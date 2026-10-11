@@ -77,6 +77,7 @@ class FakeApi:
         delete_status: int = 204,
         close_status: int = 200,
         update_branch_status: int = 202,
+        refresh_delay: int | None = 0,
         compare: tuple[int, int] = (3, 1),
     ):
         self.calls: list[tuple[str, str, dict | None]] = []
@@ -91,8 +92,10 @@ class FakeApi:
         self.delete_status = delete_status
         self.close_status = close_status
         self.update_branch_status = update_branch_status
+        self.refresh_delay = refresh_delay
         self.compare = compare
         self.refreshed = False
+        self._refresh_countdown: int | None = None
         self.check_run_heads: list[str] = []
         self._consumed_state = "unknown"
 
@@ -158,11 +161,19 @@ class FakeApi:
             }
 
         if method == "PUT" and path == f"{repo_prefix}/pulls/99/update-branch":
-            if self.update_branch_status < 300:
-                self.refreshed = True
+            # 202 Accepted: the branch moves asynchronously, unless refresh_delay is
+            # None, which scripts "accepted but never actually refreshed".
+            if self.update_branch_status < 300 and self.refresh_delay is not None:
+                self._refresh_countdown = self.refresh_delay
+                if self.refresh_delay == 0:
+                    self.refreshed = True
             return self.update_branch_status, {"message": "Updating pull request branch."}
 
         if method == "GET" and path == f"{repo_prefix}/pulls/99":
+            if self._refresh_countdown is not None and self._refresh_countdown > 0:
+                self._refresh_countdown -= 1
+                if self._refresh_countdown == 0:
+                    self.refreshed = True
             if self.refreshed:
                 state = self.refreshed_state
             else:
@@ -276,6 +287,21 @@ class InconclusiveIsNotAPass(unittest.TestCase):
         canary, code = run_probe(api)
         self.assertEqual(code, 1)
         self.assertIn("inconclusive", canary.failure)
+        self.assertIn("positive control", canary.failure)
+
+    def test_refresh_that_lands_late_is_tolerated(self):
+        # update-branch answers 202 and moves the branch afterwards; the first CI run
+        # read the head too early and reported the refresh as having failed.
+        api = FakeApi(refresh_delay=3)
+        canary, code = run_probe(api)
+        self.assertEqual(code, 0, canary.failure)
+        self.assertIn("refreshed", " | ".join(canary.steps))
+
+    def test_head_that_never_moves_fails_the_positive_control(self):
+        api = FakeApi(refresh_delay=None)
+        canary, code = run_probe(api)
+        self.assertEqual(code, 1)
+        self.assertIn("never moved", canary.failure)
         self.assertIn("positive control", canary.failure)
 
 

@@ -490,12 +490,23 @@ class StrictCanary:
             )
         self._require(200 <= status < 300, f"PUT update-branch -> HTTP {status}: {payload}")
 
-        status, pr = self.api.call("GET", f"/repos/{self.repo}/pulls/{self.pr}")
-        self._require(status == 200, f"GET pulls/{self.pr} -> HTTP {status}")
-        new_head = _field(_field(pr, "head", {}) or {}, "sha")
+        # update-branch answers 202 and moves the branch shortly afterwards, so the
+        # head has to be waited for. Reading it immediately reports the old SHA and
+        # looks like the refresh silently failed (it did, on the first CI run).
+        deadline = self._monotonic() + self.poll_timeout
+        new_head = self.head
+        while new_head == self.head:
+            get_status, pr = self.api.call("GET", f"/repos/{self.repo}/pulls/{self.pr}")
+            self._require(get_status == 200, f"GET pulls/{self.pr} -> HTTP {get_status}")
+            new_head = _field(_field(pr, "head", {}) or {}, "sha") or self.head
+            if new_head != self.head or self._monotonic() >= deadline:
+                break
+            self._sleep(self.poll_interval)
         self._require(
-            bool(new_head) and new_head != self.head,
-            f"update-branch did not move the head (still {self.head and self.head[:7]})",
+            new_head != self.head,
+            f"update-branch answered HTTP {status} but the head never moved from {self.head[:7]} "
+            f"within {self.poll_timeout:.0f}s: the positive control needs the refreshed head, so "
+            "this run cannot separate staleness from a blanket block",
         )
         self._step("refreshed", f"head {self.head[:7]} -> {new_head[:7]}")
         self.head = new_head
