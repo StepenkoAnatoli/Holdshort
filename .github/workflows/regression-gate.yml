@@ -1,5 +1,17 @@
 name: regression-gate
 
+# Mirrors the local pre-commit hook (.githooks/pre-commit) so the full gate
+# also protects clones without the hook wired, and so required status checks
+# catch --no-verify bypasses on main.
+#
+# The REQUIRED branch-protection context is "regression-gate" (the runbook
+# documented name). The check-run name = "<job name>" — the job must keep
+# name: gate (its current name) for the context to match; renaming the
+# workflow file's `name:` does NOT change the check-run name.
+#
+# On: every push to main and every pull_request (any branch), so a green
+# status is produced for exactly the commits protection looks at.
+
 on:
   push:
     branches: [main]
@@ -7,6 +19,7 @@ on:
 
 jobs:
   gate:
+    name: regression-gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
