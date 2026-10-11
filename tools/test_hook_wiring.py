@@ -113,6 +113,12 @@ class HookWiring(unittest.TestCase):
         localq = subprocess.run(["git", "config", "--local", "--get", "core.hooksPath"],
                                 cwd=self.root, env=env, capture_output=True, text=True)
         self.assertNotEqual(localq.returncode, 0)
+        # This test targets LOCAL-view semantics (global config is not wiring).
+        # On a GitHub runner GITHUB_ACTIONS=true is inherited by the CLI
+        # subprocess and correctly switches it to the CI/tracked-mode view —
+        # so scrub it here; local-view behavior is what is under test.
+        env.pop("GITHUB_ACTIONS", None)
+        env.pop("CI", None)
         out = subprocess.run(
             [sys.executable, str(TOOLS / "check_hook_wiring.py"), "--root", str(self.root)],
             cwd=self.root, env=env, capture_output=True, text=True)
