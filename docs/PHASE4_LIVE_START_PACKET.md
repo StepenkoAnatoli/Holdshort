@@ -114,5 +114,12 @@ or amends at signing; nothing in this form is signed by authority it doesn't alr
    2026-10-10**: that commit *is* the §10 row 4 approval, and it unlocks live dispatch
    authorization on this scope (pilot ceiling $20.00, api.anthropic.com-only egress, gitignored
    env-file key placement, 90-day trial window).
-2. Name the §2/P02 reviewer so the "reviewer" qualification field can be filled (one name, see
-   `docs/P02_REVIEW_BRIEF.md` for the exact checklist handed them) — **still pending**.
+2. ~~Name the §2/P02 reviewer so the "reviewer" qualification field can be filled (one name, see
+   `docs/P02_REVIEW_BRIEF.md` for the exact checklist handed them)~~ — **DONE 2026-10-10**:
+   the signed designation instrument [docs/P02_REVIEWER_NOTICE.md](P02_REVIEWER_NOTICE.md) names
+   `"StepenkoAnatoli"` as reviewer-of-record (§2 row 3 owner-deviation basis) and the §2
+   qualification table's `Reviewer` field is filled accordingly. What still remains
+   owner-actionable (upgrades, not the naming itself): the *strict-P02 independence*
+   countersignature via a fresh non-author session per
+   [docs/P02_REVIEWER_DESIGNATION.md](P02_REVIEWER_DESIGNATION.md) — recommended before any
+   external re-audit, not a pilot-start gate.
