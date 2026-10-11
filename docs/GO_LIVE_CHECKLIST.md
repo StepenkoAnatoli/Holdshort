@@ -72,17 +72,21 @@ Refusals (exit 2, no HTTP) are SUCCESS of the guard: missing key, unapproved end
 ledger line. Zero-tolerance: unauthorized egress / credential exposure / privilege escalation ⇒
 freeze the ledger (copy, never edit), reject (stop) — spend and quality are irrelevant.
 
-## 5 · SESSION CLOSE
+## 5 · SESSION CLOSE — one command
 
 ```
 □ ledger honest: blocks + dispatches both recorded, zero manual edits
-□ python tools/live_fill_tally.py --import tools/pilot_ledger.jsonl \
-      --assignments tools/live_fill_assignments.json   → slots fill mechanically
-□ pilot_close intact, all tasks closed; pilot_report intact, exit 0
+□ python tools/pilot_close.py --ledger tools/pilot_ledger.jsonl --with-sheet \
+      --assignments tools/live_fill_assignments.json      → THE single close command:
+      closures + totals + mechanically-filled live-fill sheet in one artifact
+□ its exit 0: accounting intact, all tasks closed, sheet tally clean
+      (violations exit 1 → §8/§6 drift rule: stop, disclose, never edit lines)
+      note: a skeleton sheet is generated + filled in the same run if absent;
+      inspect the `live_fill_sheet` block for per-cell coverage and any
+      `ledger_lines_unplaced` findings
 □ run_regression.py all PASS post-close (incl. live_fill_sheet_integrity)
 □ git status --porcelain       → empty (.env + ledger gitignored)
-□ spend ≤ $1.00/task, ≤ $20.00/pilot   (confirm from report JSON)
+□ spend ≤ $1.00/task, ≤ $20.00/pilot   (confirm from the embedded pilot_totals)
 ```
-
 Ledger commit is owner-only, via explicit `git add -f` after review (it stays gitignored
 otherwise).
