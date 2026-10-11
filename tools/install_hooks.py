@@ -18,6 +18,7 @@ unchanged (or explicitly reported), never half-wired.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -26,8 +27,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 HOOK = REPO_ROOT / ".githooks" / "pre-commit"
 
 
-def git(args: list[str], cwd: Path = REPO_ROOT) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+def git(args: list[str], cwd: Path = None) -> subprocess.CompletedProcess:
+    # cwd resolves the CURRENT module-level REPO_ROOT at call time: tests
+    # repoint REPO_ROOT at a throwaway clone, and wiring must happen THERE,
+    # not in the dev repo a def-time default would keep touching. env is
+    # inherited so GIT_CONFIG_GLOBAL/SYSTEM isolation in tests propagates.
+    return subprocess.run(["git", *args], cwd=cwd or REPO_ROOT, capture_output=True,
+                          text=True, env=os.environ)
 
 
 def main() -> int:
@@ -44,12 +50,6 @@ def main() -> int:
     if r.returncode != 0:
         print(f"install_hooks: could not set local core.hooksPath: {r.stderr}", file=sys.stderr)
         return 1
-
-    # The tracked hook must be executable: on Linux/CI, git silently SKIPS a
-    # non-executable hooksPath script (commit proceeds without any gate).
-    import os, stat as _stat
-    mode = HOOK.stat().st_mode
-    HOOK.chmod(mode | _stat.S_IXUSR | _stat.S_IXGRP | _stat.S_IXOTH)
 
     configured = git(["config", "core.hooksPath"]).stdout.strip()
     if configured.replace("\\", "/").rstrip("/") != ".githooks":

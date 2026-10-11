@@ -23,6 +23,10 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    # Weekly: re-prove the gate and the onboarding path even in quiet periods
+    # (no pushes). Monday ~03:20 UTC; keeps protection honest over time.
+    - cron: "20 3 * * 1"
 
 jobs:
   gate:
@@ -41,7 +45,7 @@ jobs:
   setup-prove:
     name: onboarding-proof
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     steps:
       - uses: actions/checkout@v4
         with:

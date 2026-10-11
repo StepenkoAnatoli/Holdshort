@@ -50,20 +50,17 @@ def check_integrity(sheet: dict) -> list:
 def tally_summary(sheet: dict) -> dict:
     """Machine-readable fill status: per-cell + per-arm + totals + integrity.
     Used by this tool's human output and by pilot_close.py --with-sheet
-    (session-close embeds this dict verbatim in the close report)."""
+    (session-close embeds this dict verbatim in the close report). Recorded
+    counts here match import_from_ledger's "empty" predicate exactly: a slot
+    with ANY measured field set + task_id counts as recorded (first-dispatch
+    slots legally carry not_computable_first_dispatch latency)."""
     problems = check_integrity(sheet)
-    # Recompute the recorded count the same way import_from_ledger decides
-    # "empty": a slot with ANY measured field set counts as recorded (a
-    # mechanical fill sets every measured field it can; the §8 latency for a
-    # first dispatch is explicitly "not_computable_first_dispatch", so the
-    # all-fields!=NOT_MEASURED test would wrongly miss legal first-dispatch
-    # slots).
     for cell_id, c in sheet["cells"].items():
         c["_recorded"] = sum(1 for obs in c["observations"]
                              if any(obs.get(k) != NOT_MEASURED
                                     for k in MEASURED_REQUIRED) and obs.get("task_id"))
     per_cell = {}
-    per_arm = {arm: 0 for arm in sheet["arms"]}
+    per_arm: Dict[str, int] = {arm: 0 for arm in sheet["arms"]}
     cells_filled = 0
     for cell_id in sorted(sheet["cells"]):
         c = sheet["cells"][cell_id]
@@ -86,7 +83,7 @@ def tally_summary(sheet: dict) -> dict:
     }
 
 
-def summarize_sheet(sheet_path):
+def summarize_sheet(sheet_path: Path) -> tuple:
     """Load a sheet: (summary, None) on success, (None, 2) if missing/corrupt."""
     if not sheet_path.is_file():
         return None, 2
@@ -129,7 +126,9 @@ def import_from_ledger(sheet: dict, entries: list, assignments: dict) -> list:
       * D-arm gate-runner route is not carried by ledger lines: recorded as
         gate_runner_route = "ledger-only"
     """
-    findings: list = []
+    findings: list = []  # rows: {"line", "task_id", "kind", "detail"}
+    def _finding(kind: str, detail: str) -> None:
+        findings.append({"line": idx, "task_id": tid, "kind": kind, "detail": detail})
     per_task_prev_ts: dict = {}
     empties: dict = {}
     for cell_id, c in sheet["cells"].items():
@@ -139,24 +138,20 @@ def import_from_ledger(sheet: dict, entries: list, assignments: dict) -> list:
         tid = e.get("task_id")
         a = assignments.get(tid)
         if a is None:
-            findings.append(f"ledger line {idx}: task {tid!r} has no assignment — "
-                            "not imported (add {'arm','cell'} to the assignments map)")
+            _finding("unassigned", f"task {tid!r} has no assignment — not imported (add {'arm','cell'} to the assignments map)")
             continue
         if not isinstance(a, dict) or "arm" not in a or "cell" not in a:
-            findings.append(f"ledger line {idx}: assignment for {tid!r} must be "
-                            "{\"arm\": \"A..D\", \"cell\": \"T-01..T-05\"} — got {a!r}")
+            _finding("bad-assignment", f"assignment for {tid!r} must be {{\"arm\": \"A..D\", \"cell\": \"T-01..T-05\"}} — got {a!r}")
             continue
         arm, cell_task = a["arm"], a["cell"]
         cell_id = f"{arm}|{cell_task}"
         cell = sheet["cells"].get(cell_id)
         if cell is None:
-            findings.append(f"ledger line {idx}: {tid!r} → {cell_id!r} but that cell does "
-                            "not exist in this sheet")
+            _finding("unknown-cell", f"{tid!r} → {cell_id!r} but that cell does not exist in this sheet")
             continue
         empty = empties.get(cell_id) or []
         if not empty:
-            findings.append(f"ledger line {idx}: cell {cell_id!r} has no empty slot — "
-                            "line not imported (over-capacity task/repeat beyond plan)")
+            _finding("over-capacity", f"cell {cell_id!r} has no empty slot — line not imported (over-capacity task/repeat beyond plan)")
             continue
         obs = empty.pop(0)
         ts = e.get("ts")

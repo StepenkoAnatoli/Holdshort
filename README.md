@@ -24,6 +24,42 @@ designated non-author review plus owner acknowledgement is still required before
 see [docs/PHASE2_REVIEW_RECORD.md](docs/PHASE2_REVIEW_RECORD.md) for the author-side validation
 record and the outstanding review requirements.
 
+## Enforcing-by-default: the four protection layers
+
+A clone of this repo enforces the Phase-4 regression gate by default, and main
+cannot receive unverified content through any path. Four independent layers —
+each has caught a real failure during development:
+
+1. **Local pre-commit hook** — `core.hooksPath` is wired repo-locally by
+   `python tools/install_hooks.py` (or one-command `bash tools/setup_machine.sh`);
+   every commit runs the full gate on HEAD+index and refuses on any failure.
+   The hook is tracked at mode `100755` so Linux checkouts execute it.
+2. **CI mirror** — the `regression-gate` GitHub Actions workflow runs the same
+   gate on every push to main and every pull request, so clones *without* the
+   hook wired are still covered, and `--no-verify` bypasses still get audited.
+3. **Required status check** — branch protection on `main` requires the
+   `regression-gate` check (strict) before any update lands; a push without a
+   green gate is refused server-side with `GH006`.
+4. **Admin enforcement** — `enforce_admins` is on: the owner's own pushes go
+   through the same required check. No human path lands unverified content.
+
+Plus continuous self-proof: a weekly scheduled run (and every manual
+`workflow_dispatch`) re-runs the gate AND the onboarding proof — a throwaway
+clone goes through `setup_machine.sh` (wire → clean commit allowed → staged
+fake key refused → §0–§2 preflight) so enforcement itself cannot rot silently.
+
+### New-clone setup (one command)
+
+```bash
+bash tools/setup_machine.sh https://github.com/StepenkoAnatoli/SmartRouter.git
+```
+
+This clones, wires the hook, proves enforcement (clean commit allowed, staged
+fake key refused), and ends with the automated runbook §0–§2 preflight — the
+machine is verified ready, not just gated. `python tools/install_hooks.py` alone
+re-wires an existing checkout; the key for live dispatch stays out of the repo
+(row-4: local gitignored `.env` only).
+
 ## Historical planning documents (superseded README content preserved)
 
 The Phase-1 plan-only documents remain on this branch as historical/specification references:

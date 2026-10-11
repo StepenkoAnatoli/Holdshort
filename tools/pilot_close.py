@@ -131,42 +131,16 @@ def build_sheet_section(entries, assignments: Optional[Dict[str, dict]],
 
     filled_lines, missed = 0, []
     if assignments is not None and action == "generated-skeleton":
-        by_cell = {}
-        for cell_id, c in sheet["cells"].items():
-            by_cell[(c["arm"], c["task_id"])] = c
-        for idx, e in enumerate(entries, 1):
-            tid = e.get("task_id")
-            a = assignments.get(tid)
-            if not a:
-                missed.append({"line": idx, "task_id": tid,
-                               "kind": "unassigned", "detail": "no assignment map entry"})
-                continue
-            c = by_cell.get((a.get("arm"), a.get("cell")))
-            if c is None:
-                missed.append({"line": idx, "task_id": tid,
-                               "kind": "unknown-cell",
-                               "detail": f"assignment {a} does not match any sheet cell"})
-                continue
-            open_slot = next((o for o in c["observations"]
-                              if o.get("task_id") is None), None)
-            if open_slot is None:
-                missed.append({"line": idx, "task_id": tid,
-                               "kind": "over-capacity",
-                               "detail": f"cell {c['task_id']} arm {c['arm']} has no open slot"})
-                continue
-            open_slot.update({
-                "task_id": tid,
-                "ts": e.get("ts", "not_measured"),
-                "profile_dispatched": e.get("profile_id", "not_measured"),
-                "input_tokens": e.get("input_tokens", "not_measured"),
-                "output_tokens": e.get("output_tokens", "not_measured"),
-                "cost_usd": e.get("cost_usd", "not_measured"),
-                "outcome": e.get("decision", "not_measured"),
-                "ledger_line_no": idx,
-                "accounting_intact": True,  # ledger already accounting-checked before close
-                "gate_runner_route": a.get("gate_runner_route", "not_measured"),
-            })
-            filled_lines += 1
+        # DELEGATED to live_fill_tally.import_from_ledger — the single source of
+        # truth for mechanical slot-filling (line order, skip-filled idempotency,
+        # §8 latency delta with not_computable_first_dispatch, D-arm
+        # gate_runner_route=ledger-only, unassignable lines as findings never
+        # dropped). Duplicating it here DID drift once; don't re-duplicate.
+        import live_fill_tally as lft  # noqa: E402
+        missed = lft.import_from_ledger(sheet, entries, assignments)
+        filled_lines = sum(1 for cid in sheet["cells"]
+                           for o in sheet["cells"][cid]["observations"]
+                           if o.get("task_id") is not None)
 
     if action == "generated-skeleton":
         sheet_path.parent.mkdir(parents=True, exist_ok=True)

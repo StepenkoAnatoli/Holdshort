@@ -28,6 +28,7 @@ CHECKS = [
     ("test_pilot_close", [sys.executable, "tools/test_pilot_close.py"]),
     ("test_task_persistence", [sys.executable, "tools/test_task_persistence.py"]),
     ("test_task_crosscheck", [sys.executable, "tools/test_task_crosscheck.py"]),
+    ("test_install_hooks", [sys.executable, "tools/test_install_hooks.py"]),
     ("live_fill_sheet_integrity", [sys.executable, "tools/live_fill_tally.py", "--mode", "gate"]),
     ("test_pilot_report", [sys.executable, "tools/test_pilot_report.py"]),
     ("test_arm_matrix", [sys.executable, "tools/test_arm_matrix.py"]),
