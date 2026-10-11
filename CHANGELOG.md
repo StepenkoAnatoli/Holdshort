@@ -127,6 +127,24 @@ class of failure.
   `CANARY_TOKEN` secret, stays wired and documented. Verified live: dispatch run
   `38181495347` on the pull request that landed this — refusal, refresh, cleanup, PASS.
 
+## Credential stores — the gate now looks outside the repo (10-12, `adc79ba`)
+
+The PAT-cleanup audit found two silent shapes no check could see: a live credential in
+the OS store that no gh session manages (no hosts.yml, yet gh's git-credential helper
+still serves it to git), and a store entry the effective helper chain no longer reads
+(`gh auth setup-git`'s URL-scoped reset orphans the GCM entry for the same URL).
+
+- **10-12 `adc79ba`** — `tools/check_credential_hygiene.py` joins the gate: both shapes
+  refuse the next commit until triaged, the same stop-the-line rule `check_secrets` and
+  the app-DB scan already carry. The machine's three pre-existing entries are baselined
+  with their triage note (`tools/credential_hygiene_baseline.json`), so the gate stays
+  green while they remain visible and pruneable. Read-only: no helper is executed, no
+  secret value is read into the report, and `cmdkey` is asked for target names only;
+  a hosts.yml `oauth_token` is inspected as present-or-placeholder. Its 14-invariant
+  test suite (reset semantics, the hook's HOME trap, UTF-16 listings, no value echo,
+  fail-closed hosts.yml/baseline) rides the same gate, and POSIX platforms report the
+  store surface N/A so the CI mirror runs it unchanged.
+
 ## Why the layers are not redundancy
 
 Each layer covers a failure mode of the previous one: the CI mirror covers

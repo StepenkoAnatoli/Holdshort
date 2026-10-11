@@ -8,6 +8,8 @@ Checks (in order):
   3. tools/test_pilot_report.py          — ledger aggregation suite (10 tests)
   ...
   N. tools/check_secrets.py              — credential-shaped strings in tracked files
+  N+1. tools/check_credential_hygiene.py — orphaned gh keyring tokens / stale stored
+                                            credentials (baseline-triaged)
 
 Each subprocess's exit status is preserved (no output filtering that can mask
 failure). Exit 0 only when ALL pass; nonzero reports which check failed first.
@@ -39,6 +41,8 @@ CHECKS = [
     ("test_arm_matrix", [sys.executable, "tools/test_arm_matrix.py"]),
     ("test_secrets_env_guard", [sys.executable, "tools/test_secrets_env_guard.py"]),
     ("check_secrets", [sys.executable, "tools/check_secrets.py"]),
+    ("test_credential_hygiene", [sys.executable, "tools/test_credential_hygiene.py"]),
+    ("credential_hygiene", [sys.executable, "tools/check_credential_hygiene.py"]),
 ]
 
 
