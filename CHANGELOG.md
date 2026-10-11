@@ -108,6 +108,25 @@ class of failure.
   restoring real backslash-EOL continuations — and caught by exactly the
   end-to-end onboarding proof described above, its first live catch.
 
+- **10-12 `041242f`** — **Strict-mode canary**: `tools/strict_canary.py` and the
+  `strict-canary` job (weekly `schedule` + every `workflow_dispatch`) re-prove the
+  Layer-3 stale-base refusal instead of leaving it in prose. A throwaway pull request
+  is cut from an older `main` commit, a green `regression-gate` check is placed on that
+  stale head (synthetic, and its output says so — `GITHUB_TOKEN`-authored events start
+  no workflow runs, so CI cannot supply one), and the run must then see
+  `mergeable_state: behind`, a `405` refusal, and a refreshed head that is
+  `clean`/`unstable` and mergeable — `update-branch` being the remedy it exercises. The
+  pull request and branch are deleted on every path; a `2xx` from the attempted merge is
+  a protection regression rather than a pass; and exit `3` (`CANNOT PROBE`) keeps a
+  configuration gap from reading as a verdict. Three real bugs were found by running it,
+  not by review: the HTTP client discarded JSON **arrays** (the commits listing came back
+  empty), the probe read the refreshed head before `update-branch` had moved it, and the
+  positive control demanded `clean` where GitHub legitimately answers `unstable`. It also
+  needed this repository to stop forbidding Actions-created pull requests
+  (`can_approve_pull_request_reviews` false → true, 10-12); the alternative, a dedicated
+  `CANARY_TOKEN` secret, stays wired and documented. Verified live: dispatch run
+  `38181495347` on the pull request that landed this — refusal, refresh, cleanup, PASS.
+
 ## Why the layers are not redundancy
 
 Each layer covers a failure mode of the previous one: the CI mirror covers
