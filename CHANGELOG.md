@@ -51,23 +51,30 @@ same gate, run by GitHub Actions on every push to main and pull request.
 
 Branch protection on `main` requires the `regression-gate` context
 before any update lands; a push without a green gate is refused server-side.
-Strict mode (re-run the check on a moved base before merge) and the
-general binding below were not always both true — see the 10-11
-protection-upgrade note.
 
 - **10-11 `193d1cb`** — Both the required status check (layer 3) and
   `enforce_admins` (layer 4) landed in one protection commit, plus the
   `workflow_dispatch` onboarding proof. `enforce_admins` is what makes the
   required check non-optional for the owner too — no human path lands
   unverified content.
-- **10-11 (later, API change, not a commit)** — branch protection was
-  tightened via the GitHub API to add **strict** mode: a PR whose base
-  has moved must re-run `regression-gate` against the updated branch
-  before it can merge, so the merged tree is always the exact tree a
-  green gate covered. Read-verified `strict: true` alongside the
-  existing contexts + admin enforcement. (Until this upgrade, the
-  changelog's earlier "strict" phrasing described intent, not live
-  state — the honest ledger records both.)
+
+## Strict-mode upgrade — 10-11, via the API (not a commit)
+
+Later the same day, branch protection was upgraded **through
+the GitHub API, not by a commit**, to enable **strict** mode: a PR whose
+base has moved must re-run `regression-gate` against the updated branch
+before it can merge, so the merged tree is always the exact tree a green
+gate covered. Read-verified `strict: true` alongside the existing
+contexts + admin enforcement.
+
+Why it is recorded as its own event rather than an amendment to
+`193d1cb`: strict mode is a distinct, independently verifiable protection
+property with its own live-state check (`GET /branches/main/protection`),
+its own behavioral contract (stale-base re-run), and its own audit
+trail in the README. No deploy step shipped it — the API call itself was
+the change — so it deserves its own heading, not a parenthetical note.
+(Until this upgrade, the changelog's earlier "strict" phrasing described
+intent, not live state — the honest ledger records both.)
 
 ## Continuous self-proof of the enforcement itself
 
