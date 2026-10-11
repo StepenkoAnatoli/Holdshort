@@ -44,6 +44,10 @@ git ls-files | grep -x '.env'                            # empty = never tracked
 python tools/check_secrets.py                            # still clean ✓
 ```
 
+Replacing or removing a value — including the Windows credential-store cases, where a stored
+credential outlives the session that created it — is
+[CREDENTIAL_ROTATION_RUNBOOK.md](CREDENTIAL_ROTATION_RUNBOOK.md).
+
 ## 2. Dry-run warm-up — no network, proves the pipeline (no OWNER needed)
 
 ```bash

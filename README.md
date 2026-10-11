@@ -84,6 +84,11 @@ machine is verified ready, not just gated. `python tools/install_hooks.py` alone
 re-wires an existing checkout; the key for live dispatch stays out of the repo
 (row-4: local gitignored `.env` only).
 
+Replacing one is the other half:
+[docs/CREDENTIAL_ROTATION_RUNBOOK.md](docs/CREDENTIAL_ROTATION_RUNBOOK.md) covers rotation, the
+Windows store cases where a credential outlives the session that stored it, and the verification
+that proves the new value is the one in use.
+
 ## Historical planning documents (superseded README content preserved)
 
 The Phase-1 plan-only documents remain on this branch as historical/specification references:
