@@ -108,19 +108,24 @@ Fail actions:
   privilege escalation) ⇒ **zero-tolerance**: copy the ledger aside unchanged, decision is
   `reject (stop)`, session over.
 
-## 5. Session close
+## 5. Session close — ONE command does it all
 
-- [ ] `python tools/pilot_close.py --ledger tools/pilot_ledger.jsonl` — intact, all tasks closed.
-- [ ] `python tools/run_regression.py` — now **11 checks**, must all PASS after close.
-      Check #11, `live_fill_sheet_integrity`, audits the live-fill sheet (if a session
-      sheet exists): any dishonest state — a cell marked `filled` with unmeasured slots,
-      or filled with `accounting_intact=false` — FAILS the gate, blocking every commit
-      until fixed. The session cannot close with an unhonest sheet, and neither can any
-      commit land on it. No live session → no sheet → check passes trivially.
+- [ ] `python tools/pilot_close.py --ledger tools/pilot_ledger.jsonl --with-sheet \
+      --assignments tools/live_fill_assignments.json` — THE single close
+      command: per-task closures + pilot totals AND the mechanically-filled live-fill
+      sheet in one artifact. **Replaces the separate `live_fill_tally.py --import`
+      invocation.** Verified in one run:
+      accounting intact, all tasks closed, sheet tally clean (dispatch-refused
+      blocks disclosed inline, never silently skipped). Violations exit 1 →
+      stop + disclose, never edit ledger lines.
+- [ ] `python tools/run_regression.py` — all checks PASS after close
+      (incl. `live_fill_sheet_integrity`; generated-skeleton sheets are disclosed,
+      emitted by the same close run, and only pass tally when placed).
 - [ ] `git status --porcelain` empty (`.env` ignored, ledger ignored).
-- [ ] Spend from the closure JSON ≤ $20.00 pilot / ≤ $1.00 task. If you decide to commit the
-      ledger as pilot-close evidence for the report, review it first — it is gitignored by
-      default and stays that way unless explicitly `git add -f`ed by you.
+- [ ] Spend from the embedded `pilot_totals` ≤ $20.00 pilot / ≤ $1.00 task.
+      If you decide to commit the ledger as pilot-close evidence for the report, review
+      it first — it is gitignored by default and stays that way unless explicitly
+      `git add -f`ed by you.
 
 ## 6. Known boundaries (honest limitations)
 

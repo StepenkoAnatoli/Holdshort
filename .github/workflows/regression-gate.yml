@@ -13,10 +13,14 @@ name: regression-gate
 #
 # workflow_dispatch additionally runs the ONBOARDING PROOF (setup-prove job):
 # setup_machine.sh exercises the full fail-closed path end-to-end — clone,
-# wire repo-local hooksPath, clean commit allowed, staged fake key REFUSED —
-# against a throwaway clone. This keeps the onboarding path itself honest:
-# if install_hooks.py or the hook ever regresses, running this dispatch
-# fails loudly instead of silently shipping enforcement theater.
+# wire repo-local hooksPath, clean commit allowed, staged fake key REFUSED,
+# the §0–§2 dry-run preflight, AND the runbook §5 session-close proof
+# (pilot_close --with-sheet: single close command → closures + totals +
+# mechanically-filled live-fill sheet in one artifact, intact + tally clean +
+# idempotent) — against a throwaway clone. This keeps the onboarding path
+# itself honest: if install_hooks.py, the hook, OR the close-report
+# generation ever regresses, running this dispatch fails loudly instead of
+# silently shipping enforcement theater.
 
 on:
   push:

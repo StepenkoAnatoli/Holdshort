@@ -18,6 +18,10 @@
 #      - §0 secrets scan clean; live refusal exit 2 with NO .env (no HTTP call)
 #      - §2 dry-run cloud-C dispatch -> dispatched, ledger line written, exit 0
 #      - §2 dry-run cloud-XYZ -> unknown-profile (Gate-4 fail-closed), exit 1
+#   6. SESSION-CLOSE proof (runbook §5, the --with-sheet single command):
+#      pilot_close --with-sheet on the dry-run ledger -> closures + totals +
+#      mechanically-filled live-fill sheet in one artifact; accounting intact,
+#      sheet tally clean, idempotent re-run, ALL artifacts temp.
 #   All artifacts are temp; nothing is committed or pushed.
 set -u
 
@@ -135,11 +139,68 @@ grep -q '"decision": "unknown-profile"' "$DRY_TMP/gate4.json" || { cat "$DRY_TMP
 grep -q '"decision": "unknown-profile"' "$DRY_TMP/dryrun_ledger.jsonl" || { cat "$DRY_TMP/dryrun_ledger.jsonl" >&2; die "refusal not recorded in ledger"; }
 echo "    PASS — unknown-profile Gate-4 fail-closed (exit 1, ledger records it)"
 
+# ---------------------------------------------------------------------
+# SESSION-CLOSE proof (runbook §5) — the --with-sheet single close command
+# is continuously proven on the dry-run ledger: closures + totals + the
+# mechanically-filled live-fill sheet in one artifact. Assignments map the
+# §2 dry-run task ids into the sheet's arm/task grid; artifacts are temp.
+# ---------------------------------------------------------------------
+echo "==> SESSION-CLOSE proof: pilot_close --with-sheet (runbook §5 single command)"
+CLOSE_TMP="$(mktemp -d)" || die "mktemp -d"
+# NOTE: a §2 refusal line (unknown-profile, cost 0) stays in the ledger: the
+# close path must disclose it honestly (blocked:gate closure), never skip it.
+ASSIGN="$CLOSE_TMP/assign.json"
+printf '%s' '{"dryrun-1": {"arm": "A", "cell": "T-01"}, "dryrun-2": {"arm": "B", "cell": "T-02"}}' > "$ASSIGN" \
+  || die "write assignments"
+python tools/pilot_close.py \
+  --ledger "$DRY_TMP/dryrun_ledger.jsonl" --with-sheet \
+  --sheet "$CLOSE_TMP/live_fill_sheet.json" \
+  --assignments "$ASSIGN" > "$CLOSE_TMP/close.json" 2> "$CLOSE_TMP/close.err"
+RC=$?
+if [ "$RC" -ne 0 ]; then
+  cat "$CLOSE_TMP/close.err" >&2; cat "$CLOSE_TMP/close.json" >&2
+  die "session-close proof: pilot_close --with-sheet must exit 0 on the dry-run ledger (got $RC)"
+fi
+# The embedded sheet section must prove every claim the runbook §5 checklist
+# makes about THE single close command:
+python - "$CLOSE_TMP/close.json" <<'PROOF' || die "session-close proof: report content mismatch"
+import json, sys
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+s = d["live_fill_sheet"]
+assert s["integrity_ok"], s["problems"]                          # tally clean
+assert d["pilot_totals"]["accounting_status"] == "intact"        # accounting intact
+assert d["pilot_totals"]["tasks_closed"] == 2, d["closures"]     # ALL tasks closed
+assert s["ledger_lines_placed"] == 2, s["ledger_lines_placed"]   # both lines placed mechanically
+assert s["ledger_lines_unplaced"] == [], s["ledger_lines_unplaced"]  # nothing silently skipped
+assert d["pilot_totals"]["blocked"] >= 1                         # Gate-4 refusal DISCLOSED as a closure
+print("    close report: intact / all closed / placed+disclosed / tally clean")
+PROOF
+# Idempotency: a second close over the SAME sheet must report loaded-existing
+# and identical fill counts, proving the never-overwrite-recorded-slots rule.
+python tools/pilot_close.py \
+  --ledger "$DRY_TMP/dryrun_ledger.jsonl" --with-sheet \
+  --sheet "$CLOSE_TMP/live_fill_sheet.json" \
+  --assignments "$ASSIGN" > "$CLOSE_TMP/close2.json" 2>&1 \
+  || die "session-close proof: idempotent re-run must also exit 0"
+python - "$CLOSE_TMP/close.json" "$CLOSE_TMP/close2.json" <<'PROOF' || die "session-close proof: idempotency mismatch"
+import json, sys
+s1 = json.load(open(sys.argv[1], encoding="utf-8"))["live_fill_sheet"]
+s2 = json.load(open(sys.argv[2], encoding="utf-8"))["live_fill_sheet"]
+assert s1["ledger_lines_placed"] == 2
+assert s2["sheet_action"] == "loaded-existing", s2["sheet_action"]
+assert s2["ledger_lines_placed"] == 0, s2["ledger_lines_placed"]
+assert s2["observations_recorded"] == s1["observations_recorded"]
+assert s2["ledger_lines_unplaced"] == s1["ledger_lines_unplaced"] == []
+print("    idempotent: 2nd run loads existing sheet, no re-placement")
+PROOF
+echo "    PASS — close report intact + tally clean + idempotent (runbook §5 command proven)"
+
 echo "==> cleaning scratch files"
 rm -rf "$DR_TMP" 2>/dev/null || true
 rm -rf "$DRY_TMP" 2>/dev/null || true
+rm -rf "$CLOSE_TMP" 2>/dev/null || true
 git status --porcelain | grep -q . && {
   echo "WARNING: worktree not clean after rollback:"; git status --porcelain; }
 
-echo "setup_machine: DONE — gate enforced, preflight (§0–§2) verified on this machine."
+echo "setup_machine: DONE — gate enforced, preflight (§0–§5) verified on this machine."
 exit 0
