@@ -145,6 +145,29 @@ still serves it to git), and a store entry the effective helper chain no longer 
   fail-closed hosts.yml/baseline) rides the same gate, and POSIX platforms report the
   store surface N/A so the CI mirror runs it unchanged.
 
+## Credential rotation — the other half of `.env` placement (10-12, `79eeb59`)
+
+Placement was documented; removal and replacement were not. `docs/CREDENTIAL_ROTATION_RUNBOOK.md`
+closes that: the inventory this machine actually holds (live-dispatch key, the GitHub credential
+present in *both* stores, the gh session, the optional `CANARY_TOKEN`, plaintext credential files),
+the Windows two-store mechanics that make deletion non-obvious, per-credential procedures, the leak
+surfaces no repo check can see, and the verification that proves the new value is the one in use.
+
+- **10-12 `79eeb59`** — the runbook lands, linked from GO_LIVE_RUNBOOK §1 and the README's
+  new-clone paragraph. Its central claim is measured, not asserted: on this machine
+  `gh auth setup-git`'s URL-scoped `credential.https://github.com.helper =` reset leaves GCM's
+  `git:https://github.com` entry unreadable, while two `gh:` keyring tokens stay live with no
+  `hosts.yml` — `git ls-remote origin` succeeds through exactly that orphan. So the obvious move,
+  rotating in the store you can see, invalidates the copy nobody was using. Each procedure
+  therefore ends with an explicit per-target `cmdkey /delete` and a use-test (store check → chain
+  inspection → `ls-remote` → push → CI), plus pruning the resolved entry from
+  `tools/credential_hygiene_baseline.json`, because a resolved row left in place silently silences
+  a recurrence. Read-only by construction, like the checks it documents: no secret value is read,
+  printed or validated and no helper is executed. Every read-only command it prescribes was
+  exercised before landing; the destructive or interactive steps (`cmdkey /delete`,
+  `gh auth login --with-token`, `gh secret set`, GCM `github login/logout`) are marked in its §7 as
+  prescribed-but-not-run.
+
 ## Why the layers are not redundancy
 
 Each layer covers a failure mode of the previous one: the CI mirror covers
