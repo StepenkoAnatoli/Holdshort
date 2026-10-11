@@ -48,6 +48,17 @@ each has caught a real failure during development:
 4. **Admin enforcement** — `enforce_admins` is on: the owner's own pushes go
    through the same required check. No human path lands unverified content.
 
+   For a new contributor's first attempt to land code by pushing a commit
+   straight to `main` (the classic `--no-verify` bypass or a fresh clone with
+   no hooks): there is no first-attempt grace period — the very first push is
+   refused server-side with `GH006` (required status check not green), and
+   install-hooks-wiring doesn't matter, because the enforcement here is
+   server-side and hooks exist only to prevent you from ever getting to that
+   refusal. The correct first move is a pull request against a feature
+   branch, which gets the CI gate run on the PR head before any merge is
+   considered; strict mode additionally guarantees the gate re-runs if the
+   base moves between the PR's CI pass and merge.
+
 Plus continuous self-proof: a weekly scheduled run (and every manual
 `workflow_dispatch`) re-runs the gate AND the onboarding proof — a throwaway
 clone goes through `setup_machine.sh` (wire → clean commit allowed → staged

@@ -92,3 +92,19 @@ strict-P02 countersignature is [docs/P02_REVIEWER_DESIGNATION.md](docs/P02_REVIE
 | Draft / prerelease | `false` / `false` (a real release, publicly visible) |
 | In-repo content commits after the tag | `23a9ef0` (packet), `2f4b141` (completion), `1d3b9b6` (zip), `55713f3` (prices verified), `badeb03` (audit), `c0337c8` (arm matrix / walkthrough), `8a085a6` (row-4 pre-fill), `8526af7` (reviewer record), `8a2c08c` (rate re-verify), `6d46481` (record freshness) — **none change skill semantics**; the released artefacts' behavior is what was tagged. |
 | Consumer handoff notes | `docs/HANDOFF_MOONZILA.md`, `docs/HANDOFF_RESEARCH_KIT.md` — delivered to their respective owners for Phase 5/6/7 gate awareness. |
+
+## 6b. Release provenance — v1.0.1 (supersedes v1.0.0-pilot on `main`)
+
+| Field | Value |
+| --- | --- |
+| Tag name | `v1.0.1` (annotated) |
+| Tagged at commit | `cdcec77eb96cb2fe9e5f2c08aaad26543ed0ccab` — the packaging tree carrying the enforcement+docs refresh since v1.0.0-pilot (PR #11 gate hardening, PR #12 docs-strict-provenance, PR #13 packet reconcile, this PR #14 packaging) |
+| Tag object SHA | `fbe2a4c7ec4844fc29668d294b75206b0d2e36c4` |
+| GitHub Release id | `409546770` |
+| Release URL | https://github.com/StepenkoAnatoli/SmartRouter/releases/tag/v1.0.1 |
+| Release asset | `SmartRouter-v1.0.1.zip` — 217,751 bytes, 75 entries, SHA-1 `aafcc9288261e9691ec7b9ae26120f35ba9d29b8` (also committed as `tools/release/SmartRouter-v1.0.1.zip` in `cdcec77`, merged to main via PR #14 `9508c97`; blob id `b988f89f58f274c540b964d28c096c13726af15a`) |
+| Release notes body length | 5,999 bytes / 5,960 characters (base-release pointer + enforcement-hardening story + four-protection-layer annex; same content as [tools/release/RELEASE_NOTES_v1.0.1.md](tools/release/RELEASE_NOTES_v1.0.1.md), modulo EOL) |
+| Draft / prerelease | `false` / `false` (a real release, publicly visible) |
+| In-repo content commits after the tag | `abe79d8` (strict-protection merge test), `03d629f` (PR #15 merge), `7af6975` (revert), `b143654` (PR #16 merge) — **test-and-revert cycle only, zero net content change** (README byte-identical pre/post); skills semantics unchanged. The tag's packaging commit `cdcec77` itself is the point-in-time snapshot of record. |
+| Consumer handoff notes | same set as v1.0.0-pilot (`docs/HANDOFF_MOONZILA.md`, `docs/HANDOFF_RESEARCH_KIT.md`) — unchanged; v1.0.1 is an enforcement/docs refresh, not a behavior change for consumers. |
+| Passing onboarding-proof runs (Linux-side evidence for re-audits) | [run 38139054255](https://github.com/StepenkoAnatoli/SmartRouter/actions/runs/38139054255), [run 38139216469](https://github.com/StepenkoAnatoli/SmartRouter/actions/runs/38139216469), and [run 38139363415](https://github.com/StepenkoAnatoli/SmartRouter/actions/runs/38139363415) — all three `workflow_dispatch` on `main` @ `b143654` (2026-10-11 11:32 / 12:25 / 12:28 UTC), each `conclusion: success` for both jobs (`regression-gate` **and** `onboarding-proof` on ubuntu-24.04). Each proof = fresh throwaway clone onboarded by `setup_machine.sh` end-to-end: `core.hooksPath` wired, gate baseline green, clean commit allowed, staged fake key refused, §0-§2 preflight PASS, session-close (pilot_close --with-sheet) intact/tally-clean/idempotent. Logs are the authoritative Linux evidence; runner picks up image `20261004.327` on the last run. |
