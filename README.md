@@ -39,9 +39,12 @@ each has caught a real failure during development:
 2. **CI mirror** — the `regression-gate` GitHub Actions workflow runs the same
    gate on every push to main and every pull request, so clones *without* the
    hook wired are still covered, and `--no-verify` bypasses still get audited.
-3. **Required status check** — branch protection on `main` requires the
-   `regression-gate` check before any update lands; a push without a
-   green gate is refused server-side with `GH006`.
+3. **Required status check (strict)** — branch protection on `main`
+   requires the `regression-gate` check, with strict mode on (since
+   2026-10-11, set via the API): the check must be green against the
+   current base — a PR whose base moved re-runs the gate before it can
+   merge. A push without a green gate is refused server-side with
+   `GH006`.
 4. **Admin enforcement** — `enforce_admins` is on: the owner's own pushes go
    through the same required check. No human path lands unverified content.
 

@@ -49,14 +49,25 @@ same gate, run by GitHub Actions on every push to main and pull request.
 
 ## Layer 3 — required status check on `main` + Layer 4 — admin enforcement
 
-Branch protection on `main` requires the `regression-gate` context, strict,
+Branch protection on `main` requires the `regression-gate` context
 before any update lands; a push without a green gate is refused server-side.
+Strict mode (re-run the check on a moved base before merge) and the
+general binding below were not always both true — see the 10-11
+protection-upgrade note.
 
 - **10-11 `193d1cb`** — Both the required status check (layer 3) and
   `enforce_admins` (layer 4) landed in one protection commit, plus the
   `workflow_dispatch` onboarding proof. `enforce_admins` is what makes the
   required check non-optional for the owner too — no human path lands
   unverified content.
+- **10-11 (later, API change, not a commit)** — branch protection was
+  tightened via the GitHub API to add **strict** mode: a PR whose base
+  has moved must re-run `regression-gate` against the updated branch
+  before it can merge, so the merged tree is always the exact tree a
+  green gate covered. Read-verified `strict: true` alongside the
+  existing contexts + admin enforcement. (Until this upgrade, the
+  changelog's earlier "strict" phrasing described intent, not live
+  state — the honest ledger records both.)
 
 ## Continuous self-proof of the enforcement itself
 
