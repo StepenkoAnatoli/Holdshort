@@ -5,17 +5,24 @@ name: regression-gate
 # catch --no-verify bypasses on main.
 #
 # The REQUIRED branch-protection context is "regression-gate" (the runbook
-# documented name). The check-run name = "<job name>" — the job must keep
-# name: gate (its current name) for the context to match; renaming the
-# workflow file's `name:` does NOT change the check-run name.
+# documented name). The check-run name = "<job display name>" — the job keeps
+# name: regression-gate for the context to match.
 #
 # On: every push to main and every pull_request (any branch), so a green
 # status is produced for exactly the commits protection looks at.
+#
+# workflow_dispatch additionally runs the ONBOARDING PROOF (setup-prove job):
+# setup_machine.sh exercises the full fail-closed path end-to-end — clone,
+# wire repo-local hooksPath, clean commit allowed, staged fake key REFUSED —
+# against a throwaway clone. This keeps the onboarding path itself honest:
+# if install_hooks.py or the hook ever regresses, running this dispatch
+# fails loudly instead of silently shipping enforcement theater.
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   gate:
@@ -30,3 +37,20 @@ jobs:
           python-version: "3.12"
       - name: Run the full regression gate (mirror of the pre-commit hook)
         run: python tools/run_regression.py
+
+  setup-prove:
+    name: onboarding-proof
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Onboarding proof — clone, wire hooks, prove clean-pass + leak-refusal
+        run: |
+          bash tools/setup_machine.sh \
+            "file://${GITHUB_WORKSPACE}" "${RUNNER_TEMP}/proof-clone"
+          echo "setup proof: PASS (a fresh machine would be enforcing by default)"
