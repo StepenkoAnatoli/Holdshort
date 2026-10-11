@@ -47,6 +47,56 @@ def check_integrity(sheet: dict) -> list:
     return problems
 
 
+def tally_summary(sheet: dict) -> dict:
+    """Machine-readable fill status: per-cell + per-arm + totals + integrity.
+    Used by this tool's human output and by pilot_close.py --with-sheet
+    (session-close embeds this dict verbatim in the close report)."""
+    problems = check_integrity(sheet)
+    # Recompute the recorded count the same way import_from_ledger decides
+    # "empty": a slot with ANY measured field set counts as recorded (a
+    # mechanical fill sets every measured field it can; the §8 latency for a
+    # first dispatch is explicitly "not_computable_first_dispatch", so the
+    # all-fields!=NOT_MEASURED test would wrongly miss legal first-dispatch
+    # slots).
+    for cell_id, c in sheet["cells"].items():
+        c["_recorded"] = sum(1 for obs in c["observations"]
+                             if any(obs.get(k) != NOT_MEASURED
+                                    for k in MEASURED_REQUIRED) and obs.get("task_id"))
+    per_cell = {}
+    per_arm = {arm: 0 for arm in sheet["arms"]}
+    cells_filled = 0
+    for cell_id in sorted(sheet["cells"]):
+        c = sheet["cells"][cell_id]
+        n = c.get("_recorded", 0)
+        per_arm[c["arm"]] += n
+        cells_filled += 1 if c.get("filled") else 0
+        per_cell[cell_id] = {"arm": c["arm"], "task_category": c["task_category"],
+                             "recorded": n, "filled": bool(c.get("filled"))}
+    target = sheet["observations_per_arm_target"]
+    return {
+        "per_cell": per_cell,
+        "per_arm": per_arm,
+        "target_per_arm": target,
+        "cells_filled": cells_filled,
+        "cells_total": len(sheet["cells"]),
+        "observations_recorded": sum(per_arm.values()),
+        "observations_max": target * len(per_arm),
+        "problems": problems,
+        "integrity_ok": not problems,
+    }
+
+
+def summarize_sheet(sheet_path):
+    """Load a sheet: (summary, None) on success, (None, 2) if missing/corrupt."""
+    if not sheet_path.is_file():
+        return None, 2
+    try:
+        sheet = json.loads(sheet_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None, 2
+    return tally_summary(sheet), None
+
+
 def load_ledger(path: Path):
     """Parse the pilot ledger (same loader contract as pilot_report.load_jsonl)."""
     entries = []

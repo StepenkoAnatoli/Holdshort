@@ -33,6 +33,43 @@ def entries_completed_one_task():
             e("L-001", "cloud-C", "dispatched", 10_000, 1_000, 0.0015)]
 
 
+class PilotCloseSheetMode(unittest.TestCase):
+    """Session-close --with-sheet: regenerate, tally, embed; idempotent."""
+
+    def test_with_sheet_embeds_fill_status_and_is_idempotent(self):
+        sheet = Path(self.td.name) / "sheet.json"
+        assign = {"L-001": {"arm": "A", "cell": "T-01"}}
+        entries = pr.load_jsonl(Path(self.td.name) / "led.jsonl")
+        s1 = pc.build_sheet_section(entries, assign, sheet)
+        self.assertEqual(s1["sheet_action"], "generated-skeleton")
+        self.assertEqual(s1["ledger_lines_placed"], 2)
+        self.assertEqual(s1["per_cell"]["A|T-01"]["recorded"], 2)
+        self.assertTrue(s1["integrity_ok"])
+        s2 = pc.build_sheet_section(entries, assign, sheet)
+        self.assertEqual(s2["sheet_action"], "loaded-existing")
+        self.assertEqual(s2["ledger_lines_placed"], 0)
+        self.assertEqual(s2["observations_recorded"], s1["observations_recorded"])
+
+    def test_with_sheet_discloses_unplaced_lines(self):
+        entries = pr.load_jsonl(Path(self.td.name) / "led.jsonl") + [
+            e("L-404", "cloud-C", "dispatched", 10_000, 1_000, 0.0015)]
+        s = pc.build_sheet_section(entries, {}, Path(self.td.name) / "sheet2.json")
+        self.assertEqual(len(s["ledger_lines_unplaced"]), 3)
+        self.assertTrue(all(m["kind"] == "unassigned" for m in s["ledger_lines_unplaced"]))
+        md = pc.embed_sheet_markdown(s)
+        self.assertIn("Unplaced ledger lines", md)
+
+    def setUp(self):
+        import tempfile
+        self.td = tempfile.TemporaryDirectory()
+        led = Path(self.td.name) / "led.jsonl"
+        led.write_text(chr(10).join(json.dumps(x) for x in entries_completed_one_task()),
+                       encoding="utf-8")
+
+    def tearDown(self):
+        self.td.cleanup()
+
+
 class PilotClose(unittest.TestCase):
 
     def test_completed_task_closure(self):
