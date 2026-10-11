@@ -78,6 +78,7 @@ class FakeApi:
         close_status: int = 200,
         update_branch_status: int = 202,
         refresh_delay: int | None = 0,
+        mergeable: bool = True,
         compare: tuple[int, int] = (3, 1),
     ):
         self.calls: list[tuple[str, str, dict | None]] = []
@@ -93,6 +94,7 @@ class FakeApi:
         self.close_status = close_status
         self.update_branch_status = update_branch_status
         self.refresh_delay = refresh_delay
+        self.mergeable = mergeable
         self.compare = compare
         self.refreshed = False
         self._refresh_countdown: int | None = None
@@ -179,7 +181,12 @@ class FakeApi:
             else:
                 state = self._states.pop(0) if self._states else self._consumed_state
                 self._consumed_state = state
-            return 200, {"number": 99, "mergeable_state": state, "head": {"sha": HEAD2 if self.refreshed else HEAD1}}
+            return 200, {
+                "number": 99,
+                "mergeable": self.mergeable,
+                "mergeable_state": state,
+                "head": {"sha": HEAD2 if self.refreshed else HEAD1},
+            }
 
         if method == "DELETE" and path.startswith(f"{repo_prefix}/git/refs/heads/"):
             return self.delete_status, {}
@@ -275,12 +282,38 @@ class InconclusiveIsNotAPass(unittest.TestCase):
         self.assertIn(sc.STATE_BEHIND, canary.failure)
         self.assertEqual(api.calls_matching("PUT", "/merge"), [], "must not attempt a merge when not stale")
 
-    def test_refresh_that_never_becomes_clean_fails(self):
+    def test_refresh_that_never_becomes_mergeable_fails(self):
         api = FakeApi(refreshed_state="blocked")
         canary, code = run_probe(api)
         self.assertEqual(code, 1)
         self.assertIn("blocked", canary.failure)
         self.assertIn("staleness", canary.failure)
+
+    def test_positive_control_failure_names_what_is_pending(self):
+        # A bare "state was blocked" is not diagnosable; the failure has to say
+        # which checks are on the refreshed head.
+        api = FakeApi(refreshed_state="blocked")
+        canary, _ = run_probe(api)
+        self.assertIn("checks on head", canary.failure)
+        self.assertIn(sc.CHECK_NAME, canary.failure)
+
+    def test_unstable_after_refresh_counts_as_no_longer_stale(self):
+        # GitHub reports `unstable` for mergeable-with-pending-non-required-checks
+        # and reserves `blocked` for a required check, so `unstable` means the
+        # staleness block is gone. Seen for real on the first working CI dispatch.
+        api = FakeApi(refreshed_state="unstable")
+        canary, code = run_probe(api)
+        self.assertEqual(code, 0, canary.failure)
+        self.assertIn("unstable", " | ".join(canary.steps))
+        self.assertIn("mergeable=True", " | ".join(canary.steps))
+
+    def test_conflicting_refresh_fails_even_when_not_behind(self):
+        # `clean` next to mergeable=false must not pass: the point is a merge that
+        # staleness is no longer holding up.
+        api = FakeApi(refreshed_state="clean", mergeable=False)
+        canary, code = run_probe(api)
+        self.assertEqual(code, 1)
+        self.assertIn("mergeable=False", canary.failure)
 
     def test_update_branch_refusal_is_inconclusive(self):
         api = FakeApi(update_branch_status=422)

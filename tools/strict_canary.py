@@ -34,8 +34,10 @@ the end, on every path:
    2026-10-11 test observed.
 5. Positive control: `update-branch` (the remedy used that day), a fresh green
    check on the new head, and then assert the pull request leaves `behind` and
-   becomes `clean`. That separates "staleness was refused" from "this token
-   cannot merge anything", which is the failure mode that would make a refusal
+   becomes mergeable (`clean`, or `unstable` when some non-required check is
+   pending — GitHub says `blocked`, not `unstable`, when a required check is the
+   obstacle). That separates "staleness was refused" from "this token cannot
+   merge anything", which is the failure mode that would make a refusal
    meaningless.
 6. Close the pull request and delete the branch.
 
@@ -97,10 +99,15 @@ STALE_BASE_DEPTH = 2
 #: `behind` assertion stops holding and the canary fails loudly.
 CHECK_NAME = "regression-gate"
 
-#: The stale state GitHub reports under strict mode, and the state it returns to
-#: once the head is refreshed.
+#: The stale state GitHub reports under strict mode, and the states that mean
+#: staleness is no longer holding the merge up. `unstable` is legitimate here:
+#: GitHub uses it for "mergeable, but some non-required check is pending or
+#: failing" — it reports `blocked`, not `unstable`, when a *required* check is the
+#: obstacle, so it cannot be read as strict mode still refusing.
 STATE_BEHIND = "behind"
 STATE_CLEAN = "clean"
+STATE_UNSTABLE = "unstable"
+STATE_MERGEABLE = (STATE_CLEAN, STATE_UNSTABLE)
 
 #: The refusal status observed on 2026-10-11 (PR #21's record). 401/403 mean the
 #: token cannot merge at all, which makes any refusal meaningless — an
@@ -311,13 +318,32 @@ class StrictCanary:
         self._attempt_merge()
         new_head = self._refresh()
         self._synthetic_green_check(new_head, "post-refresh")
-        state = self._wait_state({STATE_CLEAN}, "refreshed head")
+        state = self._wait_state(set(STATE_MERGEABLE), "refreshed head")
+        status, pr = self.api.call("GET", f"/repos/{self.repo}/pulls/{self.pr}")
+        mergeable = _field(pr, "mergeable") if status == 200 else None
         self._require(
-            state == STATE_CLEAN,
-            f"after refresh the pull request reports {state!r}, not {STATE_CLEAN!r}: the refusal "
-            "cannot be attributed to staleness rather than to a blanket block",
+            state in STATE_MERGEABLE and mergeable is not False,
+            f"after refresh the pull request reports {state!r} (mergeable={mergeable!r}), not "
+            f"{' or '.join(STATE_MERGEABLE)}: the refusal cannot be attributed to staleness rather "
+            f"than to a blanket block — {self._pending_work()}",
         )
-        self._step("refreshed-state", f"mergeable_state={STATE_CLEAN!r}")
+        self._step("refreshed-state", f"mergeable_state={state!r}, mergeable={mergeable!r}")
+
+    def _pending_work(self) -> str:
+        """What the refreshed head is actually waiting on. Without this a failed
+        positive control says only which state came back, and the operator cannot
+        tell a pending non-required check from a genuine block."""
+        bits = []
+        status, runs = self.api.call("GET", f"/repos/{self.repo}/commits/{self.head}/check-runs")
+        if status == 200 and isinstance(runs, dict):
+            entries = [
+                f"{run.get('name')}={run.get('status')}/{run.get('conclusion')}"
+                for run in (runs.get("check_runs") or [])
+            ]
+            bits.append("checks on head: " + (", ".join(entries) if entries else "none"))
+        else:
+            bits.append(f"check-runs lookup -> HTTP {status}")
+        return "; ".join(bits)
 
     def _pick_base(self) -> tuple[str, str]:
         status, tip_payload = self.api.call("GET", f"/repos/{self.repo}/commits/main")
