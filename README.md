@@ -95,5 +95,3 @@ qualified real models or economic benefit.
 [LICENSE](LICENSE) applies to the newly authored planning documents and — for this branch — the new
 skill files listed above. It does not license historical SmartRouter content or linked third-party
 repositories.
-
-<!-- strict-test marker: trivial PR for testing strict-protection merge flow, safe to delete -->
