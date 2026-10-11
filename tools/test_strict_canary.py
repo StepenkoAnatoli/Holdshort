@@ -16,6 +16,9 @@ Pinned contracts:
     reaches `clean` — the refusal must be attributable to staleness;
   * the merge is never attempted unless a green required check sits on the head
     (otherwise "refused" could just mean "required check never reported");
+  * a step the probe needs being refused for configuration reasons (token scopes,
+    or a repository policy blocking Actions-created pull requests) exits 3 as
+    "cannot probe" — neither a pass nor a protection verdict;
   * cleanup runs on every path, a cleanup failure fails the run, and no ref is
     deleted when the ref was never created;
   * the pull request, its title/body, the marker and the synthetic check run all
@@ -69,6 +72,8 @@ class FakeApi:
         refreshed_state: str = "clean",
         check_runs_green: bool = True,
         create_ref_status: int = 201,
+        check_runs_status: int = 201,
+        pulls_status: int = 201,
         delete_status: int = 204,
         close_status: int = 200,
         update_branch_status: int = 202,
@@ -81,6 +86,8 @@ class FakeApi:
         self.refreshed_state = refreshed_state
         self.check_runs_green = check_runs_green
         self.create_ref_status = create_ref_status
+        self.check_runs_status = check_runs_status
+        self.pulls_status = pulls_status
         self.delete_status = delete_status
         self.close_status = close_status
         self.update_branch_status = update_branch_status
@@ -117,8 +124,11 @@ class FakeApi:
             return 200, {"status": "behind" if behind else "ahead", "behind_by": behind, "ahead_by": ahead}
 
         if method == "POST" and path == f"{repo_prefix}/check-runs":
+            if self.check_runs_status >= 300:
+                self.check_run_heads.append((body or {}).get("head_sha", ""))
+                return self.check_runs_status, {"message": "Resource not accessible by integration"}
             self.check_run_heads.append((body or {}).get("head_sha", ""))
-            return 201, {"id": len(self.check_run_heads)}
+            return self.check_runs_status, {"id": len(self.check_run_heads)}
 
         if method == "GET" and path.endswith("/check-runs"):
             if not self.check_runs_green:
@@ -131,7 +141,11 @@ class FakeApi:
             }
 
         if method == "POST" and path == f"{repo_prefix}/pulls":
-            return 201, {"number": 99, "html_url": "https://example.invalid/pull/99"}
+            if self.pulls_status >= 300:
+                return self.pulls_status, {
+                    "message": "GitHub Actions is not permitted to create or approve pull requests."
+                }
+            return self.pulls_status, {"number": 99, "html_url": "https://example.invalid/pull/99"}
 
         if method == "PATCH" and path == f"{repo_prefix}/pulls/99":
             return self.close_status, {}
@@ -285,7 +299,8 @@ class SafetyRules(unittest.TestCase):
     def test_ref_creation_failure_is_reported_with_the_needed_permission(self):
         api = FakeApi(create_ref_status=403)
         canary, code = run_probe(api)
-        self.assertEqual(code, 1)
+        self.assertEqual(code, 3, "scopes/policy are an environment gap, not a verdict")
+        self.assertTrue(canary.blocked)
         self.assertIn("contents: write", canary.failure)
         self.assertEqual(api.calls_matching("DELETE", "/git/refs/heads/"), [],
                          "no ref was created, so none may be deleted")
@@ -334,6 +349,40 @@ class DisposableArtifacts(unittest.TestCase):
     def test_branch_name_carries_the_run_id(self):
         canary = sc.StrictCanary(FakeApi(), REPO, run_id="abc123")
         self.assertIn("abc123", canary.branch)
+
+
+class CannotProbeIsItsOwnVerdict(unittest.TestCase):
+    """Configuration refusals exit 3 and never read as PASS or as a regression."""
+
+    def test_blocked_pr_creation_names_the_repository_policy(self):
+        api = FakeApi(pulls_status=403)
+        canary, code = run_probe(api)
+        self.assertEqual(code, 3)
+        self.assertTrue(canary.blocked)
+        self.assertIn("can_approve_pull_request_reviews", canary.failure)
+        self.assertIn("CANARY_TOKEN", canary.failure)
+        self.assertEqual(api.calls_matching("PUT", "/merge"), [],
+                         "nothing may be merged when the PR could not even be opened")
+
+    def test_blocked_check_placement_exits_three(self):
+        api = FakeApi(check_runs_status=403)
+        canary, code = run_probe(api)
+        self.assertEqual(code, 3)
+        self.assertIn("checks: write", canary.failure)
+
+    def test_blocked_run_is_not_rendered_as_pass_or_fail(self):
+        canary, _ = run_probe(FakeApi(pulls_status=403))
+        report = sc.render(canary)
+        self.assertIn("CANNOT PROBE", report)
+        self.assertIn("unproven", report)
+        self.assertNotIn("strict-canary: FAIL", report)
+        self.assertNotIn("strict-canary: PASS", report)
+
+    def test_cleanup_still_runs_when_blocked(self):
+        api = FakeApi(pulls_status=403)
+        run_probe(api)
+        self.assertEqual(len(api.calls_matching("DELETE", "/git/refs/heads/")), 1,
+                         "a blocked probe must not leave its throwaway branch behind")
 
 
 class _Response(io.BytesIO):

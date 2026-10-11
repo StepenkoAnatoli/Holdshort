@@ -45,16 +45,26 @@ run fails loudly, names the pull request, and warns that the marker file may now
 be on `main`. The marker is one inert line, so the blast radius is a revertible
 commit and the failure itself is the alarm.
 
-Exit status: 0 only when every assertion holds. A refusal for an unexpected
-status, a state that never becomes `behind`, a merge that succeeds, an API
-failure, or a cleanup that fails all exit nonzero with the reason. An
-inconclusive canary must never read as a passing one.
+Exit status
+-----------
+0  every assertion held — Layer 3 is live.
+1  the probe ran and the verdict is not PASS: a refusal with an unexpected
+   status, a state that never becomes `behind`, a merge that succeeds, or a
+   cleanup that fails. An inconclusive canary must never read as a passing one.
+2  misconfiguration — no token at all.
+3  the environment refuses a step the probe needs (token scopes, or a repository
+   policy such as `can_approve_pull_request_reviews=false`, which blocks
+   `GITHUB_TOKEN` from opening pull requests even with `pull-requests: write`).
+   That is a configuration gap to close, not a protection verdict, and it is
+   reported as such rather than as a pass or as a regression.
 
 Token
 -----
 `GH_TOKEN` (or `GITHUB_TOKEN`), needing `contents: write` (throwaway branch
 refs), `pull-requests: write` (open, close, update-branch) and `checks: write`
-(the synthetic green check). In CI that is the workflow's own `github.token`.
+(the synthetic green check). In CI that is the workflow's own `github.token`,
+unless the repository forbids Actions-created pull requests — then a dedicated
+token (`CANARY_TOKEN`) is the alternative to opening that repository setting.
 
 Usage:
     GH_TOKEN=... python tools/strict_canary.py --repo owner/name
@@ -111,6 +121,14 @@ class TransportError(RuntimeError):
 
 class ProbeError(RuntimeError):
     """The probe cannot reach a verdict (or reached the wrong one)."""
+
+
+class EnvironmentBlocked(ProbeError):
+    """A step the probe needs was refused for configuration reasons — token scopes
+    or a repository policy — rather than by branch protection. Kept distinct so
+    the run reports "cannot probe" instead of "protection regressed" or a plain
+    failure: the remedy is configuration, and calling it anything else would
+    either hide a real gap or cry wolf."""
 
 
 def _decode(raw: bytes):
@@ -226,6 +244,7 @@ class StrictCanary:
         self.pr_url: str | None = None
         self.head: str | None = None
         self.branch_created = False
+        self.blocked = False
 
     # ---------------------------------------------------------------- plumbing
 
@@ -258,11 +277,16 @@ class StrictCanary:
     def run(self) -> int:
         try:
             self._probe()
+        except EnvironmentBlocked as exc:
+            self.blocked = True
+            self._fail(str(exc))
         except (ProbeError, TransportError) as exc:
             self._fail(str(exc))
         finally:
             self._cleanup()
-        return 0 if self.ok else 1
+        if self.ok:
+            return 0
+        return 3 if self.blocked else 1
 
     def _fail(self, message: str) -> None:
         if self.failure is None:
@@ -322,7 +346,7 @@ class StrictCanary:
             {"ref": f"refs/heads/{self.branch}", "sha": base},
         )
         if status in (401, 403):
-            raise ProbeError(
+            raise EnvironmentBlocked(
                 f"cannot create the throwaway branch (HTTP {status}): the token needs "
                 "`contents: write`"
             )
@@ -373,7 +397,7 @@ class StrictCanary:
             },
         )
         if status in (401, 403):
-            raise ProbeError(
+            raise EnvironmentBlocked(
                 f"cannot place the green {CHECK_NAME} check on the throwaway head (HTTP {status}): "
                 "the token needs `checks: write`, without which staleness cannot be separated from "
                 "a required check that never reported"
@@ -406,9 +430,12 @@ class StrictCanary:
             },
         )
         if status in (401, 403):
-            raise ProbeError(
-                f"cannot open the throwaway pull request (HTTP {status}): the token needs "
-                "`pull-requests: write`"
+            raise EnvironmentBlocked(
+                f"cannot open the throwaway pull request (HTTP {status}): either the token lacks "
+                "`pull-requests: write`, or the repository forbids Actions from creating pull "
+                "requests (`can_approve_pull_request_reviews=false` is the case when a job-level "
+                "`pull-requests: write` still answers 403). Close it by enabling that repository "
+                "setting, or point this job at a dedicated token via `CANARY_TOKEN`."
             )
         self._require(200 <= status < 300, f"POST pulls -> HTTP {status}: {payload}")
         self.pr = _field(payload, "number")
@@ -450,7 +477,12 @@ class StrictCanary:
             f"/repos/{self.repo}/pulls/{self.pr}/update-branch",
             {"expected_head_sha": self.head},
         )
-        if status in (401, 403, 404, 405, 422):
+        if status in (401, 403):
+            raise EnvironmentBlocked(
+                f"update-branch was refused (HTTP {status}): the token needs `pull-requests: write` "
+                "and write access to this repository"
+            )
+        if status in (404, 405, 422):
             raise ProbeError(
                 f"inconclusive: update-branch -> HTTP {status} "
                 f"({payload.get('message') if isinstance(payload, dict) else ''!r}); without the "
@@ -507,6 +539,9 @@ def render(canary: StrictCanary) -> str:
         lines.append(f"  !!   revert the canary merge; marker: {MARKER_PATH}")
     if canary.ok:
         lines.append("strict-canary: PASS — stale head refused, refreshed head mergeable")
+    elif canary.blocked:
+        lines.append(f"strict-canary: CANNOT PROBE (exit 3) — {canary.failure}")
+        lines.append("  Layer 3 is unproven until this is fixed; that is a gap, not a pass.")
     else:
         lines.append(f"strict-canary: FAIL — {canary.failure}")
     return "\n".join(lines)
