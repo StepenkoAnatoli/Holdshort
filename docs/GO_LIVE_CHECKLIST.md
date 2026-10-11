@@ -7,6 +7,9 @@ If any box fails: **stop, fix, re-run that box** — details and rationale live 
 Authorization (row-4, SIGNED 2026-10-10): $1.00/task · $20.00/pilot · 4 attempts + 1
 same-profile repair · 300 s/task wall-clock (task-store enforced) · api.anthropic.com ONLY.
 
+# To onboard a new machine (one command): bash tools/setup_machine.sh <repo-url>
+# — wires the hook, proves enforcement, and ends with the §0–§2 preflight automated.
+
 ## 0 · PREFLIGHT (≈1 min, no key needed)
 
 ```
