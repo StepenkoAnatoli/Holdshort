@@ -45,6 +45,12 @@ def main() -> int:
         print(f"install_hooks: could not set local core.hooksPath: {r.stderr}", file=sys.stderr)
         return 1
 
+    # The tracked hook must be executable: on Linux/CI, git silently SKIPS a
+    # non-executable hooksPath script (commit proceeds without any gate).
+    import os, stat as _stat
+    mode = HOOK.stat().st_mode
+    HOOK.chmod(mode | _stat.S_IXUSR | _stat.S_IXGRP | _stat.S_IXOTH)
+
     configured = git(["config", "core.hooksPath"]).stdout.strip()
     if configured.replace("\\", "/").rstrip("/") != ".githooks":
         print(f"install_hooks: effective hooksPath is {configured!r}, not .githooks — "

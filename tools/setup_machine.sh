@@ -69,7 +69,6 @@ PROOF
 cat "$FILE_SLUG" >> README.md
 rm -f "$FILE_SLUG"
 git add README.md
-echo "    proof-2 state: worktree-key-lines=$(grep -c 'IC_API_KEY=' README.md || true) staged-key-lines=$(git grep -c --cached 'IC_API_KEY=' -- README.md || true) hook=$(git config core.hooksPath)"
 if git commit -m "setup: leak proof (must be refused)" >/dev/null 2>&1; then
   git reset -q --hard HEAD~1
   fail "hook ACCEPTED a fake key — enforcement is not working"
