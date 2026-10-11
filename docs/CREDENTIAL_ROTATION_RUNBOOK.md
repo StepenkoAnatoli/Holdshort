@@ -42,7 +42,7 @@ the rest is the credential inventory that audit produced. State verified on this
 | 2 | GitHub credential for `git` over https | push/pull of this repo | WinCred: `git:https://github.com` (GCM) and `gh:github.com:<user>` + `gh:github.com:` (gh) | §3.2 | both stores hold one; only the gh store is consulted (§2) |
 | 3 | `gh` CLI session for `github.com` | PR/run inspection, `gh auth git-credential` | `%APPDATA%\GitHub CLI\hosts.yml` **and** WinCred tokens | §3.2 | no `hosts.yml` → gh reports no session while git still authenticates through the tokens |
 | 4 | CI canary token *(optional)* | `tools/strict_canary.py`, only if the repo forbids Actions-created PRs | GitHub Actions secret `CANARY_TOKEN` | §3.3 | unset — the canary uses the run's own `github.token` |
-| 5 | Plaintext credential files | account recovery, personal tooling | Desktop, other checkouts, backups | §3.4 | three credential-class files on the Desktop (51–206 B) |
+| 5 | Plaintext credential files | account recovery, personal tooling | Desktop, other checkouts, backups | §3.4 | three credential-class files on the Desktop (51–206 B); one is a copy of the live `github.com` credential (§3.2) |
 
 Re-derive this table before acting on it — a rotation runbook that trusts recorded state is how you
 rotate the wrong store:
@@ -147,6 +147,13 @@ git config --show-origin --get-regexp '^credential.*\.helper$'
 
 An empty value is a reset: it clears the helpers inherited for that URL.
 
+> **This machine holds a second, plaintext copy of the credential this section rotates.** On
+> 2026-10-12 the Desktop token export's content was byte-identical to the credential git actually
+> serves (sha256 compared locally, never printed) — the orphaned keyring token *is* that exported
+> PAT. So a rotation here means: mint the replacement, prove it is in use, revoke the old value,
+> **then delete that file**, which has no safe steady state (§3.4). Leaving it in place leaves a
+> live token in a text file on the Desktop.
+
 **Path A — `gh` owns it (this machine's current chain; recommended).** The chain already consults gh
 and this clone authenticates through it, so choosing A deletes the orphan instead of the working
 credential.
@@ -220,7 +227,7 @@ the file, and keep the new codes in a password manager rather than in a text fil
 
 Last inventoried 2026-10-12: `Research-Kit`'s root held no key or token files (the 10-11 audit's
 finding there is resolved), while the Desktop held three credential-class files, 51–206 B (an API
-key, a dated token export, GitHub recovery codes). Re-derive rather than trust this line:
+key, a dated token export, GitHub recovery codes; one of them is a copy of the live `github.com` credential, §3.2). Re-derive rather than trust this line:
 
 ```bash
 find "$USERPROFILE/Desktop" "$USERPROFILE/Research-Kit" -maxdepth 1 -type f \
@@ -338,6 +345,7 @@ entry only after triage, never to turn a red check green.
 | GCM's real CLI surface | `git-credential-manager --version` → 2.9.1, with `--help` and `github --help` listing `list`/`login`/`logout` (§3.2) |
 | `CANARY_TOKEN` is unused | `gh secret list` empty; workflow reads `secrets.CANARY_TOKEN \|\| github.token` |
 | the §4 surfaces and their state | the history loop → 0/0/0; the app-store loop → `desktop-v2.db` holds token-shaped text |
+| the live credential has a plaintext twin on the Desktop | sha256 digest comparison, truncated and never printed: the token export's content equals the credential git serves |
 | the store check's verdict | `python tools/check_credential_hygiene.py` → 0 (clean, 3 baselined) |
 
 **Not exercised here, and marked as such:** the `cmdkey /delete`, `gh auth login --with-token`,

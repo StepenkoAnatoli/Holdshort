@@ -166,7 +166,10 @@ surfaces no repo check can see, and the verification that proves the new value i
   printed or validated and no helper is executed. Every read-only command it prescribes was
   exercised before landing; the destructive or interactive steps (`cmdkey /delete`,
   `gh auth login --with-token`, `gh secret set`, GCM `github login/logout`) are marked in its §7 as
-  prescribed-but-not-run.
+  prescribed-but-not-run. Checking the inventory before landing turned up a copy that the 10-11
+  audit had only listed: the Desktop token export is byte-identical (sha256 compared locally, never
+  printed) to the credential git serves, so replacing the `github.com` credential means replacing
+  that file too.
 
 ## Why the layers are not redundancy
 
