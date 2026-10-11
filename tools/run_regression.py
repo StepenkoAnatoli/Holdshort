@@ -33,6 +33,7 @@ CHECKS = [
     ("test_task_crosscheck", [sys.executable, "tools/test_task_crosscheck.py"]),
     ("test_install_hooks", [sys.executable, "tools/test_install_hooks.py"]),
     ("test_hook_wiring", [sys.executable, "tools/test_hook_wiring.py"]),
+    ("test_strict_canary", [sys.executable, "tools/test_strict_canary.py"]),
     ("live_fill_sheet_integrity", [sys.executable, "tools/live_fill_tally.py", "--mode", "gate"]),
     ("test_pilot_report", [sys.executable, "tools/test_pilot_report.py"]),
     ("test_arm_matrix", [sys.executable, "tools/test_arm_matrix.py"]),
