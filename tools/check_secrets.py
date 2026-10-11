@@ -14,9 +14,18 @@ Checked patterns (conservative; a hit names file:line):
   * raw authorization headers with bearer tokens
 
 Scope: all git-tracked files via `git ls-files -z` (untracked local files are
-out of scope — .env is untracked by design). Binary files are skipped.
-Exits 0 clean; 1 on any hit; 2 if a parameter (e.g. tracked-file listing) is
-unavailable. Designed as a stop-the-line check, not advisory output.
+out of scope — .env is untracked by design). Known-binary extensions (.png,
+.zip, ...) are skipped.
+
+Decoding policy (hardened): a skipped unreadable or undecodable file is an
+UNSCANNED hole, not a pass. Decode chain attempts utf-8-sig, strict utf-8,
+utf-16 (BOM-sniffing), utf-16-le and utf-16-be before giving up. Exit codes:
+  0  clean
+  1  credential-shaped hit (refuse commit)
+  2  fail-closed: tracked-file listing failed, a text-class file was
+     unreadable (permissions) or undecodable (NOT any known-binary ext) —
+     the scan corpus is incomplete and a leak could be hiding in it.
+Designed as a stop-the-line check, not advisory output.
 """
 from __future__ import annotations
 
@@ -41,6 +50,13 @@ _SKIP_DIRS = (".git/", "__pycache__/")
 # self-exclusions: this file's own pattern definitions must not self-trip
 SELF_PATH = "tools/check_secrets.py".replace("\\", "/")
 
+UTF8_FAMILY: tuple[str, ...] = ("utf-8-sig", "utf-8")
+UTF16_FAMILY: tuple[str, ...] = ("utf-16", "utf-16-le", "utf-16-be")
+
+
+class UnscannableError(Exception):
+    """A tracked file that should be text could not be decoded or read."""
+
 
 def tracked_files() -> list[str]:
     out = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT,
@@ -51,6 +67,63 @@ def tracked_files() -> list[str]:
         raise SystemExit(2)
     return [f.decode("utf-8", errors="replace")
             for f in out.stdout.split(b"\x00") if f.strip()]
+
+
+def _utf16_order_by_nul_parity(raw: bytes) -> str:
+    """Little-endian utf-16 puts ASCII NULs at ODD byte offsets, big-endian
+    at EVEN offsets; pick the dominant parity (ties → LE, the common case)."""
+    even = sum(1 for i in range(0, len(raw) - 1, 2) if raw[i] == 0)
+    odd = sum(1 for i in range(1, len(raw), 2) if raw[i] == 0)
+    return "utf-16-be" if even > odd else "utf-16-le"
+
+
+def decode_text(p: Path) -> str:
+    """Decode a text-class tracked file via the BOM/utf-8/utf-16 chain.
+
+    Acceptance rule: a decode is only ACCEPTED when it yields NUL-free
+    text. utf-16-le/be bytes without a BOM are "valid" utf-8 with
+    interleaved NULs, and searching that mangled string would silently
+    miss real keys — so NUL-mixed utf-8 dispatches to utf-16 with the
+    endianness chosen by NUL-byte parity (Python's BOM-less 'utf-16'
+    defaults to LE and would mangle BE text into NUL-free garbage, which
+    is exactly the false-clean trap). utf-8-garbled bytes without a BOM
+    are unrecoverably ambiguous → UnscannableError (fail closed).
+    """
+    try:
+        raw = p.read_bytes()
+    except OSError as e:  # PermissionError and friends
+        raise UnscannableError(f"unreadable ({e})") from e
+    fallback: str | None = None
+    for enc in UTF8_FAMILY:  # utf-8-sig then strict utf-8
+        try:
+            text = raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+        except UnicodeError:
+            continue
+        if "\x00" not in text:
+            return text
+        if fallback is None:
+            fallback = text  # NUL-mixed utf-8: real utf-16 without BOM
+        break
+    if fallback is not None:
+        # BOM-less utf-16: decode with parity-chosen endianness; everything
+        # else in that shape is mangled utf-8 text, still searchable
+        try:
+            ordered = raw.decode(_utf16_order_by_nul_parity(raw))
+        except UnicodeDecodeError:
+            ordered = None
+        if ordered is not None and "\x00" not in ordered:
+            return ordered
+        return fallback  # mangled text beats skipping: a hit is still a hit
+    # utf-8 family failed outright: only a BOM'd utf-16 file is trustworthy
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        try:
+            return raw.decode("utf-16")
+        except UnicodeDecodeError:
+            pass
+    raise UnscannableError(
+        f"undecodable in any of {', '.join(UTF8_FAMILY + UTF16_FAMILY)}")
 
 
 def scan() -> list[str]:
@@ -66,9 +139,12 @@ def scan() -> list[str]:
         if not p.is_file():
             continue
         try:
-            text = p.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, PermissionError):
-            continue
+            text = decode_text(p)
+        except UnscannableError as e:
+            raise UnscannableError(
+                f"{rel} could not be scanned ({e}); fix or remove the file, "
+                "or add its extension to _SKIP_EXTENSIONS if it is genuinely binary"
+            ) from e
         for name, pat in PATTERNS:
             for i, line in enumerate(text.splitlines(), 1):
                 # skip the scanner's own literal pattern definitions
@@ -83,7 +159,11 @@ def scan() -> list[str]:
 
 
 def main() -> int:
-    hits = scan()
+    try:
+        hits = scan()
+    except UnscannableError as e:
+        print(f"check_secrets: FAIL-CLOSED — {e}", file=sys.stderr)
+        return 2
     if hits:
         print(f"check_secrets: {len(hits)} hit(s) — DO NOT COMMIT; remove the credential:")
         for h in hits:

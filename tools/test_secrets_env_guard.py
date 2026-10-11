@@ -19,6 +19,7 @@ from __future__ import annotations
 import importlib.util
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -104,6 +105,91 @@ class EnvGuard(unittest.TestCase):
         self.assertIn(".env", lines)
         self.assertIn(".env.*", lines)
         self.assertIn("!.env.example", lines)
+
+
+class DecodePolicy(unittest.TestCase):
+    """The scan never silently leaves a text-class file unscanned.
+
+    H1: encoding variants of a leak are still caught (utf-8-sig, utf-16-le,
+        utf-16-be) — utf-8-only scanning was blind to these.
+    H2: an undecodable text-class file FAILS CLOSED (SystemExit with the
+        fail-closed message, i.e. the CLI exits 2) instead of silently
+        skipping the file (the old except-and-continue behavior).
+    H3: genuinely binary extensions stay skipped (no false fail on .png).
+    """
+
+    # piece-concatenated so the file's own literal does not trip the scanner
+    KEY = ('ANTHROPIC_API_KEY=' + 'sk-ant-' + 'fake0123456789'
+           'abcdef0123' + '\n')
+
+    def _hit_in_leak_bytes(self, raw: bytes) -> bool:
+        """True iff the scanner's patterns catch the leak after decode_text."""
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "leak.txt"
+            p.write_bytes(raw)
+            text = cs.decode_text(p)
+        return any(pat.search(line) for _, pat in cs.PATTERNS for line in text.splitlines())
+
+    def test_h1_utf8_sig_leak_caught(self):
+        self.assertTrue(self._hit_in_leak_bytes(b"\xef\xbb\xbf" + self.KEY.encode("utf-8")))
+
+    def test_h1_utf16_le_leak_caught(self):
+        self.assertTrue(self._hit_in_leak_bytes(self.KEY.encode("utf-16-le")))
+
+    def test_h1_utf16_be_leak_caught(self):
+        self.assertTrue(self._hit_in_leak_bytes(self.KEY.encode("utf-16-be")))
+
+    def test_h1_utf16_bom_leak_caught(self):
+        self.assertTrue(self._hit_in_leak_bytes(self.KEY.encode("utf-16")))
+
+    def test_h1_plain_utf8_still_caught(self):
+        self.assertTrue(self._hit_in_leak_bytes(self.KEY.encode("utf-8")))
+
+    def test_h2_undecodable_fails_closed(self):
+        # bytes invalid in utf-8, utf-16-le, utf-16-be, and utf-16 alike:
+        # odd-length AND no BOM kills every candidate in one shot.
+        garbage = b"\xff\x00\xfe\xff\x00\xff\xfe\x00\xff"
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "garbage.txt"
+            p.write_bytes(garbage)
+            for enc in cs.UTF8_FAMILY + cs.UTF16_FAMILY:
+                with self.assertRaises(UnicodeDecodeError,
+                                       msg=f"precondition broken: {enc} decoded the 'garbage'"):
+                    garbage.decode(enc)
+            with self.assertRaises(cs.UnscannableError):
+                cs.decode_text(p)
+        # end-to-end CLI: a tracked undecodable file must produce exit 2 and
+        # the fail-closed message. Fake repo: own .git, tracked garbage.txt.
+        import contextlib, io
+        with tempfile.TemporaryDirectory() as td:
+            fake_root = Path(td) / "repo"
+            fake_root.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=fake_root, check=True)
+            subprocess.run(["git", "config", "user.email", "t@t.invalid"], cwd=fake_root, check=True)
+            subprocess.run(["git", "config", "user.name", "t"], cwd=fake_root, check=True)
+            subprocess.run(["git", "config", "core.autocrlf", "false"], cwd=fake_root, check=True)
+            (fake_root / "garbage.txt").write_bytes(garbage)
+            subprocess.run(["git", "add", "garbage.txt"], cwd=fake_root, check=True)
+            orig_root = cs.ROOT
+            try:
+                cs.ROOT = fake_root
+                buf_err = io.StringIO()
+                with contextlib.redirect_stderr(buf_err), contextlib.redirect_stdout(io.StringIO()):
+                    rc = cs.main()
+            finally:
+                cs.ROOT = orig_root
+        self.assertEqual(rc, 2, "undecodable tracked file must fail closed with exit 2")
+        self.assertIn("FAIL-CLOSED", buf_err.getvalue())
+
+    def test_h2_utf16_without_bom_still_scanned_not_skipped(self):
+        # Mangled-decode fallback: utf-16-le with no BOM decodes as NUL-mixed
+        # utf-8; decode_text must return SOME text (fallback), never raise,
+        # so the leak inside is still searched.
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "nul.txt"
+            p.write_bytes(self.KEY.encode("utf-16-le"))
+            text = cs.decode_text(p)
+        self.assertIn("sk-ant-", text)  # the leak is still in the scanned text
 
 
 if __name__ == "__main__":
