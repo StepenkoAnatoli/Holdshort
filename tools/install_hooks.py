@@ -1,35 +1,71 @@
 #!/usr/bin/env python3
-"""Install the repo-local pre-commit hook (regression gate).
+"""Wire the repo's pre-commit regression gate for this clone.
 
-Every fresh clone must run this once: `python tools/install_hooks.py`.
-The hook makes every future commit run tools/run_regression.py (validator,
-dispatcher cap suite, adapter suite, closure/report/matrix suites, secrets
-scan) so cap enforcement can never silently regress. Hooks live in .git/ and
-are not tracked — hence this installer.
+Every fresh clone must run this once (done automatically by
+`bash tools/setup_machine.sh`, or directly: `python tools/install_hooks.py`).
+
+What it does:
+  1. Sets the REPO-LOCAL core.hooksPath to `.githooks` (the tracked, canonical
+     hook: stashes worktree-only state, runs the full gate on HEAD+index,
+     fail-closed). No global git config is touched.
+  2. Verifies a conflicting GLOBAL core.hooksPath does not silently win —
+     repo-local config always overrides global, but we still warn explicitly
+     so the operator knows another toolchain's hooks exist.
+  3. Syntax-checks the hook script and confirms `bash` exists to run it.
+
+Fail-closed: any verification failure exits non-zero and leaves config
+unchanged (or explicitly reported), never half-wired.
 """
 from __future__ import annotations
 
-import shutil
-import stat
+import subprocess
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-HOOK_SRC = REPO_ROOT / "docs" / "hook_pre_commit.sh"
-HOOK_DST = REPO_ROOT / ".git" / "hooks" / "pre-commit"
+HOOK = REPO_ROOT / ".githooks" / "pre-commit"
+
+
+def git(args: list[str], cwd: Path = REPO_ROOT) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
 
 
 def main() -> int:
-    if not REPO_ROOT.name or not (REPO_ROOT / ".git").is_dir():
-        print("install_hooks: not a git repository — nothing to install", file=sys.stderr)
+    if not (REPO_ROOT / ".git").is_dir():
+        print("install_hooks: not a git repository — nothing to wire", file=sys.stderr)
         return 2
-    if not HOOK_SRC.is_file():
-        print(f"install_hooks: missing {HOOK_SRC}", file=sys.stderr)
-        return 2
-    HOOK_DST.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(HOOK_SRC, HOOK_DST)
-    HOOK_DST.chmod(HOOK_DST.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    print(f"install_hooks: pre-commit hook installed at {HOOK_DST}")
+    if not HOOK.is_file():
+        print("install_hooks: .githooks/pre-commit missing — aborting (it is the tracked, "
+              "fail-closed gate; refusing to install a weaker substitute)", file=sys.stderr)
+        return 1
+
+    # 1) Repo-local hooksPath (overrides any global value for this repo only).
+    r = git(["config", "--local", "core.hooksPath", ".githooks"])
+    if r.returncode != 0:
+        print(f"install_hooks: could not set local core.hooksPath: {r.stderr}", file=sys.stderr)
+        return 1
+
+    configured = git(["config", "core.hooksPath"]).stdout.strip()
+    if configured.replace("\\", "/").rstrip("/") != ".githooks":
+        print(f"install_hooks: effective hooksPath is {configured!r}, not .githooks — "
+              "refusing to claim success", file=sys.stderr)
+        return 1
+
+    # 2) Surface a conflicting global hooksPath (would apply to OTHER repos,
+    #    but tells the operator where the machine's global hooks come from).
+    g = git(["config", "--global", "core.hooksPath"], cwd=REPO_ROOT)
+    if g.returncode == 0 and g.stdout.strip():
+        print(f"install_hooks: NOTE — global core.hooksPath is {g.stdout.strip()!r}; "
+              "this repo now overrides it with .githooks (repo-local wins).")
+
+    # 3) Hook must be bash-parseable and bash must exist.
+    probe = subprocess.run(["bash", "-n", str(HOOK)], capture_output=True, text=True)
+    if probe.returncode != 0:
+        print(f"install_hooks: hook script syntax check failed:\n{probe.stderr}", file=sys.stderr)
+        return 1
+
+    print("install_hooks: pre-commit gate wired (repo-local core.hooksPath=.githooks). "
+          "Every commit now runs the full regression gate on this clone.")
     return 0
 
 
