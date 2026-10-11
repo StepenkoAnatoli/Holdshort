@@ -1,28 +1,30 @@
 # SmartRouter
 
-## Canonical routing skills — Phase 2 preview (separate authorization required)
+## Project phase state (updated 2026-10-11)
 
-This branch adds a proposed, author-amended **skill preview** for the plan's Phase 2 milestone:
+Executable phases of the plan are **closed** — released as
+[`v1.0.0-pilot`](https://github.com/StepenkoAnatoli/SmartRouter/releases/tag/v1.0.0-pilot)
+at commit `b6e04fd`. The authoritative ledger is
+[docs/PROJECT_COMPLETION.md](docs/PROJECT_COMPLETION.md); summary:
 
-- [skills/smart-router/SKILL.md](skills/smart-router/SKILL.md) — the single **canonical** routing
-  authority: ordered eligibility gates, recommendation/direct/delegate/escalate/blocked output
-  contract, and pinned references [references/gates.md](skills/smart-router/references/gates.md),
-  [references/brief-and-result.md](skills/smart-router/references/brief-and-result.md).
-- [skills/smart-router-review/SKILL.md](skills/smart-router-review/SKILL.md) — evidence-backed
-  blocker review; defers to the canonical policy and never re-selects or grants score-based
-  permission.
-- [skills/smart-router-eval-prep/SKILL.md](skills/smart-router-eval-prep/SKILL.md) — evaluation
-  preregistration preparation; never authorizes or runs a paid trial.
-- [tools/validate_skills.py](tools/validate_skills.py) — packaging validator (frontmatter, name
-  matching, reference resolution, no-competing-authority sweep). Run: `python tools/validate_skills.py`.
+| Phase | State |
+| --- | --- |
+| 1 — plan, review brief, acceptance packets, §10 fixtures | **Closed** (plan rev `d7c00f96`) |
+| 2 — canonical `smart-router` skill + review/eval-prep siblings | **Closed** (3 skills validated by `tools/validate_skills.py`) |
+| 3 — preregistration (task pool, seeds, pricing, thresholds) | **Closed** — owner-deviation closure at `6d0b140`; formal exit in [docs/PHASE3_ACCEPTANCE_RECORD.md](docs/PHASE3_ACCEPTANCE_RECORD.md) |
+| 4 — pilot evaluation, non-live scope | **Closed** — 5/5 task contracts executed; report in [docs/PHASE4_PILOT_REPORT.md](docs/PHASE4_PILOT_REPORT.md) |
+| **Live Phase 4** — real-provider pilot (real spend) | **Open** — the only executable item left; gated on §10 row 4: real rate sheets, live qualification records, explicit owner spend approval |
+| 5–7 — consumer integrations (Research-Kit, Moonzila) | **Consumer-owned by design** — their owners approve and execute; handoff notes in `docs/HANDOFF_MOONZILA.md` / `docs/HANDOFF_RESEARCH_KIT.md` |
 
-**Status: proposed, not yet approved.** These skills are not yet installed in any consumer. Nothing
-here authorizes adoption, spend, dispatch, or_merge. Per plan section 14/15, Phase 2 exits only
-after: valid packaging plus semantic review at the full revision, per-scenario dispositions
-recorded, no competing operational authority, and no untested runtime claims. A separately
-designated non-author review plus owner acknowledgement is still required before Phase 2 sign-off —
-see [docs/PHASE2_REVIEW_RECORD.md](docs/PHASE2_REVIEW_RECORD.md) for the author-side validation
-record and the outstanding review requirements.
+**Open ≠ unguarded.** Nothing live can run without the §10 row-4 key in a
+gitignored `.env`, dispatch hard-caps, and the enforcement stack described
+below. The skill set shipped in Phase 2 — the single canonical routing
+authority [skills/smart-router/SKILL.md](skills/smart-router/SKILL.md) with
+[references/gates.md](skills/smart-router/references/gates.md), non-author
+review procedure [skills/smart-router-review/SKILL.md](skills/smart-router-review/SKILL.md),
+and no-spend eval prep [skills/smart-router-eval-prep/SKILL.md](skills/smart-router-eval-prep/SKILL.md) —
+is validated packaging, not yet installed in any consumer; adoption still
+requires each consumer's own authorization (plan §14/15).
 
 ## Enforcing-by-default: the four protection layers
 
@@ -38,7 +40,7 @@ each has caught a real failure during development:
    gate on every push to main and every pull request, so clones *without* the
    hook wired are still covered, and `--no-verify` bypasses still get audited.
 3. **Required status check** — branch protection on `main` requires the
-   `regression-gate` check (strict) before any update lands; a push without a
+   `regression-gate` check before any update lands; a push without a
    green gate is refused server-side with `GH006`.
 4. **Admin enforcement** — `enforce_admins` is on: the owner's own pushes go
    through the same required check. No human path lands unverified content.
