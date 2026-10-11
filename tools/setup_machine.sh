@@ -38,6 +38,11 @@ tail -1 "$GATE_OUT"
 rm -f "$GATE_OUT"
 
 echo "==> PROOF 1: pre-commit hook fires on a clean scratch commit"
+# Scratch identity, LOCAL to this throwaway clone only: a bare runner/VM has
+# no user.name/user.email, and without it the proof commit fails before the
+# hook is ever invoked, masking a working gate as "broken wiring".
+git config user.name  "setup-gate-proof" || fail "local user.name"
+git config user.email "setup-gate-proof@example.invalid" || fail "local user.email"
 SCRATCH="setup_gate_proof_$$"
 echo "# gate proof (rolled back)" > "$SCRATCH.txt"
 git add "$SCRATCH.txt"
