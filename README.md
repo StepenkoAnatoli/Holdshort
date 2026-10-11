@@ -64,6 +64,14 @@ Plus continuous self-proof: a weekly scheduled run (and every manual
 clone goes through `setup_machine.sh` (wire → clean commit allowed → staged
 fake key refused → §0–§2 preflight) so enforcement itself cannot rot silently.
 
+The same run also fires the **strict-mode canary**: `tools/strict_canary.py`
+opens a throwaway pull request whose head sits a couple of commits behind
+`main`, puts a green `regression-gate` check on that stale head, and requires
+that the merge be refused (Layer 3) — then requires the same pull request to
+become mergeable once `update-branch` refreshes it, so a blanket block cannot be
+mistaken for strict mode. It deletes the pull request and branch on every path.
+Layer 3 is a setting someone can switch off; that job is what notices.
+
 ### New-clone setup (one command)
 
 ```bash

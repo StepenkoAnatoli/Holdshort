@@ -21,6 +21,23 @@ name: regression-gate
 # itself honest: if install_hooks.py, the hook, OR the close-report
 # generation ever regresses, running this dispatch fails loudly instead of
 # silently shipping enforcement theater.
+#
+# workflow_dispatch and the weekly schedule ALSO run the STRICT-MODE CANARY
+# (strict-canary job): tools/strict_canary.py opens a throwaway pull request
+# whose head is cut from an older main commit, places a green `regression-gate`
+# check on that stale head, and proves both halves of Layer 3 — the merge API
+# must refuse it (HTTP 405, the status the 2026-10-11 by-hand test recorded),
+# and after `update-branch` the same pull request must become mergeable. The
+# synthetic check is disclosed as not-gate-evidence in its own output, because
+# GITHUB_TOKEN-authored events start no workflow runs, so CI cannot supply the
+# green check that makes the refusal attributable to staleness. The pull request
+# and branch are deleted on every path; a 2xx from the attempted merge is
+# reported as a protection regression, not as a pass. Layer 3 is configuration
+# and can be switched off — this job is what notices.
+#
+# strict-canary is deliberately NOT a required status context: it runs only on
+# dispatch and schedule, so requiring it would block every pull request that
+# could never produce it.
 
 on:
   push:
@@ -62,3 +79,23 @@ jobs:
           bash tools/setup_machine.sh \
             "file://${GITHUB_WORKSPACE}" "${RUNNER_TEMP}/proof-clone"
           echo "setup proof: PASS (a fresh machine would be enforcing by default)"
+
+  strict-canary:
+    name: strict-canary
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    permissions:
+      contents: write # create and delete the throwaway branch
+      pull-requests: write # open and close the throwaway PR, update-branch
+      checks: write # the synthetic green check (a precondition, not evidence)
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Strict-mode canary — stale head refused, refreshed head mergeable
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/strict_canary.py --repo "$GITHUB_REPOSITORY"
