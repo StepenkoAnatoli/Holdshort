@@ -60,6 +60,9 @@ SmartRouter sets the maximum allowed autonomy for every task through the `HumanG
 
 ### 2. HumanGate → Concrete Host Behavior
 
+Gate meanings are canonical in spec-v2.md §8.2; this table sketches what the Host may do
+under each (background aspiration, not a second definition):
+
 | HumanGate                    | What the Host is allowed to do                                      | What requires a human                  | Typical use |
 |-----------------------------|---------------------------------------------------------------------|----------------------------------------|-------------|
 | `none`                      | Full loop: worktree → agent → repairs → PR → CI → auto-merge       | Nothing                                | Trivial / low-risk |
@@ -107,7 +110,7 @@ SmartRouter may raise the gate higher than these defaults; the Host may never lo
    - On success → go to step 5
    - On failure → go to step 4
 
-4. Implementation Repair (max 1 TOTAL per original task — this is the one allowed repair)
+4. Implementation Repair (max 1 TOTAL per original task, plan R01 — this is the one allowed repair)
    - attempts += 1
    - If attempts > 1 → escalate to needs-human
    - Send failure evidence + logs back to the same agent
@@ -123,7 +126,7 @@ SmartRouter may raise the gate higher than these defaults; the Host may never lo
    - On success → go to step 8
    - On failure → go to step 7
 
-7. CI Failure (no additional repair — the §4 allowance is already the one repair total)
+7. CI Failure (no additional repair — the §4 allowance is already the one repair total, plan R01)
    - On CI failure: if attempts == 0 (implementation needed no repair), the host may spend
      the single allowance here — send CI logs back to the same agent for one repair cycle
    - If attempts >= 1 (the allowance is consumed) → escalate to needs-human immediately

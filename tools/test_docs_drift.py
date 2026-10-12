@@ -85,5 +85,48 @@ class DocsDrift(unittest.TestCase):
             self.assertEqual(dd.check(root), [])
 
 
+class DivergenceGuard(unittest.TestCase):
+    # F6 ----------------------------------------------------------------------
+    def test_f6_lattice_order_enforced(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root, "f.md", "# t\n\nnone < directory < ephemeral-container < worktree+branch\n")
+            found = dd.check(root)
+        self.assertTrue(any("canonical order" in f for f in found), found)
+
+    # F7 ----------------------------------------------------------------------
+    def test_f7_invented_gate_token_caught(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root, "g.md", "# t\n\nHumanGate: `review-before-lunch`\n")
+            found = dd.check(root)
+        self.assertTrue(any("outside spec-v2" in f for f in found), found)
+
+    # F8 ----------------------------------------------------------------------
+    def test_f8_live_two_repair_caught_historical_exempt(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root, "h.md", "# t\n\nallow one implementation repair plus one CI repair\n")
+            live = dd.check(root)
+        self.assertTrue(any("two-repair" in f for f in live), live)
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root, "i.md", "# t\n\n**RESOLVED** — previously allowed one implementation "
+                    "repair **plus** one CI repair\n")
+            self.assertEqual(dd.check(root), [])
+
+    # F9 ----------------------------------------------------------------------
+    def test_f9_cap_restatement_needs_cite(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root, "j.md", "# t\n\nAt most one same-profile corrective dispatch, trust me.\n")
+            found = dd.check(root)
+        self.assertTrue(any("fixture cite" in f for f in found), found)
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            fixture(root, "k.md", "# t\n\nAt most one same-profile corrective dispatch (plan R01).\n")
+            self.assertEqual(dd.check(root), [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -24,6 +24,21 @@ next host or reviewer. This check pins the restatements to the normative source:
       ("convention", case-insensitive) — the filename is host convention, never
       normative (spec-v2 §11 names no file)
 
+  Canonical homes (single-sourcing — restatements must not diverge or float free):
+  F7. isolation lattice order: any line naming 2+ lattice levels names them in the
+      canonical order none < directory < worktree+branch < ephemeral-container
+      (spec-v2.md §6 is the home; tables list weakest-first, templates read left-first)
+  F8. HumanGate tables agree: spec-v2.md §8.2 and host-hil-policy.md §2 contain the same
+      four gate names, and no backticked `review-before-*` / `approval-*` token anywhere
+      falls outside the enum
+  F9. no live two-repair allowance: "one implementation repair plus one CI repair" /
+      "two same-profile" language survives only inside RESOLVED/previously/flagged
+      historical context (±3 lines) — the live rule is one total (F10)
+  F10. repair-cap restatements cite their fixture: any block stating the one-repair cap
+      contains "R01" within line..+3 or points at the cited rule ("above"/"below")
+      ("convention", case-insensitive) — the filename is host convention, never
+      normative (spec-v2 §11 names no file)
+
 Runs standalone (`python tests/docs_drift.py`, exit 0 pinned / 1 drifted) and as
 part of the regression gate via tools/test_docs_drift.py. No network.
 """
@@ -101,6 +116,42 @@ def check(root: Path | None = None) -> list[str]:
         if "SMARTROUTER_BRIEF.json" in text and "convention" not in text.lower():
             findings.append(f"{rel}: names SMARTROUTER_BRIEF.json without the "
                             f"host-convention note")
+        # F7: lattice order on lines naming 2+ levels
+        levels = ["none", "directory", "worktree+branch", "ephemeral-container"]
+        for i, line in enumerate(text.splitlines(), 1):
+            present = sorted([lv for lv in levels if lv in line], key=line.index)
+            if len(present) >= 2 and present != sorted(present, key=levels.index):
+                findings.append(f"{rel}:{i}: lattice levels out of canonical order: "
+                                f"{line.strip()[:100]}")
+        # F8b: gate-like backticked tokens must be enum members
+        for m in re.finditer(r"`((?:review-before-|approval-)\S+?)`", text):
+            if m.group(1) not in HUMANGATES:
+                findings.append(f"{rel}: gate-like token `{m.group(1)}` outside spec-v2 §8.2")
+        # F9: live two-repair allowance language (historical context exempt)
+        lines = text.splitlines()
+        for i, line in enumerate(lines):
+            if re.search(r"one implementation repair\s*(\*\*plus\*\*|plus|\+)\s*one CI repair"
+                         r"|two same-profile", line, re.IGNORECASE):
+                window = "\n".join(lines[max(0, i - 3):i + 4])
+                if not re.search(r"RESOLVED|previously|Flagged|exceeds|flag 1", window):
+                    findings.append(f"{rel}:{i + 1}: two-repair allowance outside "
+                                    f"historical context")
+        # F10: cap restatements cite R01 or point at the cited rule
+        for i, line in enumerate(lines):
+            if re.search(r"at most one same-profile|maximum \*\*1\*\*.*same-profile"
+                         r"|one same-profile repair total|1 same-profile repair total"
+                         r"|max 1 TOTAL|max 1 same-profile", line, re.IGNORECASE):
+                window = "\n".join(lines[i:i + 4])
+                if "R01" not in window and "above" not in window and "below" not in window:
+                    findings.append(f"{rel}:{i + 1}: repair-cap restatement without "
+                                    f"fixture cite (want R01 or above/below pointer)")
+    # F8a: the two canonical gate tables agree on the name set
+    for canon in ("skills/smart-router/references/spec-v2.md",
+                  "skills/smart-router/references/host-hil-policy.md"):
+        ctext = (ROOT / canon).read_text(encoding="utf-8")
+        missing = [g for g in HUMANGATES if g not in ctext]
+        if missing:
+            findings.append(f"{canon}: canonical gate table missing {missing}")
     return findings
 
 

@@ -111,7 +111,7 @@ Recommended branch naming: `sr/<task-id>/<short-slug>`.
 
 - Every `delegate` route (or the winning candidate of a `speculative` set) becomes the **Owner**.
 - Verification failures, CI failures, and review comments **always** return to the current Owner.
-- At most one same-profile corrective dispatch is permitted under the original allowance.
+- At most one same-profile corrective dispatch is permitted under the original allowance (plan R01/R02/R03).
 - Ownership never transfers silently. If the Owner becomes ineligible, a full new SmartRouter decision is required.
 - The Project Orchestrator may observe status and request new routes; it does not become Owner of an existing brief.
 
