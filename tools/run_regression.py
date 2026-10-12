@@ -59,6 +59,7 @@ CHECKS = [
     ("test_pilot_report", [sys.executable, "tools/test_pilot_report.py"]),
     ("test_arm_matrix", [sys.executable, "tools/test_arm_matrix.py"]),
     ("test_secrets_env_guard", [sys.executable, "tools/test_secrets_env_guard.py"]),
+    ("test_fixture_key_hygiene", [sys.executable, "tools/test_fixture_key_hygiene.py"]),
     ("check_secrets", [sys.executable, "tools/check_secrets.py"]),
     ("test_credential_hygiene", [sys.executable, "tools/test_credential_hygiene.py"]),
     ("credential_hygiene", [sys.executable, "tools/check_credential_hygiene.py"]),
