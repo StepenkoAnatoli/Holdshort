@@ -8,8 +8,10 @@ Checks (in order):
   3. tools/test_pilot_report.py          — ledger aggregation suite (10 tests)
   ...
   N. tools/check_secrets.py              — credential-shaped strings in tracked files
-  N+1. tools/check_credential_hygiene.py — orphaned gh keyring tokens / stale stored
-                                            credentials (baseline-triaged)
+  N+1. tools/check_credential_hygiene.py — orphaned gh keyring tokens / stale stored                                             credentials (baseline-triaged)
+   N+2. tools/check_app_db_secrets.py     — token-shaped strings in the Freebuff
+                                             Desktop app stores (desktop-v2.db*),
+                                             baseline-allowlisted after triage
 
 Each subprocess's exit status is preserved (no output filtering that can mask
 failure). Exit 0 only when ALL pass; nonzero reports which check failed first.
@@ -43,6 +45,8 @@ CHECKS = [
     ("check_secrets", [sys.executable, "tools/check_secrets.py"]),
     ("test_credential_hygiene", [sys.executable, "tools/test_credential_hygiene.py"]),
     ("credential_hygiene", [sys.executable, "tools/check_credential_hygiene.py"]),
+    ("test_app_db_secrets", [sys.executable, "tools/test_app_db_secrets.py"]),
+    ("app_db_secrets", [sys.executable, "tools/check_app_db_secrets.py"]),
 ]
 
 
