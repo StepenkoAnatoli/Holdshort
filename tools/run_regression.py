@@ -31,6 +31,10 @@ Checks (in order):
                                              (throwaway repo, real git worktrees).
   N+8. tools/test_class_breaker.py           — breaker split: facts per task, class rates
                                              only under eval-prep authorization.
+  N+9. tools/test_outcome_ledger.py          — canonical §10.3 Outcome store (record/get/
+                                             list/verify, fail-closed schema).
+  N+10. tools/test_check_provenance.py       — diff-vs-branch provenance for review
+                                             (scope, naming, base, worktree binding).
   N+9. tools/test_watch_app_db_secrets.py— the watcher that scans those stores on
                                              change runs OUTSIDE the gate (it is a
                                              long-lived process, started by the
@@ -86,6 +90,8 @@ CHECKS = [
     ("test_task_ids", [sys.executable, "tools/test_task_ids.py"]),
     ("test_host_dry_run", [sys.executable, "tools/test_host_dry_run.py"]),
     ("test_class_breaker", [sys.executable, "tools/test_class_breaker.py"]),
+    ("test_outcome_ledger", [sys.executable, "tools/test_outcome_ledger.py"]),
+    ("test_check_provenance", [sys.executable, "tools/test_check_provenance.py"]),
     ("test_watch_app_db_secrets", [sys.executable, "tools/test_watch_app_db_secrets.py"]),
 ]
 

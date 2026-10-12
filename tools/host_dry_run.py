@@ -38,7 +38,6 @@ import os
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
@@ -53,6 +52,7 @@ def _load(name: str, path: Path):
 
 
 ti = _load("tids_dryrun", TOOLS / "task_ids.py")
+ol = _load("oll_dryrun", TOOLS / "outcome_ledger.py")
 
 WORKERS = (
     {"slug": "caching-layer", "file": "feature-a.txt", "body": "worker-A payload\n"},
@@ -177,15 +177,24 @@ def run(root: Path, env: dict) -> dict:
         if str(s["path"]) not in listed:
             raise DryRunFailed(f"P3 failed: {s['path']} absent from git worktree list")
 
-    # Steps 5-6: host merges sequentially, records outcomes, cleans up.
+    # Steps 5-6: host merges sequentially, records §10.3 Outcomes in the canonical
+    # ledger store, cleans up. The dry-run class tag keeps the breaker's eval
+    # projection derivable from the same file.
+    ledger_path = root / "outcome-ledger.jsonl"
+    if ledger_path.exists():
+        ledger_path.unlink()
     ledger: list[dict] = []
     for s, w in zip(spawned, WORKERS):
         _must(main, "-c", "user.email=t@t", "-c", "user.name=t",
               "merge", "--no-ff", "-m", f"merge {s['branch']}", s["branch"],
               env=env, what=f"merge {s['branch']}")
-        ledger.append({"task-id": s["task_id"], "outcome": "accepted",
-                       "evidence": {"files-touched": [w["file"]], "notes": "dry-run merge"},
-                       "owner-profile": "dry-run-worker", "ts": time.time()})
+        ledger.append(ol.record(ledger_path, {
+            "task-id": s["task_id"], "outcome": "accepted",
+            "evidence": {"checks": [{"command": f"test -f {w['file']}",
+                                     "exit-code": 0, "output-ref": "dry-run-acceptance"}],
+                         "actual-spend": 0.0, "files-touched": [w["file"]],
+                         "notes": "dry-run merge"},
+            "owner-profile": "dry-run-worker", "class": "dry-run"}))
     for s in spawned:
         # Retract the injected Brief first: it was environment, never branch content,
         # so the worktree is clean and `remove` needs no --force.
@@ -208,8 +217,7 @@ def run(root: Path, env: dict) -> dict:
     if [e["outcome"] for e in ledger] != ["accepted", "accepted"]:
         raise DryRunFailed(f"P5 failed: ledger outcomes {ledger}")
 
-    (root / "outcome-ledger.jsonl").write_text(
-        "".join(json.dumps(e, sort_keys=True) + "\n" for e in ledger), encoding="utf-8")
+    ol.read_all(ledger_path)  # fail closed here, not at the reviewer's desk
     return {"task_ids": ids, "branches": branches,
             "proofs": ["P1 distinct ids/branches/paths", "P2 checkout isolation",
                        "P3 simultaneous worktrees listed", "P4 both payloads merged exact",
