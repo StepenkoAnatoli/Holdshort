@@ -171,6 +171,29 @@ surfaces no repo check can see, and the verification that proves the new value i
   printed) to the credential git serves, so replacing the `github.com` credential means replacing
   that file too.
 
+## The app's transcript store is now inside the gate (10-12, `2512d85`)
+
+`check_secrets` can only see `git ls-files`, so a credential echoed into a chat has never been
+covered by anything: the Freebuff Desktop app persists thread transcripts into sqlite stores under
+`~/.config/freebuff-desktop/projects/*/desktop-v2.db*`, outside every repo. This machine's store
+holds token-shaped occurrences today — including a still-live GitHub PAT — which is exactly the
+residue class the checks above cannot reach.
+
+- **10-12 `2512d85`** — `tools/check_app_db_secrets.py` joins the gate after `check_secrets` and
+  `check_credential_hygiene`, so the hook and the CI mirror both run it. It reuses `check_secrets`'
+  audited anthropic/sk patterns and adds the six GitHub families, but not the noisy
+  key-assignment/bearer matchers, because on opaque binary transcript blobs those are triage noise.
+  Stores are decoded latin-1 so reported offsets are byte offsets; hits print class + offset +
+  sha256 digest and never the value, so triaging a leak cannot re-leak it. Exit 1 refuses the next
+  commit on a NEW hit; exit 2 fails closed on an unreadable or oversized store or a malformed
+  baseline. Resolution puts `USERPROFILE` ahead of `HOME` because the hook exports
+  `HOME="$REPO_ROOT"` — the trap `credential_hygiene` documented, now pinned by its own test — and a
+  machine with no app directory SKIPs with exit 0, which is why the CI runner stays green. The 16
+  digests (184 occurrences) that predate the check are baselined with their class and triage note:
+  known and visible to the gate, not harmless. Ten hermetic invariants ride the same gate, and
+  `.gitignore` gained the `.local/` rule for the XDG byproducts the hook's HOME export drops into
+  the checkout.
+
 ## Why the layers are not redundancy
 
 Each layer covers a failure mode of the previous one: the CI mirror covers
