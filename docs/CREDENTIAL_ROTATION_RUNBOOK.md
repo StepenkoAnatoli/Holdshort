@@ -276,15 +276,40 @@ token-shaped text", not "N live secrets". **Do not edit the database**: the app 
 usually running. The supported levers are the app's own data controls, plus rotation, which makes
 every stored copy worthless at once.
 
+**The same scan, without the typing.** Two tools scan that store for you:
+
+```bash
+python tools/check_app_db_secrets.py    # the gate: 0 clean/baselined; 1 NEW hit; 2 fail-closed
+python tools/watch_app_db_secrets.py    # continuous: same scan, on change or on a heartbeat
+```
+
+`check_app_db_secrets.py` rides the pre-commit gate and the CI mirror, so it acts at the *next
+commit* — which may be hours after the paste, or never, if the thread simply ends.
+`watch_app_db_secrets.py` is the continuous half: it polls the stores with `stat` only (milliseconds),
+re-scans when one changes and on a heartbeat, and prints class, byte offset and digest — never the
+value. Run it beside the app:
+
+```bash
+python tools/watch_app_db_secrets.py --log .local/app_db_watch.log
+```
+
+While an untriaged hit is present it keeps exiting 1 (a leak that is still there is still a leak) but
+prints each digest once, so a long-running watcher does not become noise; hits triaged into
+`tools/app_db_secrets_baseline.json` stop being alerts, exactly as at commit time. `--once` is the
+cron contract: one pass, the check's exit codes. `--on-new "<command>"` runs your own notifier with
+`WATCH_DIGEST` / `WATCH_CLASS` / `WATCH_STORE` in its environment. State lives in
+`.local/app_db_secrets_watch_state.json` (gitignored, digests and timestamps only).
+
 **Other checkouts, backups and exports.** Every clone has its own `.env` and its own `.git/config`
 credentials, and every backup archive has its own copy of the Desktop. Grep them by class *after*
 revoking, remembering that a revoked value in an old archive is already inert.
 
 **What this repo covers, and its blind spots.** `.gitignore` excludes `.env`, `*.pem`, `*.key`,
 `credentials*.json` and `secrets*.json`; `check_secrets.py` scans *tracked* files and fails closed on
-anything it cannot decode; `check_credential_hygiene.py` scans the local git and gh stores. By
-construction, none of them can see untracked plaintext files outside the repo, app databases, shell
-history, or any other machine. §4 is the manual cover for that gap.
+anything it cannot decode; `check_credential_hygiene.py` scans the local git and gh stores; `check_app_db_secrets.py` scans the
+app's transcript stores, and `watch_app_db_secrets.py` scans them continuously rather than only at
+commit time. By construction, none of them can see untracked plaintext files outside the repo, other
+app databases, shell history, or any other machine. §4 is the manual cover for that gap.
 
 ## 5. Verification — run after every rotation
 
@@ -292,6 +317,7 @@ history, or any other machine. §4 is the manual cover for that gap.
 
 ```bash
 python tools/check_credential_hygiene.py                        # 0 clean/baselined; 1 act on it; 2 fail-closed
+python tools/check_app_db_secrets.py                            # 0 clean/baselined; 1 NEW token-shaped hit; 2 fail-closed
 git config --show-origin --get-regexp '^credential.*\.helper$'  # exactly one owner for github.com
 MSYS_NO_PATHCONV=1 cmdkey.exe /list | grep -aE 'Target:.*(git:|gh:)'   # deleted targets are gone
 ```

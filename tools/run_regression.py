@@ -12,6 +12,13 @@ Checks (in order):
    N+2. tools/check_app_db_secrets.py     — token-shaped strings in the Freebuff
                                              Desktop app stores (desktop-v2.db*),
                                              baseline-allowlisted after triage
+  N+3. tools/test_watch_app_db_secrets.py— the watcher that scans those stores on
+                                             change runs OUTSIDE the gate (it is a
+                                             long-lived process, started by the
+                                             operator); its hermetic test joins the
+                                             gate so the watcher cannot rot unseen.
+                                             Last because it is the slowest suite
+                                             here (~11s: it starts real watchers).
 
 Each subprocess's exit status is preserved (no output filtering that can mask
 failure). Exit 0 only when ALL pass; nonzero reports which check failed first.
@@ -47,6 +54,7 @@ CHECKS = [
     ("credential_hygiene", [sys.executable, "tools/check_credential_hygiene.py"]),
     ("test_app_db_secrets", [sys.executable, "tools/test_app_db_secrets.py"]),
     ("app_db_secrets", [sys.executable, "tools/check_app_db_secrets.py"]),
+    ("test_watch_app_db_secrets", [sys.executable, "tools/test_watch_app_db_secrets.py"]),
 ]
 
 
