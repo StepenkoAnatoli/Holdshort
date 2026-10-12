@@ -41,6 +41,10 @@ Checks (in order):
                                              worktree (main checkout, bare dirs, wrong task).
   N+13. tools/test_docs_drift.py             — background-docs-to-spec-v2 pin (blocks,
                                              enums, branch naming, Brief filename note).
+  N+14. tools/test_conform_spec.py           — §10 object conformance (Brief, SpeculativeSet,
+                                             Outcome, NestedBrief bounds, LedgerRecord) with
+                                             §12 violations failing the gate.
+                                             enums, branch naming, Brief filename note).
                                              (scope, naming, base, worktree binding).
   N+9. tools/test_watch_app_db_secrets.py— the watcher that scans those stores on
                                              change runs OUTSIDE the gate (it is a
@@ -102,6 +106,7 @@ CHECKS = [
     ("test_spawn_worker", [sys.executable, "tools/test_spawn_worker.py"]),
     ("test_guard_launch", [sys.executable, "tools/test_guard_launch.py"]),
     ("test_docs_drift", [sys.executable, "tools/test_docs_drift.py"]),
+    ("test_conform_spec", [sys.executable, "tools/test_conform_spec.py"]),
     ("test_watch_app_db_secrets", [sys.executable, "tools/test_watch_app_db_secrets.py"]),
 ]
 

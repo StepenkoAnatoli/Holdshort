@@ -3,9 +3,14 @@ name: smart-router-eval-prep
 description: Prepare an evaluation preregistration and cost-per-verified-success comparison plan for SmartRouter trials. Use when designing a pilot, drafting frozen thresholds, or assembling the economic comparison protocol. Prepares documents only; never authorizes, schedules, or runs paid trials, and never substitutes author-supplied numbers for owner-approved values.
 license: MIT
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
+  previous: "1.0.0"
   defers-to: smart-router
   spec-pinned: "docs/DEVELOPMENT_PLAN.md@d7c00f96a17c35e6c47c5ba1f7e3a9160c966042"
+  changelog: |
+    - v1.1.0: preregistration now freezes isolation, ownership, and feedback-loop
+      dimensions (isolation capability, owner accounting, repair budgets) so trial
+      evidence can verify what v1.1 reviewers check. Still never authorizes trials.
 ---
 
 # SmartRouter evaluation preparation — preregistration only
@@ -28,6 +33,10 @@ never fill in invented numbers where the plan requires owner-approved values.
    a number you invented to make the document look complete.
 3. **Name the host and controls** explicitly: identity/permissions evidence, billing/usage
    observations, conservative bounds, all-call limits, isolation, Stop/recovery, required checks.
+   Freeze the v1.1 dimensions per [references/preregistration.md](references/preregistration.md)
+   §6: the host's isolation capability (worktree support, branch convention), per-owner
+   accounting (which worker owns which brief), and the feedback-loop budget (at most one
+   same-profile repair per original task, plan R01/R02/R03 — counted in the arm economics).
    Absence of a host is a reported blocker — not a reason to weaken the protocol.
 4. **Separate report closure from promotion eligibility** in the drafted protocol: a complete report
    may close as `rejected` or `inconclusive` with disclosed gaps and still release no reservation and

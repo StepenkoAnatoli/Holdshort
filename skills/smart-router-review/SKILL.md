@@ -1,11 +1,16 @@
 ---
 name: smart-router-review
-description: Evidence-backed blocker review of routing decisions and routing artifacts. Use when reviewing a SmartRouter route decision, skill release, or routing-policy amendment for unresolved safety, permission, authority, required-check, accounting or license blockers. Produces a review record, never a score-based permission or merge verdict, and never re-selects routes.
+description: Evidence-backed blocker review of routing decisions and routing artifacts, including their isolation, ownership, and feedback-loop claims. Use when reviewing a SmartRouter route decision, skill release, or routing-policy amendment for unresolved safety, permission, authority, required-check, accounting or license blockers. Produces a review record, never a score-based permission or merge verdict, and never re-selects routes.
 license: MIT
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
+  previous: "1.0.0"
   defers-to: smart-router
   spec-pinned: "docs/DEVELOPMENT_PLAN.md@d7c00f96a17c35e6c47c5ba1f7e3a9160c966042"
+  changelog: |
+    - v1.1.0: reviewer now also verifies isolation, ownership, and feedback-loop
+      claims (provenance check, sticky-ownership evidence, one-repair cap per
+      plan R01/R02/R03). Still never selects routes or approves by score.
 ---
 
 # SmartRouter review — blocker-focused procedure
@@ -36,10 +41,17 @@ You never pick a different route, re-scope authority, or approve by score averag
 4. **Walk the relevant fixtures** for the decision shape under review (e.g. blocked routes ⇒ check it
    didn't resurrect rejected candidates; advisory output ⇒ check it didn't perform or claim a
    dispatch; elapsed counters ⇒ check restart didn't renew them).
-5. **Record the evidence record** per blocker: what was checked, at what evidence level
+5. **Verify isolation, ownership, and feedback-loop claims** — not just the route:
+   isolation ⇒ the delivered diff matches its `sr/<task-id>/<slug>` provenance and touches
+   only permitted-effects paths ([references/isolation-provenance.md](references/isolation-provenance.md));
+   ownership ⇒ exactly one owner holds the brief end-to-end (Outcome Ledger + registry evidence,
+   no silent transfer without a fresh decision); feedback loop ⇒ every verification/CI/review
+   failure returned to that same owner, with at most one same-profile corrective dispatch
+   per original task (plan R01/R02/R03). Each unverified claim is its own blocker record.
+6. **Record the evidence record** per blocker: what was checked, at what evidence level
    (source-inspection / packaged check / semantic walkthrough / tested host behavior), what remains
    untested, and the explicit disposition (`unresolved` / `corrected and rechecked` / `nonblocking`).
-6. **Verdict vocabulary**: `Approve` / `Request Changes` / `Reject`, with reasons tied to records, not
+7. **Verdict vocabulary**: `Approve` / `Request Changes` / `Reject`, with reasons tied to records, not
    numeric averages. Missing required evidence = unresolved, not approval.
 
 ## Hard boundaries
