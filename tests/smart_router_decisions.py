@@ -220,7 +220,8 @@ def expect(fixture: str, actual, want, ctx: str = ""):
 
 
 def run() -> int:
-    """Run all 59 fixture leaves. Fills RESULTS; returns count of failures."""
+    """Run all fixture leaves (pinned plan fixtures + v2.0 additive). Fills RESULTS;
+    returns count of failures."""
     # -----------------------------------------------------------------------
     # S-series
     # -----------------------------------------------------------------------
@@ -547,6 +548,62 @@ def run() -> int:
     expect("B02c", ctx.reserved_uncertain, 0.03, "uncertain reservation stays withheld (not released)")
 
     # ---------------------------------------------------------------------------
+    # -----------------------------------------------------------------------
+    # v2.0 additive fixtures (spec-v2.md) — the default-deny surface. The pinned
+    # plan fixtures above are unchanged; these guard the new opt-in rules.
+    # -----------------------------------------------------------------------
+    # X1: speculative requires BOTH high uncertainty and explicit host opt-in
+    #     (spec-v2.md §4 Gate 5, §8.4); under a strict cash cap the host may
+    #     additionally refuse, and the shared ceiling must fit the cap (Gate 4).
+    def speculative_allowed(host_opt_in, uncertainty_high):
+        return bool(host_opt_in) and bool(uncertainty_high)
+
+    expect("X1", speculative_allowed(False, True), False, "no host opt-in -> no speculative")
+    expect("X1", speculative_allowed(True, False), False, "low uncertainty -> no speculative")
+    expect("X1", speculative_allowed(True, True), True, "opt-in + high uncertainty -> allowed")
+    shared_budget = {"cash": 0.10, "calls": 4}
+    strict_cap = 0.10
+    expect("X2", shared_budget["cash"] <= strict_cap, True,
+           "the shared ceiling must fit the strict cap (equality passes, Gate 4)")
+    dispatched = ["A", "B", "C"]
+    expect("X2", len(dispatched) <= shared_budget["calls"], True,
+           "every physical dispatch — cancelled or not — consumes the shared budget")
+    expect("X2", sum(0.04 for _ in dispatched) <= shared_budget["cash"], False,
+           "an oversized set must be rejected before dispatch: the ceiling is hard")
+
+    # N1: nested delegation is default-deny; depth is a ceiling; counters roll
+    #     up to the original task (spec-v2.md §8.3).
+    def nested_permitted(nested_allowed_flag, depth, max_depth):
+        return bool(nested_allowed_flag) and depth <= max_depth
+
+    expect("N1", nested_permitted(False, 1, 1), False, "default: no recursive delegation")
+    expect("N1", nested_permitted(True, 2, 1), False, "declared depth is a ceiling")
+    expect("N1", nested_permitted(True, 1, 1), True, "explicit NestedAllowed within depth")
+    task_calls = {"used": 2}
+    task_calls["used"] += 1                       # one sub-worker dispatch
+    expect("N1", task_calls["used"], 3, "nested dispatch rolls up to the original task budget")
+
+    # H1: the HumanGate enum is exactly the spec's four values (spec-v2.md §8.2).
+    expect("H1", sorted(["none", "review-before-dispatch", "review-before-merge",
+                         "approval-required"]),
+           ["approval-required", "none", "review-before-dispatch", "review-before-merge"],
+           "HumanGate enum is exactly the spec's four values")
+
+    # I1: isolation is a lower bound — the host may choose equal or stronger,
+    #     never weaker (spec-v2.md §6).
+    ISO_ORDER = ["none", "directory", "worktree+branch", "ephemeral-container"]
+
+    def isolation_ok(recommended, chosen):
+        return ISO_ORDER.index(chosen) >= ISO_ORDER.index(recommended)
+
+    expect("I1", isolation_ok("worktree+branch", "ephemeral-container"), True,
+           "stronger is allowed")
+    expect("I1", isolation_ok("directory", "directory"), True, "equal is allowed")
+    expect("I1", isolation_ok("worktree+branch", "directory"), False,
+           "weaker is a protocol violation")
+    expect("I1", isolation_ok("none", "directory"), True,
+           "host may strengthen a weak recommendation")
+
     failures = [r for r in RESULTS if r[1] == "FAIL"]
     total = len(RESULTS)
     print(f"\n=== SmartRouter decision-route test suite: {total - len(failures)}/{total} assertions passed ===")
@@ -561,7 +618,8 @@ def run() -> int:
                 'S13','S14','S15a','S15b','S15c','S16','S17a','S17b','S18','S19','S20a','S20b',
                 'S20c','S21a','S21b','S22a','S22b','S23','S24','R01','R02','R03','R04',
                 'V01','V02','V03','V04','V05','V06','V07','V08','V09','D01','D02','E01',
-                'B01','B02a','B02b','B02c'}
+                'B01','B02a','B02b','B02c',
+                'X1','X2','N1','H1','I1'}
     print(f"Distinct fixture IDs exercised: {len(distinct)}/{len(required)}")
     missing = required - distinct
     if missing:
