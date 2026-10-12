@@ -20,3 +20,9 @@ tools/live_fill_sheet.csv
 Thumbs.db
 .DS_Store
 tools/task_state/
+
+# --- tool byproducts created when HOME/XDG point inside the repo ---
+# `.githooks/pre-commit` exports HOME="$REPO_ROOT", and tools that fall back to
+# XDG paths (e.g. `gh`, which wrote .local/state/gh/device-id here on 2026-10-11)
+# then drop machine-local state into the checkout. Byproduct, not evidence.
+.local/

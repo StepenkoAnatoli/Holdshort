@@ -5,14 +5,27 @@ Checks (in order):
   0. tools/check_hook_wiring.py          — pre-commit gate is wired (Layer-1 self-check)
   1. tools/validate_skills.py            — packaging/authority validator
   2. tools/test_live_dispatcher.py       — §5 caps + Gate-4 suite (26 checks)
-  3. tools/test_pilot_report.py          — ledger aggregation suite (10 tests)
+  3. tools/test_clone_freshness.py       — clone-parity contract (temp-repo fixture)
+  4. tools/test_pilot_report.py          — ledger aggregation suite (10 tests)
   ...
   N. tools/check_secrets.py              — credential-shaped strings in tracked files
+  N+1. tools/test_credential_hygiene.py  — orphaned gh keyring tokens / stale stored
+                                           credentials (baseline-triaged)
+  N+2. tools/test_custody_acl.py         — the credential custody tree's ACL stays
+                                           locked to the user alone (N/A off-machine)
+  N+3. tools/test_app_db_secrets.py      — token-shaped strings in the Freebuff
+                                           Desktop app stores (desktop-v2.db*),
+                                           baseline-allowlisted after triage
 
 Each subprocess's exit status is preserved (no output filtering that can mask
 failure). Exit 0 only when ALL pass; nonzero reports which check failed first.
 Extra checks can be added to CHECKS; keep order cheap→expensive for fast
 feedback.
+
+Note: tools/check_clone_freshness.py itself is deliberately NOT a gate step —
+it can only answer with the remote reachable, and this gate must run offline
+(on every commit). Its hermetic test above is what joins this list; the
+checker itself is the operator's runbook §0 precondition.
 """
 from __future__ import annotations
 
@@ -33,11 +46,19 @@ CHECKS = [
     ("test_task_crosscheck", [sys.executable, "tools/test_task_crosscheck.py"]),
     ("test_install_hooks", [sys.executable, "tools/test_install_hooks.py"]),
     ("test_hook_wiring", [sys.executable, "tools/test_hook_wiring.py"]),
+    ("test_strict_canary", [sys.executable, "tools/test_strict_canary.py"]),
+    ("test_clone_freshness", [sys.executable, "tools/test_clone_freshness.py"]),
     ("live_fill_sheet_integrity", [sys.executable, "tools/live_fill_tally.py", "--mode", "gate"]),
     ("test_pilot_report", [sys.executable, "tools/test_pilot_report.py"]),
     ("test_arm_matrix", [sys.executable, "tools/test_arm_matrix.py"]),
     ("test_secrets_env_guard", [sys.executable, "tools/test_secrets_env_guard.py"]),
     ("check_secrets", [sys.executable, "tools/check_secrets.py"]),
+    ("test_credential_hygiene", [sys.executable, "tools/test_credential_hygiene.py"]),
+    ("credential_hygiene", [sys.executable, "tools/check_credential_hygiene.py"]),
+    ("test_custody_acl", [sys.executable, "tools/test_custody_acl.py"]),
+    ("custody_acl", [sys.executable, "tools/check_custody_acl.py"]),
+    ("test_app_db_secrets", [sys.executable, "tools/test_app_db_secrets.py"]),
+    ("app_db_secrets", [sys.executable, "tools/check_app_db_secrets.py"]),
 ]
 
 
