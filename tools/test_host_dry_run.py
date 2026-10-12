@@ -85,14 +85,19 @@ class HostDryRun(unittest.TestCase):
                      "commit", "-qm", "seed", env=env, what="commit")
             wt_root = tmp / "wts"
             wt_root.mkdir()
-            first = hd.spawn_worker(main, wt_root, "a3f9", dict(hd.WORKERS[0]), env)
+            registry = tmp / "workers.json"
+            first = hd.spawn_worker(main, wt_root, "a3f9", dict(hd.WORKERS[0]), env,
+                                    registry)
             try:
                 with self.assertRaises(hd.DryRunFailed) as cm:
-                    hd.spawn_worker(main, wt_root, "a3f9", dict(hd.WORKERS[1]), env)
+                    hd.spawn_worker(main, wt_root, "a3f9", dict(hd.WORKERS[1]), env,
+                                    registry)
             finally:
-                (first["path"] / "SMARTROUTER_BRIEF.json").unlink(missing_ok=True)
-                hd._must(main, "worktree", "remove", str(first["path"]), env=env, what="rm")
-            self.assertIn("collision", str(cm.exception).lower())
+                # Fixture teardown, not a merge: abandon the unmerged branch (its zero
+                # dispatches stay consumed by definition — nothing was ever sent).
+                hd.sw.cleanup(main, registry, "a3f9", allow_unmerged=True, env=env)
+            self.assertIn("refus", str(cm.exception).lower(),
+                          "the second spawn must be refused, never a shared checkout")
 
     # D4 ----------------------------------------------------------------------
     def test_d4_brief_never_enters_the_branch(self):

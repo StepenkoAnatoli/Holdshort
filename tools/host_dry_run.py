@@ -53,15 +53,24 @@ def _load(name: str, path: Path):
 
 ti = _load("tids_dryrun", TOOLS / "task_ids.py")
 ol = _load("oll_dryrun", TOOLS / "outcome_ledger.py")
+sw = _load("spw_dryrun", TOOLS / "spawn_worker.py")
+
+class DryRunFailed(RuntimeError):
+    """A lifecycle step or proof failed — the harness must not report success."""
+
+
+_REG_LOCK = None  # created per-run: the shared registry file needs one writer at a time
+def _reg_lock():
+    global _REG_LOCK
+    if _REG_LOCK is None:
+        import threading
+        _REG_LOCK = threading.Lock()
+    return _REG_LOCK
 
 WORKERS = (
     {"slug": "caching-layer", "file": "feature-a.txt", "body": "worker-A payload\n"},
     {"slug": "auth-refactor", "file": "feature-b.txt", "body": "worker-B payload\n"},
 )
-
-
-class DryRunFailed(RuntimeError):
-    """A lifecycle step or proof failed — the harness must not report success."""
 
 
 def _env(tmp: Path) -> dict:
@@ -96,21 +105,19 @@ def brief_for(task_id: str, slug: str) -> dict:
         "attempts": 1, "ownership": "worker"}
 
 
-def spawn_worker(main: Path, wt_root: Path, task_id: str, spec: dict, env: dict) -> dict:
-    """Steps 2-4 for one worker. Raises DryRunFailed (never returns a half-spawn)."""
-    branch = ti.branch_for(task_id, spec["slug"])
-    path = wt_root / task_id
-    if path.exists():
-        raise DryRunFailed(f"collision: worktree path {path} already exists for {task_id}")
-    _must(main, "worktree", "add", "-b", branch, str(path), "main", env=env,
-          what=f"worktree add {task_id}")
+def spawn_worker(main: Path, wt_root: Path, task_id: str, spec: dict, env: dict,
+                 registry: Path) -> dict:
+    """Steps 2-4 for one worker, via the tested host primitive (never half-spawns)."""
     try:
-        # The Brief is injected into the worker's ENVIRONMENT (untracked): committing it
-        # would make every branch both-add SMARTROUTER_BRIEF.json and the second host
-        # merge would conflict by construction — a harness artifact, not a lifecycle
-        # property. Only the work payload is staged.
-        (path / "SMARTROUTER_BRIEF.json").write_text(
-            json.dumps(brief_for(task_id, spec["slug"]), indent=2) + "\n", encoding="utf-8")
+        with _reg_lock():  # two parallel spawns share one registry file
+            rec = sw.spawn(main, wt_root, spec["slug"], brief_for(task_id, spec["slug"]),
+                           "dry-run-worker", registry, task_id=task_id, env=env)
+    except (sw.Refused, sw.FailClosed, ti.ScopeUnreachable) as e:
+        raise DryRunFailed(f"spawn refused for {task_id} ({e})") from e
+    path = Path(rec["path"])
+    try:
+        # Only the work payload is staged: the injected Brief stays untracked, so
+        # parallel merges cannot conflict on it (see spawn_worker semantics).
         (path / spec["file"]).write_text(spec["body"], encoding="utf-8")
         _must(path, "add", spec["file"], env=env, what=f"stage {task_id}")
         _must(path, "-c", "user.email=t@t", "-c", "user.name=t",
@@ -122,7 +129,7 @@ def spawn_worker(main: Path, wt_root: Path, task_id: str, spec: dict, env: dict)
         raise DryRunFailed(f"worker I/O failed for {task_id} ({e})") from e
     if spec["file"] not in check.stdout.splitlines():
         raise DryRunFailed(f"acceptance: {spec['file']} missing in {task_id}'s worktree")
-    return {"task_id": task_id, "branch": branch, "path": path}
+    return {"task_id": task_id, "branch": rec["branch"], "path": path}
 
 
 def run(root: Path, env: dict) -> dict:
@@ -154,9 +161,12 @@ def run(root: Path, env: dict) -> dict:
             raise DryRunFailed(f"P1 failed: {label} not distinct: {vals}")
 
     # Steps 2-4 in parallel: the collision regime the flow exists for.
+    registry = root / "workers.json"
+    if registry.exists():
+        registry.unlink()
     spawned: list[dict] = [None, None]  # type: ignore[list-item]
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-        futs = {pool.submit(spawn_worker, main, wt_root, tid, w, env): k
+        futs = {pool.submit(spawn_worker, main, wt_root, tid, w, env, registry): k
                 for k, (tid, w) in enumerate(zip(ids, WORKERS))}
         for fut in concurrent.futures.as_completed(futs):
             spawned[futs[fut]] = fut.result()  # DryRunFailed propagates here
@@ -196,12 +206,12 @@ def run(root: Path, env: dict) -> dict:
                          "notes": "dry-run merge"},
             "owner-profile": "dry-run-worker", "class": "dry-run"}))
     for s in spawned:
-        # Retract the injected Brief first: it was environment, never branch content,
-        # so the worktree is clean and `remove` needs no --force.
-        (s["path"] / "SMARTROUTER_BRIEF.json").unlink(missing_ok=True)
-        _must(main, "worktree", "remove", str(s["path"]), env=env,
-              what=f"worktree remove {s['task_id']}")
-        _must(main, "branch", "-d", s["branch"], env=env, what=f"branch delete {s['branch']}")
+        # Same primitive, same guarantees: retract brief, refuse on debris, remove the
+        # worktree, delete the branch only because it merged just above.
+        try:
+            sw.cleanup(main, registry, s["task_id"], env=env)
+        except (sw.Refused, sw.FailClosed) as e:
+            raise DryRunFailed(f"cleanup failed for {s['task_id']} ({e})") from e
 
     # P4 — post-merge main holds both payloads with exact bodies.
     for w in WORKERS:
