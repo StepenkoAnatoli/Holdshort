@@ -194,6 +194,42 @@ residue class the checks above cannot reach.
   `.gitignore` gained the `.local/` rule for the XDG byproducts the hook's HOME export drops into
   the checkout.
 
+## The transcript store is watched, not only gated (10-12, `381bf5b`)
+
+The check above acts at the *next commit*: a value pasted into a thread is refused hours later, or never,
+if the thread simply ends. `tools/watch_app_db_secrets.py` is the continuous half — the same scan, run
+while the app is in use.
+
+- **10-12 `381bf5b`** — the watcher imports `check_app_db_secrets.py` by path rather than copying its
+  patterns, so the pattern set and the fail-closed rules cannot drift from the gate's, and adds a
+  literal-prefix prefilter that is conservative by construction: zero-width anchors are stepped over,
+  `(?i)` disables the derivation, and any escape or alternation gives up and returns None (the
+  prefilter turns itself off rather than risk under-scanning). Its tests pin that the prefilter path
+  returns exactly what the check's own `scan_store` returns for the same bytes. Reporting keeps the
+  check's discipline — class, byte offset, sha256 digest, never the value — and repeat alerts are
+  suppressed by digest through a state file of digests and timestamps only, without changing the
+  verdict: a leak that is still there still exits 1. Exit codes match the check (0 clean, 1 untriaged
+  hit, 2 fail-closed), `--once` is the cron contract, and `--on-new "<command>"` hands the digest to
+  the operator's own notifier. It polls with `stat` only — 0.63 ms for all four stores here — and
+  scans on a debounced change or a heartbeat, so it neither reads a store mid-write nor dies on a
+  locked one: an unreadable store is a warning, an unscannable one makes the pass incomplete so
+  "no new hits" is never read as clean.
+- **10-12 `381bf5b`** — its cost is stated rather than sold: a pass over this machine's 23 MB store is
+  ~2.3 s, the check's own cost, because the store holds baselined hits and the prefilter therefore
+  cannot short-circuit it. The prefilter pays off only on a store with no token-shaped literal at all
+  (a 16 MB no-literal corpus: 1.3 s → 0.15 s). What is cheap is the idle watcher: about a millisecond
+  every five seconds. The module docstring says exactly this instead of claiming to be lightweight.
+- **10-12 `381bf5b`** — the 15-invariant suite joins the gate last (it is the slowest, ~10 s, because
+  it starts real watchers and drives one with a live store change). It runs against an *isolated empty*
+  baseline, and its first run proved why: W3 planted a fixture and asserted an alert while that very
+  fixture's digest had just been triaged into the tracked baseline, so a test coupled to live triage
+  state stops asserting the day its fixture is baselined. Triage churn is not hypothetical here — this
+  session's own transcript put token-shaped text in the store (rendered fixture values first, then
+  raw-byte fragments of them: a live WAL store read as plain bytes yields partial copies as pages are
+  rewritten), and every new digest was identified — prefix of, or straddle against, our own fixtures —
+  before it was recorded, with two earlier notes corrected rather than left imprecise. The runbook's §4
+  and §5 now document both tools where an operator looks for this surface.
+
 ## Why the layers are not redundancy
 
 Each layer covers a failure mode of the previous one: the CI mirror covers
