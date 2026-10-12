@@ -28,7 +28,11 @@ You never pick a different route, re-scope authority, or approve by score averag
    reaffirmed (plan P02).
 3. **Run the blocker checklist** at [references/blocked-review.md](references/blocked-review.md) per
    category: safety/privacy/permission, authority conflict, required check, release gate,
-   redistribution/license, accounting.
+   redistribution/license, accounting. When the artifact claims `worktree+branch`
+   isolation, additionally run the provenance check at
+   [references/isolation-provenance.md](references/isolation-provenance.md)
+   (`tools/check_provenance.py`): the delivered diff must come from `sr/<task-id>/<slug>`
+   and touch only permitted-effects paths.
 4. **Walk the relevant fixtures** for the decision shape under review (e.g. blocked routes ⇒ check it
    didn't resurrect rejected candidates; advisory output ⇒ check it didn't perform or claim a
    dispatch; elapsed counters ⇒ check restart didn't renew them).
