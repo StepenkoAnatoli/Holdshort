@@ -14,11 +14,15 @@ only the owner's hands can act (key pasting, the GO decision) — both marked **
 Run in order; each must satisfy before continuing:
 
 ```bash
-[ "$(git rev-parse HEAD)" = "$(git ls-remote origin main | cut -f1)" ] && echo parity-OK      # on the pushed tree
-python tools/run_regression.py                                  # 10 checks, exit 0
+python tools/check_clone_freshness.py                           # exit 0 = this clone IS origin/main
+                                                                #  exactly: HEAD at the LIVE tip (never
+                                                                #  the local tracking ref), no local-only
+                                                                #  commits, clean worktree; exit 1 names
+                                                                #  what is off, exit 2 = remote unreachable
+python tools/run_regression.py                                  # full gate, exit 0
 python tools/check_secrets.py                                   # clean, 0 hits
 git config core.hooksPath                                       # prints .githooks (pre-commit
-                                                                #  runs the same 10-check gate on every
+                                                                #  runs the same full gate on every
                                                                 #  commit; a failing gate blocks the push)
 mkdir -p tools/task_state                                        # per-task state dir (gitignored) for --task-store
 
@@ -29,6 +33,8 @@ python tools/live_dispatcher.py --live \                        # adapter presen
 
 **Stop-condition**: any unexpected result blocks the session; fix and re-run before step 1.
 The expected exit-2 above proves the fail-closed path: no key ⇒ no HTTP call.
+Clone-freshness exit 1 (the tree under you is not the pushed tree) or exit 2 (remote
+unreachable — provenance unverified) blocks the same way.
 
 ## 1. Key placement — `.env`, never committed *(OWNER: key pasting)*
 
@@ -141,5 +147,9 @@ Fail actions:
   per-task attempts/spent/repairs and the task's `started` anchor to JSON (atomic writes), so
   the 300 s deadline applies to the task's WHOLE lifetime, not per dispatcher process.
   Without the flag, behavior is per-process counters as before.
+- Clone freshness (`tools/check_clone_freshness.py`) is read-only: it never fetches, so a stale
+  local `origin/main` stays stale — the report names it rather than fixing it. Exit 2
+  (FAIL-CLOSED) is not a pass: with no reachable remote the pushed-tree question is
+  unanswered; `--offline` compares against the last fetch only and says so in its output.
 - Cache-credit accounting, `--strict`-non-empty promotion, and consumer-owned phases (5–7) are
   out of scope, unchanged from the live-start packet.
