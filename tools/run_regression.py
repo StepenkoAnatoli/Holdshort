@@ -25,7 +25,13 @@ Checks (in order):
                                              no-progress escalation, needs-human package);
                                              its hermetic test joins the gate so the HITL
                                              contract cannot rot unseen.
-  N+6. tools/test_watch_app_db_secrets.py— the watcher that scans those stores on
+  N+6. tools/test_task_ids.py               — task-id mint/format/entropy/uniqueness
+                                             semantics + live-scope collision checks.
+  N+7. tools/test_host_dry_run.py            — two-parallel-worker lifecycle proof
+                                             (throwaway repo, real git worktrees).
+  N+8. tools/test_class_breaker.py           — breaker split: facts per task, class rates
+                                             only under eval-prep authorization.
+  N+9. tools/test_watch_app_db_secrets.py— the watcher that scans those stores on
                                              change runs OUTSIDE the gate (it is a
                                              long-lived process, started by the
                                              operator); its hermetic test joins the
@@ -77,6 +83,9 @@ CHECKS = [
     ("app_db_secrets", [sys.executable, "tools/check_app_db_secrets.py"]),
     ("test_redact_text", [sys.executable, "tools/test_redact_text.py"]),
     ("test_host_watchdog", [sys.executable, "tools/test_host_watchdog.py"]),
+    ("test_task_ids", [sys.executable, "tools/test_task_ids.py"]),
+    ("test_host_dry_run", [sys.executable, "tools/test_host_dry_run.py"]),
+    ("test_class_breaker", [sys.executable, "tools/test_class_breaker.py"]),
     ("test_watch_app_db_secrets", [sys.executable, "tools/test_watch_app_db_secrets.py"]),
 ]
 

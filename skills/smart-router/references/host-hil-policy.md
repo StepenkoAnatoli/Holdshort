@@ -8,7 +8,7 @@ document below is preserved as given (its outer markdown packaging fence omitted
 its "mandatory"/"must" wording is host-policy aspiration, and the divergences from the
 pinned rules are flagged here:
 
-Flagged, with flag 1 fixed by tightening this policy (2026-10-12):
+Flagged, with flags 1 and 3 fixed by tightening this policy (2026-10-12):
 
 1. **RESOLVED — tightened to one repair total (plan R01/R02/R03 kept as the cap).** §4 (steps 4
    and 7) and §9.1 previously allowed one implementation repair **plus** one CI repair — up to
@@ -27,12 +27,15 @@ Flagged, with flag 1 fixed by tightening this policy (2026-10-12):
    pin exact acceptance checks ([brief-and-result.md](brief-and-result.md)). A human review
    is not a substitute for an acceptance contract. "Ambiguous requirements" alone can justify
    `review-before-dispatch`; "missing acceptance criteria" fails closed first.
-3. **§9.6's circuit breaker computes above-attempt statistics.** A class-level escalation
-   rate (">30%") is aggregated data; [brief-and-result.md](brief-and-result.md) reserves
-   stats above attempt level for the separately authorized evaluation flow
-   (`smart-router-eval-prep`), never per-task routing. Treat the breaker as a host safety
-   switch that fails closed toward more human review, and run any rate computation under
-   that authorized flow.
+3. **RESOLVED — the breaker is split: facts per task, rates only under eval auth
+   (2026-10-12, `tools/class_breaker.py`).** Per-task routing appends one attempt-level
+   fact per task (`record`: task id, class, outcome) and enforces the currently published
+   effective gate table (`gate`: a lookup, never a computation). Class escalation rates are
+   recomputed only in a separately authorized evaluation run (`recompute`: frozen window,
+   minimum samples, frozen threshold, raise-to gate, owner approval with name+date); without
+   that authorization the run refuses fail-closed and publishes nothing. The ">30%" figure
+   survives only as a frozen-threshold *example* inside an auth doc, never as a live
+   per-task rule.
 
 Everything else checked out against the normative sources: `HumanGate` as an autonomy
 ceiling the Host may never lower (§8.2 + Host responsibility 7; fail-closed upward is
@@ -243,8 +246,15 @@ The Host should detect lack of progress:
 - Each agent session should have a wall-clock timeout
 - Unresponsive agents are killed and the task escalated
 
-#### 9.6 Circuit Breaker
-If a task class shows repeated autonomous failures (e.g. >30% escalation rate), the Host should temporarily raise the default HumanGate for that class until the issue is understood.
+#### 9.6 Circuit Breaker (split: facts per task, rates only under eval auth)
+The per-task Host appends one attempt-level fact per task to the Outcome Ledger
+(`tools/class_breaker.py record`: task id, class, outcome) and enforces the currently
+published effective gate table (`gate`: a lookup, never a computation). It never computes
+class escalation rates inline. Rates are recomputed only in a separately authorized
+evaluation run (`recompute` with frozen window, minimum samples, frozen threshold,
+raise-to gate, and owner approval); that run publishes a new table version with its audit
+trail, or refuses fail-closed. Until an authorized run says otherwise, the effective table
+stands — a host safety switch that fails closed toward the published review level.
 
 ---
 
