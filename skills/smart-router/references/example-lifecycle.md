@@ -26,7 +26,7 @@ a clean checkout) and the decision is `delegate` with `worktree+branch`.
 ```
 Difficulty:        high-or-ambiguous
 Route:             delegate
-Profile:           (host-profile-id, claude-code-cli, anthropic, claude-sonnet-5-5, cfg-tools-v1)
+Profile:           (main-host, anthropic, claude-sonnet-5-5@2026-10-01, cfg-tools-v1)
 Isolation:         worktree+branch
 IsolationReason:   multi-module change with shared-state risk and need for clean test runs
 Owner:             worker

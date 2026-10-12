@@ -46,7 +46,10 @@ NestedAllowed:     no
 ## Summary
 
 SmartRouter chooses `direct` when the task is small, low-risk, easy to verify, and the
-current profile can handle it cleanly. In these cases, the overhead of creating an i
+current profile can handle it cleanly. In these cases, the overhead of creating an
+isolated worker exceeds the cost of doing the edit directly.
 
-*(Editor's note: the sentence above is preserved exactly as received — the source arrived
-truncated mid-sentence.)*
+*(Completion note 2026-10-12: the source sentence broke off at "an i" and is completed
+above with the minimal in-context wording — "isolated worker exceeds the cost of doing
+the edit directly" — matching the section's own overhead argument two paragraphs up.
+No other text changed; the pre-completion truncation is recorded in git history.)*
