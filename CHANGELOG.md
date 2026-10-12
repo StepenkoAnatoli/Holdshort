@@ -243,3 +243,68 @@ collapsed continuations `b70f13d`).
 
 `setup_machine.sh` in one command; the full story lives in
 [README.md](README.md).
+
+## Skill v1.1.0 — isolated-worker delegation contract (10-12)
+
+The routing skill gained the operational patterns of a multi-agent supervisor
+without gaining any of its authority. Source studied and verified:
+`OrchestratorInc/agent-orchestrator`, cloned 10-12 — its `docs/architecture.md`
+("Project sessions own isolated Git worktrees"; "Display status is never
+stored. It is computed at read time from durable facts") and its README ("the
+orchestrator owns planning and delegation; workers own implementation, tests,
+commits, and pull requests"). Lands with this change; the commit hash is the
+one that ships it.
+
+- **Isolation contract** — every `delegate` route now names an isolation
+  expectation (`worktree+branch` preferred), and "no shared mutable working
+  tree across concurrent workers" joins the hard prohibitions. Adopted because
+  branch/worktree collision between parallel workers is exactly the failure
+  mode the source project exists to solve.
+- **Ownership + closed feedback loop** — project-orchestrator vs worker split
+  with sticky ownership: verification failures, CI failures and review comments
+  return to the same owning profile as a new brief, and ownership never
+  transfers silently. This pairs with our own verification gate: a failed gate
+  becomes a new brief for the same owner, not a fresh dispatch.
+- **Machine-readable briefs** — the brief emits `isolation`, `branch-hint`,
+  `ownership` and the rest as fields a host can dispatch without
+  reinterpretation; the harness joins the profile identity tuple so one
+  decision can target different runtimes.
+- **Derived status, never self-report** — an agent's "done" stays unverified
+  until observed facts (checks run, PR/CI state) support it (plan S10,
+  retained).
+
+Deliberately **not** copied: the Electron desktop + Go daemon (heavy for a
+skill-focused project), the Kanban look-and-feel, and any orchestrator freedom
+to spend or switch models — this repo's fail-closed gates stay stricter. All
+v1.0.0 rules are retained unchanged (`metadata.previous: "1.0.0"`).
+
+## Skill v2.0.0 — complete surface contract (10-12)
+
+`skills/smart-router/references/spec-v2.md` lands the consolidated
+SmartRouter + Isolated Workers specification (routes, isolation, ownership,
+HumanGate, nesting, speculative sets, machine-readable objects, Host
+responsibilities, compliance), and the skill consumes it as its external
+contract. Every addition is strictly additive and default-deny, per the spec's
+own §13 rule; gate semantics stay fixture-pinned to the plan.
+
+- **Fifth route `speculative`** — bounded parallel candidates; first to satisfy
+  the acceptance contract becomes sole owner; opt-in only (high uncertainty +
+  explicit host opt-in), the shared budget is a hard ceiling, cancelled
+  candidates still consume their dispatches, and nested speculative sets are
+  disallowed (§8.4, added when the Gate-5 explainer surfaced the gap).
+- **HumanGate + nested delegation** — `review-before-dispatch` /
+  `review-before-merge` / `approval-required`; nested sub-briefs only when the
+  decision sets `NestedAllowed: yes` (parent keeps ownership, counters roll up
+  to the original task, depth ≤ 1, host policy may raise to 2). Without it,
+  "no recursive delegation" still holds.
+- **Isolation lattice as a lower bound** — `none < directory < worktree+branch
+  < ephemeral-container`; the host may only strengthen, never weaken.
+- **Normative objects** — Brief, SpeculativeSet and Outcome/PreviousResult
+  schemas (spec-v2.md §10) and the Host's ten musts (§11).
+
+Verified against the pinned evidence base: the decision fixture suite keeps all
+52 pinned fixture IDs green and gains additive v2.0 fixtures (X1/X2 speculative
+opt-in and budget ceiling, N1 nesting default-deny, H1 HumanGate enum, I1
+isolation lower bound); `validate_skills` passes strict. Deliberately still
+absent: the Host itself (execution, worktree spawning, Outcome Ledger) — the
+spec defines its contract; this repo remains the decision layer only.
