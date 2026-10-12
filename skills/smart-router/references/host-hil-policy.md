@@ -8,17 +8,19 @@ document below is preserved as given (its outer markdown packaging fence omitted
 its "mandatory"/"must" wording is host-policy aspiration, and the divergences from the
 pinned rules are flagged here:
 
-Flagged, not fixed:
+Flagged, with flag 1 fixed by tightening this policy (2026-10-12):
 
-1. **The two-repair budget exceeds the normative corrective-dispatch cap.** §4 (steps 4 and
-   7) and §9.1 allow one implementation repair **plus** one CI repair — up to two same-profile
-   corrective dispatches on one task. spec-v2.md §7 and [brief-and-result.md](brief-and-result.md)
-   (plan R01/R02/R03) cap this at **one** same-profile corrective dispatch per original
-   task; the Brief's `attempts` field (§10.1, default 1) *records* that cap and cannot raise
-   it, and the allowance is never renewed by restart, rename, profile change or escalation.
-   The normative files win: a second repair cycle requires a fresh, separately authorized
-   task with its own allowance (all dispatches still roll up to the original task), or an
-   explicit spec revision.
+1. **RESOLVED — tightened to one repair total (plan R01/R02/R03 kept as the cap).** §4 (steps 4
+   and 7) and §9.1 previously allowed one implementation repair **plus** one CI repair — up to
+   two same-profile corrective dispatches on one task. spec-v2.md §7 and
+   [brief-and-result.md](brief-and-result.md) (plan R01/R02/R03) cap this at **one**
+   same-profile corrective dispatch per original task; the Brief's `attempts` field (§10.1,
+   default 1) *records* that cap and cannot raise it, and the allowance is never renewed by
+   restart, rename, profile change or escalation. Resolution: this policy now allows at most
+   **one** same-profile corrective dispatch per original task **total** (implementation or CI,
+   not each). A second cycle requires a fresh, separately authorized task with its own
+   allowance (all dispatches still roll up to the original task), or an explicit spec
+   revision. Flags 2–3 below remain flagged, not fixed.
 2. **"Missing acceptance criteria → `review-before-dispatch`" (§3, rule 2) misroutes a Gate 3
    failure.** The acceptance contract must exist **before** work starts; a missing
    prerequisite before start ⇒ **blocked** ([gates.md](gates.md), Gate 3), and the Brief must
@@ -102,12 +104,12 @@ SmartRouter may raise the gate higher than these defaults; the Host may never lo
    - On success → go to step 5
    - On failure → go to step 4
 
-4. Implementation Repair (max 1)
+4. Implementation Repair (max 1 TOTAL per original task — this is the one allowed repair)
    - attempts += 1
    - If attempts > 1 → escalate to needs-human
    - Send failure evidence + logs back to the same agent
-   - Agent may try one more time
-   - If still failing → escalate
+   - Agent may try one more time (this consumes the single repair allowance)
+   - If still failing → escalate (no further same-profile repair; CI failures later also escalate)
 
 5. Create Pull Request
    - Push branch
@@ -118,10 +120,12 @@ SmartRouter may raise the gate higher than these defaults; the Host may never lo
    - On success → go to step 8
    - On failure → go to step 7
 
-7. CI Repair (max 1)
-   - Send CI logs back to the same agent
-   - Allow one additional repair cycle
-   - If still failing → escalate to needs-human
+7. CI Failure (no additional repair — the §4 allowance is already the one repair total)
+   - On CI failure: if attempts == 0 (implementation needed no repair), the host may spend
+     the single allowance here — send CI logs back to the same agent for one repair cycle
+   - If attempts >= 1 (the allowance is consumed) → escalate to needs-human immediately
+   - If the one repair still fails → escalate to needs-human
+   - A further cycle needs a fresh, separately authorized task (counters still roll up)
 
 8. Auto-merge Decision
    - All acceptance checks passed
@@ -156,8 +160,9 @@ Exactly the same as the autonomous loop above, **except**:
 
 The Host **must** stop and mark the task `needs-human` when any of these occur:
 
-- Implementation repair limit reached (1 attempt)
-- CI repair limit reached (1 attempt)
+- Repair allowance exhausted (max 1 same-profile corrective dispatch per original task total,
+  implementation or CI — plan R01/R02/R03; a CI failure after a consumed implementation repair
+  escalates with no second cycle)
 - Budget or call limit defined in the Brief is exhausted
 - Agent process crashes or becomes unresponsive
 - SmartRouter re-evaluation raises the HumanGate
@@ -208,10 +213,13 @@ Agent loops are one of the biggest risks in autonomous systems.
 The following hard limits are **mandatory**:
 
 #### 9.1 Attempt Caps
-- Maximum **1** same-profile implementation repair
-- Maximum **1** CI repair after the PR is opened
+- Maximum **1** same-profile corrective dispatch per original task **total** (implementation
+  or CI, not each — plan R01/R02/R03; the Brief `attempts` field records this cap)
+- A CI failure after the allowance is consumed escalates to `needs-human`; a further cycle
+  needs a fresh, separately authorized task (all dispatches still roll up to the original task)
 - Total attempts are also bounded by the `attempts` field in the Brief
-- Counters are never reset by restarting the agent, renaming the branch, or changing profiles
+- Counters are never reset by restarting the agent, renaming the branch, changing profiles,
+  or escalating
 
 #### 9.2 Budget Caps
 - Cash and call limits in the Brief are hard ceilings
@@ -256,7 +264,7 @@ This policy gives speed on routine work while keeping strong, selective human co
 
 We prevent loops with **layered hard limits**, not hope:
 
-1. **Strict attempt caps** — only 1 implementation repair + 1 CI repair.
+1. **Strict attempt caps** — only 1 same-profile repair total per original task (plan R01/R02/R03).
 2. **Budget ceilings** — cash and call limits are never renewed.
 3. **Progress detection** — if the agent makes no real progress, stop and escalate.
 4. **Timeouts** — kill unresponsive sessions.

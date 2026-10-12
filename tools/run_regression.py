@@ -16,7 +16,16 @@ Checks (in order):
   N+3. tools/test_app_db_secrets.py      — token-shaped strings in the Freebuff
                                            Desktop app stores (desktop-v2.db*),
                                            baseline-allowlisted after triage
-  N+4. tools/test_watch_app_db_secrets.py— the watcher that scans those stores on
+  N+4. tools/test_redact_text.py           — the pre-write redaction filter reuses the
+                                             app-DB pattern set; its hermetic test joins
+                                             the gate so prevention cannot drift from
+                                             detection.
+  N+5. tools/test_host_watchdog.py         — the host loop-prevention enforcer (wall-clock
+                                             timeout, one-repair-total cap per R01-R03,
+                                             no-progress escalation, needs-human package);
+                                             its hermetic test joins the gate so the HITL
+                                             contract cannot rot unseen.
+  N+6. tools/test_watch_app_db_secrets.py— the watcher that scans those stores on
                                              change runs OUTSIDE the gate (it is a
                                              long-lived process, started by the
                                              operator); its hermetic test joins the
@@ -66,6 +75,8 @@ CHECKS = [
     ("custody_acl", [sys.executable, "tools/check_custody_acl.py"]),
     ("test_app_db_secrets", [sys.executable, "tools/test_app_db_secrets.py"]),
     ("app_db_secrets", [sys.executable, "tools/check_app_db_secrets.py"]),
+    ("test_redact_text", [sys.executable, "tools/test_redact_text.py"]),
+    ("test_host_watchdog", [sys.executable, "tools/test_host_watchdog.py"]),
     ("test_watch_app_db_secrets", [sys.executable, "tools/test_watch_app_db_secrets.py"]),
 ]
 
