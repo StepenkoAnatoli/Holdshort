@@ -69,7 +69,9 @@ Full brief workflow: [brief-and-result.md](brief-and-result.md).
 TASK_ID="$(python tools/task_ids.py --mint)"          # e.g. 9d4e2f1a (uniqueness-checked)
 BRANCH="sr/${TASK_ID}/caching-layer"
 git worktree add -b "$BRANCH" "../.sr-worktrees/${TASK_ID}" main   # outside form
-cp brief.json "../.sr-worktrees/${TASK_ID}/SMARTROUTER_BRIEF.json" # exact Brief, untracked
+cp brief.json "../.sr-worktrees/${TASK_ID}/SMARTROUTER_BRIEF.json" # exact Brief, untracked;
+# `SMARTROUTER_BRIEF.json` is a host filename convention, not normative — spec-v2 §11
+# requires injecting the exact Brief and names no file
 cd "../.sr-worktrees/${TASK_ID}" && launch-agent-here
 ```
 

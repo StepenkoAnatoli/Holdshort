@@ -35,6 +35,13 @@ Checks (in order):
                                              list/verify, fail-closed schema).
   N+10. tools/test_check_provenance.py       — diff-vs-branch provenance for review
                                              (scope, naming, base, worktree binding).
+  N+11. tools/test_spawn_worker.py           — host spawn primitive (worktree+branch,
+                                             verbatim Brief, registry, merge-gated cleanup).
+  N+12. tools/test_guard_launch.py           — pre-launch refusal outside the dedicated
+                                             worktree (main checkout, bare dirs, wrong task).
+  N+13. tools/test_docs_drift.py             — background-docs-to-spec-v2 pin (blocks,
+                                             enums, branch naming, Brief filename note).
+                                             (scope, naming, base, worktree binding).
   N+9. tools/test_watch_app_db_secrets.py— the watcher that scans those stores on
                                              change runs OUTSIDE the gate (it is a
                                              long-lived process, started by the
@@ -92,6 +99,9 @@ CHECKS = [
     ("test_class_breaker", [sys.executable, "tools/test_class_breaker.py"]),
     ("test_outcome_ledger", [sys.executable, "tools/test_outcome_ledger.py"]),
     ("test_check_provenance", [sys.executable, "tools/test_check_provenance.py"]),
+    ("test_spawn_worker", [sys.executable, "tools/test_spawn_worker.py"]),
+    ("test_guard_launch", [sys.executable, "tools/test_guard_launch.py"]),
+    ("test_docs_drift", [sys.executable, "tools/test_docs_drift.py"]),
     ("test_watch_app_db_secrets", [sys.executable, "tools/test_watch_app_db_secrets.py"]),
 ]
 
