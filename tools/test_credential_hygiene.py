@@ -28,6 +28,13 @@ Invariants under test (each one is a real failure mode, observed or reasoned abo
   C13. a UTF-16 store listing (what a redirected Windows console tool can emit) parses.
   C14. chain semantics match gitcredentials(7): an empty helper value resets the
        accumulated list, file order applies, and another URL's section does not leak in.
+  C15. a file under ~/.secrets (e.g. research-kit) is flagged as
+       plaintext-credential-file (exit 1) by NAME ONLY — fixture key material is
+       piece-assembled and never echoed into stdout/stderr.
+  C16. a missing ~/.secrets dir is clean (expected on CI runners and fresh machines).
+  C17. a baselined plaintext-file entry is clean; --update-baseline records the
+       subject (never any content).
+  C18. a --secrets-dir override pointing at a non-directory fails CLOSED (exit 2).
 
 Every fixture is a temp dir; the real credential store and the real hosts.yml are never
 read (cmdkey is never executed, APPDATA/HOME/USERPROFILE all point into the fixture).
@@ -123,7 +130,8 @@ class CredentialHygiene(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
             d = gh_dir(tmp, "github.com:\n    user: U\n    oauth_token: !!!\n")
-            entries, desc, available, hosts, _hdesc, creds, malformed, config = cch.inspect(
+            (entries, desc, available, hosts, _hdesc, creds, malformed, config,
+             _secrets, _secrets_desc) = cch.inspect(
                 store_path=None, gh_config_override=d, credentials_file=tmp / "none",
                 platform="linux", config=[])
             self.assertFalse(available)
@@ -370,6 +378,66 @@ class CredentialHygiene(unittest.TestCase):
                  ["manager", "!/path/git-credential-manager", "store", "git-credential-store",
                   "!'C:\\Program Files\\GitHub CLI\\gh.exe' auth git-credential"]]
         self.assertEqual(kinds, ["manager", "manager", "store", "store", "gh"])
+
+
+    # C15 ------------------------------------------------------------------
+    def test_c15_secrets_dir_file_flagged_by_name_only(self):
+        # Three pieces: no literal in this file is ever a full key shape.
+        fake = "sk-ant-" + "fake0123456789" + "abcdef0123"
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            home = tmp / "userhome"
+            home.mkdir()
+            secrets = home / ".secrets"
+            secrets.mkdir()
+            (secrets / "research-kit").write_text(f"RESEARCH_KIT_KEY={fake}\n",
+                                                 encoding="utf-8")
+            env = env_for(tmp, home_dir=home)
+            r = run_cli(tmp, env)
+            blob = r.stdout + r.stderr
+        self.assertEqual(r.returncode, 1, blob)
+        self.assertIn("plaintext-credential-file: plaintext-file:research-kit", r.stdout)
+        self.assertNotIn(fake, blob,
+                         "the gate must never echo file contents (names only)")
+
+    # C16 ------------------------------------------------------------------
+    def test_c16_missing_secrets_dir_is_clean(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            env = env_for(tmp)  # userhome has no .secrets dir
+            r = run_cli(tmp, env)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("clean (0 new findings", r.stdout)
+
+    # C17 ------------------------------------------------------------------
+    def test_c17_baselined_plaintext_entry_and_update_records_subject(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            home = tmp / "userhome"
+            (home / ".secrets").mkdir(parents=True)
+            (home / ".secrets" / "research-kit").write_text("placeholder\n",
+                                                           encoding="utf-8")
+            env = env_for(tmp, home_dir=home)
+            first = run_cli(tmp, env)
+            self.assertEqual(first.returncode, 1, first.stdout + first.stderr)
+            upd = run_cli(tmp, env, "--update-baseline", "--note", "unit-test triage")
+            self.assertEqual(upd.returncode, 0, upd.stdout + upd.stderr)
+            again = run_cli(tmp, env)
+            self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+            doc = json.loads((tmp / "baseline.json").read_text(encoding="utf-8"))
+        self.assertIn("plaintext-file:research-kit", doc["entries"])
+        self.assertIn("plaintext-credential-file",
+                      doc["entries"]["plaintext-file:research-kit"])
+
+    # C18 ------------------------------------------------------------------
+    def test_c18_secrets_override_not_a_directory_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            notdir = tmp / "not-a-dir"
+            notdir.write_text("x", encoding="utf-8")
+            r = run_cli(tmp, env_for(tmp), "--secrets-dir", str(notdir))
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("FAIL-CLOSED", r.stderr)
 
 
 if __name__ == "__main__":

@@ -33,6 +33,11 @@ Classes (each a real observed state on this machine, 2026-10-12):
   * stale-plaintext-credential — a `~/.git-credentials` line whose host's chain does not
     include the `store` helper (git will never read it), plus an informational line when
     such a file IS in use (plaintext at rest, by the operator's own choice).
+  * plaintext-credential-file — a top-level entry under `~/.secrets/` (e.g. a file like
+    `research-kit` holding API keys): key material at rest outside any credential store,
+    readable by every process running as the user. Flagged by NAME ONLY — contents are
+    never read, so triaging cannot echo a key (same output discipline as everything else
+    here: target names, hosts, usernames and helper names only — never a secret).
 
 Surfaces and resolution (each overridable for tests, matching the app_db precedent):
   * OS store: `cmdkey /list` on Windows. On other platforms the surface does not exist
@@ -42,6 +47,7 @@ Surfaces and resolution (each overridable for tests, matching the app_db precede
   * gh config dir, single resolution exactly as gh does it: GH_CONFIG_DIR, else
     %APPDATA%/GitHub CLI, else $XDG_CONFIG_HOME/gh, else <home>/.config/gh.
   * git's plaintext store: <home>/.git-credentials.
+  * loose secret files: <home>/.secrets (top-level entry names only; contents never read).
   * user home for git config: USERPROFILE wins over HOME, because the pre-commit hook
     exports HOME=<repo root> and a machine config read through that HOME would silently
     miss the user's real credential config.
@@ -75,6 +81,7 @@ REPO_ROOT = TOOLS.parent
 BASELINE_DEFAULT = TOOLS / "credential_hygiene_baseline.json"
 GH_CONFIG_ENV = "GH_CONFIG_DIR"
 CREDENTIALS_FILE_NAME = ".git-credentials"
+SECRETS_DIR_NAME = ".secrets"
 
 # Helpers that read from a store this check can see. Matching is by the family name a
 # helper is written as (`manager`, a path to git-credential-manager, `!`-commands, ...).
@@ -386,6 +393,38 @@ def parse_credentials_file(text: str) -> tuple[list[CredentialFileEntry], list[M
     return good, bad
 
 
+# ---------------------------------------------------------------- loose secret files
+
+def resolve_secrets_dir(override: Path | None) -> Path | None:
+    """<home>/.secrets, or the explicit override (tests)."""
+    if override is not None:
+        return override
+    home = user_home()
+    if home is None:
+        return None
+    return home / SECRETS_DIR_NAME
+
+
+def plaintext_names(secrets_dir: Path | None) -> tuple[list[str], str]:
+    """Top-level entry names under the secrets dir. Contents are NEVER read.
+
+    Returns (names, description). A missing dir is clean; a present-but-unlistable
+    dir (or an override that is not a directory) is fail-closed — an unreadable
+    dir could be hiding key files.
+    """
+    if secrets_dir is None:
+        return [], "no user home resolvable"
+    if not secrets_dir.exists():
+        return [], f"no {SECRETS_DIR_NAME} dir at {secrets_dir}"
+    if not secrets_dir.is_dir():
+        raise FailClosed(f"{secrets_dir} exists but is not a directory")
+    try:
+        names = sorted(e.name for e in secrets_dir.iterdir())
+    except OSError as e:
+        raise FailClosed(f"{secrets_dir} cannot be listed ({e})") from e
+    return names, f"{secrets_dir} ({len(names)} top-level entr(ies), names only)"
+
+
 # ---------------------------------------------------------------- findings
 
 @dataclass
@@ -403,7 +442,8 @@ def hygiene_findings(entries: list[StoreEntry], store_available: bool,
                      hosts: dict[str, HostInfo] | None,
                      cred_entries: list[CredentialFileEntry],
                      malformed: list[MalformedCredentialLine],
-                     config: list[ConfigEntry]) -> tuple[list[Finding], list[str], list[str]]:
+                     config: list[ConfigEntry],
+                     secret_names: list[str] | None = None) -> tuple[list[Finding], list[str], list[str]]:
     """(findings, informational lines, other (unjudged) store targets)."""
     findings: list[Finding] = []
     info: list[str] = []
@@ -481,6 +521,14 @@ def hygiene_findings(entries: list[StoreEntry], store_available: bool,
             f"{CREDENTIALS_FILE_NAME} line {bad.line} is not a usable entry ({bad.reason})",
             "fix or remove that line"))
 
+    for name in secret_names or []:
+        findings.append(Finding(
+            "plaintext-credential-file", f"plaintext-file:{name}",
+            f"{SECRETS_DIR_NAME}/{name} holds key material at rest outside any credential "
+            "store (flagged by name only — contents were never read)",
+            "move each key into Windows Credential Manager, delete the file, then prune "
+            "this baseline entry"))
+
     return findings, info, other
 
 
@@ -526,6 +574,9 @@ def parse_args(argv: list[str] | None = None):
                     help=f"gh config dir (overrides {GH_CONFIG_ENV} and the default order)")
     ap.add_argument("--credentials-file", type=Path, default=None,
                     help=f"git store file to inspect (default: <home>/{CREDENTIALS_FILE_NAME})")
+    ap.add_argument("--secrets-dir", type=Path, default=None,
+                    help=f"loose-secrets dir to inspect (default: <home>/{SECRETS_DIR_NAME}; "
+                         "entry names only, contents never read)")
     ap.add_argument("--baseline", type=Path, default=BASELINE_DEFAULT,
                     help=f"baseline allowlist (default: {BASELINE_DEFAULT.name})")
     ap.add_argument("--update-baseline", action="store_true",
@@ -537,9 +588,12 @@ def parse_args(argv: list[str] | None = None):
 
 def inspect(store_path: Path | None = None, gh_config_override: Path | None = None,
             credentials_file: Path | None = None, platform: str | None = None,
-            config: list[ConfigEntry] | None = None):
+            config: list[ConfigEntry] | None = None,
+            secrets_dir: Path | None = None):
     """Gather every surface once, for the CLI and for tests.
-    Returns (entries, store_desc, store_available, hosts, hosts_desc, creds, malformed, config)."""
+    Returns (entries, store_desc, store_available, hosts, hosts_desc, creds, malformed,
+    config, secret_names, secrets_desc). Pass secrets_dir=None to use <home>/.secrets;
+    tests may pass an explicit dir."""
     entries, store_desc = store_listing(store_path, platform)
     store_available = (store_path is not None) or (platform or os.name) == "nt"
     config_dir = resolve_gh_config_dir(gh_config_override)
@@ -556,18 +610,21 @@ def inspect(store_path: Path | None = None, gh_config_override: Path | None = No
             raise FailClosed(f"{creds_path} is unreadable ({e})") from e
     if config is None:
         config = config_entries(git_env())
-    return entries, store_desc, store_available, hosts, hosts_desc, creds, malformed, config
+    secrets_path = secrets_dir if secrets_dir is not None else resolve_secrets_dir(None)
+    secret_names, secrets_desc = plaintext_names(secrets_path)
+    return (entries, store_desc, store_available, hosts, hosts_desc, creds, malformed,
+            config, secret_names, secrets_desc)
 
 
 def run(args) -> int:
     try:
         (entries, store_desc, store_available, hosts, hosts_desc,
-         creds, malformed, config) = inspect(
+         creds, malformed, config, secret_names, secrets_desc) = inspect(
             store_path=args.store_listing, gh_config_override=args.gh_config_dir,
-            credentials_file=args.credentials_file)
+            credentials_file=args.credentials_file, secrets_dir=args.secrets_dir)
         baseline = load_baseline(args.baseline)
         findings, info, other = hygiene_findings(
-            entries, store_available, hosts, creds, malformed, config)
+            entries, store_available, hosts, creds, malformed, config, secret_names)
         new = [f for f in findings if f.subject not in baseline]
         known = [f for f in findings if f.subject in baseline]
         if args.update_baseline:
@@ -592,7 +649,7 @@ def run(args) -> int:
                   "--note \"...\"")
             return 1
         summary = (f"credential_hygiene: clean (0 new findings; {len(known)} baselined; "
-                   f"store: {store_desc}; gh config: {hosts_desc})")
+                   f"store: {store_desc}; gh config: {hosts_desc}; secrets: {secrets_desc})")
         print(summary)
         for line in info:
             print(f"  info: {line}")
