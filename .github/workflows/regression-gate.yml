@@ -68,6 +68,19 @@ jobs:
       - name: Run the full regression gate (mirror of the pre-commit hook)
         run: python tools/run_regression.py
 
+  watcher-once:
+    name: watcher-once-proof
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Watcher --once against a synthetic store (dirty alerts, clean silent)
+        run: python tools/ci_watcher_once_proof.py
+
   setup-prove:
     name: onboarding-proof
     runs-on: ubuntu-latest

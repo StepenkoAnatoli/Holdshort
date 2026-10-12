@@ -12,6 +12,8 @@
 # Sequence:
 #   1. (optional) clone -> wire core.hooksPath
 #   2. gate baseline on the fresh checkout (full regression gate, exit 0)
+#   2b. BOOT redaction re-verify: the filter fires on a synthetic probe
+#       (placeholder out, value nowhere) and the message-schema guard is green
 #   3. PROOF 1: scratch commit allowed (hook+gate run and pass; rolled back)
 #   4. PROOF 2: staged fake key REFUSED (fail-closed; rolled back)
 #   5. PREFLIGHT (runbook §0–§2, automated):
@@ -38,6 +40,11 @@ else
   cd "$(git rev-parse --show-toplevel)"
 fi
 
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  # NOTE: fail (not die) — die() is defined further below.
+  fail "worktree has uncommitted changes to tracked files — commit or stash them first; PROOF 1 rolls HEAD and must run on a clean tree (this guard exists because the proof once destroyed uncommitted work)"
+fi
+
 die() { echo "setup_machine: FAIL — $*" >&2; exit 1; }
 
 echo "==> wiring core.hooksPath"
@@ -50,6 +57,24 @@ python tools/run_regression.py > "$GATE_OUT" 2>&1 || {
 }
 tail -1 "$GATE_OUT"
 rm -f "$GATE_OUT"
+
+echo "==> BOOT: redaction layer re-verify (every restart self-checks the triggers)"
+R1='github_pa'; R2='t_'; R3='A1b2C3d4E5A1b2C3d4E5A1b2C3d4E5'
+BOOT_FAKE="${R1}${R2}${R3}"
+if printf '%s' "$BOOT_FAKE" | python3 tools/redact_text.py --check >/dev/null 2>&1; then
+  unset BOOT_FAKE; die "redaction filter did not fire on a token-shaped probe"
+fi
+BOOT_OUT="$(printf '%s' "$BOOT_FAKE" | python3 tools/redact_text.py)" || { unset BOOT_FAKE; die "redact_text filter failed"; }
+case "$BOOT_OUT" in
+  *"[REDACTED-github-pat-fine-grained]"*) echo "    PASS — probe redacted to class placeholder" ;;
+  *) unset BOOT_FAKE BOOT_OUT; die "redaction placeholder missing from filter output" ;;
+esac
+BOOT_LEAK="$(printf '%s' "$BOOT_OUT" | grep -c -F -- "$BOOT_FAKE" || true)"
+[ "$BOOT_LEAK" = "0" ] || { unset BOOT_FAKE BOOT_OUT; die "redacted output still carries the probe value"; }
+unset BOOT_FAKE BOOT_OUT BOOT_LEAK R1 R2 R3
+echo "    PASS — value nowhere in output (count-only check, never printed)"
+python3 tools/check_message_schema.py >/dev/null 2>&1 || die "message schema guard red — a messages table was recreated without its redaction triggers"
+echo "    PASS — schema guard green (absent store skips clean)"
 
 echo "==> PROOF 1: pre-commit hook fires on a clean scratch commit"
 # Scratch identity, LOCAL to this clone only: a bare runner/VM has no
@@ -66,10 +91,11 @@ if git commit -m "setup: gate proof (rolled back, not pushed)" >/dev/null 2>&1; 
   rm -f "$SCRATCH.txt"
   echo "    PASS — hook ran the gate and allowed a clean commit"
 else
-  git reset -q --hard HEAD~1 >/dev/null 2>&1
+  # The commit was refused: nothing was created, so HEAD must not move.
+  git reset -q -- "$SCRATCH.txt" >/dev/null 2>&1 || true
   rm -f "$SCRATCH.txt"
-  git commit -m "setup: gate proof (rolled back, not pushed)" 2>&1 | head -5 >&2 || true
-  die "hook did not allow a clean commit — gate wiring is broken"
+  git commit --dry-run 2>&1 | head -10 >&2 || true
+  die "hook did not allow a clean commit — gate wiring is broken (HEAD untouched)"
 fi
 
 echo "==> PROOF 2: a staged fake key is REFUSED (fail-closed)"
@@ -88,8 +114,9 @@ if git commit -m "setup: leak proof (must be refused)" >/dev/null 2>&1; then
   git reset -q --hard HEAD~1
   die "hook ACCEPTED a fake key — enforcement is not working"
 fi
-git reset -q --hard HEAD
-echo "    PASS — refusal confirmed (commit blocked)"
+git reset -q -- README.md >/dev/null 2>&1 || true
+git checkout -q -- README.md >/dev/null 2>&1 || true
+echo "    PASS — refusal confirmed (commit blocked; worktree otherwise untouched)"
 
 # ---------------------------------------------------------------------
 # PREFLIGHT (runbook §0–§2) — a fresh machine ends ready, not just gated.
