@@ -150,3 +150,8 @@ This keeps everything easy to track and clean up.
 
 **Key rule:**  
 The agent should never be started in the main working directory when SmartRouter requested `worktree+branch`. Always launch it inside its private worktree.
+
+**v3.0 autonomy default:** a human checkpoint shown in this example applies only
+when explicitly requested by the user. Otherwise `HumanGate` is `none`; the Host
+verifies and completes authorized work autonomously. Failed eligibility or exhausted
+limits yield a recorded automatic stop, not a human approval prompt (spec-v2.md §8.2).

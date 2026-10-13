@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-10-13 — autonomous default, explicit HITL, observed usage and project boundaries
+
+At the user's explicit direction, canonical skill v3.0 makes HumanGate none the
+default for all task classes. Human checkpoints require a recorded user request;
+missing authorization, verification, accounting or remaining allowance still blocks.
+The command supervisor emits blocked packages without a human action menu unless
+--human-requested is supplied, and class-table lookup honors the same opt-in.
+Repair limits remain one total (R01/R02/R03), cannot be raised by CLI, and terminal
+repair failure prevents another launch. Supervisor output is redacted before logs,
+state and packages are written. A metadata-only usage exporter and engineering
+record capture observed GPT counts, missing inputs, failures and future risks
+without turning subscription usage into an invented provider bill or savings claim.
+Removed unrelated consumer handoff/adoption records and named fixture coupling.
+Credential custody defaults to ~/.secrets/smart-router; sibling project inventories
+are excluded. Historical binary bundles are removed from current source. The ACL
+probe uses its selected runtime's own modules; two Windows-only test harness leaks
+are fixed without weakening production checks.
+
 New-reviewer guide to **enforcement hardening**, told chronologically: each
 protection layer was added because of a real observed failure, and each
 entry below names the commit that shipped it. See

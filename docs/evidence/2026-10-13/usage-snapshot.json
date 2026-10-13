@@ -1,0 +1,34 @@
+{
+  "accounting_note": "Cached input overlaps input; reasoning overlaps output. Unknown is not zero. No savings derived.",
+  "captured_at": "2026-10-13T19:00:11.905891+00:00",
+  "context_window_tokens": 475000,
+  "cumulative_usage": {
+    "cache_write_input_tokens": 0,
+    "cached_input_tokens": 21616640,
+    "input_tokens": 22018331,
+    "output_tokens": 77631,
+    "reasoning_output_tokens": 39499,
+    "total_tokens": 22095962
+  },
+  "is_final_bill": false,
+  "last_observed_response_usage": {
+    "cache_write_input_tokens": 0,
+    "cached_input_tokens": 84352,
+    "input_tokens": 85279,
+    "output_tokens": 1214,
+    "reasoning_output_tokens": 229,
+    "total_tokens": 86493
+  },
+  "latest_model": "gpt-6.1-sol",
+  "model_attribution": "session aggregate; not allocated per model or task",
+  "models_observed": [
+    "gpt-6.1-sol"
+  ],
+  "provider_cost_usd": null,
+  "reasoning_effort": "high",
+  "schema_version": 1,
+  "source_id": "66e112aaf0c99fc3",
+  "token_events_observed": 124,
+  "usage_observed_at": "2026-10-13T18:59:41.160Z",
+  "usage_status": "observed"
+}

@@ -40,7 +40,7 @@ When multiple candidates pass Gates 1–4, SmartRouter applies this preference:
 | Feature              | Default Value              | Notes |
 |----------------------|----------------------------|-------|
 | Isolation            | `worktree+branch` for most non-trivial work | Can be lower only for truly trivial tasks |
-| HumanGate            | `none`                     | Raised automatically when risk or uncertainty is high |
+| HumanGate            | `none`                     | Human intervention only on explicit user request |
 | NestedAllowed        | `no`                       | Must be explicitly enabled |
 | MaxNestingDepth      | `0` or `1`                 | 2 only if Host policy allows |
 | Speculative mode     | Off                        | Requires explicit Host opt-in |
@@ -51,5 +51,8 @@ When multiple candidates pass Gates 1–4, SmartRouter applies this preference:
 **Default behavior = prefer `direct`, stay simple, stay safe.**
 
 SmartRouter only moves to more complex options (`delegate`, nested workers, speculative
-parallel, higher HumanGate, stronger isolation) when the simpler path is clearly insufficient
+parallel, stronger isolation) when the simpler path is clearly insufficient
 or too risky.
+
+HumanGate stays `none` unless the user asks for a human checkpoint. A risk or
+verification block stops automatically without requesting approval (spec-v2.md §8.2).

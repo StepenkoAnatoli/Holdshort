@@ -225,15 +225,9 @@ all — they are *regenerated* (Settings → Password and authentication → Rec
 which invalidates every previously printed code. If such a file was ever exposed, regenerate, delete
 the file, and keep the new codes in a password manager rather than in a text file.
 
-Last inventoried 2026-10-12: `Research-Kit`'s root held no key or token files (the 10-11 audit's
-finding there is resolved), while the Desktop held three credential-class files, 51–206 B (an API
-key, a dated token export, GitHub recovery codes; one of them is a copy of the live `github.com` credential, §3.2). Re-derive rather than trust this line:
-
-```bash
-find "$USERPROFILE/Desktop" "$USERPROFILE/Research-Kit" -maxdepth 1 -type f \
-     \( -iname '*token*' -o -iname '*key*' -o -iname '*credential*' -o -iname '*.env' \) \
-     -printf '%s\t%f\n'
-```
+Inspect SmartRouter-owned credential custody only (`~/.secrets/smart-router`,
+or an explicitly supplied project path). Other projects' inventories and personal
+Desktop exports are outside this repository's scope.
 
 This runbook names classes and sizes rather than file names because this repository is public; the
 machine-local detail belongs on the machine. A plaintext file whose only content *is* a credential

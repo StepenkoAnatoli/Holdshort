@@ -186,8 +186,10 @@ def run(root: Path, env: dict) -> dict:
 
     # P3 — git agrees both worktrees are live at once.
     listed = _must(main, "worktree", "list", "--porcelain", env=env, what="worktree list")
+    listed_paths = {os.path.normcase(os.path.normpath(line[9:]))
+                    for line in listed.splitlines() if line.startswith("worktree ")}
     for s in spawned:
-        if str(s["path"]) not in listed:
+        if os.path.normcase(os.path.normpath(s["path"])) not in listed_paths:
             raise DryRunFailed(f"P3 failed: {s['path']} absent from git worktree list")
 
     # Steps 5-6: host merges sequentially, records §10.3 Outcomes in the canonical
@@ -224,8 +226,10 @@ def run(root: Path, env: dict) -> dict:
 
     # P5 — cleanup complete, ledger complete.
     listed_after = _must(main, "worktree", "list", "--porcelain", env=env, what="worktree list")
+    remaining_paths = {os.path.normcase(os.path.normpath(line[9:]))
+                       for line in listed_after.splitlines() if line.startswith("worktree ")}
     for s in spawned:
-        if str(s["path"]) in listed_after:
+        if os.path.normcase(os.path.normpath(s["path"])) in remaining_paths:
             raise DryRunFailed(f"P5 failed: {s['path']} survives cleanup")
     if [e["outcome"] for e in ledger] != ["accepted", "accepted"]:
         raise DryRunFailed(f"P5 failed: ledger outcomes {ledger}")

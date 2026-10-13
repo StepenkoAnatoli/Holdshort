@@ -68,8 +68,10 @@ class ClassBreaker(unittest.TestCase):
 
     # C2 ----------------------------------------------------------------------
     def test_c2_gate_is_a_lookup(self):
-        self.assertEqual(cb.effective_gate(TABLE, "auth"), "review-before-merge")
-        self.assertEqual(cb.effective_gate(TABLE, "new-class"), "review-before-merge")
+        self.assertEqual(cb.effective_gate(TABLE, "auth"), "none")
+        self.assertEqual(cb.effective_gate(TABLE, "new-class"), "none")
+        self.assertEqual(cb.effective_gate(TABLE, "auth", human_requested=True), "review-before-merge")
+        self.assertEqual(cb.effective_gate(TABLE, "new-class", human_requested=True), "review-before-merge")
         with self.assertRaises(cb.FailClosed):
             cb.effective_gate({"classes": {"x": "auto-merge-whenever"}}, "x")
 

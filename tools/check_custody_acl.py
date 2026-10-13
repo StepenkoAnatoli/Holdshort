@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Custody-directory ACL lockdown — the token tree must stay readable by the user alone.
 
-Why this exists: on 2026-10-12 the custody tree (~/.secrets, notably
-~/.secrets/research-kit) was locked down — inheritance broken on every object and full
-control re-granted to the user account alone, so SYSTEM and Administrators no longer hold
-STANDING access to the credential files kept there. ACL state regresses silently: an
+The default custody tree is ~/.secrets/smart-router. Its intended policy is inheritance
+broken on every object and full control granted to the user account alone, so SYSTEM
+and Administrators hold no STANDING access to the files. ACL state regresses silently: an
 installer, a profile tool, or one careless `icacls /reset` re-enables inheritance and the
 credentials flow back to every administrator with no signal anywhere. This check rides the
 pre-commit gate (tools/run_regression.py), so a commit cannot land while the tree sits
@@ -125,8 +124,8 @@ def default_root(env: dict | None = None) -> Path:
     env = env if env is not None else os.environ
     for var in ("USERPROFILE", "HOME"):
         if env.get(var):
-            return Path(env[var]) / ".secrets"
-    return Path.home() / ".secrets"
+            return Path(env[var]) / ".secrets" / "smart-router"
+    return Path.home() / ".secrets" / "smart-router"
 
 
 def na_reason(root: Path, platform: str | None = None) -> str | None:
@@ -150,9 +149,11 @@ def gather(root: Path) -> dict:
     if not exe:
         raise FailClosed("no powershell/pwsh on PATH — the ACL cannot be read")
     b64 = base64.b64encode(probe_script(root).encode("utf-16-le")).decode("ascii")
+    probe_env = dict(os.environ)
+    probe_env["PSModulePath"] = str(Path(exe).parent / "Modules") + os.pathsep + probe_env.get("PSModulePath", "")
     try:
         proc = subprocess.run([exe, "-NoProfile", "-NonInteractive", "-EncodedCommand", b64],
-                              capture_output=True, timeout=60)
+                              capture_output=True, timeout=60, env=probe_env)
     except subprocess.TimeoutExpired as e:
         raise FailClosed("the ACL probe timed out — the tree cannot be judged") from e
     except OSError as e:

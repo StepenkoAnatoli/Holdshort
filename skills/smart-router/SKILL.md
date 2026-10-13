@@ -3,11 +3,12 @@ name: smart-router
 description: Canonical fail-closed model-routing policy for coding-agent hosts. Use before every new coding task or model dispatch decision: classify eligibility through ordered gates (permissions/privacy, capabilities, verification, affordability, economics), choose direct work, bounded isolated delegation, opt-in speculative exploration, escalation, or blocked, and produce a route decision with deterministic reasons. Recommends only; does not switch the running model, enforce caps, or guarantee host enforcement. Isolation is a lower bound the host may only strengthen; when the route is delegate or speculative the host spawns isolated workers (git worktree + branch preferred) that own the brief end-to-end.
 license: MIT
 metadata:
-  version: "2.0.0"
-  previous: "1.1.0"
+  version: "3.0.0"
+  previous: "2.0.0"
   spec-pinned: "docs/DEVELOPMENT_PLAN.md@d7c00f96a17c35e6c47c5ba1f7e3a9160c966042"
   authority: canonical
   changelog: |
+    - v3.0.0: user-directed autonomous default; HumanGate only on explicit user request; automatic stops stay blocked.
     - v2.0.0: fifth route `speculative` (host opt-in, high uncertainty only), HumanGate, NestedAllowed/MaxNestingDepth.
     - v2.0.0: isolation lattice (none < directory < worktree+branch < ephemeral-container) as a normative lower bound.
     - v2.0.0: normative machine-readable objects (Brief, SpeculativeSet, Outcome) and Host responsibilities in references/spec-v2.md.
@@ -153,9 +154,11 @@ Brief (spec-v2.md §10.1) or SpeculativeSet (§10.2) — **must** also be emitte
 
 ## Adaptive surface (v2.0) — default-deny
 
-- **HumanGate** — `review-before-dispatch`, `review-before-merge`, or `approval-required` when
-  consequence class or Gate 1 says so; `none` only for fully autonomous work. The host must
-  honour it before the corresponding action. Concrete host behavior per gate (background
+- **HumanGate** — default `none` for every task. Emit `review-before-dispatch`,
+  `review-before-merge`, or `approval-required` only when the user explicitly requested
+  that checkpoint for this task or project. Risk, complexity, uncertainty, and failures
+  alone never opt the user into HITL. Missing authorization or failed gates remain
+  `blocked`; they do not create an approval prompt. Honour an explicitly requested gate. Concrete host behavior per gate (background
   sketch): [references/host-hil-policy.md](references/host-hil-policy.md).
 - **Nested delegation** — only when this decision sets `NestedAllowed: yes`. The parent worker
   remains the owner; the sub-worker gets a NestedBrief with tighter bounds and a reduced

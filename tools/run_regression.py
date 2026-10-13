@@ -100,6 +100,8 @@ CHECKS = [
     ("app_db_secrets", [sys.executable, "tools/check_app_db_secrets.py"]),
     ("test_redact_text", [sys.executable, "tools/test_redact_text.py"]),
     ("test_host_watchdog", [sys.executable, "tools/test_host_watchdog.py"]),
+    ("test_usage_snapshot", [sys.executable, "tools/test_usage_snapshot.py"]),
+    ("test_project_scope", [sys.executable, "tools/test_project_scope.py"]),
     ("test_task_ids", [sys.executable, "tools/test_task_ids.py"]),
     ("test_host_dry_run", [sys.executable, "tools/test_host_dry_run.py"]),
     ("test_class_breaker", [sys.executable, "tools/test_class_breaker.py"]),

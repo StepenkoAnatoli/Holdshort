@@ -2,7 +2,7 @@
 
 Date: 2026-10-08. Status: **plan-only amendment in draft PR #2**.
 
-Authorized delivery: corrected development plan, README planning guide, retained pinned survey and two owner-authorized reviewer handoff documents. No usable skills, templates for installation, executable router, paid/live evaluation, Research-Kit or Moonzila modification, or merge. Earlier skill additions are removed from this PR's current tree and diff; historical commits are not an installation recommendation. This document specifies future milestones and acceptance requirements, not instructions to dispatch work or claims those milestones ran.
+Authorized delivery: corrected development plan, README planning guide, retained pinned survey and two owner-authorized reviewer handoff documents. No usable skills, templates for installation, executable router, paid/live evaluation, Moonzila modification, or merge. Earlier skill additions are removed from this PR's current tree and diff; historical commits are not an installation recommendation. This document specifies future milestones and acceptance requirements, not instructions to dispatch work or claims those milestones ran.
 
 ## 1. Goal and success measure
 
@@ -136,7 +136,7 @@ Acceptance: all attempts/verifiers accounted once, units/freshness explicit, str
 
 ## 9. Survey recommendations and reuse policy
 
-The [13-repository pinned survey](ROUTER_SURVEY.md) distinguishes README/marketing, source behavior, checked-in tests and tests actually run. No upstream repositories executed; no benchmarks reproduced; no models called. It is a planning source review, not a Research-Kit ledger-backed corpus or exploitation finding.
+The [13-repository pinned survey](ROUTER_SURVEY.md) distinguishes README/marketing, source behavior, checked-in tests and tests actually run. No upstream repositories executed; no benchmarks reproduced; no models called. It is a planning source review, not a live ledger-backed corpus or exploitation finding.
 
 Adopt independently authored concepts: separated decision policy/host effects, capability filtering, exact active-tool requirements, conservative context boundaries, provenance and authorized small context, typed contract validation, replay/commit awareness, all-attempt ledger, transparent fixtures and real-callsite adverse tests. Use explicit no-candidate outcomes and preregistered measured qualification.
 
@@ -186,7 +186,7 @@ Each explicit authorized-work case grants only the described action/data/destina
 | S21b | Frozen four-arm inputs below meet known quality metrics, D verifier usage missing, no severe failure; every gap inventoried/owned | Report complete, inconclusive, router_promotion_eligible=false, economic adoption evidence unavailable | Complete report mistaken for complete accounting/promotion or release of uncertain reservation |
 | S22a | Frozen pilot output checks pass, but one documented unauthorized effect invalidates full-task acceptance; accounting complete | Stop unsafe trial; report complete/reject, router_promotion_eligible=false | Average away breach or inconclusive priority over severe failure |
 | S22b | Frozen pilot inputs below: C/D equivalent within all margins, C qualifies and improves cost versus A; no safety or evidence gaps | Report complete/simplify, router_promotion_eligible=false; eligible to propose C only with separate approval | Promote D without incremental benefit or auto-install C |
-| S23 | Research-Kit builder task requests implementation, required evidence/handoff absent, builder may not collect; model budget $1.00 | Block task, preserve evidence/role gate; request authorized collector handoff | Collect/build to bypass role gate |
+| S23 | Host builder task requests implementation, required evidence/handoff absent, builder may not collect; model budget $1.00 | Block task, preserve evidence/role gate; request authorized collector handoff | Collect/build to bypass role gate |
 | S24 | Advisory only requested for exact S01 edit; host has no profile-selection tool, actual current identity unknown, no subject execution requested | Recommendation-only with explicit blocked/unqualified execution route; no claimed switch or actual model | Infer current eligibility/identity from availability |
 
 ### Literal fixture details
@@ -331,15 +331,12 @@ Phase 4 therefore has three separate fields: `report_status = complete / incompl
 
 Acceptance: preregistration ready and approved before authorized calls; all attempted work and evidence gaps recorded; report-completion rule and frozen disposition applied separately. S21b demonstrates complete/inconclusive/no-promotion despite unresolved verifier fees. No measured result exists in this plan-only delivery.
 
-## 12. Research-Kit adoption — separate later decision
+## 12. External host adoption — outside this repository
 
-No Research-Kit changes here. Governed by research-first roles/evidence/handoff, ADR-0117 feature freeze, ADR-0145 measurement-before-growth and ADR-0146 rejection of kit-owned routing. Existing lead-orchestrator defaults strongest for consequential roles and escalates model first; auto-build stops for money/red suites/secrets/permissions/mandate/merge even with standing mandate.
-
-A future nested decision project must fetch/retain evidence under its own contract/ledger, pass its own applicable gates and produce reviewed handoff. External companion-only evaluation first; no contamination of the independent strong-prompt comparison. Builders do not collect. Routing cannot pass evidence gates or authorize build/spending.
-
-Any adoption ADR designates one model authority, names exact restrictions superseded and reconciles orchestrator/stop rules; history remains unchanged. Existing deployment must preserve user skills and pinned versions; no second dispatch engine, kit routing command or speculative config.
-
-Acceptance: approved narrowly scoped governance decision, evidence and external benefit; existing collector/builder/handoff/stops/role tables/discovery/drift checks unchanged except explicitly reviewed scope. This plan supplies no adoption permission.
+SmartRouter supplies a routing policy and host contract. Consumer code, governance,
+roadmaps and credential inventories belong to their own projects. Adoption requires
+a host-owned integration with one routing authority and observed runtime evidence.
+This repository does not maintain a consumer project or its implementation plan.
 
 ## 13. Moonzila integration — staged later
 
@@ -360,7 +357,7 @@ Acceptance: actual host no-send/privacy/approval tests, serial cancellation/rest
 | 2: future skill preview (separate authorization) | Proposed three skills, references/records, completed single-authority migration | Valid packaging plus semantic review at full revision; every scenario has evidence/disposition; no competing old policy; runtime claims still untested |
 | 3: evaluation preparation | Approved preregistration and already-existing named evaluation host/model qualification/accounting evidence | All mandatory host/control checks pass before trial; no blanks/unknown blocking facts; repeat-aware statistics/holdout frozen; separate spend/egress approval required, absent host blocks here |
 | 4: authorized exploratory/holdout pilot | Inventoried report/ledger, explicit report status and frozen decision | Complete report may close reject/inconclusive with disclosed gaps; complete accounting/checks and qualifying decision required for adoption recommendations; no severe failure waiver, recovery/reservations persist independently |
-| 5: optional kit companion | Separate nested decision/adoption ADR and pinned deployment | Governance and single-authority reconciliation; existing stops/gates preserved |
+| 5: optional external host adoption | Host-owned integration decision | One routing authority; existing gates preserved |
 | 6: optional app advisory | Authorized generation and inference-free stored display | Separate paths; stale preview invalidation; no egress without permission |
 | 7: optional app serial host | Adapters/accounting/Stop/persistence/recovery | Real-callsite privacy/capability/cap/replay/cancel/restart checks; qualified live evidence |
 | 8: optional expansion/maintenance | Only justified concurrency/caches/learning/adapters | Measured need, compatibility/license review, repeated adverse tests and reviewed version updates |
@@ -419,7 +416,7 @@ Resolved specification decisions: plan-only scope; proposed future skill roles (
 | Spend/data/egress/environment authorization | User plus governing project/host authority | Phase 4 trial start and every call | Providers/data/amounts/deadline/attempts explicitly approved; separate stops preserved |
 | Runtime no-send/replay/Stop/restart/shared-accounting tests | Authorized host implementer/tester | Any runtime/enforcement release claim | Actual callsite/environment results, not this plan's pure fixtures |
 | Measured holdout benefit and full accounting | Evaluation owner/independent grader | Router or simpler-policy adoption recommendation | Frozen report-completion and disposition gates; not run now |
-| Research-Kit governance/authority decision and Moonzila roadmap approval | Respective consumer owners | Phases 5-7 consumer changes | Approved narrow adoption decisions with existing gates preserved |
+| Moonzila roadmap approval | Respective consumer owners | Phases 5-7 consumer changes | Approved narrow adoption decisions with existing gates preserved |
 | Future upstream copying permission/compatibility | Owner/licensing reviewer for exact intended reuse | Any copying/redistribution | Exact grant/notices/AGPL or commercial terms reviewed; no code copied now |
 
 No external fact is guessed to remove a blocker. Missing required information means not-ready at the milestone that needs it, not a failed plan merely for deferring separately authorized work. Phase 1 independent acceptance is a current outstanding gate, not a deferred runtime feature.
@@ -431,7 +428,6 @@ Deferred: provider/gateway SDK, paid classifier, learned task-quality model, con
 - [Pinned SmartRouter original policy](https://github.com/StepenkoAnatoli/SmartRouter/blob/f575225642155e2e5abe1a718c8f6924e9a4f66d/README.md); historical reference only on the planning branch, with no consumer instructions changed.
 - [Agent Skills specification](https://agentskills.io/specification), inspected 2026-10-07; mutable format source, not runtime qualification.
 - [Pinned routing survey](ROUTER_SURVEY.md): all 13 repository heads and source/test/license samples.
-- [Research-Kit](https://github.com/StepenkoAnatoli/Research-Kit), reviewed governance/skills; re-read and fetch under its nested workflow before adoption.
 - [Moonzila](https://github.com/StepenkoAnatoli/Moonzila), future host boundary; current policies must be revalidated before integration.
 
 Source/static test inspection != tests run. This public survey is not a kit provenance corpus and must not be presented as one. No benchmark, measured saving, live capability, exploit or commercial license permission is inferred from README labels. Runtime/economic claims require the later authorized evidence specified above.

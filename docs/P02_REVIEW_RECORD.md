@@ -65,4 +65,4 @@
 
 - Live-provider behaviour: real-model responses, real rate behavior under load — **not** examined.
 - `--strict` sweep promotion against a *non-empty* competing-authority finding set (clean tree left nothing to promote; tool logic inspected, not executed non-empty).
-- Phases 5–7 consumer work (Research-Kit / Moonzila): consumer-owned by plan §13/§16; not in scope.
+- Phases 5–7 consumer work (Moonzila): consumer-owned by plan §13/§16; not in scope.

@@ -84,9 +84,9 @@ def file_obj(path, aces=None, owner=USER, protected=True) -> dict:
 
 def locked_objects() -> list[dict]:
     """The 2026-10-12 state: 2 locked directories, 6 explicit non-inheritable files."""
-    objs = [dir_obj(ROOT), dir_obj(ROOT + "\\research-kit")]
+    objs = [dir_obj(ROOT), dir_obj(ROOT + "\\router-key-file")]
     for i in range(6):
-        objs.append(file_obj(f"{ROOT}\\research-kit\\f{i}.dat"))
+        objs.append(file_obj(f"{ROOT}\\router-key-file\\f{i}.dat"))
     return objs
 
 
@@ -209,7 +209,7 @@ class CustodyAcl(unittest.TestCase):
     # L10 ------------------------------------------------------------------
     def test_l10_inherited_file_ace_is_refused_until_explicit(self):
         objs = locked_objects()
-        objs.append(file_obj(f"{ROOT}\\research-kit\\new.dat",
+        objs.append(file_obj(f"{ROOT}\\router-key-file\\new.dat",
                              aces=[ace(inherited=True)]))
         with tempfile.TemporaryDirectory() as td:
             fixture = write_fixture(Path(td), objs)
