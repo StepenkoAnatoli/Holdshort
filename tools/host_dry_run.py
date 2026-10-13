@@ -9,7 +9,9 @@ touched; everything lives under a temp dir (or --keep) with an isolated git env.
 Lifecycle per worker (mirrors host-worktree-flow/agents/registry/merge):
 
   1. mint task id (`tools/task_ids.py`: secrets entropy + live-scope uniqueness)
-  2. `git worktree add -b sr/<id>/<slug> ../.sr-worktrees/<id> main` (outside form)
+  2. `git worktree add -b sr/<id>/<slug> ../.sr-worktrees/<id> main` (outside form,
+     host-serialized under one creation lock — the adds mutate shared repo
+     admin state, so worker parallelism begins at step 3)
   3. inject the exact Brief (`SMARTROUTER_BRIEF.json`) + start simulated work
   4. worker edits, commits on its branch; acceptance check runs inside its worktree
   5. host merges each branch into main, records a §10.3 Outcome per task
@@ -38,6 +40,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -58,6 +61,14 @@ WORKERS = (
     {"slug": "caching-layer", "file": "feature-a.txt", "body": "worker-A payload\n"},
     {"slug": "auth-refactor", "file": "feature-b.txt", "body": "worker-B payload\n"},
 )
+
+
+_CREATE_LOCK = threading.Lock()
+"""Host-side creation lock: `git worktree add` mutates the shared
+`.git/worktrees/` admin dir, and two concurrent adds race — CI proved it
+(PR #42: sibling `fatal: failed to read .git/worktrees/<other>/commondir`).
+Creation serializes here; everything after checkout stays parallel, and P3
+still proves both worktrees live simultaneously."""
 
 
 class DryRunFailed(RuntimeError):
@@ -102,8 +113,10 @@ def spawn_worker(main: Path, wt_root: Path, task_id: str, spec: dict, env: dict)
     path = wt_root / task_id
     if path.exists():
         raise DryRunFailed(f"collision: worktree path {path} already exists for {task_id}")
-    _must(main, "worktree", "add", "-b", branch, str(path), "main", env=env,
-          what=f"worktree add {task_id}")
+    # Serialized (see _CREATE_LOCK): concurrent adds race on the shared admin dir.
+    with _CREATE_LOCK:
+        _must(main, "worktree", "add", "-b", branch, str(path), "main", env=env,
+              what=f"worktree add {task_id}")
     try:
         # The Brief is injected into the worker's ENVIRONMENT (untracked): committing it
         # would make every branch both-add SMARTROUTER_BRIEF.json and the second host
@@ -153,7 +166,8 @@ def run(root: Path, env: dict) -> dict:
         if len(set(vals)) != 2:
             raise DryRunFailed(f"P1 failed: {label} not distinct: {vals}")
 
-    # Steps 2-4 in parallel: the collision regime the flow exists for.
+    # Steps 2-4 concurrently: creation serializes on _CREATE_LOCK while worker
+    # execution stays parallel — the collision regime the flow exists for.
     spawned: list[dict] = [None, None]  # type: ignore[list-item]
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
         futs = {pool.submit(spawn_worker, main, wt_root, tid, w, env): k
