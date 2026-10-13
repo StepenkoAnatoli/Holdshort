@@ -38,9 +38,14 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 try:
-    from task_persistence import TaskStateStore, ResumableTasks
+    import redaction
+except ImportError:
+    from tools import redaction
+
+try:
+    from task_persistence import TaskStateStore, ResumableTasks, CorruptState
 except ImportError:  # direct import when repo root on path
-    from tools.task_persistence import TaskStateStore, ResumableTasks
+    from tools.task_persistence import TaskStateStore, ResumableTasks, CorruptState
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PRICES_PATH = REPO_ROOT / "tools" / "prices-2.json"
@@ -63,7 +68,7 @@ class CapConfig:
 class LedgerEntry:
     ts: float
     task_id: str
-    attempt_no: int
+    attempt_no: Optional[int]
     profile_id: str
     input_tokens: int
     output_tokens: int
@@ -136,6 +141,7 @@ class LiveDispatcher:
 
     def _append(self, entry: LedgerEntry) -> None:
         rec = dict(asdict(entry))
+        rec, _ = redaction.redact_obj(rec)  # redact BEFORE truncating the reason
         rec["reason"] = str(rec["reason"])[:REASON_MAX]
         self.ledger_path.parent.mkdir(parents=True, exist_ok=True)
         with self.ledger_path.open("a", encoding="utf-8", newline="\n") as fh:
@@ -174,13 +180,20 @@ class LiveDispatcher:
     ) -> LedgerEntry:
         """One physical dispatch, or a gated rejection. Never zero-fills a price."""
         profile = self.prices["profiles"].get(profile_id)
+        try:
+            st = self._task(task_id)
+        except CorruptState:
+            # No dispatch and no replacement state: record only the refusal.
+            # Unknown counters remain on disk for explicit recovery.
+            e = LedgerEntry(self.now_fn(), task_id, None, profile_id, 0, 0, 0.0,
+                            "blocked:state-corrupt", "persisted state unreadable or invalid; preserved")
+            self._append(e)
+            return e
 
         # 1) unknown profile — Gate-4 fail-closed (plan §8: unpriced blocks; S06)
         if profile is None:
-            return self._reject(self._task(task_id), profile_id, "unknown-profile",
+            return self._reject(st, profile_id, "unknown-profile",
                                 f"{profile_id!r} absent from prices-2.json (Gate-4 fail-closed)")
-
-        st = self._task(task_id)
 
         # 2) §5 attempt cap (counts every dispatch, any arm)
         if st["attempts"] >= self.caps.max_attempts:

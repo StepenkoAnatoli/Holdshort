@@ -97,7 +97,46 @@ class TaskPersistence(unittest.TestCase):
             p = store.path_for("L-3")
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text("{corrupt", encoding="utf-8")
-            self.assertIsNone(store.load("L-3"), "corrupt state treated as absent")
+            # G5 fail-closed: corrupt state raises (never auto-reinit to zeros);
+            # the file is preserved for forensics and the dispatcher refuses.
+            with self.assertRaises(tp.CorruptState):
+                store.load("L-3")
+            self.assertTrue(p.is_file(), "corrupt file preserved for forensics")
+            d = fresh_dispatcher(tmp, lambda: 3_000_000.0)
+            e = d.attempt("L-3", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
+                          expected_in=1_000, expected_out=1_000)
+            self.assertEqual(e.decision, "blocked:state-corrupt",
+                             "corrupt counters must refuse, never reset")
+            self.assertEqual(p.read_text(encoding="utf-8"), "{corrupt")
+            self.assertNotIn("L-3", d._tasks)
+            self.assertIsNone(e.attempt_no, "unknown counters must not be reported as zero")
+
+    def test_invalid_state_refuses_egress_and_preserves_original(self):
+        base = {"task_id": "L-3", "attempts": 1, "spent": 0.2,
+                "started": 1.0, "repairs": 0, "last_profile": "cloud-C"}
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            store = tp.TaskStateStore(tmp / "task_state")
+            p = store.path_for("L-3")
+            p.parent.mkdir()
+            for mutation in ({"spent": float("nan")}, {"attempts": True},
+                             {"started": "bad"}, {"task_id": "other"},
+                             {"repairs": -1}, {"clock": "monotonic"}):
+                original = json.dumps(dict(base, **mutation))
+                p.write_text(original, encoding="utf-8")
+                calls = []
+                d = ld.LiveDispatcher(PRICES, tmp / "ledger.jsonl", task_store=p.parent,
+                                      confirm_egress=True,
+                                      dispatch_fn=lambda *args: calls.append(args))
+                e = d.attempt("L-3", "cloud-C", "req", work_bound=.01, review_bound=.01)
+                self.assertEqual(e.decision, "blocked:state-corrupt")
+                self.assertEqual(calls, [])
+                self.assertEqual(p.read_text(encoding="utf-8"), original)
+            p.write_bytes(b"\xff")
+            d = fresh_dispatcher(tmp, lambda: 1.0)
+            self.assertEqual(d.attempt("L-3", "cloud-C", "req", work_bound=.01,
+                                      review_bound=.01).decision, "blocked:state-corrupt")
+            self.assertEqual(p.read_bytes(), b"\xff")
 
     def test_atomic_write_no_tmp_leftovers(self):
         with tempfile.TemporaryDirectory() as td:

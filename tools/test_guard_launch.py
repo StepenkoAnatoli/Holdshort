@@ -121,6 +121,39 @@ class GuardLaunch(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
         self.assertIn("FAIL-CLOSED", r.stderr)
 
+    # G8 ----------------------------------------------------------------------
+    def test_g8_unattested_launch_refused_when_required(self):
+        import json
+        reg = self.tmp / "reg.json"
+        reg.write_text(json.dumps({"workers": {TASK: {
+            "path": str(self.wt), "branch": BRANCH, "profile": "p",
+            "shared": {"attested": False}}}}), encoding="utf-8")
+        r = self._run(*self._base(self.wt), "--task-id", TASK,
+                      "--branch", BRANCH, "--registry", str(reg),
+                      "--require-shared-plan")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("shared-surface", r.stderr)
+        reg.write_text(json.dumps({"workers": {TASK: {
+            "path": str(self.wt), "branch": BRANCH, "profile": "p",
+            "shared": {"attested": True, "no_shared_surface": True}}}}),
+            encoding="utf-8")
+        r2 = self._run(*self._base(self.wt), "--task-id", TASK,
+                       "--branch", BRANCH, "--registry", str(reg),
+                       "--require-shared-plan")
+        self.assertEqual(r2.returncode, 0)
+
+        for mutation in ({"branch": "sr/a3f9c1d2/other"}, {"path": str(self.repo)},
+                         {"shared": {"attested": "false", "no_shared_surface": True}},
+                         {"shared": {"attested": True}}, {"shared": []}):
+            rec = {"path": str(self.wt), "branch": BRANCH, "profile": "p",
+                   "shared": {"attested": True, "no_shared_surface": True}}
+            rec.update(mutation)
+            reg.write_text(json.dumps({"workers": {TASK: rec}}), encoding="utf-8")
+            result = self._run(*self._base(self.wt), "--task-id", TASK,
+                               "--branch", BRANCH, "--registry", str(reg),
+                               "--require-shared-plan")
+            self.assertEqual(result.returncode, 1, "invalid attestation must refuse launch")
+
     # G7 ----------------------------------------------------------------------
     def test_g7_half_binding_refused(self):
         r = self._run(*self._base(self.wt), "--task-id", TASK)

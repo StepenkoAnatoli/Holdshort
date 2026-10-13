@@ -198,7 +198,14 @@ important open implementation gaps:
 
 - The existing live dispatcher can send before enforcing remaining cost headroom.
 - Pilot spending resets with a new dispatcher instance instead of being shared persistently.
-- Corrupt persisted task state can reset counters instead of blocking or reconciling.
+
+Corrupt persisted task state now blocks dispatch and preserves the original file.
+Recovery still needs an authoritative reconciliation process. Shared-resource
+plans can be required when creating and launching a worker; these checks track
+declared ports within one registry and do not reserve operating-system resources
+or coordinate simultaneous registry writers.
+See the [integration notes](docs/REMAINING_BRANCH_INTEGRATION.md) for the optional
+worker checks and the exact scope of these fixes.
 
 These gaps prevent treating the current live dispatcher as a dependable spending
 boundary. The review also covers process-tree cleanup, shared-state coordination,

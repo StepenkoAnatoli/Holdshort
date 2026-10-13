@@ -87,7 +87,7 @@ subscription-token-to-dollar conversion and no router savings claim.
 | --- | --- | --- | --- |
 | F01 | P1, existing dispatcher on both bases | Mock transport with an honest $1 bound: first call reaches the $1 task cap; a second call is still sent, then returns `blocked-cost-cap` with cost $0. Two physical sends and modeled $2 charges become one recorded attempt and $1. Caps must reserve remaining all-in allowance before send, and every physical dispatch must be accounted even on overrun/error. | Open; no live calls made. |
 | F02 | P1, existing pilot accounting | Two dispatcher instances sharing the same task store and ledger each accept a distinct $1 task under a $1 pilot cap. Each instance begins with `pilot_spent = 0`. | Open; needs persistent shared pilot reservations, reconciliation and locking. |
-| F03 | P1, existing task persistence | Save attempts=4/spend=1/repairs=1, corrupt that task file, then resume. Counters become 0/0/0. The comment claims ledger re-derivation, but this load path does not perform it. | Open; corrupt/unreadable state must block or be reconciled from an authoritative ledger. |
+| F03 | P1, existing task persistence | Save attempts=4/spend=1/repairs=1, corrupt that task file, then resume. Counters become 0/0/0. The comment claims ledger re-derivation, but this load path does not perform it. | Fixed during remaining-branch integration: corrupt/unreadable/invalid state blocks before dispatch, preserves the file and reports the unknown attempt counter as null. Authoritative recovery remains future work. |
 | F04 | P1, original snapshot byte redactor | UTF-16 LE and BE synthetic credentials produce zero redaction findings and survive decoded output. The repo scanner already understands those encodings. | Open in original snapshot; autonomy code uses the current text redactor for decoded supervisor output. |
 | F05 | P1, original snapshot watchdog | Set `repair_allowance=2` after one distinct failed repair: evaluator authorizes another repair, overriding R01/R02/R03. Current main's CLI also permitted arbitrary allowances. | Fixed in autonomy supervisor: allowance is 0 or 1, pure policy clamps at one, and terminal failure blocks later launches. |
 | F06 | P1, original structured-state watchdog | Missing budget returns `repair`; NaN clock returns `repair`; attempt `[{}]` returns `continue`. Incomplete state is interpreted as permission to proceed. | Open for the original API; current command supervisor rejects nonfinite timeout. Full host counter/identity validation still needs work. |
@@ -197,3 +197,14 @@ The default ACL probe now prepends the selected PowerShell executable's own modu
 folder to its child environment. This fixes the mixed-version module-import failure
 without changing machine-wide module paths. Scope tests keep sibling project
 inventories out of the router's default scan.
+
+## Remaining branch integration — 14 October 2026
+
+The [integration record](REMAINING_BRANCH_INTEGRATION.md) records the reviewed
+gap-closure merge and the useful changes ported from the original snapshot.
+F03 now blocks invalid state without replacing counters. The original redaction
+layer is wired into both ledger and state writes, with UTF-16 coverage added;
+this addresses the tested F04 encoding reproductions and extends the writer
+coverage discussed in F08. Shared-plan checks now refuse before spawning and
+bind launch evidence to the task, branch and worktree. Budget findings F01/F02
+remain open. No live-model qualification or bill was inferred from these tests.

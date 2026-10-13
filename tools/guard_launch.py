@@ -67,8 +67,31 @@ def _must(cwd: Path, *args: str, what: str) -> str:
     return proc.stdout
 
 
+def _shared_attested(registry: Path | None, task_id: str, branch: str, launch_dir: Path) -> bool:
+    """True when the registry record carries an attested shared-surface plan (G7)."""
+    if registry is None or not task_id:
+        return False
+    try:
+        import json as _json
+        doc = _json.loads(registry.read_text(encoding="utf-8"))
+        rec = doc.get("workers", {}).get(task_id, {})
+        shared = rec.get("shared")
+        if (not branch or rec.get("branch") != branch
+                or Path(rec["path"]).resolve() != launch_dir
+                or not isinstance(shared, dict) or shared.get("attested") is not True):
+            return False
+        # Use the spawn validator rather than trusting a truthy attestation.
+        validator = _load("shared_guard", TOOLS / "spawn_worker.py")
+        validator.check_shared_plan(shared, {"workers": {}})
+        return True
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, RuntimeError):
+        return False
+
+
 def check(repo: Path, launch_dir: Path, isolation: str, *,
-          task_id: str = "", branch: str = "") -> dict:
+          task_id: str = "", branch: str = "",
+          registry: Path | None = None,
+          require_shared_plan: bool = False) -> dict:
     """Approve one launch. Returns the proof; raises Refused/FailClosed."""
     if isolation != "worktree+branch":
         return {"launch": "allowed", "reason": f"isolation {isolation!r} launches in place by design"}
@@ -117,6 +140,10 @@ def check(repo: Path, launch_dir: Path, isolation: str, *,
         if current != branch:
             raise Refused(f"worktree is on {current!r}, not the worker's {branch!r} — "
                           f"right worktree area, wrong task")
+    if require_shared_plan and isolation == "worktree+branch":
+        if not _shared_attested(registry, task_id, branch, launch_resolved):
+            raise Refused("no attested shared-surface plan for this task "
+                          "(--require-shared-plan: spawn with --no-shared-surface or --shared-plan first)")
     return {"launch": "allowed", "dir": str(launch_resolved), "branch": branch or None}
 
 
@@ -127,10 +154,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--isolation", required=True)
     ap.add_argument("--task-id", default="")
     ap.add_argument("--branch", default="")
+    ap.add_argument("--registry", type=Path, default=None,
+                    help="worker registry holding shared-surface attestations (G7)")
+    ap.add_argument("--require-shared-plan", action="store_true",
+                    help="refuse worktree+branch starts without an attested plan")
     args = ap.parse_args(argv)
     try:
         report = check(args.repo, args.dir, args.isolation,
-                       task_id=args.task_id, branch=args.branch)
+                       task_id=args.task_id, branch=args.branch,
+                       registry=args.registry,
+                       require_shared_plan=args.require_shared_plan)
     except Refused as e:
         print(f"guard_launch: REFUSED — {e}", file=sys.stderr)
         return 1
