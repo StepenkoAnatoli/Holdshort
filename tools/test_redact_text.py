@@ -11,6 +11,8 @@ Invariants (each a real failure mode):
   R6. --check exits 1 on shapes, 0 when clean; plain filter exits 0 and writes redacted text
   R7. --file mode matches the stdin filter byte-for-byte
   R8. redacted output scans clean under the check's own patterns (placeholders hold no shapes)
+  R9. known-miss cases per class: sub-threshold tails, bare prefixes, wrong
+      separators/case, and boundary lookalikes are left untouched (no over-redaction)
 
 Run as part of the regression gate (tools/run_regression.py).
 """
@@ -136,6 +138,38 @@ class Redact(unittest.TestCase):
         self.assertEqual(via_file.returncode, 0)
         self.assertEqual(via_file.stdout, via_stdin.stdout)
         self.assertNotIn(FAKE_OAUTH, via_file.stdout)
+
+    # R9 -------------------------------------------------------------------
+    def test_r9_known_misses_left_untouched(self):
+        # Every entry is one char short, wrongly cased/separated, or a boundary
+        # lookalike. Piece-built throughout so this file stays literal-free.
+        misses = {
+            "github-pat-fine-grained": [
+                "github_pat_" + "A" * 19,
+                "github_pat_",
+                "github_pat-" + "A" * 30,
+                "GITHUB_PAT_" + "A" * 30,
+            ],
+            "github-pat-classic": [
+                "ghp_" + "A" * 35,
+                "ghp_",
+                "GHP_" + "A" * 36,
+            ],
+            "github-oauth": ["gho_" + "B" * 35, "gho_"],
+            "github-user-to-server": ["ghu_" + "C" * 35, "ghu_"],
+            "github-server-to-server": ["ghs_" + "D" * 35, "ghs_"],
+            "github-refresh": ["ghr_" + "E" * 35, "ghr_"],
+            "anthropic-key": ["sk-ant-" + "f" * 19, "sk-ant-", "sk-ant-short"],
+            "openai-style-key": ["sk-proj-" + "A" * 15, "sk-proj-"],
+            "generic-sk-key": ["sk-" + "Z" * 23, "mask-" + "Z" * 24],
+        }
+        for name, cases in misses.items():
+            for case in cases:
+                with self.subTest(cls=name, case=case[:20]):
+                    red, hits = rt.redact("before " + case + " after")
+                    self.assertEqual(red, "before " + case + " after",
+                                     f"{name} over-redacted a known miss")
+                    self.assertEqual(hits, [])
 
     # R8 -------------------------------------------------------------------
     def test_r8_redacted_output_scans_clean(self):

@@ -35,6 +35,16 @@ The complete external contract — normative schemas, Host responsibilities, com
 [references/spec-v2.md](references/spec-v2.md); gate semantics remain fixture-pinned in
 [references/gates.md](references/gates.md).
 
+Survey companions (non-normative guidance; authority stays with the plan and
+spec-v2.md): [references/execution-mechanics.md](references/execution-mechanics.md)
+(retry taxonomy, cooldown FSM, replay/commit rules),
+[references/ranking-and-selection.md](references/ranking-and-selection.md)
+(decision-only selection, eligibility-first ranking, estimate/accounting split),
+[references/verifier-gated-escalation.md](references/verifier-gated-escalation.md)
+(verifier design and prohibited fail-open patterns), and
+[references/decision-trace.md](references/decision-trace.md) (host record schema
+per decision and attempt).
+
 ## Core model (v1.1, extended v2.0)
 
 Three roles exist above individual model calls:
