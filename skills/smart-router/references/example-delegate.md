@@ -2,11 +2,10 @@
 
 **Status:** worked example — non-normative. The normative contract is [gates.md](gates.md)
 (fixture-pinned) and [spec-v2.md](spec-v2.md); where this example and the normative files
-ever disagree, **the normative files win**. Two shorthand deviations from spec-v2.md §9 are
-flagged here, not fixed: the decision block below is abbreviated (a real decision must also
-contain `MaxNestingDepth`, `Reservations`, `Calls`, `Deadline` and `Uncertainty` — the last
-one is never omitted, since an unpriced fee must never be hidden), and `Profile` is shown as
-a model label where §9 requires the full identity tuple.
+ever disagree, **the normative files win**. The decision block below is shown **complete**
+per spec-v2.md §9 (all eleven keys plus the full identity-tuple `Profile`) so this example
+teaches the fail-closed format by demonstration — completed 2026-10-12 from the previously
+flagged abbreviated form (git history records the shorthand).
 
 ## Scenario
 
@@ -48,12 +47,17 @@ SmartRouter determines that an isolated worker is better because:
 ```
 Difficulty:        high-or-ambiguous
 Route:             delegate
-Profile:           claude-sonnet-4
+Profile:           (main-host, anthropic, claude-sonnet-5-5@2026-10-01, cfg-tools-v1)
 Isolation:         worktree+branch
 IsolationReason:   multi-module change with high blast radius
 Owner:             worker
 HumanGate:         review-before-merge
 NestedAllowed:     no
+MaxNestingDepth:   1
+Reservations:      work $0.42 + review $0.08 all-in, within $1.00 task cap
+Calls:             0 used / 4 approved
+Deadline:          2026-10-12T14:00:00Z (starts on dispatch; equality expires)
+Uncertainty:       [integration-suite runtime upper bound unmeasured on this host]
 ```
 
 Plus a machine-readable Brief that contains:

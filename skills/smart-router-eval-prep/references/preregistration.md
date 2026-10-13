@@ -64,3 +64,20 @@ protocol, or an explicitly named owner and evidence requirement. Blanks mean not
       releasing reservations or authorizing adoption.
 - [ ] Adoption (of router or simpler policy) always requires separate authorization even after a
       clean promote.
+
+## 6. Isolation, ownership and feedback-loop dimensions (v1.1)
+
+What v1.1 reviewers verify must be freezable before the trial — otherwise the
+evaluation cannot observe it:
+
+- [ ] Host isolation capability frozen: worktree support, branch-naming convention
+      (`sr/<task-id>/<slug>` per host-task-id), Brief-injection mechanism.
+- [ ] Per-owner accounting frozen: which worker owns which brief, where ownership is
+      recorded (Outcome Ledger + registry), and what counts as a silent transfer
+      (any transfer without a fresh decision fails the arm).
+- [ ] Feedback-loop budget frozen: at most one same-profile corrective dispatch per
+      original task (plan R01/R02/R03); every verification/CI/review failure returns
+      to the same owner; repair spend counts in the arm's all-in economics.
+- [ ] Provenance evidence frozen: which artifacts (branch, diff file list, ledger
+      entries) the trial will keep so `check_provenance`-style review is possible
+      after the fact.
