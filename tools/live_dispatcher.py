@@ -42,6 +42,11 @@ try:
 except ImportError:  # direct import when repo root on path
     from tools.task_persistence import TaskStateStore, ResumableTasks
 
+try:
+    import redaction
+except ImportError:  # direct import when repo root on path
+    from tools import redaction
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PRICES_PATH = REPO_ROOT / "tools" / "prices-2.json"
 LEDGER_DEFAULT = REPO_ROOT / "tools" / "pilot_ledger.jsonl"
@@ -136,6 +141,11 @@ class LiveDispatcher:
 
     def _append(self, entry: LedgerEntry) -> None:
         rec = dict(asdict(entry))
+        # Pre-write redaction (tools/redaction.py): a ledger line is
+        # transcript-bound, so credential-shaped strings are stripped BEFORE
+        # the write. Redact first, truncate after — truncating a raw token
+        # could cut it into a shape no scanner matches.
+        rec, _findings = redaction.redact_obj(rec)
         rec["reason"] = str(rec["reason"])[:REASON_MAX]
         self.ledger_path.parent.mkdir(parents=True, exist_ok=True)
         with self.ledger_path.open("a", encoding="utf-8", newline="\n") as fh:

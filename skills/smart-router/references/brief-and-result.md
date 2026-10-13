@@ -72,9 +72,11 @@ Ledger.
   tool/output-config revision)` defines a repair as same-profile (harness = the agent runtime,
   e.g. a Claude Code / Codex / Cursor-class CLI); equal prices/labels/predicted quality do not.
 - At most **one** same-profile corrective dispatch per original task; the allowance is not renewed by
-  restarting, renaming, changing profiles or escalating (plan R01/R02/R03).
-  A background host-policy sketch ([host-hil-policy.md](host-hil-policy.md)) budgets a
-  separate CI-repair cycle, which exceeds this cap — see its flag 1; the cap wins.
+  restarting, renaming, changing profiles or escalating (plan R01/R02/R03). A CI-phase
+  correction spends that same single allowance — there is no second repair cycle. (The
+  background host-policy sketch [host-hil-policy.md](host-hil-policy.md) used to budget a
+  separate CI-repair cycle; it has been tightened to this one-repair total — former flag 1,
+  resolved.)
 - All physical dispatches — initial, planner, verifier, transport retry, repair, escalation, and any
   host-internal hidden retry — consume the single approved task call budget; cancelled/timeout calls
   still count (plan R03).
@@ -104,8 +106,9 @@ Ledger.
 
 - Verification failures, CI failures and review comments return to the **same owning profile**
   as a new brief for that owner — not to a fresh worker, and not to the orchestrator.
-- At most one same-profile corrective dispatch per original task (the attempt rules above are
-  unchanged and still override any local preference).
+- At most one same-profile corrective dispatch per original task — CI failures and review
+  comments included (the attempt rules above are unchanged and still override any local
+  preference).
 - Status is **derived from observable facts** — checks actually run with exit statuses, PR/CI
   state, acceptance results — never from an agent's self-report. A self-reported "done" or
   "tests passed" is unverified until observed evidence exists (plan S10).

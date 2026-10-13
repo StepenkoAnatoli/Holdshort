@@ -7,6 +7,13 @@ Checks (in order):
   2. tools/test_live_dispatcher.py       — §5 caps + Gate-4 suite (26 checks)
   3. tools/test_clone_freshness.py       — clone-parity contract (temp-repo fixture)
   4. tools/test_pilot_report.py          — ledger aggregation suite (10 tests)
+  5. tools/test_redaction.py             — pre-write transcript redaction layer
+                                           (credential-shaped strings are stripped
+                                           before content can reach the app's
+                                           desktop-v2.db transcript stores)
+  6. tools/test_host_watchdog.py         — host watchdog verdicts (HITL policy
+                                           §6/§9: timeouts, no-progress,
+                                           needs-human escalations)
   ...
   N. tools/check_secrets.py              — credential-shaped strings in tracked files
   N+1. tools/test_credential_hygiene.py  — orphaned gh keyring tokens / stale stored
@@ -51,6 +58,8 @@ CHECKS = [
     ("test_pilot_close", [sys.executable, "tools/test_pilot_close.py"]),
     ("test_task_persistence", [sys.executable, "tools/test_task_persistence.py"]),
     ("test_task_crosscheck", [sys.executable, "tools/test_task_crosscheck.py"]),
+    ("test_redaction", [sys.executable, "tools/test_redaction.py"]),
+    ("test_host_watchdog", [sys.executable, "tools/test_host_watchdog.py"]),
     ("test_install_hooks", [sys.executable, "tools/test_install_hooks.py"]),
     ("test_hook_wiring", [sys.executable, "tools/test_hook_wiring.py"]),
     ("test_strict_canary", [sys.executable, "tools/test_strict_canary.py"]),

@@ -22,6 +22,11 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
+try:
+    import redaction
+except ImportError:  # direct import when repo root on path
+    from tools import redaction
+
 STATE_FIELDS = ("task_id", "attempts", "spent", "started", "repairs", "last_profile")
 DEFAULT_DIR = Path(__file__).resolve().parent / "task_state"
 
@@ -34,6 +39,10 @@ def _sanitize(task_id: str) -> str:
 
 
 def _atomic_write(path: Path, doc: dict) -> None:
+    # Pre-write redaction (tools/redaction.py): persisted task state can end
+    # up quoted into a transcript; strip credential-shaped strings before
+    # the write rather than at the scanners after the fact.
+    doc, _findings = redaction.redact_obj(doc)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     with tmp.open("w", encoding="utf-8", newline="\n") as fh:

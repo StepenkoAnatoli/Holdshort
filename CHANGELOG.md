@@ -308,3 +308,47 @@ opt-in and budget ceiling, N1 nesting default-deny, H1 HumanGate enum, I1
 isolation lower bound); `validate_skills` passes strict. Deliberately still
 absent: the Host itself (execution, worktree spawning, Outcome Ledger) — the
 spec defines its contract; this repo remains the decision layer only.
+
+## Repair-cap consistency — HITL policy tightened to one repair total (10-12)
+
+The host HITL policy sketch (`skills/smart-router/references/host-hil-policy.md`)
+budgeted one implementation repair **plus** one CI repair — up to two
+same-profile corrective dispatches per task — while plan R01/R02/R03,
+spec-v2.md §7 and the signed go-live limits allow **one** same-profile repair
+per original task. Resolved in the normative direction (the normative files
+win, and the signed `docs/GO_LIVE_RUNBOOK.md` / `docs/GO_LIVE_CHECKLIST.md`
+limits already say "≤ 1 same-profile repair"): the policy now has **one repair
+total** shared by the implementation phase, the CI phase and review-feedback
+corrections (its former flag 1 is resolved; flags 2–3 remain flagged, not
+fixed). `brief-and-result.md` no longer reports the divergent CI-repair budget.
+A second repair cycle still exists as a fresh, separately authorized task with
+its own allowance. Plan R01–R03 and their pinned fixtures are unchanged.
+
+## Transcript redaction layer + host watchdog (10-12)
+
+Two new gate-tested tools close the loop the app-DB watchers only observe:
+
+- **`tools/redaction.py` — pre-write redaction layer.** The app persists thread
+  transcripts to `desktop-v2.db*`; `check_app_db_secrets`/`watch_app_db_secrets`
+  DETECT token-shaped strings there after the fact. This layer PREVENTS them:
+  `redact_text`/`redact_bytes`/`redact_obj` strip every credential class the
+  union of both audited scanners would flag, replacing each match with
+  `[REDACTED:<class>:sha256=<16-hex>]` (class + digest, never the value —
+  the scanners' own output discipline). Wired into the repo's transcript-bound
+  writers (`live_dispatcher` ledger lines, `task_persistence` state, watchdog
+  escalation packages) and usable as a CLI pre-write filter for any pipeline.
+- **`tools/host_watchdog.py` — host supervisor (HITL policy §6/§9).** Emits a
+  deterministic `continue` / `repair` / `needs-human` verdict per session
+  state: §9.5 wall-clock timeouts on the persisted `started` anchor
+  (strictly-before; equality expires; restart never grants a fresh window),
+  §9.3 no-progress detection on observed signals only (same failing checks,
+  no meaningful file changes, repeated identical error), §9.2 budget caps,
+  and §9.1's one-repair-total cap (implementation, CI and review-feedback
+  corrections share the single allowance — the repair-cap resolution above).
+  Escalations emit the §6 package (Brief, decision + reasons, complete attempt
+  history + logs, diff/PR URL, Approve/Guide/Take over/Abort) — redacted before
+  it can reach a transcript.
+
+Both suites join `tools/run_regression.py` (17 + 25 tests, including live
+writer-integration proofs that ledger lines and task state are redacted
+before they are written).
