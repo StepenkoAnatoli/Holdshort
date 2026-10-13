@@ -158,6 +158,50 @@ class SpawnWorker(unittest.TestCase):
         with self.assertRaises(sw.FailClosed):
             self._spawn(task_id="a3f9c1d2")
 
+    # S8 ----------------------------------------------------------------------
+    def test_s8_port_overlap_refused(self):
+        # G7: parallel workers must never share a mutable service endpoint.
+        self._spawn(task_id="a3f9c1d2",
+                    shared={"env_scope": "task-a", "ports": [18080]})
+        with self.assertRaises(sw.Refused):
+            self._spawn(task_id="b4e0d2e3",
+                        shared={"env_scope": "task-b", "ports": [18080]})
+        self.assertFalse((self.wts / "b4e0d2e3-work").exists())
+        branches = _git(self.repo, "branch", "--list", "sr/b4e0d2e3/*", env=self.env)
+        self.assertEqual(branches.stdout.strip(), "", "refusal must not leave a branch")
+        self.assertNotIn("b4e0d2e3", json.loads(self.reg.read_text())["workers"])
+        rec = self._spawn(task_id="c5f1e3a4",
+                          shared={"env_scope": "task-c", "ports": [18081]})
+        self.assertTrue(rec["shared"]["attested"])
+        self.assertEqual(rec["shared"]["ports"], [18081])
+
+    # S9 ----------------------------------------------------------------------
+    def test_s9_unattested_spawn_refused_when_required(self):
+        # G7: --require-shared-plan makes unattested spawns fail closed.
+        with self.assertRaises(sw.Refused):
+            sw.spawn(self.repo, self.wts, "work", dict(BRIEF), "prof",
+                     self.reg, task_id="a3f9c1d2", env=self.env,
+                     require_shared_plan=True)
+        rec = sw.spawn(self.repo, self.wts, "work", dict(BRIEF), "prof",
+                       self.reg, task_id="a3f9c1d2", env=self.env,
+                       shared={"no_shared_surface": True},
+                       require_shared_plan=True)
+        self.assertTrue(rec["shared"]["attested"])
+
+    # S10 ---------------------------------------------------------------------
+    def test_s10_legacy_spawn_records_unattested(self):
+        # Backward compat: old callers without a plan keep working, but the
+        # registry marks them unattested (auditable, not trusted).
+        rec = self._spawn(task_id="a3f9c1d2")
+        self.assertEqual(rec["shared"], {"attested": False})
+
+    def test_invalid_shared_plans_refused_before_spawn(self):
+        for shared in ({}, {"ports": [True]}, {"ports": [0]}, {"ports": [65536]},
+                       {"no_shared_surface": True, "ports": [18080]}):
+            with self.assertRaises(sw.Refused):
+                self._spawn(task_id="a3f9c1d2", shared=shared)
+        self.assertFalse(self.wts.exists() and any(self.wts.iterdir()))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

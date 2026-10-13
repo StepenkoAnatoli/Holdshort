@@ -41,6 +41,8 @@ Checks (in order):
                                              worktree (main checkout, bare dirs, wrong task).
   N+13. tools/test_docs_drift.py             — background-docs-to-spec-v2 pin (blocks,
                                              enums, branch naming, Brief filename note).
+  N+14b. tools/test_skill_adherence.py        — G2 skill-text pin (normative sentences
+                                             survive verbatim) + sample/score harness.
   N+14. tools/test_conform_spec.py           — §10 object conformance (Brief, SpeculativeSet,
                                              Outcome, NestedBrief bounds, LedgerRecord) with
                                              §12 violations failing the gate.
@@ -90,6 +92,7 @@ CHECKS = [
     ("test_secrets_env_guard", [sys.executable, "tools/test_secrets_env_guard.py"]),
     ("test_fixture_key_hygiene", [sys.executable, "tools/test_fixture_key_hygiene.py"]),
     ("test_redact_text", [sys.executable, "tools/test_redact_text.py"]),
+    ("test_redaction", [sys.executable, "tools/test_redaction.py"]),
     ("test_message_schema", [sys.executable, "tools/test_message_schema.py"]),
     ("message_schema", [sys.executable, "tools/check_message_schema.py"]),
     ("check_secrets", [sys.executable, "tools/check_secrets.py"]),
@@ -111,6 +114,7 @@ CHECKS = [
     ("test_spawn_worker", [sys.executable, "tools/test_spawn_worker.py"]),
     ("test_guard_launch", [sys.executable, "tools/test_guard_launch.py"]),
     ("test_docs_drift", [sys.executable, "tools/test_docs_drift.py"]),
+    ("test_skill_adherence", [sys.executable, "tools/test_skill_adherence.py"]),
     ("test_conform_spec", [sys.executable, "tools/test_conform_spec.py"]),
     ("test_watch_app_db_secrets", [sys.executable, "tools/test_watch_app_db_secrets.py"]),
 ]
