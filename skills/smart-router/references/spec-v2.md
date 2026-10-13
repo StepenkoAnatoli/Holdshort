@@ -111,7 +111,7 @@ Recommended branch naming: `sr/<task-id>/<short-slug>`.
 
 - Every `delegate` route (or the winning candidate of a `speculative` set) becomes the **Owner**.
 - Verification failures, CI failures, and review comments **always** return to the current Owner.
-- At most one same-profile corrective dispatch is permitted under the original allowance.
+- At most one same-profile corrective dispatch is permitted under the original allowance (plan R01/R02/R03).
 - Ownership never transfers silently. If the Owner becomes ineligible, a full new SmartRouter decision is required.
 - The Project Orchestrator may observe status and request new routes; it does not become Owner of an existing brief.
 
@@ -132,9 +132,12 @@ Isolation strength is derived from the combination of Gate 1 (permissions/privac
 **8.3 Nested Delegation**
 - Permitted only when SmartRouter sets `NestedAllowed: yes`.
 - Parent Worker remains the Owner.
-- Sub-worker receives a NestedBrief with tighter bounds and a reduced allowance.
+- Sub-worker receives a NestedBrief with tighter bounds and a reduced allowance
+  (schema: §10.4 — bounds are checked against the parent's *remaining* allowance).
 - All cash, call and attempt counters roll up to the original task.
 - Default maximum depth = 1 (Host policy may raise it to 2).
+- Only a speculative winner, after it becomes sole owner, may nest; nested
+  speculative sets are not allowed (§8.4).
 
 **8.4 Speculative Parallel Candidates**
 
@@ -260,6 +263,82 @@ Advisory: recommendation only — no dispatch performed or claimed
 }
 ```
 
+**10.4 NestedBrief** (required whenever a Worker delegates a sub-unit under
+`NestedAllowed: yes`)
+
+```json
+{
+  "parent-task-id": "string",
+  "parent-brief-fingerprint": "string",
+  "nesting-depth": 2,
+  "max-nesting-depth": 1,
+  "objective": "string (one narrowed sub-unit of the parent objective)",
+  "acceptance": {
+    "checks": [
+      { "command": "string", "expect": "string" }
+    ]
+  },
+  "permitted-effects": ["string (subset of the parent's)"],
+  "non-goals": ["string (the parent's, plus no further nesting at max depth)"],
+  "isolation": "none | directory | worktree+branch | ephemeral-container (>= parent's)",
+  "allowance": {
+    "cash": 0.0,
+    "calls": 0,
+    "deadline": "ISO-8601 datetime (at or before the parent's)"
+  },
+  "attempts": 1,
+  "ownership": "parent-worker",
+  "nested-allowed": false
+}
+```
+
+Bound rules (checked by the Host before spawning the sub-worker, and by
+`tools/conform_spec.py`):
+
+- `allowance.cash` / `allowance.calls` fit inside the parent's *remaining* allowance
+  (not its original); `allowance.deadline` is at or before the parent's deadline.
+- `attempts` does not exceed the parent's remaining attempts.
+- Every `permitted-effects` entry is covered by the parent's `permitted-effects`;
+  `non-goals` include the parent's, plus no further nesting once
+  `nesting-depth == max-nesting-depth`.
+- `isolation` is at least as strong as the parent's (§6 lattice order).
+- `nesting-depth` is the parent's depth + 1 (a top-level Brief is depth 1) and never
+  exceeds `max-nesting-depth`; at max depth `nested-allowed` must be `false`.
+- `ownership` stays the parent worker: the sub-worker reports to the parent, and the
+  parent remains the Owner toward the Host. All counters roll up to the original task.
+
+**10.5 LedgerRecord** (one auditable line per decision, dispatch, spend, outcome, or
+escalation — the Outcome Ledger record format behind Host duty §11.8)
+
+```json
+{
+  "task-id": "string",
+  "seq": 1,
+  "kind": "decision | dispatch | outcome | spend | escalation",
+  "ts": "ISO-8601 datetime",
+  "profile": "exact identity tuple or null",
+  "counters": {
+    "calls-used": 0,
+    "calls-limit": 0,
+    "cash-spent": 0.0,
+    "cash-cap": 0.0,
+    "repairs-used": 0,
+    "repairs-allowed": 1
+  },
+  "deadline": "ISO-8601 datetime or null",
+  "brief-fingerprint": "string or null",
+  "detail": "string (route | request id | spend delta | escalation reason)",
+  "outcome-ref": "§10.3 Outcome task-id or null"
+}
+```
+
+Ledger rules: one record per event, `seq` starts at 1 per task and strictly increases;
+records are append-only and never rewritten (a superseding outcome appends a new
+`outcome` record and points at it via `outcome-ref`); a `dispatch` record is written
+*before* sending (slot reservation, plan §8); counter fields always describe the task
+totals *after* applying the event. `tools/conform_spec.py` validates records;
+`tools/outcome_ledger.py` remains the §10.3 Outcome store that `outcome-ref` points at.
+
 ## 11. Host Responsibilities (Normative)
 
 A compliant Host **must**:
@@ -271,7 +350,7 @@ A compliant Host **must**:
 5. Account for every physical dispatch, including cancelled speculative candidates.
 6. Route all verification, CI and review feedback to the current Owner.
 7. Honour `HumanGate` before the corresponding action.
-8. Maintain an auditable Outcome Ledger.
+8. Maintain an auditable Outcome Ledger in the §10.5 record format.
 9. Never reset cash, call or attempt counters by rename, restart or profile change.
 10. Treat missing or stale capability fingerprints as a Gate 2 failure.
 
@@ -302,6 +381,7 @@ A Host **may**:
 | 1.3     | Nested delegation + Outcome-aware re-routing |
 | 1.4     | Speculative parallel candidates |
 | 2.0     | Complete surface defined by this document |
+| 2.1     | NestedBrief schema (§10.4), LedgerRecord schema (§10.5), emit-validation duty (§14) |
 
 Later versions are strictly additive. A Host implementing only up to version *N* must ignore unknown fields and must refuse any route it cannot enforce.
 
@@ -312,6 +392,9 @@ A system is **SmartRouter-compliant** when and only when:
 - it treats this specification as the sole routing authority,
 - it implements all Host responsibilities in §11,
 - it never violates the hard prohibitions in §12,
+- it validates every §10 object it emits (schema, enums, and bound rules such as
+  §10.4 sub-allowances) and refuses routes whose objects it cannot produce or enforce
+  (a 2.0 Host refuses `NestedAllowed: yes` routes rather than guessing the sub-brief),
 - and it can correctly produce and consume the objects defined in §10.
 
 **End of Specification**

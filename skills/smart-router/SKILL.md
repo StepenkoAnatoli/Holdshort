@@ -108,6 +108,12 @@ Isolation strength derives from Gate 1 (permissions/privacy), Gate 3 (consequenc
 Gate 5 (economics). **Parallel workers must never share a mutable working tree when any form of
 isolation was requested.** Recommended branch naming: `sr/<task-id>/<short-slug>`.
 
+Worktrees isolate the tracked checkout only — **not** `.env`/secrets, ports, databases,
+ignored dependencies, or running processes. The Host must plan those shared surfaces per
+task (scoped env, allocated ports, namespaced schemas, supervised processes) before
+spawning; mechanics and the planning table:
+[references/worktree-mechanics.md](references/worktree-mechanics.md).
+
 Mechanics background for `worktree+branch` (what a worktree isolates — and what it does
 not): [references/worktree-mechanics.md](references/worktree-mechanics.md). Host-side
 operational flow (who creates the worktree, injects the Brief, verifies, and cleans up):
@@ -180,8 +186,9 @@ isolated worker without reinterpretation. Full requirements:
 
 - Verification failures, CI failures and review comments **return to the same owning profile**
   that produced the artifact, as a new brief for that owner (for `speculative`, the winner).
-- The owner may receive at most one same-profile corrective dispatch (existing attempt rules
-  still apply).
+- The owner may receive at most one same-profile corrective dispatch per original task
+  (plan R01/R02/R03; see [references/brief-and-result.md](references/brief-and-result.md)
+  for the attempt/ledger rules that define sameness).
 - If the owner is no longer eligible, the route is re-evaluated from scratch; **no ownership
   transfer without a fresh decision**.
 - The project orchestrator may observe status and decide the next high-level action, but it does

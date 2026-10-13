@@ -65,6 +65,23 @@ Main repository
     symlink them)
   - running processes
 
+## Planning for the gaps (host duties — worktrees are cooperative placement, not a sandbox)
+
+Isolation of the checkout is necessary but not sufficient for parallel workers. The Host
+must plan each shared surface **before** spawning, or two "isolated" workers collide
+outside git:
+
+| Shared surface | Failure mode | Host plan |
+|----------------|--------------|-----------|
+| `.env` / secrets | Worker B reads worker A's key, or overwrites the one shared `.env` | Never symlink or share the root `.env` into a worktree. Inject per-worker env (scoped credentials or secret refs) with the Brief; the worker's process environment — not a shared file — carries secrets. |
+| Ports | Two workers bind the same test-server port; one fails or, worse, tests hit the wrong server | Allocate ports per task (registry `task_id → port`) and pass them in the Brief; acceptance checks bind only their allocation. |
+| Databases / services | Workers share one dev database and each other's fixtures contaminate verification | One schema/namespace per task, or serialize database-touching workers. Record the choice in the Outcome Ledger evidence. |
+| Running processes | A stale server from task A serves task B's acceptance run | Supervise per-task processes (start/stop with the worker lifetime); kill on cleanup/escalation (see `host_watchdog.py` timeouts). |
+| Ignored dependencies | Symlinked `node_modules` shares build state; fresh installs cost time | Prefer per-worktree installs for hermetic verification; symlink only for read-only caches, never for mutable build output. |
+
+Verification inside the worktree isolates the code under test; the table above isolates
+everything else. A host that plans only the checkout has planned half the isolation.
+
 ## Common Commands
 
 ```bash

@@ -16,7 +16,35 @@ Checks (in order):
   N+3. tools/test_app_db_secrets.py      — token-shaped strings in the Freebuff
                                            Desktop app stores (desktop-v2.db*),
                                            baseline-allowlisted after triage
-  N+4. tools/test_watch_app_db_secrets.py— the watcher that scans those stores on
+  N+4. tools/test_redact_text.py           — the pre-write redaction filter reuses the
+                                             app-DB pattern set; its hermetic test joins
+                                             the gate so prevention cannot drift from
+                                             detection.
+  N+5. tools/test_host_watchdog.py         — the host loop-prevention enforcer (wall-clock
+                                             timeout, one-repair-total cap per R01-R03,
+                                             no-progress escalation, needs-human package);
+                                             its hermetic test joins the gate so the HITL
+                                             contract cannot rot unseen.
+  N+6. tools/test_task_ids.py               — task-id mint/format/entropy/uniqueness
+                                             semantics + live-scope collision checks.
+  N+7. tools/test_host_dry_run.py            — two-parallel-worker lifecycle proof
+                                             (throwaway repo, real git worktrees).
+  N+8. tools/test_class_breaker.py           — breaker split: facts per task, class rates
+                                             only under eval-prep authorization.
+  N+9. tools/test_outcome_ledger.py          — canonical §10.3 Outcome store (record/get/
+                                             list/verify, fail-closed schema).
+  N+10. tools/test_check_provenance.py       — diff-vs-branch provenance for review
+                                             (scope, naming, base, worktree binding).
+  N+11. tools/test_spawn_worker.py           — host spawn primitive (worktree+branch,
+                                             verbatim Brief, registry, merge-gated cleanup).
+  N+12. tools/test_guard_launch.py           — pre-launch refusal outside the dedicated
+                                             worktree (main checkout, bare dirs, wrong task).
+  N+13. tools/test_docs_drift.py             — background-docs-to-spec-v2 pin (blocks,
+                                             enums, branch naming, Brief filename note).
+  N+14. tools/test_conform_spec.py           — §10 object conformance (Brief, SpeculativeSet,
+                                             Outcome, NestedBrief bounds, LedgerRecord) with
+                                             §12 violations failing the gate.
+  N+9. tools/test_watch_app_db_secrets.py— the watcher that scans those stores on
                                              change runs OUTSIDE the gate (it is a
                                              long-lived process, started by the
                                              operator); its hermetic test joins the
@@ -70,6 +98,17 @@ CHECKS = [
     ("custody_acl", [sys.executable, "tools/check_custody_acl.py"]),
     ("test_app_db_secrets", [sys.executable, "tools/test_app_db_secrets.py"]),
     ("app_db_secrets", [sys.executable, "tools/check_app_db_secrets.py"]),
+    ("test_redact_text", [sys.executable, "tools/test_redact_text.py"]),
+    ("test_host_watchdog", [sys.executable, "tools/test_host_watchdog.py"]),
+    ("test_task_ids", [sys.executable, "tools/test_task_ids.py"]),
+    ("test_host_dry_run", [sys.executable, "tools/test_host_dry_run.py"]),
+    ("test_class_breaker", [sys.executable, "tools/test_class_breaker.py"]),
+    ("test_outcome_ledger", [sys.executable, "tools/test_outcome_ledger.py"]),
+    ("test_check_provenance", [sys.executable, "tools/test_check_provenance.py"]),
+    ("test_spawn_worker", [sys.executable, "tools/test_spawn_worker.py"]),
+    ("test_guard_launch", [sys.executable, "tools/test_guard_launch.py"]),
+    ("test_docs_drift", [sys.executable, "tools/test_docs_drift.py"]),
+    ("test_conform_spec", [sys.executable, "tools/test_conform_spec.py"]),
     ("test_watch_app_db_secrets", [sys.executable, "tools/test_watch_app_db_secrets.py"]),
 ]
 
