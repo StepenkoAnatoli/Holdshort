@@ -49,7 +49,7 @@ class TaskPersistence(unittest.TestCase):
             d1 = fresh_dispatcher(tmp, lambda: now)
             for _ in range(2):
                 e = d1.attempt("L-1", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
-                               expected_in=10_000, expected_out=1_000)
+                               expected_in=10_000, expected_out=1_000, data_class="public", fingerprint_fresh=True, verifiers_available=True)
                 self.assertEqual(e.decision, "dispatched")
             # Process 2 (fresh dispatcher instance = simulated restart, same store):
             d2 = fresh_dispatcher(tmp, lambda: now)
@@ -61,11 +61,11 @@ class TaskPersistence(unittest.TestCase):
             # a profile switch is escalation, NOT a repair, so continue on other profiles:
             for pid in ("cloud-S", "cloud-C-alt"):
                 e = d2.attempt("L-1", pid, "req", work_bound=0.01, review_bound=0.01,
-                               expected_in=10_000, expected_out=1_000)
+                               expected_in=10_000, expected_out=1_000, data_class="public", fingerprint_fresh=True, verifiers_available=True)
             self.assertEqual(d2._task("L-1")["attempts"], 4)
             # cap-enforcement point: 4 attempts are USED; the 5th fires attempt-cap first:
             e = d2.attempt("L-1", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
-                           expected_in=10_000, expected_out=1_000)
+                           expected_in=10_000, expected_out=1_000, data_class="public", fingerprint_fresh=True, verifiers_available=True)
             self.assertEqual(e.decision, "blocked-attempt-cap", "cap must fire across restarts")
 
     def test_deadline_survives_restart(self):
@@ -75,18 +75,18 @@ class TaskPersistence(unittest.TestCase):
             t0 = 2_000_000.0
             d1 = fresh_dispatcher(tmp, lambda: t0)
             d1.attempt("L-2", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
-                       expected_in=1_000, expected_out=1_000)
+                       expected_in=1_000, expected_out=1_000, data_class="public", fingerprint_fresh=True, verifiers_available=True)
             st = d1._task("L-2")
             self.assertEqual(st["started"], t0, "started anchor persisted")
 
             d2 = fresh_dispatcher(tmp, lambda: t0 + 250.0)  # restarted 250s later
             e = d2.attempt("L-2", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
-                           expected_in=1_000, expected_out=1_000)
+                           expected_in=1_000, expected_out=1_000, data_class="public", fingerprint_fresh=True, verifiers_available=True)
             self.assertEqual(e.decision, "dispatched", "still within the 300s whole-task window")
 
             d3 = fresh_dispatcher(tmp, lambda: t0 + 300.0)  # restarted at equality
             e = d3.attempt("L-2", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
-                           expected_in=1_000, expected_out=1_000)
+                           expected_in=1_000, expected_out=1_000, data_class="public", fingerprint_fresh=True, verifiers_available=True)
             self.assertEqual(e.decision, "blocked-deadline",
                              "equality expires across restarts too (strictly-before rule)")
 
@@ -97,7 +97,18 @@ class TaskPersistence(unittest.TestCase):
             p = store.path_for("L-3")
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text("{corrupt", encoding="utf-8")
-            self.assertIsNone(store.load("L-3"), "corrupt state treated as absent")
+            # G5 fail-closed: corrupt state raises (never auto-reinit to zeros);
+            # the file is preserved for forensics and the dispatcher refuses.
+            with self.assertRaises(tp.CorruptState):
+                store.load("L-3")
+            self.assertTrue(p.is_file(), "corrupt file preserved for forensics")
+            d = fresh_dispatcher(tmp, lambda: 3_000_000.0)
+            e = d.attempt("L-3", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
+                          expected_in=1_000, expected_out=1_000,
+                          data_class="public", fingerprint_fresh=True,
+                          verifiers_available=True)
+            self.assertEqual(e.decision, "blocked:state-corrupt",
+                             "corrupt counters must refuse, never reset")
 
     def test_atomic_write_no_tmp_leftovers(self):
         with tempfile.TemporaryDirectory() as td:
@@ -117,7 +128,7 @@ class TaskPersistence(unittest.TestCase):
             d = ld.LiveDispatcher(json.loads((TOOLS / "prices-2.json").read_text(encoding="utf-8")),
                                   tmp / "l.jsonl", now_fn=lambda: now, task_store=None)
             d.attempt("L-5", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
-                      expected_in=1_000, expected_out=1_000)
+                      expected_in=1_000, expected_out=1_000, data_class="public", fingerprint_fresh=True, verifiers_available=True)
             self.assertFalse((tmp / "task_state").exists(), "no state dir when store is off")
 
     def test_store_directory_sanitizes_task_ids(self):
