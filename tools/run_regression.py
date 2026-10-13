@@ -41,7 +41,6 @@ Checks (in order):
                                              worktree (main checkout, bare dirs, wrong task).
   N+13. tools/test_docs_drift.py             — background-docs-to-spec-v2 pin (blocks,
                                              enums, branch naming, Brief filename note).
-                                             (scope, naming, base, worktree binding).
   N+9. tools/test_watch_app_db_secrets.py— the watcher that scans those stores on
                                              change runs OUTSIDE the gate (it is a
                                              long-lived process, started by the
