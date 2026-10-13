@@ -11,6 +11,14 @@ that primitive (library + CLI), stdlib only:
     EXACT Brief bytes (`SMARTROUTER_BRIEF.json`, untracked — never committed, so parallel
     merges cannot conflict on it), record task_id → {path, branch, profile} in the
     registry. Any step failing leaves no half-spawn (worktree removed, registry untouched).
+  * Shared-surface plan (G7 — worktrees isolate git only, not ports/DBs/env):
+    `spawn(..., shared=...)` records the per-task plan: `{"no_shared_surface": True}`
+    for stateless file tasks, or `{"env_scope": ..., "ports": [...],
+    "namespace": ...}` for stateful ones. Port overlap with a live registry
+    worker REFUSES (parallel workers must never share a mutable service
+    endpoint). `require_shared_plan=True` (or the CLI without either
+    `--shared-plan`/`--no-shared-surface` under `--require-shared-plan`)
+    refuses unattested spawns fail-closed.
   * `cleanup`: retract the injected Brief, `git worktree remove`, delete the branch —
     but only when merged into the base (default `main`); an unmerged branch refuses
     closed unless `--allow-unmerged` (abandonment still consumes its dispatches, and the
@@ -96,15 +104,50 @@ def brief_fingerprint(brief_bytes: bytes) -> str:
     return "sha256:" + hashlib.sha256(brief_bytes).hexdigest()[:16]
 
 
+def check_shared_plan(shared: dict | None, registry: dict) -> dict:
+    """Validate a shared-surface plan, enforcing port exclusivity (G7).
+
+    Returns the normalized record (`{"attested": False}` when no plan was
+    supplied — auditable, not trusted). Raises Refused on port overlap with a
+    live worker or on malformed plans.
+    """
+    if shared is None:
+        return {"attested": False}
+    if not isinstance(shared, dict):
+        raise Refused("shared plan must be an object (or omit it for unattested)")
+    if shared.get("no_shared_surface") is True:
+        return {"attested": True, "no_shared_surface": True}
+    ports = shared.get("ports", [])
+    if not isinstance(ports, list) or any(not isinstance(x, int) for x in ports):
+        raise Refused("shared plan 'ports' must be a list of ints")
+    live_ports: dict[int, str] = {}
+    for tid, rec in registry.get("workers", {}).items():
+        for x in (rec.get("shared") or {}).get("ports", []):
+            live_ports.setdefault(x, tid)
+    clash = [x for x in ports if x in live_ports]
+    if clash:
+        raise Refused(f"port(s) {clash} already held by worker {live_ports[clash[0]]!r} — "
+                      f"parallel workers must not share a mutable endpoint")
+    plan = {"attested": True}
+    for k in ("env_scope", "ports", "namespace", "note"):
+        if k in shared:
+            plan[k] = shared[k]
+    return plan
+
+
 def spawn(repo: Path, wt_root: Path, slug: str, brief: dict, profile: str,
           registry_path: Path, *, task_id: str | None = None,
-          env: dict | None = None) -> dict:
+          env: dict | None = None, shared: dict | None = None,
+          require_shared_plan: bool = False) -> dict:
     """Full spawn. Returns the worker record. Raises Refused/FailClosed, never half-spawns."""
     if not isinstance(brief, dict) or not brief:
         raise Refused("brief must be a non-empty object (verbatim injection, no invention)")
     if not profile:
         raise Refused("profile must name the exact identity tuple for the worker")
     reg = load_registry(registry_path)
+    if require_shared_plan and not (isinstance(shared, dict) and shared):
+        raise Refused("shared-surface plan required (--require-shared-plan): pass "
+                      "--no-shared-surface for stateless tasks or --shared-plan '{...}'")
     taken = set(reg["workers"]) | ti.collect_taken(repo)
     chosen = task_id or ti.ensure_unique(taken)
     if not ti.valid(chosen):
@@ -125,15 +168,16 @@ def spawn(repo: Path, wt_root: Path, slug: str, brief: dict, profile: str,
     except OSError as e:
         _git(repo, "worktree", "remove", "--force", str(path), env=env)
         raise FailClosed(f"brief injection failed, spawn rolled back ({e})") from e
+    plan = check_shared_plan(shared, reg)
     reg["workers"][chosen] = {"path": str(path), "branch": branch, "profile": profile,
-                              "brief_fingerprint": fp}
+                              "brief_fingerprint": fp, "shared": plan}
     try:
         save_registry(registry_path, reg)
     except OSError as e:
         _git(repo, "worktree", "remove", "--force", str(path), env=env)
         raise FailClosed(f"registry write failed, spawn rolled back ({e})") from e
     return {"task_id": chosen, "path": str(path), "branch": branch,
-            "profile": profile, "brief_fingerprint": fp}
+            "profile": profile, "brief_fingerprint": fp, "shared": plan}
 
 
 def cleanup(repo: Path, registry_path: Path, task_id: str, *,
@@ -183,6 +227,12 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--profile", required=True)
     s.add_argument("--registry", type=Path, required=True)
     s.add_argument("--task-id", default=None)
+    s.add_argument("--shared-plan", default=None,
+                   help="JSON object: shared-surface plan (env_scope/ports/namespace)")
+    s.add_argument("--no-shared-surface", action="store_true",
+                   help="attest the task uses no shared mutable surface (stateless files only)")
+    s.add_argument("--require-shared-plan", action="store_true",
+                   help="refuse the spawn unless a plan is attested (fail-closed)")
     c = sub.add_parser("cleanup", help="retract brief, remove worktree, delete merged branch")
     c.add_argument("--repo", type=Path, required=True)
     c.add_argument("--registry", type=Path, required=True)
@@ -196,8 +246,17 @@ def main(argv: list[str] | None = None) -> int:
                 brief = json.loads(args.brief.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as e:
                 raise FailClosed(f"brief {args.brief} unreadable ({e})") from e
+            if args.shared_plan and args.no_shared_surface:
+                raise Refused("--shared-plan and --no-shared-surface are exclusive")
+            shared = {"no_shared_surface": True} if args.no_shared_surface else None
+            if args.shared_plan:
+                try:
+                    shared = json.loads(args.shared_plan)
+                except json.JSONDecodeError as e:
+                    raise FailClosed(f"--shared-plan malformed ({e})") from e
             rec = spawn(args.repo, args.wt_root, args.slug, brief, args.profile,
-                        args.registry, task_id=args.task_id)
+                        args.registry, task_id=args.task_id, shared=shared,
+                        require_shared_plan=args.require_shared_plan)
             print(json.dumps(rec, indent=2, sort_keys=True))
             return 0
         done = cleanup(args.repo, args.registry, args.task_id,
