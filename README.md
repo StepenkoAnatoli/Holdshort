@@ -1,6 +1,6 @@
 # SmartRouter
 
-## Project phase state (updated 2026-10-11)
+## Project phase state (updated 2026-10-13)
 
 Executable phases of the plan are **closed** — released as
 [`v1.0.0-pilot`](https://github.com/StepenkoAnatoli/SmartRouter/releases/tag/v1.0.0-pilot)
@@ -25,6 +25,45 @@ review procedure [skills/smart-router-review/SKILL.md](skills/smart-router-revie
 and no-spend eval prep [skills/smart-router-eval-prep/SKILL.md](skills/smart-router-eval-prep/SKILL.md) —
 is validated packaging, not yet installed in any consumer; adoption still
 requires each consumer's own authorization (plan §14/15).
+
+## Merged 2026-10-13: post-pilot hardening wave (PRs #36–#44)
+
+Nine pull requests, each green on the `regression-gate` check, merged to
+`main` as `e9418ed` (#38) and `48e5afe` (#44, after a main-side merge); the
+other seven auto-closed as merged once their commits landed. In stack order:
+
+- **#39 — redaction filter + host watchdog + one-repair-total**:
+  `tools/redact_text.py` (pre-write secret filter reusing the app-DB
+  patterns), `tools/host_watchdog.py` (wall-clock timeout, single
+  same-profile repair cap, no-progress detection, `needs-human` package);
+  HITL policy tightened to one repair total (R01–R03).
+- **#42 — class breaker + task-id semantics + parallel dry-run**:
+  `tools/class_breaker.py` (class rates only under eval-prep authorization),
+  `tools/task_ids.py` (`secrets`-minted ids, live-scope uniqueness),
+  `tools/host_dry_run.py` (two-worker lifecycle proof).
+- **#40 — lifecycle example + canonical Outcome Ledger + review provenance**:
+  `tools/outcome_ledger.py` (§10.3 store), `tools/check_provenance.py`.
+- **#41 — spawn primitive + pre-launch guard + docs-drift pin**:
+  `tools/spawn_worker.py`, `tools/guard_launch.py`, `tests/docs_drift.py`.
+- **#37 — single-source rules + isolation gaps + example completions**
+  (canonical rule homes pinned, divergence guard in `tests/docs_drift.py`).
+- **#38 — spec 2.1 surface**: `NestedBrief` (§10.4), `LedgerRecord` (§10.5),
+  `tools/conform_spec.py` (§10 conformance, §12 violations fail), review +
+  eval-prep skills to v1.1.
+- **#36 — plaintext-credential-file hygiene gate** (`~/.secrets`, name-only
+  findings, contents never read).
+- **#43 — survey companions + decision trace + v2.1 proposal**
+  (`docs/proposals/v2_1-delta.md` — proposal only, no normative edits) +
+  fixture-key hygiene test.
+- **#44 — watcher CI proof, message store + schema guard, known-miss
+  redaction, boot re-verify, store cleanup**
+  (`docs/STORE_CLEANUP_AFTER_ROTATION.md`).
+
+The gate proved itself during the wave: PR #42's CI caught a real
+`git worktree add` race on the shared `.git/worktrees/` admin dir
+(`fatal: failed to read .../commondir`) that passed locally by timing luck.
+Worktree creation now serializes under a host-side lock; worker execution
+stays parallel.
 
 ## Enforcing-by-default: the four protection layers
 
