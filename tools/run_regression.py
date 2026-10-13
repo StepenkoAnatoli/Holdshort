@@ -44,7 +44,6 @@ Checks (in order):
   N+14. tools/test_conform_spec.py           — §10 object conformance (Brief, SpeculativeSet,
                                              Outcome, NestedBrief bounds, LedgerRecord) with
                                              §12 violations failing the gate.
-                                             (scope, naming, base, worktree binding).
   N+9. tools/test_watch_app_db_secrets.py— the watcher that scans those stores on
                                              change runs OUTSIDE the gate (it is a
                                              long-lived process, started by the
