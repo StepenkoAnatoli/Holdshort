@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="230" viewBox="0 0 1200 230" role="img" aria-labelledby="title desc">
+  <title id="title">SmartRouter eligibility checks</title>
+  <desc id="desc">Permissions, capabilities, verification, affordability, and economics are checked in order. Any failed check blocks the candidate. Only eligible models are compared.</desc>
+  <rect x="1" y="1" width="1198" height="228" rx="16" fill="#f6f8fa" stroke="#d0d7de"/>
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <text x="28" y="32" font-size="12" font-weight="700" letter-spacing="1.8" fill="#57606a">DECISION FLOW</text>
+    <text x="28" y="62" font-size="24" font-weight="600" fill="#1f2328">Five checks before a model is selected</text>
+    <g fill="#fff" stroke="#d0d7de">
+      <rect x="28" y="86" width="216" height="92" rx="10"/>
+      <rect x="260" y="86" width="216" height="92" rx="10"/>
+      <rect x="492" y="86" width="216" height="92" rx="10"/>
+      <rect x="724" y="86" width="216" height="92" rx="10"/>
+      <rect x="956" y="86" width="216" height="92" rx="10"/>
+    </g>
+    <g font-size="19" font-weight="600" fill="#0969da">
+      <text x="46" y="119">1  Permissions</text>
+      <text x="278" y="119">2  Capabilities</text>
+      <text x="510" y="119">3  Verification</text>
+      <text x="742" y="119">4  Affordability</text>
+      <text x="974" y="119">5  Economics</text>
+    </g>
+    <g font-size="15" fill="#57606a">
+      <text x="46" y="150">Allowed actions and data</text>
+      <text x="278" y="150">Tools and tested abilities</text>
+      <text x="510" y="150">Defined acceptance checks</text>
+      <text x="742" y="150">Work plus review fits</text>
+      <text x="974" y="150">Compare eligible options</text>
+    </g>
+    <g fill="none" stroke="#8c959f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M248 126l5 6-5 6"/><path d="M480 126l5 6-5 6"/>
+      <path d="M712 126l5 6-5 6"/><path d="M944 126l5 6-5 6"/>
+    </g>
+    <text x="28" y="207" font-size="15" fill="#1f2328">Any failed check blocks the candidate. Only eligible models reach comparison.</text>
+  </g>
+</svg>
