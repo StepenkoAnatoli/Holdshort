@@ -54,15 +54,19 @@ on:
     # (no pushes). Monday ~03:20 UTC; keeps protection honest over time.
     - cron: "20 3 * * 1"
 
+# Ordinary verification needs read access; the canary retains its scoped overrides.
+permissions:
+  contents: read
+
 jobs:
   gate:
     name: regression-gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - name: Run the full regression gate (mirror of the pre-commit hook)
@@ -70,12 +74,12 @@ jobs:
 
   watcher-once:
     name: watcher-once-proof
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - name: Watcher --once against a synthetic store (dirty alerts, clean silent)
@@ -83,13 +87,13 @@ jobs:
 
   setup-prove:
     name: onboarding-proof
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - name: Onboarding proof — clone, wire hooks, prove clean-pass + leak-refusal
@@ -100,17 +104,17 @@ jobs:
 
   strict-canary:
     name: strict-canary
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     permissions:
       contents: write # create and delete the throwaway branch
       pull-requests: write # open and close the throwaway PR, update-branch
       checks: write # the synthetic green check (a precondition, not evidence)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - name: Strict-mode canary — stale head refused, refreshed head mergeable
