@@ -158,6 +158,39 @@ class SpawnWorker(unittest.TestCase):
         with self.assertRaises(sw.FailClosed):
             self._spawn(task_id="a3f9c1d2")
 
+    # S8 ----------------------------------------------------------------------
+    def test_s8_port_overlap_refused(self):
+        # G7: parallel workers must never share a mutable service endpoint.
+        self._spawn(task_id="a3f9c1d2",
+                    shared={"env_scope": "task-a", "ports": [18080]})
+        with self.assertRaises(sw.Refused):
+            self._spawn(task_id="b4e0d2e3",
+                        shared={"env_scope": "task-b", "ports": [18080]})
+        rec = self._spawn(task_id="c5f1e3a4",
+                          shared={"env_scope": "task-c", "ports": [18081]})
+        self.assertTrue(rec["shared"]["attested"])
+        self.assertEqual(rec["shared"]["ports"], [18081])
+
+    # S9 ----------------------------------------------------------------------
+    def test_s9_unattested_spawn_refused_when_required(self):
+        # G7: --require-shared-plan makes unattested spawns fail closed.
+        with self.assertRaises(sw.Refused):
+            sw.spawn(self.repo, self.wts, "work", dict(BRIEF), "prof",
+                     self.reg, task_id="a3f9c1d2", env=self.env,
+                     require_shared_plan=True)
+        rec = sw.spawn(self.repo, self.wts, "work", dict(BRIEF), "prof",
+                       self.reg, task_id="a3f9c1d2", env=self.env,
+                       shared={"no_shared_surface": True},
+                       require_shared_plan=True)
+        self.assertTrue(rec["shared"]["attested"])
+
+    # S10 ---------------------------------------------------------------------
+    def test_s10_legacy_spawn_records_unattested(self):
+        # Backward compat: old callers without a plan keep working, but the
+        # registry marks them unattested (auditable, not trusted).
+        rec = self._spawn(task_id="a3f9c1d2")
+        self.assertEqual(rec["shared"], {"attested": False})
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
