@@ -6,13 +6,22 @@ per-task file by default to keep concurrent-task work safe). All writes are
 atomic (tmp + rename), all fields carry the §5 counters the dispatcher must
 never lose:
 
-  attempts, spent, started (wall-clock anchor), repairs, last_profile
+  attempts, spent, started (interval-clock anchor), repairs, last_profile
 
-Strictly-before deadline rule carries over: `started` is the wall-clock
+Strictly-before deadline rule carries over: `started` is the interval-clock
 anchor persisted at first dispatch; a restarted process resumes against the
 same anchor, so the 300 s cap applies across the whole task lifetime, not
-per process. Timestamps use time.time() unless a now_fn override is given
-(dry-run/harness use).
+per process. Interval math uses a monotonic clock (G6: NTP/wall steps must
+not stretch the deadline); wall time is kept only for human-readable stamps
+(`updated_at`, `started_wall`). Legacy files written without a `clock` field
+are treated as wall-anchored and evaluated with the wall clock for that task
+only — new saves are marked `"clock": "monotonic"`.
+
+Fail-closed corruption rule (G5, matching tools/spawn_worker.py S7): a
+present-but-unreadable state file raises CorruptState and is preserved for
+forensics. It is NEVER auto-reinitialized to zeros — callers must refuse the
+task (`blocked:state-corrupt`) and require explicit operator recovery.
+Only a missing file means "new task".
 """
 from __future__ import annotations
 
@@ -23,7 +32,21 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 STATE_FIELDS = ("task_id", "attempts", "spent", "started", "repairs", "last_profile")
+# Optional extras persisted when present (clock versioning, wall stamp).
+EXTRA_FIELDS = ("clock", "started_wall")
 DEFAULT_DIR = Path(__file__).resolve().parent / "task_state"
+
+CLOCK_MONOTONIC = "monotonic"
+CLOCK_WALL_LEGACY = "wall"
+
+
+class CorruptState(RuntimeError):
+    """A task state file exists but is unreadable/invalid — fail closed.
+
+    The file is preserved on disk for forensics. Callers must NOT treat this
+    as a new task (that would reset attempts/spend/deadline counters against
+    plan §7). Refuse the dispatch and require explicit operator recovery.
+    """
 
 
 def _sanitize(task_id: str) -> str:
@@ -49,7 +72,7 @@ class TaskStateStore:
 
     def __init__(self, state_dir: Path, *, now_fn: Callable[[], float] = time.time) -> None:
         self.state_dir = Path(state_dir)
-        self.now_fn = now_fn
+        self.now_fn = now_fn  # wall clock for `updated_at` stamps only
 
     def path_for(self, task_id: str) -> Path:
         return self.state_dir / f"{_sanitize(task_id)}.json"
@@ -57,17 +80,25 @@ class TaskStateStore:
     def load(self, task_id: str) -> Optional[dict]:
         p = self.path_for(task_id)
         if not p.is_file():
-            return None
+            return None  # genuinely new task — the ONLY absent-means-new case
         try:
             doc = json.loads(p.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return None  # corrupt state treated as absent — callers re-derive caps from ledger
+        except (json.JSONDecodeError, OSError) as e:
+            raise CorruptState(f"task {task_id!r} state unreadable ({e}); preserved at {p}") from e
         if not isinstance(doc, dict) or not all(k in doc for k in STATE_FIELDS):
-            return None
-        return {k: doc[k] for k in STATE_FIELDS}
+            raise CorruptState(
+                f"task {task_id!r} state missing required fields; preserved at {p}")
+        st = {k: doc[k] for k in STATE_FIELDS}
+        for k in EXTRA_FIELDS:
+            if k in doc:
+                st[k] = doc[k]
+        return st
 
     def save(self, st: dict) -> None:
         doc = {k: st[k] for k in STATE_FIELDS}
+        for k in EXTRA_FIELDS:
+            if k in st:
+                doc[k] = st[k]
         doc["updated_at"] = self.now_fn()
         _atomic_write(self.path_for(st["task_id"]), doc)
 
@@ -79,13 +110,17 @@ class ResumableTasks:
     nothing is reset (the plan's restart/rename-never-resets rule). The store
     is written after every mutation the dispatcher makes (dispatch or reset of
     last_profile), with the tmp+rename atomicity above.
+
+    Corruption propagates as CorruptState — load_or_init NEVER auto-creates
+    zeros over a corrupt file (G5). The dispatcher catches it and refuses the
+    task as `blocked:state-corrupt`.
     """
 
     def __init__(self, store: TaskStateStore) -> None:
         self.store = store
 
     def load_or_init(self, task_id: str, init_factory: Callable[[], dict]) -> dict:
-        loaded = self.store.load(task_id)
+        loaded = self.store.load(task_id)  # raises CorruptState; never masked
         if loaded is None:
             st = init_factory()
             self.store.save(st)
