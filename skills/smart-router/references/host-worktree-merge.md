@@ -131,3 +131,8 @@ Many Hosts prefer this safer pattern:
 | When is the worktree deleted? | Only after the branch has been successfully merged (or deliberately abandoned). |
 
 This separation keeps the agent simple: it just works in whatever directory it was launched in. All worktree lifecycle management (create → use → merge → delete) stays with the Host.
+
+**v3.0 autonomy default:** a human checkpoint shown in this example applies only
+when explicitly requested by the user. Otherwise `HumanGate` is `none`; the Host
+verifies and completes authorized work autonomously. Failed eligibility or exhausted
+limits yield a recorded automatic stop, not a human approval prompt (spec-v2.md §8.2).

@@ -408,7 +408,7 @@ def run() -> int:
     out22b = "simplify"
     expect("S22b", out22b, "simplify")
 
-    # S23: Research-Kit builder cannot bypass evidence/role gate.
+    # S23: Host builder cannot bypass evidence/role gate.
     builder_collects = False
     expect("S23", builder_collects, False, "builders do not collect evidence; block")
 

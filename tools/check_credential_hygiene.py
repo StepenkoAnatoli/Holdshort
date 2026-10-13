@@ -33,8 +33,8 @@ Classes (each a real observed state on this machine, 2026-10-12):
   * stale-plaintext-credential — a `~/.git-credentials` line whose host's chain does not
     include the `store` helper (git will never read it), plus an informational line when
     such a file IS in use (plaintext at rest, by the operator's own choice).
-  * plaintext-credential-file — a top-level entry under `~/.secrets/` (e.g. a file like
-    `research-kit` holding API keys): key material at rest outside any credential store,
+  * plaintext-credential-file — a top-level entry under `~/.secrets/smart-router/` (e.g. a file like
+    `router-key-file` holding API keys): key material at rest outside any credential store,
     readable by every process running as the user. Flagged by NAME ONLY — contents are
     never read, so triaging cannot echo a key (same output discipline as everything else
     here: target names, hosts, usernames and helper names only — never a secret).
@@ -47,7 +47,7 @@ Surfaces and resolution (each overridable for tests, matching the app_db precede
   * gh config dir, single resolution exactly as gh does it: GH_CONFIG_DIR, else
     %APPDATA%/GitHub CLI, else $XDG_CONFIG_HOME/gh, else <home>/.config/gh.
   * git's plaintext store: <home>/.git-credentials.
-  * loose secret files: <home>/.secrets (top-level entry names only; contents never read).
+  * loose secret files: <home>/.secrets/smart-router (top-level entry names only; contents never read).
   * user home for git config: USERPROFILE wins over HOME, because the pre-commit hook
     exports HOME=<repo root> and a machine config read through that HOME would silently
     miss the user's real credential config.
@@ -81,7 +81,7 @@ REPO_ROOT = TOOLS.parent
 BASELINE_DEFAULT = TOOLS / "credential_hygiene_baseline.json"
 GH_CONFIG_ENV = "GH_CONFIG_DIR"
 CREDENTIALS_FILE_NAME = ".git-credentials"
-SECRETS_DIR_NAME = ".secrets"
+SECRETS_DIR_NAME = ".secrets/smart-router"
 
 # Helpers that read from a store this check can see. Matching is by the family name a
 # helper is written as (`manager`, a path to git-credential-manager, `!`-commands, ...).
@@ -396,7 +396,7 @@ def parse_credentials_file(text: str) -> tuple[list[CredentialFileEntry], list[M
 # ---------------------------------------------------------------- loose secret files
 
 def resolve_secrets_dir(override: Path | None) -> Path | None:
-    """<home>/.secrets, or the explicit override (tests)."""
+    """<home>/.secrets/smart-router, or the explicit override (tests)."""
     if override is not None:
         return override
     home = user_home()
@@ -592,7 +592,7 @@ def inspect(store_path: Path | None = None, gh_config_override: Path | None = No
             secrets_dir: Path | None = None):
     """Gather every surface once, for the CLI and for tests.
     Returns (entries, store_desc, store_available, hosts, hosts_desc, creds, malformed,
-    config, secret_names, secrets_desc). Pass secrets_dir=None to use <home>/.secrets;
+    config, secret_names, secrets_desc). Pass secrets_dir=None to use <home>/.secrets/smart-router;
     tests may pass an explicit dir."""
     entries, store_desc = store_listing(store_path, platform)
     store_available = (store_path is not None) or (platform or os.name) == "nt"

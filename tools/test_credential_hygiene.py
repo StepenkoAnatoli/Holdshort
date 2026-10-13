@@ -28,7 +28,7 @@ Invariants under test (each one is a real failure mode, observed or reasoned abo
   C13. a UTF-16 store listing (what a redirected Windows console tool can emit) parses.
   C14. chain semantics match gitcredentials(7): an empty helper value resets the
        accumulated list, file order applies, and another URL's section does not leak in.
-  C15. a file under ~/.secrets (e.g. research-kit) is flagged as
+  C15. a file under ~/.secrets (e.g. router-key-file) is flagged as
        plaintext-credential-file (exit 1) by NAME ONLY — fixture key material is
        piece-assembled and never echoed into stdout/stderr.
   C16. a missing ~/.secrets dir is clean (expected on CI runners and fresh machines).
@@ -119,6 +119,10 @@ def env_for(tmp: Path, *, gitconfig_path: Path | None = None, home_dir: Path | N
 
 def run_cli(tmp: Path, env: dict, *args: str):
     base = ["--baseline", str(tmp / "baseline.json")]
+    if "--store-listing" not in args:
+        store = tmp / "empty-store-listing.txt"
+        store.write_text(listing(), encoding="utf-8")
+        base += ["--store-listing", str(store)]
     return subprocess.run([sys.executable, str(TOOL), *base, *args],
                           capture_output=True, text=True, timeout=120, env=env)
 
@@ -388,15 +392,15 @@ class CredentialHygiene(unittest.TestCase):
             tmp = Path(td)
             home = tmp / "userhome"
             home.mkdir()
-            secrets = home / ".secrets"
-            secrets.mkdir()
-            (secrets / "research-kit").write_text(f"RESEARCH_KIT_KEY={fake}\n",
+            secrets = home / cch.SECRETS_DIR_NAME
+            secrets.mkdir(parents=True)
+            (secrets / "router-key-file").write_text(f"ROUTER_FIXTURE_KEY={fake}\n",
                                                  encoding="utf-8")
             env = env_for(tmp, home_dir=home)
             r = run_cli(tmp, env)
             blob = r.stdout + r.stderr
         self.assertEqual(r.returncode, 1, blob)
-        self.assertIn("plaintext-credential-file: plaintext-file:research-kit", r.stdout)
+        self.assertIn("plaintext-credential-file: plaintext-file:router-key-file", r.stdout)
         self.assertNotIn(fake, blob,
                          "the gate must never echo file contents (names only)")
 
@@ -414,8 +418,8 @@ class CredentialHygiene(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
             home = tmp / "userhome"
-            (home / ".secrets").mkdir(parents=True)
-            (home / ".secrets" / "research-kit").write_text("placeholder\n",
+            (home / cch.SECRETS_DIR_NAME).mkdir(parents=True)
+            (home / cch.SECRETS_DIR_NAME / "router-key-file").write_text("placeholder\n",
                                                            encoding="utf-8")
             env = env_for(tmp, home_dir=home)
             first = run_cli(tmp, env)
@@ -425,9 +429,9 @@ class CredentialHygiene(unittest.TestCase):
             again = run_cli(tmp, env)
             self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
             doc = json.loads((tmp / "baseline.json").read_text(encoding="utf-8"))
-        self.assertIn("plaintext-file:research-kit", doc["entries"])
+        self.assertIn("plaintext-file:router-key-file", doc["entries"])
         self.assertIn("plaintext-credential-file",
-                      doc["entries"]["plaintext-file:research-kit"])
+                      doc["entries"]["plaintext-file:router-key-file"])
 
     # C18 ------------------------------------------------------------------
     def test_c18_secrets_override_not_a_directory_fails_closed(self):

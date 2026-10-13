@@ -1,6 +1,6 @@
-# SmartRouter + Isolated Workers — Complete Working Specification v2.0
+# SmartRouter + Isolated Workers — Working Specification v3.0 (autonomous default)
 
-**Status:** single source of truth for the SmartRouter **v2.0 surface** — routes, isolation,
+**Status:** single source of truth for the SmartRouter **v3.0 surface** — routes, isolation,
 ownership, HumanGate, nesting, speculative sets, machine-readable objects, Host
 responsibilities, compliance. Strictly additive over the pinned five-gate contract
 ([gates.md](gates.md), fixture-pinned to `docs/DEVELOPMENT_PLAN.md@d7c00f9`): where the two
@@ -121,6 +121,18 @@ Recommended branch naming: `sr/<task-id>/<short-slug>`.
 Isolation strength is derived from the combination of Gate 1 (permissions/privacy), Gate 3 (consequence class) and Gate 5 (economics). See table in §6.
 
 **8.2 HumanGate**
+
+Default `none`. A non-`none` gate requires an explicit user request for that task
+or project, recorded by the Host with its source. Risk classifications, eval
+recommendations, ambiguity, or failed attempts never constitute that request.
+Work, observed verification, bounded repair (R01/R02/R03), and eligible host merge
+proceed autonomously within existing authorization. Missing permissions,
+verification, accounting, budget, or recovery capability produce `blocked` or a
+terminal failure record, not an inferred approval question. The Host may re-route
+an eligible bounded recovery but may not bypass any gate or renew counters.
+A requested human checkpoint remains binding; autonomy is not authorization
+for an effect outside the user's task.
+
 
 | Value                      | Meaning |
 |----------------------------|---------|
@@ -349,7 +361,7 @@ A compliant Host **must**:
 4. Inject the exact Brief (or SpeculativeSet) into each Worker's environment.
 5. Account for every physical dispatch, including cancelled speculative candidates.
 6. Route all verification, CI and review feedback to the current Owner.
-7. Honour `HumanGate` before the corresponding action.
+7. Default `HumanGate` to `none`; honour a non-`none` gate only when it is backed by an explicit user request, recorded with provenance.
 8. Maintain an auditable Outcome Ledger in the §10.5 record format.
 9. Never reset cash, call or attempt counters by rename, restart or profile change.
 10. Treat missing or stale capability fingerprints as a Gate 2 failure.
@@ -382,8 +394,9 @@ A Host **may**:
 | 1.4     | Speculative parallel candidates |
 | 2.0     | Complete surface defined by this document |
 | 2.1     | NestedBrief schema (§10.4), LedgerRecord schema (§10.5), emit-validation duty (§14) |
+| 3.0     | User-directed autonomous default; HITL opt-in only; automatic stops remain blocked |
 
-Later versions are strictly additive. A Host implementing only up to version *N* must ignore unknown fields and must refuse any route it cannot enforce.
+Version 3.0 intentionally changes the human-intervention default under the user directive of 2026-10-13; the five eligibility gates and existing schemas remain intact. Older Hosts must not claim v3.0 behavior until they adopt this default and preserve explicitly requested gates. Additive unknown fields remain ignorable; unsupported routes must be refused.
 
 ## 14. Compliance
 

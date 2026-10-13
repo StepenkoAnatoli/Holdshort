@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -101,14 +102,19 @@ def check(repo: Path, *, task_id: str, branch: str, permitted: list[str],
         raise Violation(f"{len(offenders)} file(s) outside permitted-effects "
                         f"{permitted}: {offenders[:10]}")
     if worktree:
-        listed = _must(repo, "worktree", "list", "--porcelain", what="worktree list")
-        here = [ln.split(None, 1)[1] for ln in listed.splitlines() if ln.startswith("worktree ")]
-        if worktree not in here:
+        listed = _must(repo, "worktree", "list", "--porcelain", "-z", what="worktree list")
+        here = {}
+        current = None
+        for field in listed.split("\0"):
+            if field.startswith("worktree "):
+                current = os.path.normcase(os.path.normpath(field[9:]))
+                here[current] = None
+            elif field.startswith("branch ") and current is not None:
+                here[current] = field[7:]
+        claimed = os.path.normcase(os.path.normpath(worktree))
+        if claimed not in here:
             raise Violation(f"worktree {worktree!r} not listed on this checkout")
-        # Plain (non-porcelain) list shows `<path> <sha> [<branch>]` per worktree.
-        verbose = _must(repo, "worktree", "list", what="worktree branches")
-        if not any(ln.startswith(worktree + " ") and f"[{branch}]" in ln
-                   for ln in verbose.splitlines()):
+        if here[claimed] != f"refs/heads/{branch}":
             raise Violation(f"worktree {worktree!r} is not on {branch!r}")
     if merge_commit:
         msg = _must(repo, "log", "-1", "--pretty=%H %s", merge_commit, what="merge lookup")

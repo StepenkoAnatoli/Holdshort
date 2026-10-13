@@ -158,7 +158,7 @@ The synopsis is a navigation aid. Read the exact source row plus referenced comm
 | S22e | 254 | Precise insufficient economic benefit rejects | unreviewed |
 | S22f | 255 | Exactly 5% is equivalent, not strictly >5% promotion | unreviewed |
 | S22g | 256 | Zero baseline makes unregistered relative comparison unsupported | unreviewed |
-| S23 | 187 | Research-Kit builder cannot bypass evidence/role gate | unreviewed |
+| S23 | 187 | Host builder cannot bypass evidence/role gate | unreviewed |
 | S24 | 188 | Advisory only, unknown actual identity, no claimed dispatch | unreviewed |
 | R01 | 260–264 | One same-profile correction consumes allowance | unreviewed |
 | R02 | 260, 265 | Different tuple is authorized escalation, no repair reset | unreviewed |
@@ -282,7 +282,7 @@ Fill only after a genuine independent review is complete:
 
 At packet creation: **owner designation pending; independent review pending; owner acknowledgement pending; Phase 1 pending**. No submitted GitHub review was observed. This packet does not change that state.
 
-Even if Phase 1 later closes, PR #2 remains draft/unmerged unless separately instructed. Skill implementation, pilot provider/data/spend/attempt/deadline permissions, real runtime tests, complete holdout economics and Research-Kit/Moonzila governance/adoption all remain separately gated.
+Even if Phase 1 later closes, PR #2 remains draft/unmerged unless separately instructed. Skill implementation, pilot provider/data/spend/attempt/deadline permissions, real runtime tests, complete holdout economics and Moonzila governance/adoption all remain separately gated.
 
 ## 12. Handoff checklist
 

@@ -126,3 +126,8 @@ actual-spend, files-touched, notes}`, `owner-profile`, plus fingerprint/class ex
 On a later failure the host supplies that Outcome as `PreviousResult` and SmartRouter
 re-routes (refined brief, escalation, or `blocked`) — SmartRouter stays stateless; the
 host owns the ledger (spec-v2.md §8.5/§11).
+
+**v3.0 autonomy default:** a human checkpoint shown in this example applies only
+when explicitly requested by the user. Otherwise `HumanGate` is `none`; the Host
+verifies and completes authorized work autonomously. Failed eligibility or exhausted
+limits yield a recorded automatic stop, not a human approval prompt (spec-v2.md §8.2).

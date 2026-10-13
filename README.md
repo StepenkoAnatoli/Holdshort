@@ -1,5 +1,16 @@
 # SmartRouter
 
+## Autonomous default (v3.0 policy)
+
+Human-in-the-loop checkpoints are opt-in, enabled only by an explicit user request.
+The canonical skill and spec define this behavior; verification and hard stops stay
+in force. The executable supervisor emits a `blocked` evidence package by default,
+and preserves optional HITL through `--human-requested`.
+
+[Observed use and review record](docs/SMARTROUTER_USAGE_REVIEW_2026-10-13.md) records
+router blockers, GPT usage telemetry, reproducible bugs and remaining host gaps.
+This policy update is not a new live-pilot result or consumer-adoption claim.
+
 ## Project phase state (updated 2026-10-13)
 
 Executable phases of the plan are **closed** — released as
@@ -14,7 +25,7 @@ at commit `b6e04fd`. The authoritative ledger is
 | 3 — preregistration (task pool, seeds, pricing, thresholds) | **Closed** — owner-deviation closure at `6d0b140`; formal exit in [docs/PHASE3_ACCEPTANCE_RECORD.md](docs/PHASE3_ACCEPTANCE_RECORD.md) |
 | 4 — pilot evaluation, non-live scope | **Closed** — 5/5 task contracts executed; report in [docs/PHASE4_PILOT_REPORT.md](docs/PHASE4_PILOT_REPORT.md) |
 | **Live Phase 4** — real-provider pilot (real spend) | **Open** — the only executable item left; gated on §10 row 4: real rate sheets, live qualification records, explicit owner spend approval |
-| 5–7 — consumer integrations (Research-Kit, Moonzila) | **Consumer-owned by design** — their owners approve and execute; handoff notes in `docs/HANDOFF_MOONZILA.md` / `docs/HANDOFF_RESEARCH_KIT.md` |
+| 5–7 — consumer integrations (Moonzila) | **Consumer-owned by design** — their owners approve and execute; handoff notes in `docs/HANDOFF_MOONZILA.md` |
 
 **Open ≠ unguarded.** Nothing live can run without the §10 row-4 key in a
 gitignored `.env`, dispatch hard-caps, and the enforcement stack described
@@ -50,7 +61,7 @@ other seven auto-closed as merged once their commits landed. In stack order:
 - **#38 — spec 2.1 surface**: `NestedBrief` (§10.4), `LedgerRecord` (§10.5),
   `tools/conform_spec.py` (§10 conformance, §12 violations fail), review +
   eval-prep skills to v1.1.
-- **#36 — plaintext-credential-file hygiene gate** (`~/.secrets`, name-only
+- **#36 — plaintext-credential-file hygiene gate** (`~/.secrets/smart-router`, name-only
   findings, contents never read).
 - **#43 — survey companions + decision trace + v2.1 proposal**
   (`docs/proposals/v2_1-delta.md` — proposal only, no normative edits) +
@@ -151,7 +162,7 @@ consumer before Phase 2 exits (plan finding F4/S14).
 
 Specification fixes are not a claim that all future work is verified. Outstanding owners, evidence
 and blocking milestones are named in the plan. Authorization is still required for skill adoption,
-paid calls, consumer reconfiguration and merge. Research-Kit and Moonzila sources remain unchanged.
+paid calls, consumer reconfiguration and merge. Moonzila sources remain unchanged.
 Proposed requirements and synthetic fixture results are not evidence of runtime enforcement,
 qualified real models or economic benefit.
 

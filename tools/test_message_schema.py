@@ -16,6 +16,7 @@ Run as part of the regression gate (folded into tools/run_regression.py).
 """
 from __future__ import annotations
 
+from contextlib import closing
 import sqlite3
 import subprocess
 import sys
@@ -89,8 +90,9 @@ class MessageSchema(unittest.TestCase):
             rid, hits = ms.add_message(conn, "before " + value + " after")
             conn.close()
             self.assertIn("anthropic-key", [h for h, _ in hits])
-            body = sqlite3.connect(str(p)).execute(
-                "SELECT body FROM messages WHERE id=?", (rid,)).fetchone()[0]
+            with closing(sqlite3.connect(str(p))) as reader:
+                body = reader.execute(
+                    "SELECT body FROM messages WHERE id=?", (rid,)).fetchone()[0]
             self.assertIn("[REDACTED-anthropic-key]", body)
             raw = p.read_bytes()
             self.assertNotIn(value.encode(), raw, "raw value must not reach the file")

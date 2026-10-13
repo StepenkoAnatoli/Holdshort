@@ -17,7 +17,7 @@ between display and generate, the accounting separation, and the stale-authority
 - Anything in plan §13's *next* stage: serial execution, privacy-before-prompt-bytes, reviewed
   edits/commands, local qualification/headroom work, manual overrides, Stop/recovery/reservation/
   settlement/recovery; shared reservations/bounded concurrency; engine hosting.
-- Repository-internal implementation work; Research-Kit changes (§12); skill-packaging work (§14
+- Repository-internal implementation work; skill-packaging work (§14
   Phase 2 scope; already separately reviewed).
 - Actual Moonzila-host roadmap/priority decisions (owner/its approved plan owns those).
 

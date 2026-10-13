@@ -165,8 +165,10 @@ class Watcher(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             app = self._clean_app(td)
             store = app / "projects" / "p1" / "desktop-v2.db"
+            startup_log = Path(td) / "watch.log"
             cmd = [sys.executable, str(TOOL), "--db-dir", str(app), "--poll", "0.05",
-                   "--debounce", "0", "--heartbeat", "2", "--max-scans", "3",
+                   "--debounce", "0", "--heartbeat", "30", "--max-scans", "2",
+                   "--log", str(startup_log),
                    "--verbose", "--state", str(Path(td) / "s.json"),
                    "--baseline", str(self.empty_baseline)]
             env = dict(os.environ)
@@ -174,7 +176,16 @@ class Watcher(unittest.TestCase):
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, env=env)
             try:
-                time.sleep(0.6)                      # let the first (clean) pass happen
+                # Await the observed clean startup scan rather than assuming the
+                # interpreter and scanner started within an arbitrary sleep.
+                ready_by = time.monotonic() + 30
+                while time.monotonic() < ready_by and proc.poll() is None:
+                    text = startup_log.read_text(encoding="utf-8") if startup_log.exists() else ""
+                    if any("scan (startup)" in line and "0 hits" in line for line in text.splitlines()):
+                        break
+                    time.sleep(0.05)
+                else:
+                    self.fail("watcher did not report a clean startup scan before the fixture change")
                 with store.open("ab") as fh:         # the "leak" lands mid-watch
                     fh.write(b" pasted " + FAKE.encode())
                 out, _ = proc.communicate(timeout=25)

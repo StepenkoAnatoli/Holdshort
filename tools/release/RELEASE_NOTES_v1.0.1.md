@@ -90,4 +90,4 @@ Everything gating `v1.0.0-pilot` still gates this release: strict branch protect
 repo-local `hooksPath` + its self-check; fail-closed secrets scan; row-4 key placement
 (gitignored `.env` with `$1`/`$20` caps, `api.anthropic.com`-only egress, 90-day window).
 Consumer phases 5–7 remain owned by their respective owners; handoff notes unchanged:
-`docs/HANDOFF_MOONZILA.md` and `docs/HANDOFF_RESEARCH_KIT.md`.
+`docs/HANDOFF_MOONZILA.md`.

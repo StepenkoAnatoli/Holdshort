@@ -88,12 +88,14 @@ def load_table(table_path: Path) -> dict:
     return doc
 
 
-def effective_gate(table: dict, task_class: str, default: str = "review-before-merge") -> str:
+def effective_gate(table: dict, task_class: str, default: str | None = None, *,
+                   human_requested: bool = False) -> str:
     """The gate routing enforces for one task: a table LOOKUP, never a computation."""
-    gate = table.get("classes", {}).get(task_class, default)
+    fallback = default if default is not None else ("review-before-merge" if human_requested else "none")
+    gate = table.get("classes", {}).get(task_class, fallback)
     if gate not in HUMANGATES:
         raise FailClosed(f"published gate {gate!r} for class {task_class!r} is not a HumanGate")
-    return gate
+    return gate if human_requested else "none"
 
 
 # ------------------------------------------------------------------ evaluation (authorized only)
@@ -165,6 +167,8 @@ def main(argv: list[str] | None = None) -> int:
     g = sub.add_parser("gate", help="look up the published gate for one class (routing path)")
     g.add_argument("--table", type=Path, required=True)
     g.add_argument("--class", dest="task_class", required=True)
+    g.add_argument("--human-requested", action="store_true",
+                   help="apply the published human gate only on explicit user request")
     args = ap.parse_args(argv)
     try:
         if args.cmd == "record":
@@ -173,7 +177,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"class_breaker: recorded {entry['class']}/{entry['outcome']}")
             return 0
         if args.cmd == "gate":
-            print(effective_gate(load_table(args.table), args.task_class))
+            print(effective_gate(load_table(args.table), args.task_class,
+                                 human_requested=args.human_requested))
             return 0
         table = load_table(args.table)
         auth = load_auth(args.auth)

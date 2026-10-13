@@ -2,7 +2,7 @@
 
 Reviewed 2026-10-07 through public repository metadata, READMEs, complete recursive trees and selected source/test/license files. No clones, installs, upstream execution, provider calls or paid inference. Counts are approximate tree/path-discovered test counts, **not tests run**. Benchmark and savings figures in upstream READMEs remain publisher claims. Source behavior observations are not deployment/exploitation claims.
 
-This is a source-review appendix, not a Research-Kit ledger-backed evidence corpus. Revalidate blocking facts through the applicable consumer research workflow before adoption. No upstream code/assets are vendored; this plan-only PR delivers no usable skills. Proposed future skills must be independently authored or use material only with suitable permission. Links pin the surveyed commit, not mutable main.
+This is a source-review appendix, not a live ledger-backed evidence corpus. Revalidate blocking facts through the applicable consumer research workflow before adoption. No upstream code/assets are vendored; this plan-only PR delivers no usable skills. Proposed future skills must be independently authored or use material only with suitable permission. Links pin the surveyed commit, not mutable main.
 
 ## 1. yenanjing/awesome-model-routing
 

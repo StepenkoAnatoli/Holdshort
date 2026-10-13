@@ -44,7 +44,7 @@ SLEEP5 = [sys.executable, "-c", "import time; time.sleep(5)"]
 
 
 def run_watchdog(state: Path, task: str, *extra: str, cmd: list[str] | None = None,
-                 cwd: Path | None = None, timeout: float = 30.0) -> subprocess.CompletedProcess:
+                 cwd: Path | None = None, timeout: float = 60.0) -> subprocess.CompletedProcess:
     argv = [sys.executable, str(TOOL), "--task-id", task, "--state", str(state), *extra]
     if cmd is not None:
         argv += ["--", *cmd]
@@ -69,7 +69,7 @@ class Watchdog(unittest.TestCase):
                                     curr={"failing_tests": [], "diff_hash": "x", "error": "new"},
                                     calls_used=0, calls_limit=None, cash_spent=0.0,
                                     cash_cap=None, high_risk="privilege escalation signal")
-        self.assertEqual(verdict, "needs-human")
+        self.assertEqual(verdict, "blocked")
         self.assertIn("high-risk", reason)
 
     def test_h8_no_progress_beats_free_repair(self):
@@ -77,7 +77,7 @@ class Watchdog(unittest.TestCase):
         curr = {"failing_tests": ["t1"], "diff_hash": "bb", "error": "other"}
         verdict, reason = wd.decide(repairs_used=0, allowance=1, prev=prev, curr=curr,
                                     calls_used=0, calls_limit=None, cash_spent=0.0, cash_cap=None)
-        self.assertEqual(verdict, "needs-human")
+        self.assertEqual(verdict, "blocked")
         self.assertIn("no progress", reason)
 
     # H2 ----------------------------------------------------------------------
@@ -97,12 +97,12 @@ class Watchdog(unittest.TestCase):
             tdp = Path(td)
             esc = tdp / "esc.json"
             r = run_watchdog(tdp / "s.json", "h1", "--timeout", "0.3",
-                             "--escalation-out", str(esc), cmd=SLEEP5, timeout=30.0)
+                             "--escalation-out", str(esc), cmd=SLEEP5, timeout=60.0)
             self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
-            self.assertIn("needs-human", r.stderr)
+            self.assertIn("blocked", r.stderr)
             self.assertIn("timeout", r.stderr.lower())
             pkg = json.loads(esc.read_text())
-            self.assertEqual(pkg["status"], "needs-human")
+            self.assertEqual(pkg["status"], "blocked")
             self.assertIn("timeout", pkg["reason"].lower())
 
     # H3 ----------------------------------------------------------------------
@@ -203,15 +203,15 @@ class Watchdog(unittest.TestCase):
                              cmd=[sys.executable, "-c", "import sys; sys.exit(1)"])
             self.assertEqual(r.returncode, 2)
             pkg = json.loads(esc.read_text())
-            self.assertEqual(pkg["status"], "needs-human")
+            self.assertEqual(pkg["status"], "blocked")
             self.assertEqual(pkg["task_id"], "h6")
             self.assertEqual(pkg["brief"]["objective"], "fix t")
             self.assertEqual(pkg["decision"]["HumanGate"], "none")
             self.assertTrue(pkg["attempt_history"], "complete attempt history required")
             self.assertEqual(pkg["diff_ref"], "abc123")
             self.assertIn("/pr/1", pkg["pr_url"])
-            for action in ("Approve", "Guide", "Take over", "Abort"):
-                self.assertIn(action, pkg["actions"])
+            self.assertEqual(pkg["actions"], [])
+            self.assertFalse(pkg["human_requested"])
 
     # H7 ----------------------------------------------------------------------
     def test_h7_ceilings_and_safety_escalate_without_running(self):
@@ -233,6 +233,79 @@ class Watchdog(unittest.TestCase):
                               cmd=[sys.executable, "-c", "print('should not run')"])
             self.assertEqual(r2.returncode, 2)
             self.assertIn("high-risk", r2.stderr)
+
+
+    def test_explicit_human_request_preserves_manual_stop(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            marker = root / "ran.txt"
+            package = root / "stop.json"
+            result = run_watchdog(root / "state.json", "manual", "--timeout", "10",
+                                  "--human-requested", "--gate-raised",
+                                  "--escalation-out", str(package),
+                                  cmd=[sys.executable, "-c", f"open({str(marker)!r}, 'w').write('ran')"])
+            self.assertEqual(result.returncode, 2)
+            self.assertFalse(marker.exists())
+            doc = json.loads(package.read_text())
+            self.assertEqual(doc["status"], "needs-human")
+            self.assertTrue(doc["human_requested"])
+            self.assertIn("Approve", doc["actions"])
+
+    def test_allowance_cannot_override_one_repair_contract(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            marker = root / "ran.txt"
+            result = run_watchdog(root / "state.json", "invalid", "--timeout", "10",
+                                  "--allowance", "2",
+                                  cmd=[sys.executable, "-c", f"open({str(marker)!r}, 'w').write('ran')"])
+            self.assertEqual(result.returncode, 3)
+            self.assertFalse(marker.exists())
+
+    def test_terminal_repair_failure_blocks_next_launch(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            state = root / "state.json"
+            fail = [sys.executable, "-c", "import sys; sys.exit(1)"]
+            self.assertEqual(run_watchdog(state, "bounded", "--timeout", "10", "--diff-hash", "a", cmd=fail).returncode, 1)
+            self.assertEqual(run_watchdog(state, "bounded", "--timeout", "10", "--diff-hash", "b", cmd=fail).returncode, 2)
+            marker = root / "ran.txt"
+            result = run_watchdog(state, "bounded", "--timeout", "10",
+                                  cmd=[sys.executable, "-c", f"open({str(marker)!r}, 'w').write('ran')"])
+            self.assertEqual(result.returncode, 2)
+            self.assertFalse(marker.exists())
+
+    def test_terminal_timeout_and_gate_survive_restart(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for name, flags, command in (
+                ("timeout", ["--timeout", "0.1"], [sys.executable, "-c", "import time; time.sleep(10)"]),
+                ("gate", ["--timeout", "10", "--gate-raised"], [sys.executable, "-c", "print('must not run')"]),
+            ):
+                with self.subTest(name=name):
+                    state = root / f"{name}.json"
+                    stopped = run_watchdog(state, name, *flags, cmd=command)
+                    self.assertEqual(stopped.returncode, 2, stopped.stdout + stopped.stderr)
+                    before = json.loads(state.read_text())
+                    self.assertTrue(before["terminal_reason"])
+                    marker = root / f"{name}.txt"
+                    resumed = run_watchdog(state, name, "--timeout", "10",
+                        cmd=[sys.executable, "-c", f"open({str(marker)!r}, 'w').write('ran')"])
+                    self.assertEqual(resumed.returncode, 2, resumed.stdout + resumed.stderr)
+                    self.assertFalse(marker.exists(), "terminal stop must persist without repeating caller flags")
+                    self.assertEqual(json.loads(state.read_text())["attempts"], before["attempts"])
+
+    def test_logs_are_redacted_before_state_and_package_writes(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            state = root / "state.json"
+            package = root / "stop.json"
+            fixture = "ghp_" + "a" * 36
+            result = run_watchdog(state, "redacted", "--timeout", "10", "--allowance", "0",
+                                  "--escalation-out", str(package),
+                                  cmd=[sys.executable, "-c", "import sys; print('ghp_' + 'a'*36); sys.exit(1)"])
+            self.assertEqual(result.returncode, 2)
+            for text in (state.read_text(), package.read_text(), result.stdout, result.stderr):
+                self.assertNotIn(fixture, text, "synthetic credential reached a writer")
 
 
 if __name__ == "__main__":
