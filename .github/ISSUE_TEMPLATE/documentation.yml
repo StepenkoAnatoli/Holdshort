@@ -1,0 +1,21 @@
+name: Documentation improvement
+description: Suggest a clearer explanation, runnable example, or corrected link.
+labels: [documentation]
+body:
+  - type: input
+    id: page
+    attributes:
+      label: Page or file
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is unclear or incorrect?
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested improvement
+      description: Explain how a new user could understand or verify the result.

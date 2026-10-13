@@ -1,4 +1,12 @@
+[![SmartRouter preview: model-routing policy, five eligibility checks, and clear host responsibilities](docs/assets/smartrouter-preview.svg)](#how-it-works)
+
 # SmartRouter
+
+[![Regression tests](https://github.com/StepenkoAnatoli/SmartRouter/actions/workflows/regression-gate.yml/badge.svg?branch=main)](https://github.com/StepenkoAnatoli/SmartRouter/actions/workflows/regression-gate.yml)
+[![License scope: see LICENSE](https://img.shields.io/badge/license%20scope-see%20LICENSE-blue)](LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/StepenkoAnatoli/SmartRouter)](https://github.com/StepenkoAnatoli/SmartRouter/commits/main/)
+[![GitHub stars](https://img.shields.io/github/stars/StepenkoAnatoli/SmartRouter?style=flat)](https://github.com/StepenkoAnatoli/SmartRouter/stargazers)
+[![Good first issues](https://img.shields.io/github/issues/StepenkoAnatoli/SmartRouter/good%20first%20issue?label=good%20first%20issues)](https://github.com/StepenkoAnatoli/SmartRouter/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22)
 
 **Clear model choices for coding tasks, with verification and limits built in.**
 
@@ -216,6 +224,11 @@ Unknown dollar cost remains unknown.
 
 ## Contributing
 
+New contributors are welcome. Start with the [contribution guide](CONTRIBUTING.md)
+and browse [good first issues](https://github.com/StepenkoAnatoli/SmartRouter/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22)
+for small, clearly scoped tasks. The guide explains setup, labels, commit messages,
+bug reports, and pull requests.
+
 Work on a feature branch, define acceptance checks before implementation, and run
 the local gate before pushing. Open a pull request against `main`; GitHub runs the
 regression gate and watcher proof. Merge only after the required checks pass
@@ -223,3 +236,11 @@ against the current base. Keep project-specific consumer code and credential
 inventories in their own repositories.
 
 See [LICENSE](LICENSE) for the license grant and its stated scope.
+
+## Support the project
+
+*If you find this project helpful, please consider giving it a ⭐!*
+
+You can also help by reporting reproducible bugs, improving the documentation,
+or contributing a focused fix. Thank you for helping make SmartRouter clearer
+and more reliable.

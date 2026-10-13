@@ -1,0 +1,41 @@
+name: Bug report
+description: Report reproducible incorrect behavior using synthetic data.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Please avoid API keys, private project data, and raw session logs. Use a minimal synthetic reproduction."
+  - type: input
+    id: revision
+    attributes:
+      label: Commit or version
+      description: The commit SHA or release you tested.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include exact commands and the smallest relevant synthetic input.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Observed behavior
+      description: Include exit codes and redacted output when useful.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, Python version, Git version, and relevant host configuration.
+    validations:
+      required: true
