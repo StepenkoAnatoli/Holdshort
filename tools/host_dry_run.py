@@ -109,6 +109,9 @@ def spawn_worker(main: Path, wt_root: Path, task_id: str, spec: dict, env: dict,
                  registry: Path) -> dict:
     """Steps 2-4 for one worker, via the tested host primitive (never half-spawns)."""
     try:
+        # One writer at a time AND one worktree-add at a time: concurrent adds race
+        # on the shared .git/worktrees/ admin dir (PR #42 CI: sibling
+        # `fatal: failed to read .git/worktrees/<other>/commondir`).
         with _reg_lock():  # two parallel spawns share one registry file
             rec = sw.spawn(main, wt_root, spec["slug"], brief_for(task_id, spec["slug"]),
                            "dry-run-worker", registry, task_id=task_id, env=env)
