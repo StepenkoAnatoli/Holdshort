@@ -121,6 +121,27 @@ class GuardLaunch(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
         self.assertIn("FAIL-CLOSED", r.stderr)
 
+    # G8 ----------------------------------------------------------------------
+    def test_g8_unattested_launch_refused_when_required(self):
+        import json
+        reg = self.tmp / "reg.json"
+        reg.write_text(json.dumps({"workers": {TASK: {
+            "path": str(self.wt), "branch": BRANCH, "profile": "p",
+            "shared": {"attested": False}}}}), encoding="utf-8")
+        r = self._run(*self._base(self.wt), "--task-id", TASK,
+                      "--branch", BRANCH, "--registry", str(reg),
+                      "--require-shared-plan")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("shared-surface", r.stderr)
+        reg.write_text(json.dumps({"workers": {TASK: {
+            "path": str(self.wt), "branch": BRANCH, "profile": "p",
+            "shared": {"attested": True, "no_shared_surface": True}}}}),
+            encoding="utf-8")
+        r2 = self._run(*self._base(self.wt), "--task-id", TASK,
+                       "--branch", BRANCH, "--registry", str(reg),
+                       "--require-shared-plan")
+        self.assertEqual(r2.returncode, 0)
+
     # G7 ----------------------------------------------------------------------
     def test_g7_half_binding_refused(self):
         r = self._run(*self._base(self.wt), "--task-id", TASK)
