@@ -196,16 +196,16 @@ older release tags describe the snapshots published at those tags.
 The [October 13 review](docs/SMARTROUTER_USAGE_REVIEW_2026-10-13.md) records these
 important open implementation gaps:
 
-- Pre-send cost reservations rely on the caller's input-token estimate, which is
-  not checked against the prompt. An underestimate can take each task over its cap
-  once; that send is still recorded at actual cost. The required-check (review)
-  bound is not yet reserved against remaining headroom, and a send that raises,
-  such as a timeout, is not yet accounted.
+- The pre-send input count is the API's own estimate plus a 5% margin, so a send
+  can still slightly exceed its reservation; that send is recorded at actual cost.
+  The required-check (review) bound is not yet reserved against remaining headroom,
+  and a send that raises, such as a timeout, is not yet accounted.
 - Pilot spending resets with a new dispatcher instance instead of being shared persistently.
 
-The live dispatcher now reserves worst-case cost before sending: expected input
-tokens plus the adapter's `max_tokens` of output, priced with Haiku's long-context
-rates where they apply. It blocks when that reservation does not fit the task cap
+The live dispatcher now reserves worst-case cost before sending. It counts the
+prompt through the API's free token-counting endpoint, adds 5%, and prices that
+(or the caller's larger estimate) plus the adapter's `max_tokens` of output, with
+Haiku's long-context rates where they apply. It blocks when that reservation does not fit the task cap
 or this dispatcher instance's pilot total, then settles to the actual usage.
 Corrupt persisted task state now blocks dispatch and preserves the original file.
 Recovery still needs an authoritative reconciliation process. Shared-resource

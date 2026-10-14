@@ -82,21 +82,21 @@ python tools/live_dispatcher.py \
   --profile cloud-C \
   --task-id live-001 --request "<task prompt from the §3.1 contract>" \
   --work-bound 0.01 --review-bound 0.01 \
-  --expected-in-tokens <upper bound on the prompt's input tokens> \
   --ledger tools/pilot_ledger.jsonl \
   --task-store tools/task_state
 ```
 
-`--expected-in-tokens` is REQUIRED for a live send. Before any HTTP call the dispatcher
-reserves that many input tokens plus the adapter's `max_tokens` (4096) of output at the
-profile's rates, and refuses with `blocked-cost-cap` if the reservation does not fit what is
-left of the task's $1.00 (with `--task-store`, earlier sends of the same task count). The
-pilot cap only sees sends made by the same process, and each CLI run is a new process, so
-pilot totals come from `pilot_report` after each send (§4). Without an estimate it refuses
-with `blocked-gate4` (exit 1, no HTTP). Overestimate rather than under: the estimate is not
-checked against the prompt, so an underestimate can take the task over its cap once. That
-send is still recorded at its actual cost, and the ledger reason says it exceeded the
-reservation.
+Before the send, the dispatcher posts the prompt to api.anthropic.com's free
+`/v1/messages/count_tokens` endpoint, adds 5% to the count, and reserves that many input
+tokens (or `--expected-in-tokens`, if larger) plus the adapter's `max_tokens` (4096) of output
+at the profile's rates. It refuses with `blocked-cost-cap` if the reservation does not fit
+what is left of the task's $1.00 (with `--task-store`, earlier sends of the same task count).
+If the count request itself fails (rate limit, network, key), the run stops with an error
+before anything is sent and writes no ledger line; re-run it. The pilot cap only
+sees sends made by the same process, and each CLI run is a new process, so pilot totals come
+from `pilot_report` after each send (§4). The count is the API's own estimate, so a send can
+still slightly exceed its reservation; it is recorded at actual cost, and the ledger reason
+says so.
 
 `--task-store tools/task_state` is REQUIRED in the pilot invocation: it persists the 300 s
 whole-task deadline and the attempt/repair counters across restarts (§6 limitation closed
@@ -104,8 +104,8 @@ by this flag; `tools/test_task_persistence.py` pins the behavior).
 
 Expected: **exit 0**, ledger line `"decision": "dispatched"` with a **nonzero `cost_usd`**
 computed from the adapter's actual usage tokens against the prices-2 rates. Refusal cases
-(exit 2, pre-flight, no HTTP): missing `.env` key; profile with no approved Anthropic mapping
-(`cloud-C-alt` is refused — its provider is NOT approved).
+(exit 2, `dispatch-refused`, no HTTP, no ledger line): missing `.env` key; profile with no
+approved Anthropic mapping (`cloud-C-alt` is refused — its provider is NOT approved).
 
 The ledger lands at `tools/pilot_ledger.jsonl` (gitignored by design; committed only if the
 pilot-close report asks). Keep the output JSON of each send in your session log.
@@ -151,10 +151,10 @@ Fail actions:
 
 ## 6. Known boundaries (honest limitations)
 
-- The adapter's HTTP path (`_http_transport`) is stdlib `urllib` and was exercised only via
-  mocked-transport tests — the first real call IS the moment this runbook reaches step 3. Its
-  correctness is verified by the dispatch's own usage figures matching what `pilot_report`
-  recomputes (step 4's intact check).
+- The adapter's HTTP paths (`_http_count_transport`, then `_http_transport`) are stdlib
+  `urllib` and were exercised only via mocked-transport tests — the first real calls ARE the
+  moment this runbook reaches step 3. Their correctness is verified by the dispatch's own usage
+  figures matching what `pilot_report` recomputes (step 4's intact check).
 - Wall-clock + counters across restarts: pass `--task-store tools/task_state` to persist
   per-task attempts/spent/repairs and the task's `started` anchor to JSON (atomic writes), so
   the 300 s deadline applies to the task's WHOLE lifetime, not per dispatcher process.
