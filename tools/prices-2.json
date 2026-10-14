@@ -18,6 +18,10 @@
       {
         "url": "https://developers.openai.com/api/docs/models/gpt-5-mini",
         "http_code_observed": "200"
+      },
+      {
+        "url": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "http_code_observed": "200 (2026-10-14; cloud-O and cloud-F rows read verbatim: Opus 5.5 $4 / $20, Fable 5.1 $10 / $50)"
       }
     ]
   },
@@ -37,8 +41,32 @@
       "input_rate_per_mtok": 0.10,
       "output_rate_per_mtok": 0.50,
       "input_rate_condition": "prompts up to 100,000 tokens",
+      "long_context": {
+        "threshold_input_tokens": 100000,
+        "input_rate_per_mtok": 0.50,
+        "output_rate_per_mtok": 2.50,
+        "condition": "prompts over 100,000 tokens; higher rates apply to the whole request, input and output"
+      },
       "uncertainty_class": "known",
       "bounds_source": "https://docs.claude.com/en/docs/about-claude/pricing",
+      "rows_confirmed_verbatim": true
+    },
+    "cloud-O": {
+      "role": "escalation tier: long-running agentic coding",
+      "model": "Claude Opus 5.5",
+      "input_rate_per_mtok": 4.00,
+      "output_rate_per_mtok": 20.00,
+      "uncertainty_class": "known",
+      "bounds_source": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "rows_confirmed_verbatim": true
+    },
+    "cloud-F": {
+      "role": "frontier escalation tier: demanding reasoning, long-horizon agentic work",
+      "model": "Claude Fable 5.1",
+      "input_rate_per_mtok": 10.00,
+      "output_rate_per_mtok": 50.00,
+      "uncertainty_class": "known",
+      "bounds_source": "https://platform.claude.com/docs/en/about-claude/pricing",
       "rows_confirmed_verbatim": true
     },
     "cloud-C-alt": {

@@ -79,6 +79,7 @@ CHECKS = [
     ("decision_fixtures", [sys.executable, "tests/smart_router_decisions.py"]),
     ("test_live_dispatcher", [sys.executable, "tools/test_live_dispatcher.py"]),
     ("test_dispatch_adapter", [sys.executable, "tools/test_dispatch_adapter.py"]),
+    ("test_pricing", [sys.executable, "tools/test_pricing.py"]),
     ("test_pilot_close", [sys.executable, "tools/test_pilot_close.py"]),
     ("test_task_persistence", [sys.executable, "tools/test_task_persistence.py"]),
     ("test_task_crosscheck", [sys.executable, "tools/test_task_crosscheck.py"]),

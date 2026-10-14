@@ -29,6 +29,8 @@ APPROVED_ENDPOINT = "https://api.anthropic.com"
 MODEL_FOR_PROFILE: Dict[str, str] = {
     "cloud-S": "claude-sonnet-5-5",
     "cloud-C": "claude-haiku-5-5",
+    "cloud-O": "claude-opus-5-5",
+    "cloud-F": "claude-fable-5-1",
 }
 MAX_TOKENS_DEFAULT = 4096
 REQUEST_TIMEOUT_S = 120
