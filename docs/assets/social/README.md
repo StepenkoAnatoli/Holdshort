@@ -7,6 +7,13 @@ exports for social platforms.
 - **five-checks** introduces the five eligibility and routing checks in order.
 - **budget-fixtures** illustrates synthetic reservation accounting and points to
   contributor issue #56. Its amounts are fixture values, not provider prices.
+- **local-first-look.mp4** is a 45-second silent vertical explainer, 720 × 1280,
+  with H.264 video and an AAC silent audio track. It introduces local checks,
+  observed fixture results, the five routing checks, a synthetic budget example,
+  and contributor tasks. It is an explanatory slide video, not a recording of
+  live-provider operation. Outputs were observed locally on 14 October 2026:
+  packaging validation passed for three skills and the decision suite passed
+  94 assertions across 57 fixture IDs.
 
 Suggested destinations are the project README and the LLM evaluation issues.
 Keep the experimental-status context in captions and avoid savings or production
