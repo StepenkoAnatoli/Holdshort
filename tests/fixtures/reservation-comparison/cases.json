@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "instructions": [
+    "Synthetic policy comparison only; do not execute tasks or call a provider.",
+    "Only the current profile is available. Gates 1, 2 and 3 pass; deadline is fresh; prices and accounting are reliable. Gate 5 permits direct execution when Gate 4 passes. No human gate is requested.",
+    "All cash amounts are USD decimal strings. One cash unit is 0.01; one call unit is 1.",
+    "Reservations are disjoint, unspent and reusable only by their named owner. A reservation owned by the current task covers this exact proposed plan; other owners' reservations cannot cover it. There are no undisclosed reservations or costs.",
+    "free_cash is globally unreserved cash: cap minus settled cash minus ALL existing cash reservations. additional_cash is max(0, all_in_bound minus reservations owned by this task). Never add owned reservations to free_cash or reserve them twice.",
+    "additional_calls is max(0, planned_calls minus slots already owned by this task). prospective_calls is used_calls plus ALL reserved call slots plus additional_calls. planned_calls includes all mandatory checks.",
+    "all_in_bound is work_bound plus mandatory_verification_bound. proposed_all_in_bound must cover that sum; an omitted required verification cost fails Gate 4 even when the corrected sum fits. All other pairs supply a correct proposal.",
+    "Gate 4 passes only if the proposal covers the full bound, additional_cash <= free_cash and prospective_calls <= call_limit. Equality passes. Return direct with first_failing_gate null, or blocked with first_failing_gate 4.",
+    "Return one JSON object with schema_version 1 and an answers array. Each answer must contain id, route, first_failing_gate, free_cash, all_in_bound, additional_cash, additional_calls and prospective_calls. Cash fields must be finite nonnegative decimal strings; call fields must be nonnegative integers. Do not include rationale in scored fields."
+  ],
+  "cases": [
+    {"id":"cash-owner-other","pair_id":"cash-owner","input":{"task_id":"task-a","cash_cap":"0.10","settled_cash":"0.06","cash_reservations":[{"owner":"task-b","amount":"0.04"}],"work_bound":"0.03","mandatory_verification_bound":"0.01","proposed_all_in_bound":"0.04","used_calls":0,"call_limit":2,"call_reservations":[],"planned_calls":2}},
+    {"id":"cash-owner-current","pair_id":"cash-owner","input":{"task_id":"task-a","cash_cap":"0.10","settled_cash":"0.06","cash_reservations":[{"owner":"task-a","amount":"0.04"}],"work_bound":"0.03","mandatory_verification_bound":"0.01","proposed_all_in_bound":"0.04","used_calls":0,"call_limit":2,"call_reservations":[],"planned_calls":2}},
+    {"id":"call-owner-other","pair_id":"call-owner","input":{"task_id":"task-a","cash_cap":"1.00","settled_cash":"0.00","cash_reservations":[],"work_bound":"0.02","mandatory_verification_bound":"0.01","proposed_all_in_bound":"0.03","used_calls":1,"call_limit":3,"call_reservations":[{"owner":"task-b","slots":2}],"planned_calls":2}},
+    {"id":"call-owner-current","pair_id":"call-owner","input":{"task_id":"task-a","cash_cap":"1.00","settled_cash":"0.00","cash_reservations":[],"work_bound":"0.02","mandatory_verification_bound":"0.01","proposed_all_in_bound":"0.03","used_calls":1,"call_limit":3,"call_reservations":[{"owner":"task-a","slots":2}],"planned_calls":2}},
+    {"id":"cash-exact","pair_id":"cash-boundary","input":{"task_id":"task-a","cash_cap":"0.10","settled_cash":"0.04","cash_reservations":[],"work_bound":"0.05","mandatory_verification_bound":"0.01","proposed_all_in_bound":"0.06","used_calls":0,"call_limit":2,"call_reservations":[],"planned_calls":2}},
+    {"id":"cash-over-cent","pair_id":"cash-boundary","input":{"task_id":"task-a","cash_cap":"0.09","settled_cash":"0.04","cash_reservations":[],"work_bound":"0.05","mandatory_verification_bound":"0.01","proposed_all_in_bound":"0.06","used_calls":0,"call_limit":2,"call_reservations":[],"planned_calls":2}},
+    {"id":"calls-exact","pair_id":"call-boundary","input":{"task_id":"task-a","cash_cap":"1.00","settled_cash":"0.00","cash_reservations":[],"work_bound":"0.01","mandatory_verification_bound":"0.01","proposed_all_in_bound":"0.02","used_calls":1,"call_limit":3,"call_reservations":[],"planned_calls":2}},
+    {"id":"calls-over-one","pair_id":"call-boundary","input":{"task_id":"task-a","cash_cap":"1.00","settled_cash":"0.00","cash_reservations":[],"work_bound":"0.01","mandatory_verification_bound":"0.01","proposed_all_in_bound":"0.02","used_calls":1,"call_limit":3,"call_reservations":[],"planned_calls":3}},
+    {"id":"verification-included","pair_id":"verification-omission","input":{"task_id":"task-a","cash_cap":"0.10","settled_cash":"0.04","cash_reservations":[],"work_bound":"0.05","mandatory_verification_bound":"0.01","proposed_all_in_bound":"0.06","used_calls":0,"call_limit":2,"call_reservations":[],"planned_calls":2}},
+    {"id":"verification-omitted","pair_id":"verification-omission","input":{"task_id":"task-a","cash_cap":"0.10","settled_cash":"0.04","cash_reservations":[],"work_bound":"0.05","mandatory_verification_bound":"0.01","proposed_all_in_bound":"0.05","used_calls":0,"call_limit":2,"call_reservations":[],"planned_calls":2}}
+  ]
+}

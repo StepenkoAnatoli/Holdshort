@@ -154,6 +154,23 @@ python tools/host_watchdog.py --task-id readme-demo --state .local/readme-demo/s
 The supervisor records the attempt in `.local/readme-demo/state.json`. If the
 command succeeds, it exits with code `0`.
 
+To see an autonomous stop, run this deliberately failing command with no repair
+allowance. Use a separate task and state path:
+
+```bash
+python tools/host_watchdog.py --task-id readme-blocked-demo --state .local/readme-blocked-demo/state.json --timeout 10 --allowance 0 -- python -c "import sys; sys.exit(1)"
+```
+
+The supervisor exits with code `2` and writes
+`.local/readme-blocked-demo/state.blocked.json` beside the state file. The package
+has `status: "blocked"`, `human_requested: false`, and `actions: []`. It records
+the stop without requesting human approval. Human involvement requires an
+explicit request through `--human-requested`.
+
+Keep the state files as the record of each task. The supervisor refuses further
+execution from a terminal state. For new work, choose a new task ID and a new
+state path; do not reset or discard the old counters.
+
 | Exit code | Meaning |
 | --- | --- |
 | `0` | The supervised command succeeded. The host still owns the task's full acceptance checks. |
@@ -224,6 +241,9 @@ It is cumulative session telemetry, not a final bill or proof of savings. Cached
 input is included in input totals; reasoning output is included in output totals.
 Unknown dollar cost remains unknown.
 
+The [usage telemetry guide](docs/USAGE_TELEMETRY.md) shows how to export these
+metadata fields, try a synthetic example, and interpret missing counters.
+
 A [three-model policy pilot](docs/MODEL_POLICY_PILOT_2026-10-14.md) records
 Luna, GPT-6.1 Sol and Astra on twelve identical synthetic decisions. All matched
 the expected decision fields; the report also records a reservation-binding ambiguity,
@@ -243,6 +263,8 @@ gaps with replayable evidence. Usage and billed cost remain unknown.
 | Build a host integration | [Host contract and schemas](skills/smart-router/references/spec-v2.md) |
 | Understand autonomous stops and optional HITL | [Host policy](skills/smart-router/references/host-hil-policy.md) |
 | Inspect observed use, bugs, and GPT usage | [Engineering review](docs/SMARTROUTER_USAGE_REVIEW_2026-10-13.md) |
+| Export and interpret token counters | [Usage telemetry guide](docs/USAGE_TELEMETRY.md) |
+| Check reservation arithmetic in model answers | [Reservation comparison fixtures](docs/RESERVATION_COMPARISON_FIXTURES.md) |
 | Review the local pilot and its limits | [Pilot report](docs/PHASE4_PILOT_REPORT.md) |
 | Trace milestones and historical releases | [Project completion record](docs/PROJECT_COMPLETION.md) |
 | Handle credential rotation and custody checks | [Credential runbook](docs/CREDENTIAL_ROTATION_RUNBOOK.md) |
