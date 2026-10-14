@@ -206,7 +206,8 @@ The live dispatcher now reserves worst-case cost before sending. It counts the
 prompt through the API's free token-counting endpoint, adds 5%, and prices that
 (or the caller's larger estimate) plus the adapter's `max_tokens` of output, with
 Haiku's long-context rates where they apply. It blocks when that reservation does not fit the task cap
-or this dispatcher instance's pilot total, then settles to the actual usage.
+or this dispatcher instance's pilot total, then settles to the actual usage. A response whose
+usage cannot be read is charged the full reservation instead of $0, and its ledger reason says so.
 Corrupt persisted task state now blocks dispatch and preserves the original file.
 Recovery still needs an authoritative reconciliation process. Shared-resource
 plans can be required when creating and launching a worker; these checks track

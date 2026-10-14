@@ -96,7 +96,9 @@ before anything is sent and writes no ledger line; re-run it. The pilot cap only
 sees sends made by the same process, and each CLI run is a new process, so pilot totals come
 from `pilot_report` after each send (§4). The count is the API's own estimate, so a send can
 still slightly exceed its reservation; it is recorded at actual cost, and the ledger reason
-says so.
+says so. If a successful response has no readable usage block, the send is still recorded as
+`dispatched`, at the reserved tokens and cost, with `usage unknown` in the reason: that figure
+is a conservative charge, not the provider's bill.
 
 `--task-store tools/task_state` is REQUIRED in the pilot invocation: it persists the 300 s
 whole-task deadline and the attempt/repair counters across restarts (§6 limitation closed

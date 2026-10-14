@@ -6,7 +6,10 @@ Row-4 contract (docs/PHASE4_LIVE_START_PACKET.md §3, SIGNED 2026-10-10):
   * key lives in the **gitignored local .env** (ANTHROPIC_API_KEY=sk-ant-…);
     never read from or written to any tracked file
   * returns the model's ACTUAL (input_tokens, output_tokens) from the
-    response usage block — the dispatcher prices spend from these figures
+    response usage block — the dispatcher prices spend from these figures.
+    A 2xx body that is not JSON, or has a missing or malformed usage block,
+    raises UsageUnknown (never a zero-fill); the dispatcher then charges the
+    send at its pre-send reservation
   * the returned dispatch_fn carries `max_tokens`, the request's output
     ceiling, and `count_tokens(profile_id, request)`, which asks the free
     /v1/messages/count_tokens endpoint (same approved host) for the prompt's
@@ -42,6 +45,13 @@ REQUEST_TIMEOUT_S = 120
 
 class DispatchRefused(RuntimeError):
     """Fail-closed refusal: caller must not attempt any other route."""
+
+
+class UsageUnknown(RuntimeError):
+    """The request was sent and may be billed, but its usage could not be read.
+
+    Never zero-filled: the dispatcher charges the send's pre-send reservation.
+    """
 
 
 def parse_env_file(path: Path) -> Dict[str, str]:
@@ -148,7 +158,8 @@ def build_dispatch_fn(
     return dispatch_fn
 
 
-def _post(path: str, payload: dict, key: str) -> dict:
+def _post(path: str, payload: dict, key: str) -> bytes:
+    """POST to the approved host; returns the raw body of a 2xx response (urllib raises otherwise)."""
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         method="POST",
@@ -161,20 +172,30 @@ def _post(path: str, payload: dict, key: str) -> dict:
         },
     )
     with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_S) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+        return resp.read()
 
 
 def _http_count_transport(payload: dict, model: str, key: str) -> int:
     # no zero-fill: a missing count must fail the reservation, not price the prompt at $0
-    return _post("/v1/messages/count_tokens", payload, key)["input_tokens"]
+    body = _post("/v1/messages/count_tokens", payload, key)
+    return json.loads(body.decode("utf-8"))["input_tokens"]
 
 
 def _http_transport(payload: dict, model: str, key: str) -> Tuple[int, int]:
-    doc = _post("/v1/messages", payload, key)
-    usage = doc.get("usage") or {}
-    in_toks = int(usage.get("input_tokens") or 0)
-    out_toks = int(usage.get("output_tokens") or 0)
-    return in_toks, out_toks
+    body = _post("/v1/messages", payload, key)
+    # no zero-fill: the request was accepted, so an unreadable usage must not price it at $0
+    try:
+        doc = json.loads(body.decode("utf-8"))
+    except ValueError as exc:  # not UTF-8, or not JSON
+        raise UsageUnknown(f"response body is not JSON: {exc}") from exc
+    usage = doc.get("usage") if isinstance(doc, dict) else None
+    if not isinstance(usage, dict):
+        raise UsageUnknown(f"response usage is {usage!r}, not an object")
+    for field in ("input_tokens", "output_tokens"):
+        value = usage.get(field)
+        if type(value) is not int or value < 0:
+            raise UsageUnknown(f"usage.{field} is {value!r}, not a non-negative int")
+    return usage["input_tokens"], usage["output_tokens"]
 
 
 def main(argv=None) -> int:

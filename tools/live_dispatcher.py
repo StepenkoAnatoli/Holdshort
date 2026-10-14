@@ -26,6 +26,9 @@ Gate-4 blocks (affordability, fail-closed):
     declared `max_tokens` output ceiling (long-context tier included); a dry
     run reserves its expected tokens. Spend then settles to the actual usage,
     and a send that overran its reservation is still recorded at actual cost.
+    A send whose usage cannot be read (the dispatch_fn raises UsageUnknown or
+    returns anything but two non-negative ints) is recorded as dispatched at
+    the reserved tokens and cost, with the reason saying so — never at $0.
   * egress without a declared output ceiling or a token counter -> blocked:
     the worst case cannot be priced. A count that fails or is not a
     non-negative int raises before the send and writes no ledger line, like a
@@ -62,6 +65,11 @@ try:
 except ImportError:  # direct import when repo root on path
     from tools.task_persistence import TaskStateStore, ResumableTasks, CorruptState
 
+try:
+    from dispatch_adapter import UsageUnknown
+except ImportError:
+    from tools.dispatch_adapter import UsageUnknown
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PRICES_PATH = REPO_ROOT / "tools" / "prices-2.json"
 LEDGER_DEFAULT = REPO_ROOT / "tools" / "pilot_ledger.jsonl"
@@ -80,6 +88,12 @@ def _priceable(profile: Any) -> bool:
     except pricing.UnpriceableProfile:
         return False
     return True
+
+
+def _token_pair(usage: Any) -> bool:
+    """A dispatch_fn result is an (input, output) pair of non-negative ints."""
+    return (type(usage) in (tuple, list) and len(usage) == 2
+            and all(type(t) is int and t >= 0 for t in usage))
 
 
 def finite_nonnegative(value: Any) -> bool:
@@ -331,9 +345,18 @@ class LiveDispatcher:
                                 f"reserve ${reserve:.4f} puts pilot at ${self.pilot_spent + reserve:.2f}"
                                 f" > cap ${self.caps.max_cost_per_pilot:.2f}")
 
-        # 7) token counts: live calls only through dispatch_fn under egress consent
+        # 7) token counts: live calls only through dispatch_fn under egress consent.
+        #    A send whose usage cannot be read was still sent and may be billed:
+        #    it is charged the reservation it was priced at, never $0.
+        usage_unknown = ""
         if self.confirm_egress:
-            in_toks, out_toks = self.dispatch_fn(profile_id, request)
+            try:
+                usage = self.dispatch_fn(profile_id, request)
+                if not _token_pair(usage):
+                    raise UsageUnknown(f"dispatch_fn returned {usage!r}, not two non-negative ints")
+            except UsageUnknown as exc:
+                usage, usage_unknown = (reserve_in, out_ceiling), str(exc)
+            in_toks, out_toks = usage
         else:
             in_toks, out_toks = expected_in, expected_out
 
@@ -350,7 +373,9 @@ class LiveDispatcher:
         if self._resumer is not None:
             self._resumer.persist(st)
         reason = f"attempt {st['attempts']} of {self.caps.max_attempts}"
-        if cost > reserve:
+        if usage_unknown:
+            reason += f"; usage unknown, charged reservation ${reserve:.4f}: {usage_unknown}"
+        elif cost > reserve:
             reason += f"; actual ${cost:.4f} exceeded reservation ${reserve:.4f}"
         e = LedgerEntry(now, task_id, st["attempts"], profile_id, in_toks, out_toks, cost,
                         "dispatched", reason)

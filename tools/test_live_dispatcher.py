@@ -17,6 +17,7 @@ Covers the §5 cap surface and the Gate-4 fail-closed contract:
   T13 egress reserves worst-case cost (expected input + the dispatch_fn's
       max_tokens, long-context tier included) before any send, settles to
       actual usage, and records a send that overran its reservation
+  T15 a send whose usage cannot be read is charged its reservation, never $0
 """
 from __future__ import annotations
 
@@ -522,6 +523,115 @@ with tempfile.TemporaryDirectory() as td:
     check("T14h unmapped profile exits 2", rc == 2, str(rc))
     check("T14h refusal sends nothing, no ledger line", sent == [] and counted == []
           and entries(ledger(tmp)) == [], f"{sent} {counted}")
+
+# T15 a send whose usage cannot be read is charged its reservation, never $0 ----------------
+import pilot_report
+
+
+def unreadable(max_tokens, counts, result=None):
+    """Fake dispatch_fn for a send that went out but whose usage is unreadable:
+    raises UsageUnknown, or returns `result` when one is given."""
+    calls = []
+
+    def fn(pid, req):
+        calls.append(pid)
+        if result is None:
+            raise ld.UsageUnknown("response usage is None, not an object")
+        return result
+    fn.max_tokens = max_tokens
+    fn.count_tokens = lambda pid, req: counts.pop(0)
+    return fn, calls
+
+
+with tempfile.TemporaryDirectory() as td:
+    tmp = Path(td)
+    # Sonnet counted at 1,000 reserves 1,050 in @ $2 + 4,096 out @ $10 = $0.04306;
+    # the send is recorded at exactly that, with the attempt consumed
+    fn, calls = unreadable(4_096, [1_000])
+    d = new(tmp, dispatch_fn=fn, confirm_egress=True)
+    e = d.attempt("T15", "cloud-S", "req", work_bound=0.01, review_bound=0.01)
+    check("T15 unreadable usage still dispatched", e.decision == "dispatched"
+          and calls == ["cloud-S"], f"{e.decision} {calls}")
+    check("T15 charged the reservation, not $0", (e.input_tokens, e.output_tokens) == (1_050, 4_096)
+          and abs(e.cost_usd - 0.04306) < 1e-9, str(e))
+    check("T15 spend and attempt counted", abs(d.pilot_spent - 0.04306) < 1e-9
+          and abs(d._task("T15")["spent"] - 0.04306) < 1e-9
+          and d._task("T15")["attempts"] == 1, str(d._task("T15")))
+    check("T15 reason flags unknown usage", "usage unknown" in e.reason
+          and "usage is None" in e.reason, e.reason)
+    report = pilot_report.build_report(prices(), entries(ledger(tmp)))
+    check("T15 pilot_report recomputes the charge", report["accounting_status"] == "intact"
+          and report["pilot"]["total_spend_usd"] == 0.04306, str(report["problems"]))
+
+with tempfile.TemporaryDirectory() as td:
+    tmp = Path(td)
+    # a dispatch_fn that returns anything but two non-negative ints is treated the same
+    for bad in (None, (1_000,), (1_000, 100, 1), {1_000, 100}, (-1, 100), (1_000, -1),
+                (True, 100), (1_000, 1.5), ("1000", 100), (None, None)):
+        fn, calls = unreadable(4_096, [1_000], result=bad)
+        d = new(tmp, dispatch_fn=fn, confirm_egress=True)
+        e = d.attempt(f"T15b-{bad!r}", "cloud-S", "req", work_bound=0.01, review_bound=0.01)
+        check(f"T15b malformed usage {bad!r} charged the reservation",
+              e.decision == "dispatched" and (e.input_tokens, e.output_tokens) == (1_050, 4_096)
+              and abs(e.cost_usd - 0.04306) < 1e-9 and "usage unknown" in e.reason, str(e))
+
+with tempfile.TemporaryDirectory() as td:
+    tmp = Path(td)
+    # readable counts are never replaced by the reservation, whether tuple or list
+    for good in ((900, 200), [900, 200]):
+        fn, calls = unreadable(4_096, [1_000], result=good)
+        d = new(tmp, dispatch_fn=fn, confirm_egress=True)
+        e = d.attempt(f"T15e-{type(good).__name__}", "cloud-S", "req", work_bound=0.01,
+                      review_bound=0.01)
+        check(f"T15e readable {type(good).__name__} usage settles to actual",
+              e.decision == "dispatched" and (e.input_tokens, e.output_tokens) == (900, 200)
+              and "usage unknown" not in e.reason, str(e))
+
+with tempfile.TemporaryDirectory() as td:
+    tmp = Path(td)
+    # the charge counts against the cap: two $0.60 reservations do not fit $1.00, so
+    # the second send never reaches the transport (a $0 record would have let it through)
+    fn, calls = unreadable(60_000, [0, 0])
+    d = new(tmp, dispatch_fn=fn, confirm_egress=True)
+    e1 = d.attempt("T15c", "cloud-S", "req", work_bound=0.01, review_bound=0.01)
+    e2 = d.attempt("T15c", "cloud-S", "req", work_bound=0.01, review_bound=0.01)
+    check("T15c first unreadable send charged $0.60", e1.decision == "dispatched"
+          and abs(e1.cost_usd - 0.60) < 1e-9, str(e1))
+    check("T15c charge blocks the next send", e2.decision == "blocked-cost-cap"
+          and calls == ["cloud-S"], f"{e2.decision} {calls}")
+
+with tempfile.TemporaryDirectory() as td:
+    tmp = Path(td)
+    # end to end through the CLI and the real HTTP transport: a 200 without a usage
+    # block is recorded at the reservation (the adapter's UsageUnknown is the one caught)
+    import dispatch_adapter as da
+
+    class NoUsage:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return b'{"id": "msg_synthetic", "content": []}'
+    sent = []
+    real_build, real_urlopen = da.build_dispatch_fn, da.urllib.request.urlopen
+    da.build_dispatch_fn = lambda: real_build(api_key="placeholder", env_fallback={},
+                                              count_transport=lambda p, m, k: 1_000)
+    da.urllib.request.urlopen = lambda req, timeout: sent.append(req.full_url) or NoUsage()
+    try:
+        rc = ld.main(["--live", "--confirm-egress", "--profile", "cloud-S",
+                      "--task-id", "T15d", "--request", "x", "--work-bound", "0.01",
+                      "--review-bound", "0.01", "--ledger", str(ledger(tmp))])
+    finally:
+        da.build_dispatch_fn, da.urllib.request.urlopen = real_build, real_urlopen
+    es = entries(ledger(tmp))
+    check("T15d one real-transport send", sent == ["https://api.anthropic.com/v1/messages"],
+          str(sent))
+    check("T15d missing usage block charged the reservation", rc == 0 and len(es) == 1
+          and es[0]["decision"] == "dispatched" and abs(es[0]["cost_usd"] - 0.04306) < 1e-9
+          and "usage unknown" in es[0]["reason"], f"{rc} {es}")
 
 print(f"\n{'ALL PASS' if failures == 0 else f'{failures} FAILURES'}")
 sys.exit(0 if failures == 0 else 1)
