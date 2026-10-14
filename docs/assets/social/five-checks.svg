@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350"><title>SmartRouter: five checks before choosing a coding-agent model</title>
+<rect width="1080" height="1350" fill="#101b36"/>
+<rect x="76" y="66" width="18" height="38" rx="6" fill="#8ee8d5"/>
+<text x="113" y="99" font-family="Segoe UI,Arial,sans-serif" font-size="38" font-weight="700" fill="#8ee8d5">SmartRouter</text>
+<text x="76" y="158" font-family="Segoe UI,Arial,sans-serif" font-size="25" font-weight="400" fill="#aebbd2">MODEL ROUTING FOR CODING AGENTS</text>
+<text x="76" y="294" font-family="Segoe UI,Arial,sans-serif" font-size="82" font-weight="700" fill="#f3f6ff">Before you</text>
+<text x="76" y="389" font-family="Segoe UI,Arial,sans-serif" font-size="82" font-weight="700" fill="#f3f6ff">choose a model.</text>
+<text x="76" y="451" font-family="Segoe UI,Arial,sans-serif" font-size="32" font-weight="400" fill="#aebbd2">Check eligibility before comparing price.</text>
+<rect x="76" y="497" width="928" height="102" rx="20" fill="#182849" stroke="#30435f" stroke-width="2"/>
+<text x="103" y="563" font-family="Segoe UI,Arial,sans-serif" font-size="43" font-weight="700" fill="#8ee8d5">01</text>
+<text x="196" y="548" font-family="Segoe UI,Arial,sans-serif" font-size="38" font-weight="700" fill="#f3f6ff">Permissions</text>
+<text x="196" y="585" font-family="Segoe UI,Arial,sans-serif" font-size="27" font-weight="400" fill="#aebbd2">Is this action and destination authorized?</text>
+<rect x="76" y="613" width="928" height="102" rx="20" fill="#182849" stroke="#30435f" stroke-width="2"/>
+<text x="103" y="679" font-family="Segoe UI,Arial,sans-serif" font-size="43" font-weight="700" fill="#8ee8d5">02</text>
+<text x="196" y="664" font-family="Segoe UI,Arial,sans-serif" font-size="38" font-weight="700" fill="#f3f6ff">Capabilities</text>
+<text x="196" y="701" font-family="Segoe UI,Arial,sans-serif" font-size="27" font-weight="400" fill="#aebbd2">Can this profile do the required work?</text>
+<rect x="76" y="729" width="928" height="102" rx="20" fill="#182849" stroke="#30435f" stroke-width="2"/>
+<text x="103" y="795" font-family="Segoe UI,Arial,sans-serif" font-size="43" font-weight="700" fill="#8ee8d5">03</text>
+<text x="196" y="780" font-family="Segoe UI,Arial,sans-serif" font-size="38" font-weight="700" fill="#f3f6ff">Verification</text>
+<text x="196" y="817" font-family="Segoe UI,Arial,sans-serif" font-size="27" font-weight="400" fill="#aebbd2">Are acceptance checks ready before start?</text>
+<rect x="76" y="845" width="928" height="102" rx="20" fill="#182849" stroke="#30435f" stroke-width="2"/>
+<text x="103" y="911" font-family="Segoe UI,Arial,sans-serif" font-size="43" font-weight="700" fill="#8ee8d5">04</text>
+<text x="196" y="896" font-family="Segoe UI,Arial,sans-serif" font-size="38" font-weight="700" fill="#f3f6ff">Affordability</text>
+<text x="196" y="933" font-family="Segoe UI,Arial,sans-serif" font-size="27" font-weight="400" fill="#aebbd2">Do work AND verification fit the limits?</text>
+<rect x="76" y="961" width="928" height="102" rx="20" fill="#182849" stroke="#30435f" stroke-width="2"/>
+<text x="103" y="1027" font-family="Segoe UI,Arial,sans-serif" font-size="43" font-weight="700" fill="#8ee8d5">05</text>
+<text x="196" y="1012" font-family="Segoe UI,Arial,sans-serif" font-size="38" font-weight="700" fill="#f3f6ff">Economics</text>
+<text x="196" y="1049" font-family="Segoe UI,Arial,sans-serif" font-size="27" font-weight="400" fill="#aebbd2">Which eligible route is justified?</text>
+<rect x="76" y="1118" width="928" height="113" rx="20" fill="#21364a"/>
+<text x="105" y="1173" font-family="Segoe UI,Arial,sans-serif" font-size="34" font-weight="700" fill="#8ee8d5">Try the local checks. No API key needed.</text>
+<text x="105" y="1211" font-family="Segoe UI,Arial,sans-serif" font-size="25" font-weight="400" fill="#f3f6ff">Live-provider routing remains experimental.</text>
+<text x="76" y="1290" font-family="Segoe UI,Arial,sans-serif" font-size="29" font-weight="400" fill="#aebbd2">github.com/StepenkoAnatoli/SmartRouter</text>
+</svg>
