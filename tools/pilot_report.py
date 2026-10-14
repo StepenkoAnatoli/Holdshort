@@ -40,7 +40,25 @@ DISPATCHED = "dispatched"
 KNOWN_DECISIONS = {
     "dispatched", "unknown-profile", "blocked-attempt-cap", "blocked-cost-cap",
     "blocked-gate4", "blocked-deadline", "blocked-repair-cap", "blocked-pilot-cap",
+    "dispatch-reserved", "dispatch-error", "dispatch-reconciled", "dispatch-cancelled", "verification-complete",
+    "blocked-uncertain", "blocked-verified", "blocked:budget-state", "blocked:state-corrupt",
 }
+
+
+def effective_entries(entries):
+    """A reservation + settlement is one attempt; reconciliation supersedes uncertainty.
+
+    Keep original line numbers. Historical entries without reservation IDs keep
+    their original interpretation. Audit events remain in the source ledger.
+    """
+    finals = {e["reservation_id"]: i for i, e in enumerate(entries, 1)
+              if e.get("reservation_id") and e.get("decision") in
+              ("dispatched", "dispatch-error", "dispatch-reconciled", "dispatch-cancelled")}
+    for i, event in enumerate(entries, 1):
+        identifier = event.get("reservation_id")
+        if identifier in finals and i != finals[identifier]:
+            continue
+        yield i, event
 
 
 def load_jsonl(path: Path) -> List[dict]:
@@ -78,42 +96,66 @@ def build_report(prices: dict, entries: List[dict]) -> dict:
     repair_credits: Dict[str, int] = defaultdict(int)
     last_profile_by_task: Dict[str, str] = {}
 
-    for idx, e in enumerate(entries, 1):
+    uncertain_count = 0
+    for idx, e in effective_entries(entries):
         tid = e.get("task_id", "<missing>")
         pid = e.get("profile_id", "<missing>")
         dec = e.get("decision", "<missing>")
         if dec not in KNOWN_DECISIONS:
             problems.append(f"line {idx}: unknown decision {dec!r}")
 
-        in_t, out_t = int(e.get("input_tokens", 0)), int(e.get("output_tokens", 0))
-        cost = float(e.get("cost_usd", 0.0))
-        exp = recompute_cost(prices, pid, in_t, out_t)
+        physical = dec in (DISPATCHED, "dispatch-error", "dispatch-reconciled", "dispatch-reserved")
+        unknown = physical and any(e.get(field) is None for field in
+                                    ("input_tokens", "output_tokens", "cost_usd"))
+        if dec == "verification-complete":
+            if tid in per_task:
+                per_task[tid]["review_reserved"] = 0.0
+                per_task[tid]["outcome"] = "verified"
+            continue
+        in_t = int(e.get("input_tokens") or 0)
+        out_t = int(e.get("output_tokens") or 0)
+        cost = float(e.get("known_cost_usd", 0)) if unknown else float(e.get("cost_usd") or 0.0)
+        exp = None if unknown else recompute_cost(prices, pid, in_t, out_t)
+        if unknown:
+            uncertain_count += 1
+            problems.append(f"line {idx}: dispatch usage unknown; reservation retained")
+            per_profile_spent[pid] += cost
 
         if exp is None:
-            if dec == DISPATCHED:
+            if physical and not unknown:
                 problems.append(f"line {idx}: dispatched on unpriced profile {pid!r}")
         else:
             if abs(exp - cost) > 1e-9:
                 problems.append(
                     f"line {idx}: cost mismatch — ledger says ${cost:.6f}, rates say ${exp:.6f}"
                 )
-            if dec == DISPATCHED:
+            if physical:
                 per_profile_spent[pid] += exp
-                per_profile_dispatches[pid] += 1
+        if physical:
+            per_profile_dispatches[pid] += 1
 
-        if dec == DISPATCHED:
+        if physical:
             pilot_spent_observed += cost
             st = per_task.setdefault(tid, {
                 "task_id": tid, "attempts": 0, "spent": 0.0,
                 "last_profile": "", "same_profile_repairs_credited": 0,
-                "outcome": "dispatched",
+                "outcome": "dispatched", "review_reserved": 0.0, "uncertain_reserved": 0.0,
             })
             st["attempts"] += 1
             st["spent"] += cost
-            if st["last_profile"] and pid == st["last_profile"]:
+            st.setdefault("uncertain_reserved", 0.0)
+            st["review_reserved"] = float(e.get("review_reserved_usd", 0))
+            if unknown:
+                st["uncertain_reserved"] += (max(0, float(e.get("reserved_cost_usd", 0)) - cost)
+                                               if e.get("purpose", "work") == "work" else 0)
+                st["outcome"] = "usage-unknown"
+            elif "usage_status" in e:
+                st["outcome"] = "awaiting-verification"
+            if (e.get("purpose", "work") == "work" and st["last_profile"] and pid == st["last_profile"]):
                 st["same_profile_repairs_credited"] += 1
                 repair_credits[tid] += 1
-            st["last_profile"] = pid
+            if e.get("purpose", "work") == "work":
+                st["last_profile"] = pid
 
             if st["attempts"] > caps["max_attempts_per_task"]:
                 problems.append(
@@ -128,6 +170,7 @@ def build_report(prices: dict, entries: List[dict]) -> dict:
         else:
             if tid in per_task:
                 per_task[tid]["outcome"] = "blocked:" + ("cap" if "cap" in dec else "gate")
+                per_task[tid]["review_reserved"] = float(e.get("review_reserved_usd", per_task[tid].get("review_reserved", 0)))
             else:
                 per_task[tid] = {
                     "task_id": tid, "attempts": 0, "spent": 0.0,
@@ -168,6 +211,10 @@ def build_report(prices: dict, entries: List[dict]) -> dict:
             "tasks": len(per_task),
             "dispatches": sum(per_profile_dispatches.values()),
             "total_spend_usd": round(pilot_spent_observed, 6),
+            "total_spend_complete": uncertain_count == 0,
+            "unknown_usage_dispatches": uncertain_count,
+            "reserved_usd": round(sum(st.get("review_reserved", 0) + st.get("uncertain_reserved", 0)
+                                      for st in per_task.values()), 6),
             "caps": {
                 "max_attempts_per_task": caps["max_attempts_per_task"],
                 "max_cost_per_task_usd": caps["max_cost_per_task_usd"],

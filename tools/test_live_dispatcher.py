@@ -72,21 +72,23 @@ with tempfile.TemporaryDirectory() as td:
     # 200k prompt tokens > 100k threshold: Haiku 5.5 long-context tier, $0.50 in / $2.50 out
     check("T1 cost model", abs(e.cost_usd - (0.50 * 0.2 + 2.50 * 0.02)) < 1e-9, f"{e.cost_usd}")
     es = entries(ledger(tmp))
-    check("T1 ledger written", len(es) == 1 and es[0]["task_id"] == "T1", str(len(es)))
+    check("T1 reservation then settlement written", len(es) == 2 and es[0]["task_id"] == "T1"
+          and es[0]["decision"] == "dispatch-reserved" and es[1]["decision"] == "dispatched", str(len(es)))
 
 # T2 attempt cap -----------------------------------------------------------------
 with tempfile.TemporaryDirectory() as td:
     tmp = Path(td)
     d = new(tmp)
     # alternate profiles so the repair allowance is never what fires:
-    # the §5 attempt cap counts 4 physical dispatches regardless of arm
+    # the §5 attempt cap counts 4 physical dispatches regardless of arm;
+    # this counter-only fixture has local checks and no model review slots.
     for pid in ("cloud-S", "cloud-C", "cloud-S", "cloud-C-alt"):
         d.attempt("T2", pid, "req", work_bound=0.01, review_bound=0.01,
-                  expected_in=10_000, expected_out=1_000)
+                  expected_in=10_000, expected_out=1_000, review_calls=0)
     e = d.attempt("T2", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
                   expected_in=10_000, expected_out=1_000)
     check("T2 attempt cap rejects 5th", e.decision == "blocked-attempt-cap", e.reason)
-    check("T2 ledger records block", len(entries(ledger(tmp))) == 5, str(len(entries(ledger(tmp)))))
+    check("T2 ledger records block", len(entries(ledger(tmp))) == 9, str(len(entries(ledger(tmp)))))
 
 # T3 per-task cost cap ------------------------------------------------------------
 with tempfile.TemporaryDirectory() as td:
@@ -162,7 +164,7 @@ with tempfile.TemporaryDirectory() as td:
     # cap is what blocks the 23rd dispatch
     small = dict(expected_in=400_000, expected_out=10_000)   # $0.90 per task
     for i in range(22):
-        d.attempt(f"T8a{i}", "cloud-S", "req", work_bound=0.01, review_bound=0.01, **small)
+        d.attempt(f"T8a{i}", "cloud-S", "req", work_bound=0.01, review_bound=0, **small)
     check("T8 22 tasks = $19.80 spent", abs(d.pilot_spent - 19.80) < 1e-9, str(d.pilot_spent))
     e = d.attempt("T8b", "cloud-S", "req", work_bound=0.01, review_bound=0.01, **small)
     check("T8 pilot cap rejects", e.decision == "blocked-pilot-cap", e.reason)
@@ -290,9 +292,9 @@ with tempfile.TemporaryDirectory() as td:
     # (495k in @ $2 + 1k out @ $10); the second must not reach the transport
     fn, calls = transport([(495_000, 1_000), (1_000, 100)], max_tokens=1_000)
     d = new(tmp, dispatch_fn=fn, confirm_egress=True)
-    e1 = d.attempt("T13", "cloud-S", "req", work_bound=0.01, review_bound=0.01,
+    e1 = d.attempt("T13", "cloud-S", "req", work_bound=1.00, review_bound=0,
                    expected_in=495_000)
-    e2 = d.attempt("T13", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
+    e2 = d.attempt("T13", "cloud-C", "req", work_bound=0.01, review_bound=0,
                    expected_in=1_000)
     check("T13 first send fills task cap", e1.decision == "dispatched"
           and abs(e1.cost_usd - 1.00) < 1e-9, f"{e1.decision} {e1.cost_usd}")
@@ -332,7 +334,7 @@ with tempfile.TemporaryDirectory() as td:
     fn, calls = transport([(445_000, 1_000)] * 22 + [(1_000, 100)], max_tokens=4_096)
     d = new(tmp, dispatch_fn=fn, confirm_egress=True)
     for i in range(22):
-        d.attempt(f"T13d{i}", "cloud-S", "req", work_bound=0.01, review_bound=0.01,
+        d.attempt(f"T13d{i}", "cloud-S", "req", work_bound=0.01, review_bound=0,
                   expected_in=445_000)
     e = d.attempt("T13d-next", "cloud-S", "req", work_bound=0.01, review_bound=0.01,
                   expected_in=100_000)

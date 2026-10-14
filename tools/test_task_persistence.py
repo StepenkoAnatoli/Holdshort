@@ -47,9 +47,10 @@ class TaskPersistence(unittest.TestCase):
             tmp = Path(td)
             now = 1_000_000.0
             d1 = fresh_dispatcher(tmp, lambda: now)
+            # Counter-only fixture: required checks are local, with no model slots.
             for _ in range(2):
                 e = d1.attempt("L-1", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
-                               expected_in=10_000, expected_out=1_000)
+                               expected_in=10_000, expected_out=1_000, review_calls=0)
                 self.assertEqual(e.decision, "dispatched")
             # Process 2 (fresh dispatcher instance = simulated restart, same store):
             d2 = fresh_dispatcher(tmp, lambda: now)
@@ -61,7 +62,7 @@ class TaskPersistence(unittest.TestCase):
             # a profile switch is escalation, NOT a repair, so continue on other profiles:
             for pid in ("cloud-S", "cloud-C-alt"):
                 e = d2.attempt("L-1", pid, "req", work_bound=0.01, review_bound=0.01,
-                               expected_in=10_000, expected_out=1_000)
+                               expected_in=10_000, expected_out=1_000, review_calls=0)
             self.assertEqual(d2._task("L-1")["attempts"], 4)
             # cap-enforcement point: 4 attempts are USED; the 5th fires attempt-cap first:
             e = d2.attempt("L-1", "cloud-C", "req", work_bound=0.01, review_bound=0.01,

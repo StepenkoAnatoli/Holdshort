@@ -11,7 +11,9 @@ never lose:
 Strictly-before deadline rule carries over: `started` is the interval-clock
 anchor persisted at first dispatch; a restarted process resumes against the
 same anchor, so the 300 s cap applies across the whole task lifetime, not
-per process. The current dispatcher uses a wall-clock anchor. Monotonic-clock
+per process. The dispatcher also keeps authoritative counters and reservations
+in the shared database beside its ledger; these JSON files are optional mirrors.
+The current dispatcher uses a wall-clock anchor. Monotonic-clock
 state is refused until the dispatcher supports its clock domain; persisting a
 clock label alone does not make deadline calculations monotonic.
 

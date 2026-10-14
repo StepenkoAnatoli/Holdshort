@@ -35,7 +35,7 @@ ASSIGNMENTS_DEFAULT = REPO_ROOT / "tools" / "live_fill_assignments.json"
 
 def disposition_of(task_row: dict) -> str:
     outcome = task_row.get("outcome", "")
-    if outcome == "dispatched":
+    if outcome in ("dispatched", "verified"):
         return "completed"
     if isinstance(outcome, str) and outcome.startswith("blocked:"):
         return outcome  # blocked:cap / blocked:gate
@@ -71,7 +71,10 @@ def close_ledger(prices: dict, entries: List[dict]) -> dict:
         "total_spend_usd": base["pilot"]["total_spend_usd"],
         "cap_task_usd": caps["max_cost_per_task_usd"],
         "cap_pilot_usd": caps["max_cost_per_pilot_usd"],
-        "headroom_usd": round(caps["max_cost_per_pilot_usd"] - base["pilot"]["total_spend_usd"], 6),
+        "reserved_usd": base["pilot"].get("reserved_usd", 0),
+        "total_spend_complete": base["pilot"].get("total_spend_complete", True),
+        "headroom_usd": round(caps["max_cost_per_pilot_usd"] - base["pilot"]["total_spend_usd"]
+                              - base["pilot"].get("reserved_usd", 0), 6),
         "within_pilot_cap": base["pilot"]["total_spend_usd"] <= caps["max_cost_per_pilot_usd"] + 1e-9,
         "accounting_status": base["accounting_status"],
         "problems": base["problems"],
