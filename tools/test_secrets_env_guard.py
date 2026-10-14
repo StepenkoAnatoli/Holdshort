@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -121,6 +122,34 @@ class DecodePolicy(unittest.TestCase):
     # piece-concatenated so the file's own literal does not trip the scanner
     KEY = ('ANTHROPIC_API_KEY=' + 'sk-ant-' + 'fake0123456789'
            'abcdef0123' + '\n')
+
+    def test_mp4_asset_is_recognized_by_container_header(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            p = root / 'clip.mp4'
+            p.write_bytes((24).to_bytes(4, 'big') + b'ftyp' + b'isom'
+                          + b'\x00\x00\x02\x00' + b'iso2mp41' + b'\xff\x00\x83')
+            with mock.patch.object(cs, 'ROOT', root), \
+                    mock.patch.object(cs, 'tracked_files', return_value=['clip.mp4']):
+                self.assertEqual(cs.scan(), [])
+
+    def test_credential_text_named_mp4_is_still_scanned(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            p = root / 'text.mp4'
+            p.write_text(self.KEY, encoding='utf-8')
+            with mock.patch.object(cs, 'ROOT', root), \
+                    mock.patch.object(cs, 'tracked_files', return_value=['text.mp4']):
+                self.assertTrue(cs.scan(), 'a .mp4 suffix must not hide credential text')
+
+    def test_unrecognized_binary_named_mp4_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / 'broken.mp4').write_bytes(b'\xff\x00\x83')
+            with mock.patch.object(cs, 'ROOT', root), \
+                    mock.patch.object(cs, 'tracked_files', return_value=['broken.mp4']):
+                with self.assertRaises(cs.UnscannableError):
+                    cs.scan()
 
     def _hit_in_leak_bytes(self, raw: bytes) -> bool:
         """True iff the scanner's patterns catch the leak after decode_text."""

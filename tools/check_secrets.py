@@ -58,6 +58,18 @@ class UnscannableError(Exception):
     """A tracked file that should be text could not be decoded or read."""
 
 
+def is_mp4_container(path: Path) -> bool:
+    """Recognize an ISO base-media ftyp header, not just a .mp4 filename."""
+    try:
+        with path.open('rb') as fh:
+            header = fh.read(16)
+    except OSError as exc:
+        raise UnscannableError('MP4 header unreadable') from exc
+    return (len(header) == 16 and header[4:8] == b'ftyp'
+            and int.from_bytes(header[:4], 'big') >= 16
+            and header[8:12] in (b'isom', b'iso2', b'avc1', b'mp41', b'mp42'))
+
+
 def tracked_files() -> list[str]:
     out = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT,
                          capture_output=True, timeout=60)
@@ -137,6 +149,10 @@ def scan() -> list[str]:
         if suffix in _SKIP_EXTENSIONS:
             continue
         if not p.is_file():
+            continue
+        # Genuine media cannot be decoded as text. Keep text disguised with
+        # a .mp4 suffix in the scan corpus rather than adding a blanket skip.
+        if suffix == '.mp4' and is_mp4_container(p):
             continue
         try:
             text = decode_text(p)
