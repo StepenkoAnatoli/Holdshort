@@ -171,7 +171,8 @@ def import_from_ledger(sheet: dict, entries: list, assignments: dict) -> list:
             "outcome": e.get("decision"),
             "ledger_line_no": idx,
             "gate_runner_route": "ledger-only" if cell["arm"] == "D" else obs.get("gate_runner_route"),
-            "accounting_intact": True,   # proven flags follow below via cost check
+            # a reservation charged for unreadable usage is not a measurement
+            "accounting_intact": e.get("usage_unknown", False) is False,
         })
         # mark cell filled when it has no empties left
         if not empties[cell_id]:

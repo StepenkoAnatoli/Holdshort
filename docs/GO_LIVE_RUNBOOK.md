@@ -97,8 +97,9 @@ sees sends made by the same process, and each CLI run is a new process, so pilot
 from `pilot_report` after each send (§4). The count is the API's own estimate, so a send can
 still slightly exceed its reservation; it is recorded at actual cost, and the ledger reason
 says so. If a successful response has no readable usage block, the send is still recorded as
-`dispatched`, at the reserved tokens and cost, with `usage unknown` in the reason: that figure
-is a conservative charge, not the provider's bill.
+`dispatched`, at the reserved tokens and cost, so the caps count it. That figure is a
+conservative charge, not the provider's bill: the line carries `"usage_unknown": true`, and
+`pilot_report` and `pilot_close` report `GAPS_FOUND`, so step 4's stop rule applies.
 
 `--task-store tools/task_state` is REQUIRED in the pilot invocation: it persists the 300 s
 whole-task deadline and the attempt/repair counters across restarts (§6 limitation closed

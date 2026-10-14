@@ -85,6 +85,11 @@ def build_report(prices: dict, entries: List[dict]) -> dict:
         if dec not in KNOWN_DECISIONS:
             problems.append(f"line {idx}: unknown decision {dec!r}")
 
+        # a charged reservation stands in for unreadable usage: count it, never as measured
+        if e.get("usage_unknown", False) is not False:
+            problems.append(f"line {idx}: usage unknown — tokens and cost are the reservation"
+                            " charged, not a measured figure")
+
         in_t, out_t = int(e.get("input_tokens", 0)), int(e.get("output_tokens", 0))
         cost = float(e.get("cost_usd", 0.0))
         exp = recompute_cost(prices, pid, in_t, out_t)

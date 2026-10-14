@@ -17,7 +17,8 @@ Covers the §5 cap surface and the Gate-4 fail-closed contract:
   T13 egress reserves worst-case cost (expected input + the dispatch_fn's
       max_tokens, long-context tier included) before any send, settles to
       actual usage, and records a send that overran its reservation
-  T15 a send whose usage cannot be read is charged its reservation, never $0
+  T15 a send whose usage cannot be read is charged its reservation, never $0,
+      and every report shows it as an accounting gap, never as measured usage
 """
 from __future__ import annotations
 
@@ -525,6 +526,9 @@ with tempfile.TemporaryDirectory() as td:
           and entries(ledger(tmp)) == [], f"{sent} {counted}")
 
 # T15 a send whose usage cannot be read is charged its reservation, never $0 ----------------
+import gen_live_fill_sheet
+import live_fill_tally
+import pilot_close
 import pilot_report
 
 
@@ -559,9 +563,24 @@ with tempfile.TemporaryDirectory() as td:
           and d._task("T15")["attempts"] == 1, str(d._task("T15")))
     check("T15 reason flags unknown usage", "usage unknown" in e.reason
           and "usage is None" in e.reason, e.reason)
-    report = pilot_report.build_report(prices(), entries(ledger(tmp)))
-    check("T15 pilot_report recomputes the charge", report["accounting_status"] == "intact"
-          and report["pilot"]["total_spend_usd"] == 0.04306, str(report["problems"]))
+    es = entries(ledger(tmp))
+    check("T15 ledger line flags unknown usage", es[-1]["usage_unknown"] is True, str(es[-1]))
+    # missing-data rule (preregistration §3): the charge counts, but never as a measurement
+    report = pilot_report.build_report(prices(), es)
+    check("T15 pilot_report counts the charge but reports a gap",
+          report["accounting_status"] == "GAPS_FOUND"
+          and report["pilot"]["total_spend_usd"] == 0.04306
+          and any("usage unknown" in p for p in report["problems"])
+          and not any("cost mismatch" in p for p in report["problems"]), str(report["problems"]))
+    closure = pilot_close.close_ledger(prices(), es)
+    block = pilot_close.markdown(closure)
+    check("T15 pilot_close reports an accounting gap", "accounting intact" not in block
+          and closure["closures"][0]["accounting_gap"] is True, block)
+    sheet = gen_live_fill_sheet.build_sheet()
+    findings = live_fill_tally.import_from_ledger(sheet, es, {"T15": {"arm": "A", "cell": "T-01"}})
+    obs = [o for o in sheet["cells"]["A|T-01"]["observations"] if o.get("task_id") == "T15"]
+    check("T15 fill sheet does not record a measurement", findings == [] and len(obs) == 1
+          and obs[0]["accounting_intact"] is False, f"{findings} {obs}")
 
 with tempfile.TemporaryDirectory() as td:
     tmp = Path(td)
@@ -573,7 +592,8 @@ with tempfile.TemporaryDirectory() as td:
         e = d.attempt(f"T15b-{bad!r}", "cloud-S", "req", work_bound=0.01, review_bound=0.01)
         check(f"T15b malformed usage {bad!r} charged the reservation",
               e.decision == "dispatched" and (e.input_tokens, e.output_tokens) == (1_050, 4_096)
-              and abs(e.cost_usd - 0.04306) < 1e-9 and "usage unknown" in e.reason, str(e))
+              and abs(e.cost_usd - 0.04306) < 1e-9 and "usage unknown" in e.reason
+              and e.usage_unknown is True, str(e))
 
 with tempfile.TemporaryDirectory() as td:
     tmp = Path(td)
@@ -585,7 +605,10 @@ with tempfile.TemporaryDirectory() as td:
                       review_bound=0.01)
         check(f"T15e readable {type(good).__name__} usage settles to actual",
               e.decision == "dispatched" and (e.input_tokens, e.output_tokens) == (900, 200)
-              and "usage unknown" not in e.reason, str(e))
+              and "usage unknown" not in e.reason and e.usage_unknown is False, str(e))
+    es = entries(ledger(tmp))
+    check("T15e measured lines stay intact", all(x["usage_unknown"] is False for x in es)
+          and pilot_report.build_report(prices(), es)["accounting_status"] == "intact", str(es))
 
 with tempfile.TemporaryDirectory() as td:
     tmp = Path(td)
@@ -631,7 +654,7 @@ with tempfile.TemporaryDirectory() as td:
           str(sent))
     check("T15d missing usage block charged the reservation", rc == 0 and len(es) == 1
           and es[0]["decision"] == "dispatched" and abs(es[0]["cost_usd"] - 0.04306) < 1e-9
-          and "usage unknown" in es[0]["reason"], f"{rc} {es}")
+          and "usage unknown" in es[0]["reason"] and es[0]["usage_unknown"] is True, f"{rc} {es}")
 
 print(f"\n{'ALL PASS' if failures == 0 else f'{failures} FAILURES'}")
 sys.exit(0 if failures == 0 else 1)

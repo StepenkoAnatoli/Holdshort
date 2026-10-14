@@ -43,6 +43,22 @@ class PilotReport(unittest.TestCase):
         self.assertEqual(r["accounting_status"], "GAPS_FOUND")
         self.assertTrue(any("cost mismatch" in p for p in r["problems"]))
 
+    def test_usage_unknown_dispatch_is_gapped(self):
+        # a reservation charged for unreadable usage matches the rates but is not a
+        # measurement: it is counted, and the ledger never reads as intact
+        charged = dict(entry("T1", "cloud-C", "dispatched", 10_000, 1_000, 0.0015),
+                       usage_unknown=True)
+        r = pr.build_report(PRICES, [charged])
+        self.assertEqual(r["accounting_status"], "GAPS_FOUND")
+        self.assertTrue(any("usage unknown" in p for p in r["problems"]))
+        self.assertAlmostEqual(r["pilot"]["total_spend_usd"], 0.0015, places=6)
+        for flag in (None, 1, "true", "false"):  # anything but false is not a measurement
+            r = pr.build_report(PRICES, [dict(charged, usage_unknown=flag)])
+            self.assertEqual(r["accounting_status"], "GAPS_FOUND", repr(flag))
+        for measured in (dict(charged, usage_unknown=False),
+                         entry("T1", "cloud-C", "dispatched", 10_000, 1_000, 0.0015)):
+            self.assertEqual(pr.build_report(PRICES, [measured])["accounting_status"], "intact")
+
     def test_attempt_cap_violation_detected(self):
         # 5 dispatches on one task > cap 4
         entries = [entry("T1", "cloud-C", "dispatched", 10, 10, 0.0000012)] * 5

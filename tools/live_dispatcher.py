@@ -28,7 +28,9 @@ Gate-4 blocks (affordability, fail-closed):
     and a send that overran its reservation is still recorded at actual cost.
     A send whose usage cannot be read (the dispatch_fn raises UsageUnknown or
     returns anything but two non-negative ints) is recorded as dispatched at
-    the reserved tokens and cost, with the reason saying so — never at $0.
+    the reserved tokens and cost, never at $0, with `usage_unknown: true` on
+    the ledger line: the caps count the charge, and pilot_report reports the
+    line as an accounting gap rather than a measured figure.
   * egress without a declared output ceiling or a token counter -> blocked:
     the worst case cannot be priced. A count that fails or is not a
     non-negative int raises before the send and writes no ledger line, like a
@@ -125,6 +127,9 @@ class LedgerEntry:
     cost_usd: float
     decision: str
     reason: str
+    # True when a send's usage could not be read: the token and cost fields then hold
+    # the reservation charged against the caps, not a measurement (readers report a gap)
+    usage_unknown: bool = False
 
 
 def load_prices(path: Path) -> dict:
@@ -348,14 +353,14 @@ class LiveDispatcher:
         # 7) token counts: live calls only through dispatch_fn under egress consent.
         #    A send whose usage cannot be read was still sent and may be billed:
         #    it is charged the reservation it was priced at, never $0.
-        usage_unknown = ""
+        unknown_detail = ""
         if self.confirm_egress:
             try:
                 usage = self.dispatch_fn(profile_id, request)
                 if not _token_pair(usage):
                     raise UsageUnknown(f"dispatch_fn returned {usage!r}, not two non-negative ints")
             except UsageUnknown as exc:
-                usage, usage_unknown = (reserve_in, out_ceiling), str(exc)
+                usage, unknown_detail = (reserve_in, out_ceiling), str(exc)
             in_toks, out_toks = usage
         else:
             in_toks, out_toks = expected_in, expected_out
@@ -373,12 +378,12 @@ class LiveDispatcher:
         if self._resumer is not None:
             self._resumer.persist(st)
         reason = f"attempt {st['attempts']} of {self.caps.max_attempts}"
-        if usage_unknown:
-            reason += f"; usage unknown, charged reservation ${reserve:.4f}: {usage_unknown}"
+        if unknown_detail:
+            reason += f"; usage unknown, charged reservation ${reserve:.4f}: {unknown_detail}"
         elif cost > reserve:
             reason += f"; actual ${cost:.4f} exceeded reservation ${reserve:.4f}"
         e = LedgerEntry(now, task_id, st["attempts"], profile_id, in_toks, out_toks, cost,
-                        "dispatched", reason)
+                        "dispatched", reason, usage_unknown=bool(unknown_detail))
         self._append(e)
         return e
 
