@@ -52,13 +52,13 @@ python tools/live_dispatcher.py \
 
 ```
 □ BOTH flags present: --live AND --confirm-egress (separately nothing sends)
-□ prompt counted and worst-case cost reserved before the send (blocked-gate4 if the count fails)
+□ prompt counted and worst-case cost reserved before the send (a failed count stops the run, no ledger line)
 □ --task-store always on (deadline/counters survive restarts)
 □ exit 0, ledger "dispatched", nonzero cost_usd
 ```
 
-Refusals (no HTTP) are SUCCESS of the guard: missing key or unapproved endpoint (exit 2),
-`cloud-C-alt` (different provider; exit 1, ledger `blocked-gate4`) — all blocked before any call.
+Refusals (exit 2, no HTTP) are SUCCESS of the guard: missing key, unapproved endpoint,
+`cloud-C-alt` (different provider) — all correctly blocked before any call.
 
 ## 4 · AFTER EACH DISPATCH
 

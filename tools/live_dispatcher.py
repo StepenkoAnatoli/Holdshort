@@ -26,9 +26,10 @@ Gate-4 blocks (affordability, fail-closed):
     declared `max_tokens` output ceiling (long-context tier included); a dry
     run reserves its expected tokens. Spend then settles to the actual usage,
     and a send that overran its reservation is still recorded at actual cost.
-  * egress without a declared output ceiling or a token counter, or with a
-    count that fails or is not a non-negative int -> blocked: the worst case
-    cannot be priced
+  * egress without a declared output ceiling or a token counter -> blocked:
+    the worst case cannot be priced. A count that fails or is not a
+    non-negative int raises before the send and writes no ledger line, like a
+    failed send (an infrastructure fault is not a pilot observation)
 
 Egress is opt-in only: without --confirm-egress no network call is emitted at
 all (dry-run mode; callers supply token counts via --expected-*-tokens). With
@@ -205,6 +206,27 @@ class LiveDispatcher:
     def _cost(profile: dict, in_toks: int, out_toks: int) -> float:
         return pricing.token_cost(profile, in_toks, out_toks)
 
+    def _clock_gate(self, st: Dict[str, Any], profile_id: str
+                    ) -> Tuple[float, Optional[LedgerEntry]]:
+        """§5 wall-clock deadline (strictly-before rule: equality expires)."""
+        now = self.now_fn()
+        # Retain a high-water mark across optional persisted task restarts.
+        # An observed rollback is terminal: a later forward jump cannot renew it.
+        previous = st.get("last_observed", st["started"])
+        if st.get("clock_stopped", False) or now < previous:
+            st["clock_stopped"] = True
+            if self._resumer is not None:
+                self._resumer.persist(st)
+            return now, self._reject(st, profile_id, "blocked-deadline",
+                                     "task stopped after an observed wall-clock rollback")
+        st["last_observed"] = now
+        if self._resumer is not None:
+            self._resumer.persist(st)
+        if now - st["started"] >= self.caps.max_seconds_per_task:
+            return now, self._reject(st, profile_id, "blocked-deadline",
+                                     f"elapsed {now - st['started']:.0f}s >= cap {self.caps.max_seconds_per_task}s")
+        return now, None
+
     # -- public ------------------------------------------------------------
     def attempt(
         self,
@@ -265,22 +287,9 @@ class LiveDispatcher:
                                 f"attempt cap reached: {st['attempts']}/{self.caps.max_attempts}")
 
         # 3) §5 wall-clock deadline (strictly-before rule: equality expires)
-        now = self.now_fn()
-        # Retain a high-water mark across optional persisted task restarts.
-        # An observed rollback is terminal: a later forward jump cannot renew it.
-        previous = st.get("last_observed", st["started"])
-        if st.get("clock_stopped", False) or now < previous:
-            st["clock_stopped"] = True
-            if self._resumer is not None:
-                self._resumer.persist(st)
-            return self._reject(st, profile_id, "blocked-deadline",
-                                "task stopped after an observed wall-clock rollback")
-        st["last_observed"] = now
-        if self._resumer is not None:
-            self._resumer.persist(st)
-        if now - st["started"] >= self.caps.max_seconds_per_task:
-            return self._reject(st, profile_id, "blocked-deadline",
-                                f"elapsed {now - st['started']:.0f}s >= cap {self.caps.max_seconds_per_task}s")
+        now, blocked = self._clock_gate(st, profile_id)
+        if blocked is not None:
+            return blocked
 
         # 4) Gate-4 preflight: all-in work+review bound must fit the per-task cap
         all_in = work_bound + review_bound
@@ -303,15 +312,15 @@ class LiveDispatcher:
         #    the margin goes on before the rate tier is chosen.
         reserve_in = expected_in
         if count_fn is not None:
-            try:
-                counted = count_fn(profile_id, request)
-            except Exception as exc:  # nothing was created or billed; refuse the send
-                return self._reject(st, profile_id, "blocked-gate4",
-                                    f"token count failed before send: {type(exc).__name__}: {exc}")
+            # a failed count propagates, like a failed send: nothing was billed
+            counted = count_fn(profile_id, request)
             if type(counted) is not int or counted < 0:
-                return self._reject(st, profile_id, "blocked-gate4",
-                                    "token count was not a non-negative int")
+                raise ValueError(f"token count {counted!r} is not a non-negative int")
             reserve_in = max(expected_in, math.ceil(counted * (1 + TOKEN_COUNT_MARGIN)))
+            # the count is a network call: the send must still start before the deadline
+            now, blocked = self._clock_gate(st, profile_id)
+            if blocked is not None:
+                return blocked
         reserve = self._cost(profile, reserve_in, out_ceiling)
         if st["spent"] + reserve > self.caps.max_cost_per_task:
             return self._reject(st, profile_id, "blocked-cost-cap",
@@ -378,8 +387,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     prices = load_prices(PRICES_PATH)
 
     dispatch_fn = None
+    refused: tuple = ()
     if args.live:
         from dispatch_adapter import build_dispatch_fn, DispatchRefused
+        refused = (DispatchRefused,)
         try:
             dispatch_fn = build_dispatch_fn()  # refuses without .env key or on non-approved endpoint
         except DispatchRefused as e:
@@ -389,9 +400,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     task_store = Path(args.task_store) if args.task_store else None
     d = LiveDispatcher(prices, Path(args.ledger), confirm_egress=args.confirm_egress,
                        dispatch_fn=dispatch_fn, task_store=task_store)
-    e = d.attempt(args.task_id, args.profile, args.request,
-                  work_bound=args.work_bound, review_bound=args.review_bound,
-                  expected_in=args.expected_in_tokens, expected_out=args.expected_out_tokens)
+    try:
+        e = d.attempt(args.task_id, args.profile, args.request,
+                      work_bound=args.work_bound, review_bound=args.review_bound,
+                      expected_in=args.expected_in_tokens, expected_out=args.expected_out_tokens)
+    except refused as exc:  # e.g. no approved model mapping: refused before any request
+        print(json.dumps({"decision": "dispatch-refused", "reason": str(exc)}), file=sys.stderr)
+        return 2
     print(json.dumps(asdict(e), sort_keys=True))
     return 0 if e.decision == "dispatched" else 1
 

@@ -436,7 +436,9 @@ with tempfile.TemporaryDirectory() as td:
 
 with tempfile.TemporaryDirectory() as td:
     tmp = Path(td)
-    # a failed or nonsensical count refuses before the send; nothing was billed
+    # a count that fails or is not a non-negative int raises before the send, like a
+    # failed send: no ledger line (a blocked-gate4 line would fill a pilot slot for an
+    # infrastructure fault), no attempt consumed, nothing billed
     for bad in ("raise", None, -1, True, 1.5, "1000"):
         fn, calls = transport([(1_000, 100)], max_tokens=4_096)
         if bad == "raise":
@@ -446,10 +448,17 @@ with tempfile.TemporaryDirectory() as td:
         else:
             fn.count_tokens = lambda pid, req, v=bad: v
         d = new(tmp, dispatch_fn=fn, confirm_egress=True)
-        e = d.attempt(f"T14d-{bad}", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
+        before = len(entries(ledger(tmp)))
+        try:
+            d.attempt(f"T14d-{bad}", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
                       expected_in=1_000)
-        check(f"T14d bad count {bad!r} refused before send", e.decision == "blocked-gate4"
-              and calls == [] and d._task(f"T14d-{bad}")["attempts"] == 0, e.reason)
+            raised = False
+        except (OSError, ValueError):
+            raised = True
+        check(f"T14d bad count {bad!r} raises before send", raised and calls == []
+              and d._task(f"T14d-{bad}")["attempts"] == 0, str(calls))
+        check(f"T14d bad count {bad!r} writes no ledger line",
+              len(entries(ledger(tmp))) == before)
 
 with tempfile.TemporaryDirectory() as td:
     tmp = Path(td)
@@ -474,6 +483,45 @@ with tempfile.TemporaryDirectory() as td:
     e = d.attempt("T14f", "cloud-F", "x", work_bound=0.01, review_bound=0.01, expected_in=1)
     check("T14f adapter count blocks before send", e.decision == "blocked-cost-cap"
           and sent == [] and counted == [("claude-fable-5-1", False)], f"{e.decision} {counted}")
+
+with tempfile.TemporaryDirectory() as td:
+    tmp = Path(td)
+    # the deadline is checked again after the count: a count that takes 30 s at 290 s
+    # into the task must not let the send start past the 300 s cap
+    clock = [1_000.0]
+    fn, calls = transport([(1_000, 100)], max_tokens=4_096)
+
+    def slow_count(pid, req):
+        clock[0] += 30.0
+        return 1_000
+    fn.count_tokens = slow_count
+    d = new(tmp, dispatch_fn=fn, confirm_egress=True, now_fn=lambda: clock[0])
+    d._task("T14g")
+    clock[0] = 1_290.0
+    e = d.attempt("T14g", "cloud-C", "req", work_bound=0.01, review_bound=0.01)
+    check("T14g deadline rechecked after the count", e.decision == "blocked-deadline"
+          and calls == [], f"{e.decision} {calls}")
+
+with tempfile.TemporaryDirectory() as td:
+    tmp = Path(td)
+    # the CLI refuses a profile with no approved Anthropic mapping as dispatch-refused,
+    # exit 2, before any request and without a ledger line
+    import dispatch_adapter as da
+    sent, counted = [], []
+    real_build = da.build_dispatch_fn
+    da.build_dispatch_fn = lambda: real_build(
+        api_key="placeholder", env_fallback={},
+        transport=lambda p, m, k: sent.append(m) or (1, 1),
+        count_transport=lambda p, m, k: counted.append(m) or 1)
+    try:
+        rc = ld.main(["--live", "--confirm-egress", "--profile", "cloud-C-alt",
+                      "--task-id", "T14h", "--request", "x", "--work-bound", "0.01",
+                      "--review-bound", "0.01", "--ledger", str(ledger(tmp))])
+    finally:
+        da.build_dispatch_fn = real_build
+    check("T14h unmapped profile exits 2", rc == 2, str(rc))
+    check("T14h refusal sends nothing, no ledger line", sent == [] and counted == []
+          and entries(ledger(tmp)) == [], f"{sent} {counted}")
 
 print(f"\n{'ALL PASS' if failures == 0 else f'{failures} FAILURES'}")
 sys.exit(0 if failures == 0 else 1)
