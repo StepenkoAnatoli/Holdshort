@@ -89,10 +89,14 @@ python tools/live_dispatcher.py \
 
 `--expected-in-tokens` is REQUIRED for a live send. Before any HTTP call the dispatcher
 reserves that many input tokens plus the adapter's `max_tokens` (4096) of output at the
-profile's rates, and refuses with `blocked-cost-cap` / `blocked-pilot-cap` if the
-reservation does not fit the remaining allowance. Without an estimate it refuses with
-`blocked-gate4` (exit 1, no HTTP). Overestimate rather than under: an underestimated prompt
-is still recorded at its actual cost, and the ledger reason says it exceeded the reservation.
+profile's rates, and refuses with `blocked-cost-cap` if the reservation does not fit what is
+left of the task's $1.00 (with `--task-store`, earlier sends of the same task count). The
+pilot cap only sees sends made by the same process, and each CLI run is a new process, so
+pilot totals come from `pilot_report` after each send (§4). Without an estimate it refuses
+with `blocked-gate4` (exit 1, no HTTP). Overestimate rather than under: the estimate is not
+checked against the prompt, so an underestimate can take the task over its cap once. That
+send is still recorded at its actual cost, and the ledger reason says it exceeded the
+reservation.
 
 `--task-store tools/task_state` is REQUIRED in the pilot invocation: it persists the 300 s
 whole-task deadline and the attempt/repair counters across restarts (§6 limitation closed
