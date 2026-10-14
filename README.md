@@ -210,20 +210,17 @@ tools, and a completed local pilot report. Live-provider comparisons and consume
 adoption require their own evidence. The current **policy version is v3.0**;
 older release tags describe the snapshots published at those tags.
 
-The [October 13 review](docs/SMARTROUTER_USAGE_REVIEW_2026-10-13.md) records these
-important open implementation gaps:
+The live dispatcher now uses a persistent pilot authority to reserve work and
+mandatory verification before sending. Task and pilot totals survive restarts,
+and concurrent instances share the same allowance. Failed sends retain their
+attempts and unknown-usage reservations; complete receipts settle known cost.
+Verification cash and model-call slots remain protected until the host completes
+the required checks. See [dispatch accounting and recovery](docs/DISPATCH_ACCOUNTING.md).
 
-- The pre-send input count is the API's own estimate plus a 5% margin, so a send
-  can still slightly exceed its reservation; that send is recorded at actual cost.
-  The required-check (review) bound is not yet reserved against remaining headroom,
-  and a send that raises, such as a timeout, is not yet accounted.
-- Pilot spending resets with a new dispatcher instance instead of being shared persistently.
-
-The live dispatcher now reserves worst-case cost before sending. It counts the
-prompt through the API's free token-counting endpoint, adds 5%, and prices that
-(or the caller's larger estimate) plus the adapter's `max_tokens` of output, with
-Haiku's long-context rates where they apply. It blocks when that reservation does not fit the task cap
-or this dispatcher instance's pilot total, then settles to the actual usage.
+Input counting still uses the provider's estimate plus a 5% margin. A send can
+exceed that estimate; its known cost is recorded and further dispatch stops.
+Older ledgers without a reservation authority require reconciliation. These
+changes have synthetic process and crash coverage, not live-provider qualification.
 Corrupt persisted task state now blocks dispatch and preserves the original file.
 Recovery still needs an authoritative reconciliation process. Shared-resource
 plans can be required when creating and launching a worker; these checks track
@@ -232,9 +229,9 @@ or coordinate simultaneous registry writers.
 See the [integration notes](docs/REMAINING_BRANCH_INTEGRATION.md) for the optional
 worker checks and the exact scope of these fixes.
 
-These gaps prevent treating the current live dispatcher as a dependable spending
-boundary. The review also covers process-tree cleanup, shared-state coordination,
-stream encodings, host qualification, and integration evidence.
+The [October 13 review](docs/SMARTROUTER_USAGE_REVIEW_2026-10-13.md) preserves the
+original findings. Process-tree cleanup, host qualification, final billing
+accuracy and integration evidence still limit live-provider operation.
 
 Observed GPT usage is stored in a [metadata snapshot](docs/evidence/2026-10-13/usage-snapshot.json).
 It is cumulative session telemetry, not a final bill or proof of savings. Cached
@@ -261,6 +258,7 @@ gaps with replayable evidence. Usage and billed cost remain unknown.
 | --- | --- |
 | Understand the exact routing rules | [Canonical skill](skills/smart-router/SKILL.md) and [eligibility gates](skills/smart-router/references/gates.md) |
 | Build a host integration | [Host contract and schemas](skills/smart-router/references/spec-v2.md) |
+| Reserve dispatch budget and recover uncertain usage | [Dispatch accounting and recovery](docs/DISPATCH_ACCOUNTING.md) |
 | Understand autonomous stops and optional HITL | [Host policy](skills/smart-router/references/host-hil-policy.md) |
 | Inspect observed use, bugs, and GPT usage | [Engineering review](docs/SMARTROUTER_USAGE_REVIEW_2026-10-13.md) |
 | Export and interpret token counters | [Usage telemetry guide](docs/USAGE_TELEMETRY.md) |

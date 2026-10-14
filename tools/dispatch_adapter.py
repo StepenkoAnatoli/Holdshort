@@ -171,9 +171,12 @@ def _http_count_transport(payload: dict, model: str, key: str) -> int:
 
 def _http_transport(payload: dict, model: str, key: str) -> Tuple[int, int]:
     doc = _post("/v1/messages", payload, key)
-    usage = doc.get("usage") or {}
-    in_toks = int(usage.get("input_tokens") or 0)
-    out_toks = int(usage.get("output_tokens") or 0)
+    usage = doc.get("usage")
+    if (not isinstance(usage, dict) or any(type(usage.get(field)) is not int
+            or usage[field] < 0 for field in ("input_tokens", "output_tokens"))):
+        raise RuntimeError("provider response has missing or invalid usage; usage is unknown")
+    in_toks = usage["input_tokens"]
+    out_toks = usage["output_tokens"]
     return in_toks, out_toks
 
 

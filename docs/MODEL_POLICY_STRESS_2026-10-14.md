@@ -70,8 +70,8 @@ files preserve the actual observed dispositions.
 | NaN work bound | Dispatched | `blocked-gate4`; no transport call |
 | NaN Brief cash allowance | Accepted | Rejected |
 | One-candidate SpeculativeSet with zero parallelism | Accepted | Rejected |
-| Remaining task budget checked after transport | Second transport ran before refusal | Still reproducible; [#47](https://github.com/StepenkoAnatoli/SmartRouter/issues/47) remains open. Later update: the dispatcher now reserves worst-case cost before transport, and T13 in [test_live_dispatcher.py](../tools/test_live_dispatcher.py) shows this second send refused before the transport runs. This probe predates the egress reservation contract (its fake transport declares neither `max_tokens` nor `count_tokens`), so a rerun now stops at `blocked-gate4`. #47 stays open for the other parts of its acceptance list |
-| Independent dispatchers sharing a pilot ledger | Both accepted against separate process totals | Still reproducible; [#48](https://github.com/StepenkoAnatoli/SmartRouter/issues/48) remains open |
+| Remaining task budget checked after transport | Second transport ran before refusal | Later fix for [#47](https://github.com/StepenkoAnatoli/SmartRouter/issues/47): durable work and verification reservations precede transport; failures and overruns preserve attempts and known or uncertain cost. The frozen probe predates the adapter's reservation contract and remains unchanged. New tests use declared token ceilings and explicit bounds; see [dispatch accounting](DISPATCH_ACCOUNTING.md). |
+| Independent dispatchers sharing a pilot ledger | Both accepted against separate process totals | Later fix for [#48](https://github.com/StepenkoAnatoli/SmartRouter/issues/48): shared persistent reservations coordinate local processes. A two-process test checks the actual send boundary, and a process-crash test proves uncertain allowance survives restart. |
 | Wall clock moves backward | Negative elapsed time allowed dispatch | `blocked-deadline`; an observed rollback remains terminal across persisted restarts |
 
 The dispatcher now rejects non-finite, negative, boolean, or otherwise invalid
@@ -89,9 +89,12 @@ uses its start timestamp; it cannot recover observations that were never persist
 
 Focused regression checks cover actual pre-transport refusal, unchanged attempt
 counters, malformed schema inputs, CLI refusal, and persisted-state preservation.
-These fixes do not implement durable pilot-wide reservations, account for unknown
-provider charges, or make a wall-clock deadline monotonic between observations. Live-provider operation
-remains experimental until those gaps have been resolved and tested.
+The fixes made during this frozen comparison did not include durable pilot-wide
+reservations or unknown-usage retention. A later
+[accounting follow-up](DISPATCH_ACCOUNTING.md) adds those behaviors without
+changing this trial's packets, answers or scores. Wall-clock deadlines remain
+non-monotonic between observations, and live-provider qualification and final
+billing accuracy still require their own evidence.
 
 ## Usage and timing limits
 

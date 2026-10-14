@@ -53,7 +53,9 @@ python tools/live_dispatcher.py \
 ```
 □ BOTH flags present: --live AND --confirm-egress (separately nothing sends)
 □ prompt counted and worst-case cost reserved before the send (a failed count stops the run, no ledger line)
-□ --task-store always on (deadline/counters survive restarts)
+□ Keep ledger + .budget.sqlite3 authority + optional task mirrors together
+□ Declare required review cash and model call slots; complete verified acceptance in the host
+□ Refuse unreconciled legacy ledgers, uncertain usage and changed pilot identities
 □ exit 0, ledger "dispatched", nonzero cost_usd
 ```
 

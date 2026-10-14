@@ -134,8 +134,14 @@ def import_from_ledger(sheet: dict, entries: list, assignments: dict) -> list:
     for cell_id, c in sheet["cells"].items():
         empties[cell_id] = [o for o in c["observations"]
                             if any(o.get(k) == NOT_MEASURED for k in MEASURED_REQUIRED)]
-    for idx, e in enumerate(entries, 1):
+    from pilot_report import effective_entries
+    for idx, e in effective_entries(entries):
         tid = e.get("task_id")
+        if e.get("decision") in ("verification-complete", "dispatch-cancelled"):
+            continue  # acceptance evidence is not an additional model trial
+        if any(e.get(field) is None for field in ("input_tokens", "output_tokens", "cost_usd")):
+            _finding("unknown-usage", "unsettled dispatch is not a completed measured observation")
+            continue
         a = assignments.get(tid)
         if a is None:
             _finding("unassigned", f"task {tid!r} has no assignment — not imported (add {'arm','cell'} to the assignments map)")

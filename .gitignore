@@ -10,6 +10,10 @@ secrets*.json
 # --- pilot telemetry / generated artifacts ---
 tools/pilot_ledger.jsonl
 tools/*.ledger.jsonl
+*.budget.sqlite3
+*.budget.sqlite3-journal
+*.budget.sqlite3-wal
+*.budget.sqlite3-shm
 tools/live_fill_sheet.json
 tools/live_fill_sheet.csv
 # (live-fill artifacts are generated; generator + tally are tracked)
