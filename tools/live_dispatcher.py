@@ -44,6 +44,11 @@ except ImportError:
     from tools import redaction
 
 try:
+    import pricing
+except ImportError:
+    from tools import pricing
+
+try:
     from task_persistence import TaskStateStore, ResumableTasks, CorruptState
 except ImportError:  # direct import when repo root on path
     from tools.task_persistence import TaskStateStore, ResumableTasks, CorruptState
@@ -54,6 +59,15 @@ LEDGER_DEFAULT = REPO_ROOT / "tools" / "pilot_ledger.jsonl"
 TASK_STATE_DEFAULT = REPO_ROOT / "tools" / "task_state"
 
 REASON_MAX = 512  # bounded ledger lines, per the pilot observation rules
+
+
+def _priceable(profile: Any) -> bool:
+    """Every rate the row can select (incl. long-context tier) is valid."""
+    try:
+        pricing.validate_profile(profile)
+    except pricing.UnpriceableProfile:
+        return False
+    return True
 
 
 def finite_nonnegative(value: Any) -> bool:
@@ -180,8 +194,7 @@ class LiveDispatcher:
 
     @staticmethod
     def _cost(profile: dict, in_toks: int, out_toks: int) -> float:
-        return (profile["input_rate_per_mtok"] * in_toks
-                + profile["output_rate_per_mtok"] * out_toks) / 1_000_000.0
+        return pricing.token_cost(profile, in_toks, out_toks)
 
     # -- public ------------------------------------------------------------
     def attempt(
@@ -216,9 +229,7 @@ class LiveDispatcher:
         # any transport or counter mutation, rather than treating them as free.
         if (not finite_nonnegative(work_bound) or not finite_nonnegative(review_bound)
                 or not finite_nonnegative(work_bound + review_bound)
-                or not isinstance(profile, dict)
-                or any(not finite_nonnegative(profile.get(k)) for k in
-                       ("input_rate_per_mtok", "output_rate_per_mtok"))
+                or not _priceable(profile)
                 or any(type(t) is not int or t < 0 for t in (expected_in, expected_out))):
             return self._reject(st, profile_id, "blocked-gate4",
                                 "invalid numeric bound, rate, or expected token count")

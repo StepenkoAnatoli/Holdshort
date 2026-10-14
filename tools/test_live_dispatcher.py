@@ -66,7 +66,8 @@ with tempfile.TemporaryDirectory() as td:
     e = d.attempt("T1", "cloud-C", "req", work_bound=0.05, review_bound=0.05,
                   expected_in=200_000, expected_out=20_000)
     check("T1 dispatched", e.decision == "dispatched", e.reason)
-    check("T1 cost model", abs(e.cost_usd - (0.10 * 0.2 + 0.50 * 0.02)) < 1e-9, f"{e.cost_usd}")
+    # 200k prompt tokens > 100k threshold: Haiku 5.5 long-context tier, $0.50 in / $2.50 out
+    check("T1 cost model", abs(e.cost_usd - (0.50 * 0.2 + 2.50 * 0.02)) < 1e-9, f"{e.cost_usd}")
     es = entries(ledger(tmp))
     check("T1 ledger written", len(es) == 1 and es[0]["task_id"] == "T1", str(len(es)))
 

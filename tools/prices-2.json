@@ -41,6 +41,12 @@
       "input_rate_per_mtok": 0.10,
       "output_rate_per_mtok": 0.50,
       "input_rate_condition": "prompts up to 100,000 tokens",
+      "long_context": {
+        "threshold_input_tokens": 100000,
+        "input_rate_per_mtok": 0.50,
+        "output_rate_per_mtok": 2.50,
+        "condition": "prompts over 100,000 tokens; higher rates apply to the whole request, input and output"
+      },
       "uncertainty_class": "known",
       "bounds_source": "https://docs.claude.com/en/docs/about-claude/pricing",
       "rows_confirmed_verbatim": true

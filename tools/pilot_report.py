@@ -27,6 +27,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional
 
+try:
+    import pricing
+except ImportError:
+    from tools import pricing
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PRICES_PATH = REPO_ROOT / "tools" / "prices-2.json"
 LEDGER_DEFAULT = REPO_ROOT / "tools" / "pilot_ledger.jsonl"
@@ -57,7 +62,10 @@ def recompute_cost(prices: dict, profile_id: str, in_toks: int, out_toks: int) -
     p = prices["profiles"].get(profile_id)
     if p is None:
         return None
-    return (p["input_rate_per_mtok"] * in_toks + p["output_rate_per_mtok"] * out_toks) / 1_000_000.0
+    try:
+        return pricing.token_cost(p, in_toks, out_toks)
+    except pricing.UnpriceableProfile:
+        return None  # unauditable: callers already treat None as a problem
 
 
 def build_report(prices: dict, entries: List[dict]) -> dict:
