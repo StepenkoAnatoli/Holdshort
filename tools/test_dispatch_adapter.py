@@ -64,6 +64,15 @@ class Adapter(unittest.TestCase):
         self.assertEqual(t.calls[0]["model"], "claude-haiku-5-5")  # pinned mapping
         self.assertTrue(t.calls[0]["key_seen"])
 
+    def test_dispatch_fn_declares_output_ceiling(self):
+        # the dispatcher reserves worst-case cost from this before any send
+        t = mock_transport_factory()
+        fn = da.build_dispatch_fn(api_key="sk-ant-x", transport=t, env_fallback={},
+                                  max_tokens=1234)
+        self.assertEqual(fn.max_tokens, 1234)
+        fn("cloud-C", "x")
+        self.assertEqual(t.calls[0]["payload"]["max_tokens"], 1234)
+
     def test_escalation_tiers_pinned(self):
         t = mock_transport_factory()
         fn = da.build_dispatch_fn(api_key="sk-ant-x", transport=t, env_fallback={})

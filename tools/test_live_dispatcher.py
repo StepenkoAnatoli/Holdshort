@@ -14,6 +14,9 @@ Covers the §5 cap surface and the Gate-4 fail-closed contract:
   T9  ledger is append-only in practice: prior entries never rewritten/deleted
   T10 egress consent: dispatch_fn MUST NOT run without confirm_egress
   T11 repair not burned when dispatch is rejected at the cost cap
+  T13 egress reserves worst-case cost (expected input + the dispatch_fn's
+      max_tokens, long-context tier included) before any send, settles to
+      actual usage, and records a send that overran its reservation
 """
 from __future__ import annotations
 
@@ -189,6 +192,7 @@ with tempfile.TemporaryDirectory() as td:
     def fake_dispatch(pid, req):
         calls.append(pid)
         return 10_000, 1_000
+    fake_dispatch.max_tokens = 1_000
 
     d = new(tmp, dispatch_fn=fake_dispatch, confirm_egress=False)
     d.attempt("T10", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
@@ -196,7 +200,8 @@ with tempfile.TemporaryDirectory() as td:
     check("T10 no egress without consent", calls == [], str(calls))
 
     d2 = new(tmp, dispatch_fn=fake_dispatch, confirm_egress=True)
-    e = d2.attempt("T10e", "cloud-C", "req", work_bound=0.01, review_bound=0.01)
+    e = d2.attempt("T10e", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
+                   expected_in=10_000)
     check("T10 egress consent dispatches", e.decision == "dispatched", e.reason)
     check("T10 dispatch_fn was called", calls == ["cloud-C"], str(calls))
 
@@ -217,15 +222,21 @@ with tempfile.TemporaryDirectory() as td:
 with tempfile.TemporaryDirectory() as td:
     tmp = Path(td)
     calls = []
-    d = new(tmp, confirm_egress=True,
-            dispatch_fn=lambda *args: (calls.append(args) or (10_000, 1_000)))
+
+    def record(*args):
+        calls.append(args)
+        return 10_000, 1_000
+    record.max_tokens = 1_000
+    d = new(tmp, confirm_egress=True, dispatch_fn=record)
     for idx, value in enumerate((float('nan'), float('inf'), -float('inf'),
                                  -0.01, True, '0.01', 10**1000)):
         for field in ('work_bound', 'review_bound'):
             bounds = {'work_bound': 0.01, 'review_bound': 0.01, field: value}
-            e = d.attempt(f'numeric-{field}-{idx}', 'cloud-C', 'req', **bounds)
+            e = d.attempt(f'numeric-{field}-{idx}', 'cloud-C', 'req', expected_in=1_000,
+                          **bounds)
             check(f'T12 {field} invalid case {idx}', e.decision == 'blocked-gate4')
-    e = d.attempt('overflow-sum', 'cloud-C', 'req', work_bound=1e308, review_bound=1e308)
+    e = d.attempt('overflow-sum', 'cloud-C', 'req', work_bound=1e308, review_bound=1e308,
+                  expected_in=1_000)
     check('T12 sum overflow refused', e.decision == 'blocked-gate4')
     for value in (True, -1, 1.5):
         e = d.attempt('bad-tokens', 'cloud-C', 'req', work_bound=0.01,
@@ -234,8 +245,9 @@ with tempfile.TemporaryDirectory() as td:
     bad_prices = prices()
     bad_prices['profiles']['cloud-C']['input_rate_per_mtok'] = float('nan')
     bad = ld.LiveDispatcher(bad_prices, tmp / 'bad-rate.jsonl', confirm_egress=True,
-                            dispatch_fn=lambda *args: (calls.append(args) or (1, 1)))
-    e = bad.attempt('bad-rate', 'cloud-C', 'req', work_bound=0.01, review_bound=0.01)
+                            dispatch_fn=record)
+    e = bad.attempt('bad-rate', 'cloud-C', 'req', work_bound=0.01, review_bound=0.01,
+                    expected_in=1_000)
     check('T12 NaN rate refused', e.decision == 'blocked-gate4')
     check('T12 no transport calls', calls == [])
     check('T12 no attempts consumed', all(st['attempts'] == 0 for st in d._tasks.values()))
@@ -249,6 +261,128 @@ with tempfile.TemporaryDirectory() as td:
         except ValueError:
             refused = True
         check(f'T12 invalid {field} refused', refused)
+
+
+# T13 reserve worst-case cost before any send (usage review F01) ------------------------------
+def transport(returns, max_tokens):
+    """Fake dispatch_fn: hands back queued (in, out) usage, declares its output ceiling."""
+    calls = []
+
+    def fn(pid, req):
+        calls.append(pid)
+        return returns.pop(0)
+    fn.max_tokens = max_tokens
+    return fn, calls
+
+
+with tempfile.TemporaryDirectory() as td:
+    tmp = Path(td)
+    # F01 repro: the first send fills the $1.00 task cap exactly
+    # (495k in @ $2 + 1k out @ $10); the second must not reach the transport
+    fn, calls = transport([(495_000, 1_000), (1_000, 100)], max_tokens=1_000)
+    d = new(tmp, dispatch_fn=fn, confirm_egress=True)
+    e1 = d.attempt("T13", "cloud-S", "req", work_bound=0.01, review_bound=0.01,
+                   expected_in=495_000)
+    e2 = d.attempt("T13", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
+                   expected_in=1_000)
+    check("T13 first send fills task cap", e1.decision == "dispatched"
+          and abs(e1.cost_usd - 1.00) < 1e-9, f"{e1.decision} {e1.cost_usd}")
+    check("T13 no send without task headroom", calls == ["cloud-S"], str(calls))
+    check("T13 blocked before send", e2.decision == "blocked-cost-cap", e2.reason)
+    check("T13 block consumed no tokens", (e2.input_tokens, e2.output_tokens, e2.cost_usd)
+          == (0, 0, 0.0), str(e2))
+
+with tempfile.TemporaryDirectory() as td:
+    tmp = Path(td)
+    # the reservation prices the transport's max_tokens, not the caller's expected_out:
+    # 300k in @ $2 + 50k out @ $10 = $1.10 > cap, though this call would cost $0.601
+    fn, calls = transport([(300_000, 100)], max_tokens=50_000)
+    d = new(tmp, dispatch_fn=fn, confirm_egress=True)
+    e = d.attempt("T13b", "cloud-S", "req", work_bound=0.01, review_bound=0.01,
+                  expected_in=300_000, expected_out=100)
+    check("T13b reservation prices max_tokens", e.decision == "blocked-cost-cap"
+          and calls == [], f"{e.decision} {calls}")
+
+with tempfile.TemporaryDirectory() as td:
+    tmp = Path(td)
+    # long-context tier: after $0.90 spent, a 200k-token Haiku prompt reserves
+    # 200k @ $0.50 + 4096 @ $2.50 = $0.110 > $0.10 headroom (base tier would say $0.022)
+    fn, calls = transport([(445_000, 1_000), (200_000, 100)], max_tokens=4_096)
+    d = new(tmp, dispatch_fn=fn, confirm_egress=True)
+    d.attempt("T13c", "cloud-S", "req", work_bound=0.01, review_bound=0.01,
+              expected_in=445_000)
+    e = d.attempt("T13c", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
+                  expected_in=200_000)
+    check("T13c long-context tier reserved", e.decision == "blocked-cost-cap"
+          and calls == ["cloud-S"], f"{e.decision} {calls}")
+
+with tempfile.TemporaryDirectory() as td:
+    tmp = Path(td)
+    # pilot cap: 22 tasks x $0.90 = $19.80; the next reserves 100k @ $2 + 4096 @ $10
+    # = $0.241 > $0.20 pilot headroom and must not be sent
+    fn, calls = transport([(445_000, 1_000)] * 22 + [(1_000, 100)], max_tokens=4_096)
+    d = new(tmp, dispatch_fn=fn, confirm_egress=True)
+    for i in range(22):
+        d.attempt(f"T13d{i}", "cloud-S", "req", work_bound=0.01, review_bound=0.01,
+                  expected_in=445_000)
+    e = d.attempt("T13d-next", "cloud-S", "req", work_bound=0.01, review_bound=0.01,
+                  expected_in=100_000)
+    check("T13d pilot headroom checked before send", e.decision == "blocked-pilot-cap"
+          and len(calls) == 22, f"{e.decision} {len(calls)}")
+    check("T13d pilot spend stays <= cap", d.pilot_spent <= 20.0, str(d.pilot_spent))
+
+with tempfile.TemporaryDirectory() as td:
+    tmp = Path(td)
+    # settle to actual usage, not the reservation
+    fn, calls = transport([(9_000, 200)], max_tokens=4_096)
+    d = new(tmp, dispatch_fn=fn, confirm_egress=True)
+    e = d.attempt("T13e", "cloud-S", "req", work_bound=0.01, review_bound=0.01,
+                  expected_in=10_000)
+    check("T13e settles to actual cost", e.decision == "dispatched"
+          and (e.input_tokens, e.output_tokens) == (9_000, 200)
+          and abs(e.cost_usd - 0.02) < 1e-9 and abs(d.pilot_spent - 0.02) < 1e-9,
+          f"{e.cost_usd} {d.pilot_spent}")
+
+with tempfile.TemporaryDirectory() as td:
+    tmp = Path(td)
+    # an underestimated prompt overruns its reservation: the money is already
+    # spent, so the send is recorded at actual cost, never dropped as a $0 block
+    fn, calls = transport([(600_000, 100), (1_000, 100)], max_tokens=4_096)
+    d = new(tmp, dispatch_fn=fn, confirm_egress=True)
+    e = d.attempt("T13f", "cloud-S", "req", work_bound=0.01, review_bound=0.01,
+                  expected_in=1_000)
+    check("T13f overrun recorded as dispatched", e.decision == "dispatched"
+          and abs(e.cost_usd - 1.201) < 1e-9, f"{e.decision} {e.cost_usd}")
+    check("T13f overrun counted", abs(d.pilot_spent - 1.201) < 1e-9
+          and d._task("T13f")["attempts"] == 1, str(d.pilot_spent))
+    check("T13f overrun flagged in reason", "reservation" in e.reason, e.reason)
+    e2 = d.attempt("T13f", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
+                   expected_in=1_000)
+    check("T13f no send once over cap", e2.decision == "blocked-cost-cap"
+          and len(calls) == 1, f"{e2.decision} {calls}")
+
+with tempfile.TemporaryDirectory() as td:
+    tmp = Path(td)
+    # fail-closed: egress without a declared output ceiling or an input estimate
+    # cannot reserve a worst case, so nothing is sent and no attempt is consumed
+    calls = []
+
+    def bare(pid, req):
+        calls.append(pid)
+        return 1_000, 100
+    d = new(tmp, dispatch_fn=bare, confirm_egress=True)
+    for ceiling in ("absent", None, 0, -1, True, 1.5, "4096"):
+        if ceiling != "absent":
+            bare.max_tokens = ceiling
+        e = d.attempt("T13g", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
+                      expected_in=1_000)
+        check(f"T13g bad output ceiling {ceiling!r} refused", e.decision == "blocked-gate4",
+              e.reason)
+    bare.max_tokens = 4_096
+    e = d.attempt("T13g", "cloud-C", "req", work_bound=0.01, review_bound=0.01)
+    check("T13g missing input estimate refused", e.decision == "blocked-gate4", e.reason)
+    check("T13g nothing sent", calls == [], str(calls))
+    check("T13g no attempts consumed", d._task("T13g")["attempts"] == 0)
 
 print(f"\n{'ALL PASS' if failures == 0 else f'{failures} FAILURES'}")
 sys.exit(0 if failures == 0 else 1)

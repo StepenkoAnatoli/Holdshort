@@ -116,24 +116,28 @@ class TaskPersistence(unittest.TestCase):
             tmp = Path(td)
             now = [1000.0]
             calls = []
+            def send(*args):
+                calls.append(args)
+                return 1000, 1000
+            send.max_tokens = 1000
             def dispatcher():
                 return ld.LiveDispatcher(PRICES, tmp / "ledger.jsonl", now_fn=lambda: now[0],
                                          task_store=tmp / "task_state", confirm_egress=True,
-                                         dispatch_fn=lambda *args: (calls.append(args) or (1000, 1000)))
+                                         dispatch_fn=send)
             d1 = dispatcher()
             self.assertEqual(d1.attempt('clock', 'cloud-C', 'req', work_bound=.01,
-                                       review_bound=.01).decision, 'dispatched')
+                                       review_bound=.01, expected_in=1000).decision, 'dispatched')
             now[0] = 1200.0
             self.assertEqual(d1.attempt('clock', 'cloud-S', 'req', work_bound=.01,
-                                       review_bound=.01).decision, 'dispatched')
+                                       review_bound=.01, expected_in=1000).decision, 'dispatched')
             now[0] = 1190.0
             d2 = dispatcher()
             self.assertEqual(d2.attempt('clock', 'cloud-C-alt', 'req', work_bound=.01,
-                                       review_bound=.01).decision, 'blocked-deadline')
+                                       review_bound=.01, expected_in=1000).decision, 'blocked-deadline')
             now[0] = 1210.0
             d3 = dispatcher()
             self.assertEqual(d3.attempt('clock', 'cloud-C-alt', 'req', work_bound=.01,
-                                       review_bound=.01).decision, 'blocked-deadline')
+                                       review_bound=.01, expected_in=1000).decision, 'blocked-deadline')
             self.assertEqual(len(calls), 2, 'rollback must refuse before transport')
             self.assertEqual(d3._task('clock')['attempts'], 2)
             self.assertTrue(d3._task('clock')['clock_stopped'])

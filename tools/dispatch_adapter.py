@@ -7,6 +7,8 @@ Row-4 contract (docs/PHASE4_LIVE_START_PACKET.md §3, SIGNED 2026-10-10):
     never read from or written to any tracked file
   * returns the model's ACTUAL (input_tokens, output_tokens) from the
     response usage block — the dispatcher prices spend from these figures
+  * the returned dispatch_fn carries `max_tokens`, the request's output
+    ceiling, so the dispatcher can reserve worst-case cost before sending
   * no third-party dependencies: stdlib urllib only
 
 Profile → model mapping is pinned to the plan §10 catalog (prices-2.json).
@@ -123,6 +125,8 @@ def build_dispatch_fn(
         }
         return transport(payload, model, key)
 
+    # the output ceiling the dispatcher prices into its pre-send reservation
+    dispatch_fn.max_tokens = max_tokens
     return dispatch_fn
 
 
