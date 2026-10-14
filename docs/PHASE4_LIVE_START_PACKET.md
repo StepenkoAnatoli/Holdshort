@@ -19,7 +19,9 @@ ratification — pricing pages can change, which is exactly what the S15b revisi
 | `profile_id` | Model | `input_rate` | `output_rate` | `units` | `currency` | `uncertainty_class` | Verification |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `cloud-S` (arm A/B/D strong) | **Claude Sonnet 5.5** | **$2.00 / MTok** | **$10.00 / MTok** | tokens | USD | `known` (published list) | **Confirmed verbatim on the pricing page this day** — row reads "$2 / MTok, $10 / MTok" |
-| `cloud-C` (arm B/C economical) | **Claude Haiku 5.5** | **$0.10 / MTok** (≤100K-token prompts) | **$0.50 / MTok** | tokens | USD | `known` | **Confirmed verbatim** — row reads "$0.10 / MTok for prompts up to 100,000 tokens, $0.50 / MTok" |
+| `cloud-C` (arm B/C economical) | **Claude Haiku 5.5** | **$0.10 / MTok** (≤100K-token prompts); **$0.50 / MTok** (>100K-token prompts) | **$0.50 / MTok** (≤100K); **$2.50 / MTok** (>100K) | tokens | USD | `known` | **Confirmed verbatim** — row reads "$0.10 / MTok for prompts up to 100,000 tokens, $0.50 / MTok"; over-100K row (confirmed 2026-10-14) reads "$0.50 / MTok for prompts over 100,000 tokens, $2.50 / MTok", and a prompt over the threshold pays the higher input and output rates for the whole request |
+| `cloud-O` (escalation tier) | **Claude Opus 5.5** | **$4.00 / MTok** | **$20.00 / MTok** | tokens | USD | `known` (published list) | **Confirmed verbatim on the pricing page 2026-10-14** — row reads "$4 / MTok, $20 / MTok" |
+| `cloud-F` (frontier escalation tier) | **Claude Fable 5.1** | **$10.00 / MTok** | **$50.00 / MTok** | tokens | USD | `known` (published list) | **Confirmed verbatim on the pricing page 2026-10-14** — row reads "$10 / MTok, $50 / MTok" |
 | `cloud-C-alt` (optional economical arm) | GPT-5 Mini | $0.25 / MTok | $2.00 / MTok | tokens | USD | `known` (published) | Docs page live (HTTP 200); cross-check the number on the page itself before use |
 
 **Cached it, read it, broke it down (S15b / Gate-4 notes):**
@@ -35,7 +37,7 @@ ratification — pricing pages can change, which is exactly what the S15b revisi
   Worst-case Haiku task = 4 × $0.00035 = **$0.0014**. **No Gate-4 block from rate arithmetic.**
 
 - **Cost-relevant levers the pilot may optionally use (all on the same price page):**
-  - **Prompt caching** — cache writes billed at 1.25×; cache hits at 0.1× (Sonnet 5.5: $0.10/MTok)
+  - **Prompt caching** — cache writes billed at 1.25×; cache hits at 0.05× (Sonnet 5.5: $0.10/MTok)
     and 0.05× (Opus 5.5: $0.20/MTok). The preregistration's ratified **cold-cache rule** means the
     pilot *must not* use warm-prefix credit; cache hits should be treated as **not available** for
     cost-basis purposes unless the owner ratifies a cache-accounting amendment.
