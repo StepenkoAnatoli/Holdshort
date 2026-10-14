@@ -1,0 +1,28 @@
+{
+  "remaining_task_cap": {
+    "transport_calls": 2,
+    "decisions": [
+      "dispatched",
+      "blocked-cost-cap"
+    ],
+    "accounted_spend": 1.0
+  },
+  "shared_pilot": {
+    "decisions": [
+      "dispatched",
+      "dispatched"
+    ]
+  },
+  "nan_work_bound": {
+    "decision": "dispatched"
+  },
+  "clock_rollback": {
+    "decision": "dispatched"
+  },
+  "nan_brief": {
+    "accepted": true
+  },
+  "invalid_speculative_set": {
+    "accepted": true
+  }
+}

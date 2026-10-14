@@ -1,0 +1,247 @@
+{
+  "answers": [
+    {
+      "id": "N01",
+      "route": "blocked",
+      "first_failing_gate": 1,
+      "human_gate": "none",
+      "proposal_valid": null,
+      "calculation": null
+    },
+    {
+      "id": "N02",
+      "route": "blocked",
+      "first_failing_gate": 1,
+      "human_gate": "none",
+      "proposal_valid": null,
+      "calculation": null
+    },
+    {
+      "id": "N03",
+      "route": "blocked",
+      "first_failing_gate": 2,
+      "human_gate": "none",
+      "proposal_valid": null,
+      "calculation": null
+    },
+    {
+      "id": "N04",
+      "route": "blocked",
+      "first_failing_gate": 3,
+      "human_gate": "none",
+      "proposal_valid": null,
+      "calculation": null
+    },
+    {
+      "id": "N05",
+      "route": "direct",
+      "first_failing_gate": null,
+      "human_gate": "none",
+      "proposal_valid": null,
+      "calculation": {
+        "free_cash": 0.02,
+        "all_in_cash": 0.02,
+        "additional_calls": 1,
+        "prospective_calls": 4
+      }
+    },
+    {
+      "id": "N06",
+      "route": "blocked",
+      "first_failing_gate": 4,
+      "human_gate": "none",
+      "proposal_valid": null,
+      "calculation": {
+        "free_cash": 0.02,
+        "all_in_cash": 0.02,
+        "additional_calls": 2,
+        "prospective_calls": 5
+      }
+    },
+    {
+      "id": "N07",
+      "route": "blocked",
+      "first_failing_gate": 4,
+      "human_gate": "none",
+      "proposal_valid": null,
+      "calculation": {
+        "free_cash": 0.08,
+        "all_in_cash": 0.09,
+        "additional_calls": null,
+        "prospective_calls": null
+      }
+    },
+    {
+      "id": "N08",
+      "route": "direct",
+      "first_failing_gate": null,
+      "human_gate": "none",
+      "proposal_valid": null,
+      "calculation": {
+        "free_cash": null,
+        "all_in_cash": null,
+        "additional_calls": 0,
+        "prospective_calls": 3
+      }
+    },
+    {
+      "id": "N09",
+      "route": "blocked",
+      "first_failing_gate": 4,
+      "human_gate": "none",
+      "proposal_valid": null,
+      "calculation": null
+    },
+    {
+      "id": "N10",
+      "route": "delegate",
+      "first_failing_gate": null,
+      "human_gate": "none",
+      "proposal_valid": true,
+      "calculation": null,
+      "object_requirements": {
+        "isolation": "worktree+branch",
+        "branch_hint": "sr/a1b2c3d4/widget",
+        "cash": 0.12,
+        "calls": 2,
+        "deadline": "2030-01-01T00:05:00Z",
+        "attempts": 1,
+        "effects": [
+          "src/widget.py"
+        ],
+        "sources": [
+          "fixture://N10"
+        ],
+        "command": "python tests/check_widget.py",
+        "expect": "exit 0",
+        "ownership": "worker",
+        "nested_allowed": false,
+        "max_nesting_depth": 0
+      }
+    },
+    {
+      "id": "N11",
+      "route": null,
+      "first_failing_gate": 1,
+      "human_gate": "none",
+      "proposal_valid": false,
+      "calculation": null,
+      "object_requirements": null
+    },
+    {
+      "id": "N12",
+      "route": "recommend-escalation",
+      "first_failing_gate": null,
+      "human_gate": "none",
+      "proposal_valid": true,
+      "calculation": null,
+      "object_requirements": null
+    },
+    {
+      "id": "N13",
+      "route": null,
+      "first_failing_gate": 2,
+      "human_gate": "none",
+      "proposal_valid": false,
+      "calculation": null,
+      "object_requirements": null
+    },
+    {
+      "id": "N14",
+      "route": "speculative",
+      "first_failing_gate": null,
+      "human_gate": "none",
+      "proposal_valid": true,
+      "calculation": null,
+      "object_requirements": {
+        "profiles": [
+          "P",
+          "Q"
+        ],
+        "max_parallel": 2,
+        "cash": 0.4,
+        "calls": 5,
+        "cancel_policy": "first-success",
+        "winner_owns": true
+      }
+    },
+    {
+      "id": "N15",
+      "route": null,
+      "first_failing_gate": 5,
+      "human_gate": "none",
+      "proposal_valid": false,
+      "calculation": null,
+      "object_requirements": null
+    },
+    {
+      "id": "N16",
+      "route": null,
+      "first_failing_gate": 5,
+      "human_gate": "none",
+      "proposal_valid": false,
+      "calculation": null,
+      "object_requirements": null
+    },
+    {
+      "id": "N17",
+      "route": "direct",
+      "first_failing_gate": null,
+      "human_gate": "none",
+      "proposal_valid": null,
+      "calculation": null
+    },
+    {
+      "id": "N18",
+      "route": "direct",
+      "first_failing_gate": null,
+      "human_gate": "review-before-dispatch",
+      "proposal_valid": null,
+      "calculation": null
+    },
+    {
+      "id": "C01",
+      "answer": {
+        "transport_calls": 1,
+        "recorded_attempts": 0
+      }
+    },
+    {
+      "id": "C02",
+      "answer": {
+        "accepted_calls": 2,
+        "physical_total_cost": 1.5,
+        "global_cap_exceeded": true
+      }
+    },
+    {
+      "id": "C03",
+      "answer": {
+        "initializations": 0,
+        "transport_calls": 0,
+        "blocked": true
+      }
+    },
+    {
+      "id": "C04",
+      "answer": {
+        "allowed": true,
+        "elapsed": -300
+      }
+    },
+    {
+      "id": "C05",
+      "answer": {
+        "dispatches": 1,
+        "rejected": false
+      }
+    },
+    {
+      "id": "C06",
+      "answer": {
+        "cash_accepted": true,
+        "parallel_accepted": true
+      }
+    }
+  ]
+}

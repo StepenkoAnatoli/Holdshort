@@ -1,0 +1,226 @@
+{
+  "frozen_hashes_verified": true,
+  "negative_control_passed": true,
+  "usage_tokens": null,
+  "billed_cost": null,
+  "results": {
+    "luna-1": {
+      "correct_expected_fields_cases": 22,
+      "cases": 24,
+      "policy_decisions_correct": 18,
+      "policy_cases": 18,
+      "code_traces_correct": 6,
+      "code_cases": 6,
+      "calculation_fields_correct": 8,
+      "calculation_fields": 12,
+      "object_schema_checks": [
+        {
+          "id": "N10",
+          "schema_conformant": true
+        },
+        {
+          "id": "N14",
+          "schema_conformant": true
+        }
+      ],
+      "mismatches": [
+        {
+          "id": "N05",
+          "fields": [
+            "calculation"
+          ],
+          "expected": {
+            "route": "direct",
+            "first_failing_gate": null,
+            "human_gate": "none",
+            "proposal_valid": null,
+            "calculation": {
+              "free_cash": 0.02,
+              "all_in_cash": 0.02,
+              "additional_calls": 1,
+              "prospective_calls": 4
+            }
+          },
+          "actual": {
+            "route": "direct",
+            "first_failing_gate": null,
+            "human_gate": "none",
+            "proposal_valid": null,
+            "calculation": {
+              "free_cash": 0.04,
+              "all_in_cash": 0.02,
+              "additional_calls": 1,
+              "prospective_calls": 2
+            }
+          }
+        },
+        {
+          "id": "N06",
+          "fields": [
+            "calculation"
+          ],
+          "expected": {
+            "route": "blocked",
+            "first_failing_gate": 4,
+            "human_gate": "none",
+            "proposal_valid": null,
+            "calculation": {
+              "free_cash": 0.02,
+              "all_in_cash": 0.02,
+              "additional_calls": 2,
+              "prospective_calls": 5
+            }
+          },
+          "actual": {
+            "route": "blocked",
+            "first_failing_gate": 4,
+            "human_gate": "none",
+            "proposal_valid": null,
+            "calculation": {
+              "free_cash": 0.04,
+              "all_in_cash": 0.02,
+              "additional_calls": 2,
+              "prospective_calls": 4
+            }
+          }
+        }
+      ]
+    },
+    "luna-2": {
+      "correct_expected_fields_cases": 23,
+      "cases": 24,
+      "policy_decisions_correct": 18,
+      "policy_cases": 18,
+      "code_traces_correct": 6,
+      "code_cases": 6,
+      "calculation_fields_correct": 11,
+      "calculation_fields": 12,
+      "object_schema_checks": [
+        {
+          "id": "N10",
+          "schema_conformant": true
+        },
+        {
+          "id": "N14",
+          "schema_conformant": true
+        }
+      ],
+      "mismatches": [
+        {
+          "id": "N07",
+          "fields": [
+            "calculation"
+          ],
+          "expected": {
+            "route": "blocked",
+            "first_failing_gate": 4,
+            "human_gate": "none",
+            "proposal_valid": null,
+            "calculation": {
+              "free_cash": 0.08,
+              "all_in_cash": 0.09,
+              "additional_calls": null,
+              "prospective_calls": null
+            }
+          },
+          "actual": {
+            "route": "blocked",
+            "first_failing_gate": 4,
+            "human_gate": "none",
+            "proposal_valid": null,
+            "calculation": {
+              "free_cash": 0.08,
+              "all_in_cash": 0.095,
+              "additional_calls": null,
+              "prospective_calls": null
+            }
+          }
+        }
+      ]
+    },
+    "sol-1": {
+      "correct_expected_fields_cases": 24,
+      "cases": 24,
+      "policy_decisions_correct": 18,
+      "policy_cases": 18,
+      "code_traces_correct": 6,
+      "code_cases": 6,
+      "calculation_fields_correct": 12,
+      "calculation_fields": 12,
+      "object_schema_checks": [
+        {
+          "id": "N10",
+          "schema_conformant": true
+        },
+        {
+          "id": "N14",
+          "schema_conformant": true
+        }
+      ],
+      "mismatches": []
+    },
+    "sol-2": {
+      "correct_expected_fields_cases": 24,
+      "cases": 24,
+      "policy_decisions_correct": 18,
+      "policy_cases": 18,
+      "code_traces_correct": 6,
+      "code_cases": 6,
+      "calculation_fields_correct": 12,
+      "calculation_fields": 12,
+      "object_schema_checks": [
+        {
+          "id": "N10",
+          "schema_conformant": true
+        },
+        {
+          "id": "N14",
+          "schema_conformant": true
+        }
+      ],
+      "mismatches": []
+    },
+    "astra-1": {
+      "correct_expected_fields_cases": 24,
+      "cases": 24,
+      "policy_decisions_correct": 18,
+      "policy_cases": 18,
+      "code_traces_correct": 6,
+      "code_cases": 6,
+      "calculation_fields_correct": 12,
+      "calculation_fields": 12,
+      "object_schema_checks": [
+        {
+          "id": "N10",
+          "schema_conformant": true
+        },
+        {
+          "id": "N14",
+          "schema_conformant": true
+        }
+      ],
+      "mismatches": []
+    },
+    "astra-2": {
+      "correct_expected_fields_cases": 24,
+      "cases": 24,
+      "policy_decisions_correct": 18,
+      "policy_cases": 18,
+      "code_traces_correct": 6,
+      "code_cases": 6,
+      "calculation_fields_correct": 12,
+      "calculation_fields": 12,
+      "object_schema_checks": [
+        {
+          "id": "N10",
+          "schema_conformant": true
+        },
+        {
+          "id": "N14",
+          "schema_conformant": true
+        }
+      ],
+      "mismatches": []
+    }
+  }
+}

@@ -96,7 +96,8 @@ class Conform(unittest.TestCase):
 
     # K4 ----------------------------------------------------------------------
     def test_k4_speculative_set_rules(self):
-        good = {"candidates": [{"profile": "p"}], "shared-budget": {"cash": 1.0, "calls": 4},
+        good = {"candidates": [{"profile": "p"}, {"profile": "q"}], "max-parallel": 2,
+                "shared-budget": {"cash": 1.0, "calls": 4},
                 "cancel-policy": "first-success", "winner-owns": True}
         cs.check_speculative(good)
         for bad in (dict(good, candidates=[]),
@@ -105,6 +106,45 @@ class Conform(unittest.TestCase):
                     dict(good, **{"cancel-policy": "vibes"})):
             with self.assertRaises(cs.Violation):
                 cs.check_speculative(bad)
+
+    def test_nonfinite_allowance_and_typed_calls_are_refused(self):
+        for cash in (float('nan'), float('inf'), -float('inf'), 10**1000):
+            with self.subTest(cash_type=type(cash).__name__):
+                with self.assertRaises(cs.Violation):
+                    cs.check_brief(brief(allowance={"cash": cash, "calls": 2,
+                                                  "deadline": "2030-01-01T00:00:00Z"}))
+        for calls in (True, 1.5, -1):
+            with self.assertRaises(cs.Violation):
+                cs.check_brief(brief(allowance={"cash": 0.1, "calls": calls,
+                                              "deadline": "2030-01-01T00:00:00Z"}))
+        for allowance in (None, [], 1):
+            with self.assertRaises(cs.Violation):
+                cs.check_brief(brief(allowance=allowance))
+
+    def test_speculation_requires_distinct_candidates_and_bounded_parallelism(self):
+        good = {"candidates": [{"profile": "p"}, {"profile": "q"}], "max-parallel": 2,
+                "shared-budget": {"cash": 0.4, "calls": 5},
+                "cancel-policy": "first-success", "winner-owns": True}
+        mutations = [{"candidates": [{"profile": "p"}]},
+                     {"candidates": [{"profile": "p"}, {"profile": "p"}]},
+                     {"candidates": [{"profile": ""}, {"profile": "q"}]},
+                     {"candidates": [{"profile": "p", "weight": float('nan')},
+                                     {"profile": "q"}]},
+                     {"shared-budget": {"cash": float('nan'), "calls": 5}},
+                     {"shared-budget": {"cash": 0.4, "calls": 1.5}}]
+        mutations.extend({"max-parallel": p} for p in (None, True, 0, 1, 2.5, 3))
+        for change in mutations:
+            with self.subTest(change=change):
+                with self.assertRaises(cs.Violation):
+                    cs.check_speculative(dict(good, **change))
+
+    def test_cli_rejects_nan_instead_of_claiming_conformance(self):
+        with tempfile.TemporaryDirectory() as td:
+            bad = brief(allowance={"cash": float('nan'), "calls": 2,
+                                   "deadline": "2030-01-01T00:00:00Z"})
+            result = run("--route", "delegate", "--brief", str(write(Path(td), "bad.json", bad)))
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("VIOLATION", result.stderr)
 
     # K5 ----------------------------------------------------------------------
     def test_k5_outcome_uses_canonical_schema(self):

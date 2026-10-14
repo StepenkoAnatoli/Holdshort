@@ -8,8 +8,8 @@ the time anything runs. This checker proves the objects BEFORE dispatch:
 
   * Brief (§10.1): all keys present with typed values; isolation/nested-allowed enums;
     allowance numbers non-negative; attempts a non-negative int
-  * SpeculativeSet (§10.2): candidates non-empty with profile strings; shared-budget
-    non-negative; cancel-policy enum; winner-owns true
+  * SpeculativeSet (§10.2): at least two distinct profiles; bounded integer
+    parallelism; finite non-negative cash and integer calls; winner-owns true
   * Outcome (§10.3): via tools/outcome_ledger.validate (the canonical Outcome schema)
   * NestedBrief (§10.4 + bound rules against --parent-brief / --parent-state):
     sub-allowance within parent REMAINING cash/calls, deadline at/before parent's,
@@ -31,6 +31,7 @@ import argparse
 import datetime
 import importlib.util
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -61,7 +62,12 @@ class Violation(RuntimeError):
 
 
 def _is_num(x) -> bool:
-    return isinstance(x, (int, float)) and not isinstance(x, bool)
+    if type(x) not in (int, float):
+        return False
+    try:
+        return math.isfinite(x)
+    except OverflowError:
+        return False
 
 
 def load_json(path: Path, what: str) -> dict:
@@ -101,11 +107,14 @@ def check_brief(doc: dict) -> None:
         if not isinstance(c, dict) or "command" not in c or "expect" not in c:
             raise Violation("Brief acceptance checks need command + expect (§10.1)")
     al = doc["allowance"]
+    if not isinstance(al, dict):
+        raise Violation("Brief allowance must be an object")
     for key in ("cash", "calls", "deadline"):
         if key not in al:
             raise Violation(f"Brief allowance lacks {key!r}")
-    if not _is_num(al["cash"]) or al["cash"] < 0 or not _is_num(al["calls"]) or al["calls"] < 0:
-        raise Violation("Brief allowance cash/calls must be non-negative numbers")
+    if (not _is_num(al["cash"]) or al["cash"] < 0
+            or type(al["calls"]) is not int or al["calls"] < 0):
+        raise Violation("Brief allowance needs finite non-negative cash and integer calls")
     _iso_datetime(al["deadline"], "Brief allowance.deadline")
     if not isinstance(doc["attempts"], int) or isinstance(doc["attempts"], bool) or doc["attempts"] < 0:
         raise Violation("Brief attempts must be a non-negative int")
@@ -113,6 +122,13 @@ def check_brief(doc: dict) -> None:
         raise Violation("Brief nested-allowed must be true/false")
     if doc["max-nesting-depth"] not in (0, 1, 2):
         raise Violation("Brief max-nesting-depth must be 0, 1, or 2")
+    if type(doc["max-nesting-depth"]) is not int:
+        raise Violation("Brief max-nesting-depth must be an integer")
+    if doc["ownership"] != "worker":
+        raise Violation("Brief ownership must be worker")
+    for key in ("sources", "permitted-effects", "non-goals", "stop-triggers"):
+        if not isinstance(doc[key], list) or any(not isinstance(x, str) for x in doc[key]):
+            raise Violation(f"Brief {key} must be a list of strings")
 
 
 def _iso_datetime(value, where: str) -> None:
@@ -126,15 +142,22 @@ def _iso_datetime(value, where: str) -> None:
 
 def check_speculative(doc: dict) -> None:
     cands = doc.get("candidates")
-    if not isinstance(cands, list) or not cands:
-        raise Violation("SpeculativeSet needs a non-empty candidates list (§10.2)")
+    if not isinstance(cands, list) or len(cands) < 2:
+        raise Violation("SpeculativeSet needs at least two eligible candidates (§8.4)")
     for c in cands:
-        if not isinstance(c, dict) or not c.get("profile"):
+        if not isinstance(c, dict) or not isinstance(c.get("profile"), str) or not c["profile"].strip():
             raise Violation("SpeculativeSet candidates need profile strings")
+        if 'weight' in c and (not _is_num(c['weight']) or c['weight'] <= 0):
+            raise Violation("SpeculativeSet weights must be positive finite numbers")
+    if len({c['profile'] for c in cands}) != len(cands):
+        raise Violation("SpeculativeSet candidates must have distinct profiles")
+    parallel = doc.get('max-parallel')
+    if type(parallel) is not int or not 2 <= parallel <= len(cands):
+        raise Violation("SpeculativeSet max-parallel must be an integer from 2 to candidate count")
     sb = doc.get("shared-budget", {})
-    if not _is_num(sb.get("cash")) or sb["cash"] < 0 or \
-       not _is_num(sb.get("calls")) or sb["calls"] < 0:
-        raise Violation("SpeculativeSet shared-budget must hold non-negative numbers")
+    if not isinstance(sb, dict) or not _is_num(sb.get("cash")) or sb["cash"] < 0 or \
+       type(sb.get("calls")) is not int or sb["calls"] < 0:
+        raise Violation("SpeculativeSet budget needs finite non-negative cash and integer calls")
     if doc.get("cancel-policy") not in CANCEL:
         raise Violation(f"SpeculativeSet cancel-policy must be one of {list(CANCEL)}")
     if doc.get("winner-owns") is not True:

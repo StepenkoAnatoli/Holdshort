@@ -212,5 +212,42 @@ with tempfile.TemporaryDirectory() as td:
                   expected_in=10_000, expected_out=1_000)
     check("T11 repair still allowed afterwards", s.decision == "dispatched", s.reason)
 
+# Invalid numeric bounds must never invoke even a fake transport.
+with tempfile.TemporaryDirectory() as td:
+    tmp = Path(td)
+    calls = []
+    d = new(tmp, confirm_egress=True,
+            dispatch_fn=lambda *args: (calls.append(args) or (10_000, 1_000)))
+    for idx, value in enumerate((float('nan'), float('inf'), -float('inf'),
+                                 -0.01, True, '0.01', 10**1000)):
+        for field in ('work_bound', 'review_bound'):
+            bounds = {'work_bound': 0.01, 'review_bound': 0.01, field: value}
+            e = d.attempt(f'numeric-{field}-{idx}', 'cloud-C', 'req', **bounds)
+            check(f'T12 {field} invalid case {idx}', e.decision == 'blocked-gate4')
+    e = d.attempt('overflow-sum', 'cloud-C', 'req', work_bound=1e308, review_bound=1e308)
+    check('T12 sum overflow refused', e.decision == 'blocked-gate4')
+    for value in (True, -1, 1.5):
+        e = d.attempt('bad-tokens', 'cloud-C', 'req', work_bound=0.01,
+                      review_bound=0.01, expected_in=value)
+        check('T12 invalid expected tokens refused', e.decision == 'blocked-gate4')
+    bad_prices = prices()
+    bad_prices['profiles']['cloud-C']['input_rate_per_mtok'] = float('nan')
+    bad = ld.LiveDispatcher(bad_prices, tmp / 'bad-rate.jsonl', confirm_egress=True,
+                            dispatch_fn=lambda *args: (calls.append(args) or (1, 1)))
+    e = bad.attempt('bad-rate', 'cloud-C', 'req', work_bound=0.01, review_bound=0.01)
+    check('T12 NaN rate refused', e.decision == 'blocked-gate4')
+    check('T12 no transport calls', calls == [])
+    check('T12 no attempts consumed', all(st['attempts'] == 0 for st in d._tasks.values()))
+    for field in ('max_cost_per_task_usd', 'max_cost_per_pilot_usd',
+                  'max_elapsed_seconds_per_task'):
+        bad_prices = prices()
+        bad_prices['pilot_caps'][field] = float('nan')
+        try:
+            ld.LiveDispatcher(bad_prices, tmp / 'bad-cap.jsonl')
+            refused = False
+        except ValueError:
+            refused = True
+        check(f'T12 invalid {field} refused', refused)
+
 print(f"\n{'ALL PASS' if failures == 0 else f'{failures} FAILURES'}")
 sys.exit(0 if failures == 0 else 1)

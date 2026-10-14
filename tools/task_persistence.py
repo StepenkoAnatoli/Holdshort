@@ -37,7 +37,7 @@ except ImportError:
 
 STATE_FIELDS = ("task_id", "attempts", "spent", "started", "repairs", "last_profile")
 # Optional extras persisted when present (clock versioning, wall stamp).
-EXTRA_FIELDS = ("clock", "started_wall")
+EXTRA_FIELDS = ("clock", "started_wall", "last_observed", "clock_stopped")
 DEFAULT_DIR = Path(__file__).resolve().parent / "task_state"
 
 CLOCK_MONOTONIC = "monotonic"
@@ -94,11 +94,19 @@ class TaskStateStore:
             raise CorruptState("task state missing required fields; original state preserved")
         counters_ok = all(type(doc[k]) is int and doc[k] >= 0
                           for k in ("attempts", "repairs"))
-        numbers_ok = all(type(doc[k]) in (int, float) and math.isfinite(doc[k])
-                         and doc[k] >= 0 for k in ("spent", "started"))
+        try:
+            numbers_ok = all(type(doc[k]) in (int, float) and math.isfinite(doc[k])
+                             and doc[k] >= 0 for k in ("spent", "started"))
+            if "last_observed" in doc:
+                value = doc["last_observed"]
+                numbers_ok = (numbers_ok and type(value) in (int, float)
+                              and math.isfinite(value) and value >= doc["started"])
+        except (OverflowError, TypeError):
+            numbers_ok = False
         if (not counters_ok or not numbers_ok or doc["task_id"] != task_id
                 or not isinstance(doc["last_profile"], str)
                 or doc["repairs"] > doc["attempts"]
+                or ("clock_stopped" in doc and type(doc["clock_stopped"]) is not bool)
                 or doc.get("clock", CLOCK_WALL_LEGACY) != CLOCK_WALL_LEGACY):
             raise CorruptState("task state invalid or unsupported clock; original state preserved")
         st = {k: doc[k] for k in STATE_FIELDS}

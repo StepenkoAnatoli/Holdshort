@@ -222,6 +222,11 @@ the expected decision fields; the report also records a reservation-binding ambi
 coverage gaps and unavailable per-model telemetry. This small run does not
 establish a production model ranking.
 
+A [repeated 24-case stress comparison](docs/MODEL_POLICY_STRESS_2026-10-14.md)
+adds two runs per model, explicit reservation arithmetic, proposal checks, and
+code traces. It records calculation errors, schema fixes, and remaining runtime
+gaps with replayable evidence. Usage and billed cost remain unknown.
+
 ## Documentation
 
 | Start here when you want to… | Read |
@@ -241,6 +246,11 @@ New contributors are welcome. Start with the [contribution guide](CONTRIBUTING.m
 and browse [good first issues](https://github.com/StepenkoAnatoli/SmartRouter/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22)
 for small, clearly scoped tasks. The guide explains setup, labels, commit messages,
 bug reports, and pull requests.
+
+Interested in comparing models? Pick a [LLM testing issue](https://github.com/StepenkoAnatoli/SmartRouter/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22llm%20evaluation%22)
+for GPT repeats, Claude, Gemini preparation, local models, or usage capture.
+[Join the discussion](https://github.com/StepenkoAnatoli/SmartRouter/discussions/62)
+or read the [community guide](docs/COMMUNITY.md) to share results and help others get started.
 
 Work on a feature branch, define acceptance checks before implementation, and run
 the local gate before pushing. Open a pull request against `main`; GitHub runs the
