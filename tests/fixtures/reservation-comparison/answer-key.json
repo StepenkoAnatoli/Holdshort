@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "answers": [
+    {"id":"cash-owner-other","route":"blocked","first_failing_gate":4,"free_cash":"0.00","all_in_bound":"0.04","additional_cash":"0.04","additional_calls":2,"prospective_calls":2},
+    {"id":"cash-owner-current","route":"direct","first_failing_gate":null,"free_cash":"0.00","all_in_bound":"0.04","additional_cash":"0.00","additional_calls":2,"prospective_calls":2},
+    {"id":"call-owner-other","route":"blocked","first_failing_gate":4,"free_cash":"1.00","all_in_bound":"0.03","additional_cash":"0.03","additional_calls":2,"prospective_calls":5},
+    {"id":"call-owner-current","route":"direct","first_failing_gate":null,"free_cash":"1.00","all_in_bound":"0.03","additional_cash":"0.03","additional_calls":0,"prospective_calls":3},
+    {"id":"cash-exact","route":"direct","first_failing_gate":null,"free_cash":"0.06","all_in_bound":"0.06","additional_cash":"0.06","additional_calls":2,"prospective_calls":2},
+    {"id":"cash-over-cent","route":"blocked","first_failing_gate":4,"free_cash":"0.05","all_in_bound":"0.06","additional_cash":"0.06","additional_calls":2,"prospective_calls":2},
+    {"id":"calls-exact","route":"direct","first_failing_gate":null,"free_cash":"1.00","all_in_bound":"0.02","additional_cash":"0.02","additional_calls":2,"prospective_calls":3},
+    {"id":"calls-over-one","route":"blocked","first_failing_gate":4,"free_cash":"1.00","all_in_bound":"0.02","additional_cash":"0.02","additional_calls":3,"prospective_calls":4},
+    {"id":"verification-included","route":"direct","first_failing_gate":null,"free_cash":"0.06","all_in_bound":"0.06","additional_cash":"0.06","additional_calls":2,"prospective_calls":2},
+    {"id":"verification-omitted","route":"blocked","first_failing_gate":4,"free_cash":"0.06","all_in_bound":"0.06","additional_cash":"0.06","additional_calls":2,"prospective_calls":2}
+  ]
+}
