@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "status": "exploratory; no ratification or production qualification",
+  "launch_batch_observed_at": "2026-10-13T23:57:56Z",
+  "all_results_observed_by": "2026-10-13T23:59:15Z",
+  "batch_observation_window_seconds": 79,
+  "timing_note": "Upper-bound observation window including scheduling, packet retrieval and coordinator delay; no per-model speed ranking",
+  "native_subagent_runs": 3,
+  "contestant_retries": 0,
+  "repository_live_adapter_dispatches": 0,
+  "host_selected_default_reported_by_user": true,
+  "parent_model_identity_independently_observed": null,
+  "run_labels": {
+    "luna": "/root/benchmark_luna",
+    "sol": "/root/benchmark_sol",
+    "astra": "/root/benchmark_astra"
+  },
+  "models": {
+    "luna": {"requested_model": "gpt-6-luna", "requested_reasoning_effort": "medium", "resolved_model_revision": null, "precise_elapsed_seconds": null, "token_usage": null, "provider_cost_usd": null},
+    "sol": {"requested_model": "gpt-6.1-sol", "requested_reasoning_effort": "medium", "resolved_model_revision": null, "precise_elapsed_seconds": null, "token_usage": null, "provider_cost_usd": null},
+    "astra": {"requested_model": "gpt-6-astra", "requested_reasoning_effort": "medium", "resolved_model_revision": null, "precise_elapsed_seconds": null, "token_usage": null, "provider_cost_usd": null}
+  },
+  "accounting_note": "No per-agent usage was exposed by the test tools; the earlier parent-session aggregate is not attributed to this pilot. Unknown is not zero. No savings or bill inferred.",
+  "qualitative_review": [
+    {"model": "luna", "case_id": "X03", "finding": "Rationale says four total calls; prospective total is two used plus two reserved plus two planned = six. Route remains correct at the six-call limit.", "affects_predeclared_numeric_score": false},
+    {"case_id": "X03", "supersedes_review_index": 0, "finding": "The first interpretation overstated a model error: the prompt does not bind the existing reservations to particular work. Four is plausible if those reservations cover the planned calls; six is plausible if they do not. All routes remain correct. Record a fixture ambiguity, not a proven Luna arithmetic error.", "affects_predeclared_numeric_score": false}
+  ]
+}

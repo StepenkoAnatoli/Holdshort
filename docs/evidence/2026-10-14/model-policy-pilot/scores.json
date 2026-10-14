@@ -1,0 +1,47 @@
+{
+  "scoring": "frozen field agreement; rationale not numerically scored",
+  "models": {
+    "luna": {
+      "requested_model": "gpt-6-luna",
+      "response_sha256": "f23b186feeba996bb381e2bf69c01b84514529f10ca1ba4bd13cbeca288e1062",
+      "cases_total": 12,
+      "cases_passed": 12,
+      "field_matches": {
+        "route": 12,
+        "first_failing_gate": 12,
+        "human_gate": 12,
+        "outcome": 12,
+        "dispatch_performed": 12
+      },
+      "mismatches": []
+    },
+    "sol": {
+      "requested_model": "gpt-6.1-sol",
+      "response_sha256": "9f599d294f37f30cf724b72e182462f25e99a132d74e95e1d89b39d9b64c593a",
+      "cases_total": 12,
+      "cases_passed": 12,
+      "field_matches": {
+        "route": 12,
+        "first_failing_gate": 12,
+        "human_gate": 12,
+        "outcome": 12,
+        "dispatch_performed": 12
+      },
+      "mismatches": []
+    },
+    "astra": {
+      "requested_model": "gpt-6-astra",
+      "response_sha256": "6a8c17829ed8c8a20ef1dedba9fb463cd585a249e6ec2a1619e6034dc20a8c67",
+      "cases_total": 12,
+      "cases_passed": 12,
+      "field_matches": {
+        "route": 12,
+        "first_failing_gate": 12,
+        "human_gate": 12,
+        "outcome": 12,
+        "dispatch_performed": 12
+      },
+      "mismatches": []
+    }
+  }
+}
