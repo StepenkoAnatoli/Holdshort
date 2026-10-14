@@ -73,6 +73,68 @@ class Adapter(unittest.TestCase):
         fn("cloud-C", "x")
         self.assertEqual(t.calls[0]["payload"]["max_tokens"], 1234)
 
+    def test_count_tokens_uses_count_transport(self):
+        # same model and messages as the send, without max_tokens
+        seen = []
+        def count(payload, model, key):
+            seen.append((payload, model, bool(key)))
+            return 321
+        fn = da.build_dispatch_fn(api_key="sk-ant-x", transport=mock_transport_factory(),
+                                  env_fallback={}, count_transport=count)
+        self.assertEqual(fn.count_tokens("cloud-S", "hello"), 321)
+        payload, model, key_seen = seen[0]
+        self.assertEqual(model, "claude-sonnet-5-5")
+        self.assertEqual(payload, {"model": "claude-sonnet-5-5",
+                                   "messages": [{"role": "user", "content": "hello"}]})
+        self.assertTrue(key_seen)
+
+    def test_count_tokens_refused_without_count_transport(self):
+        # a mocked send transport must never fall through to a real count request
+        t = mock_transport_factory()
+        fn = da.build_dispatch_fn(api_key="sk-ant-x", transport=t, env_fallback={})
+        with self.assertRaises(da.DispatchRefused):
+            fn.count_tokens("cloud-C", "x")
+        self.assertEqual(t.calls, [])
+
+    def test_count_tokens_unmapped_profile_refused(self):
+        fn = da.build_dispatch_fn(api_key="sk-ant-x", transport=mock_transport_factory(),
+                                  env_fallback={}, count_transport=lambda *a: 1)
+        with self.assertRaises(da.DispatchRefused):
+            fn.count_tokens("cloud-C-alt", "x")
+
+    def test_http_count_transport_posts_to_count_endpoint(self):
+        seen = []
+
+        class Resp:
+            def __init__(self, body):
+                self.body = body
+            def __enter__(self):
+                return self
+            def __exit__(self, *exc):
+                return False
+            def read(self):
+                return self.body
+
+        def fake_urlopen(req, timeout):
+            seen.append((req.full_url, req.get_method(), json.loads(req.data)))
+            return Resp(b'{"input_tokens": 14}')
+        real = da.urllib.request.urlopen
+        da.urllib.request.urlopen = fake_urlopen
+        try:
+            payload = {"model": "claude-haiku-5-5",
+                       "messages": [{"role": "user", "content": "hi"}]}
+            n = da._http_count_transport(payload, "claude-haiku-5-5", "sk-ant-x")
+            self.assertEqual(n, 14)
+            self.assertEqual(seen[0][:2], ("https://api.anthropic.com/v1/messages/count_tokens",
+                                           "POST"))
+            self.assertEqual(seen[0][2], payload)
+            fake_body = [b'{"usage": {}}']
+            da.urllib.request.urlopen = lambda req, timeout: Resp(fake_body[0])
+            with self.assertRaises(KeyError):  # a missing count is never zero-filled
+                da._http_count_transport(payload, "claude-haiku-5-5", "sk-ant-x")
+        finally:
+            da.urllib.request.urlopen = real
+
     def test_escalation_tiers_pinned(self):
         t = mock_transport_factory()
         fn = da.build_dispatch_fn(api_key="sk-ant-x", transport=t, env_fallback={})

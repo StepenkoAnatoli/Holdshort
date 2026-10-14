@@ -8,7 +8,9 @@ Row-4 contract (docs/PHASE4_LIVE_START_PACKET.md §3, SIGNED 2026-10-10):
   * returns the model's ACTUAL (input_tokens, output_tokens) from the
     response usage block — the dispatcher prices spend from these figures
   * the returned dispatch_fn carries `max_tokens`, the request's output
-    ceiling, so the dispatcher can reserve worst-case cost before sending
+    ceiling, and `count_tokens(profile_id, request)`, which asks the free
+    /v1/messages/count_tokens endpoint (same approved host) for the prompt's
+    input tokens, so the dispatcher can reserve worst-case cost before sending
   * no third-party dependencies: stdlib urllib only
 
 Profile → model mapping is pinned to the plan §10 catalog (prices-2.json).
@@ -90,6 +92,7 @@ def build_dispatch_fn(
     max_tokens: int = MAX_TOKENS_DEFAULT,
     timeout_s: int = REQUEST_TIMEOUT_S,
     transport: Optional[Callable[[dict, str, str], Tuple[int, int]]] = None,
+    count_transport: Optional[Callable[[dict, str, str], int]] = None,
 ):
     """Return a dispatch_fn(profile_id, request) -> (in_tokens, out_tokens).
 
@@ -99,6 +102,8 @@ def build_dispatch_fn(
     """
     if transport is None:
         transport = _http_transport
+        if count_transport is None:
+            count_transport = _http_count_transport
     else:
         # test/mocked transport still goes through consent checks below
         pass
@@ -112,12 +117,16 @@ def build_dispatch_fn(
             f"endpoint {endpoint!r} is not the approved api.anthropic.com — row-4 egress refus"
         )
 
-    def dispatch_fn(profile_id: str, request: str) -> Tuple[int, int]:
+    def model_for(profile_id: str) -> str:
         model = MODEL_FOR_PROFILE.get(profile_id)
         if model is None:
             raise DispatchRefused(
                 f"profile {profile_id!r} has no approved Anthropic model mapping — refusing"
             )
+        return model
+
+    def dispatch_fn(profile_id: str, request: str) -> Tuple[int, int]:
+        model = model_for(profile_id)
         payload = {
             "model": model,
             "max_tokens": max_tokens,
@@ -125,16 +134,25 @@ def build_dispatch_fn(
         }
         return transport(payload, model, key)
 
-    # the output ceiling the dispatcher prices into its pre-send reservation
+    def count_tokens(profile_id: str, request: str) -> int:
+        model = model_for(profile_id)
+        if count_transport is None:
+            # a mocked send transport must never fall through to a real count request
+            raise DispatchRefused("no token-count transport wired — refusing to guess the prompt size")
+        payload = {"model": model, "messages": [{"role": "user", "content": request}]}
+        return count_transport(payload, model, key)
+
+    # the output ceiling and input count the dispatcher prices into its pre-send reservation
     dispatch_fn.max_tokens = max_tokens
+    dispatch_fn.count_tokens = count_tokens
     return dispatch_fn
 
 
-def _http_transport(payload: dict, model: str, key: str) -> Tuple[int, int]:
+def _post(path: str, payload: dict, key: str) -> dict:
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         method="POST",
-        url=f"{APPROVED_ENDPOINT}/v1/messages",
+        url=f"{APPROVED_ENDPOINT}{path}",
         data=body,
         headers={
             "x-api-key": key,
@@ -143,7 +161,16 @@ def _http_transport(payload: dict, model: str, key: str) -> Tuple[int, int]:
         },
     )
     with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_S) as resp:
-        doc = json.loads(resp.read().decode("utf-8"))
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _http_count_transport(payload: dict, model: str, key: str) -> int:
+    # no zero-fill: a missing count must fail the reservation, not price the prompt at $0
+    return _post("/v1/messages/count_tokens", payload, key)["input_tokens"]
+
+
+def _http_transport(payload: dict, model: str, key: str) -> Tuple[int, int]:
+    doc = _post("/v1/messages", payload, key)
     usage = doc.get("usage") or {}
     in_toks = int(usage.get("input_tokens") or 0)
     out_toks = int(usage.get("output_tokens") or 0)

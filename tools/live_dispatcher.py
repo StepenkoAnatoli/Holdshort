@@ -21,13 +21,14 @@ Gate-4 blocks (affordability, fail-closed):
   * all-in work+review bound > per-task cap -> blocked before dispatch
   * a dispatch whose worst-case reservation would push task or pilot spend
     past its cap -> blocked before anything is sent. Under egress the
-    reservation prices the caller's expected input tokens plus the
-    dispatch_fn's declared `max_tokens` output ceiling (long-context tier
-    included); a dry run reserves its expected tokens. Spend then settles to
-    the actual usage, and a send that overran its reservation is still
-    recorded at actual cost.
-  * egress without an input-token estimate or a declared output ceiling ->
-    blocked: the worst case cannot be priced
+    reservation prices the larger of the caller's expected input tokens and
+    the dispatch_fn's `count_tokens` result plus TOKEN_COUNT_MARGIN, plus its
+    declared `max_tokens` output ceiling (long-context tier included); a dry
+    run reserves its expected tokens. Spend then settles to the actual usage,
+    and a send that overran its reservation is still recorded at actual cost.
+  * egress without a declared output ceiling or a token counter, or with a
+    count that fails or is not a non-negative int -> blocked: the worst case
+    cannot be priced
 
 Egress is opt-in only: without --confirm-egress no network call is emitted at
 all (dry-run mode; callers supply token counts via --expected-*-tokens). With
@@ -66,6 +67,9 @@ LEDGER_DEFAULT = REPO_ROOT / "tools" / "pilot_ledger.jsonl"
 TASK_STATE_DEFAULT = REPO_ROOT / "tools" / "task_state"
 
 REASON_MAX = 512  # bounded ledger lines, per the pilot observation rules
+# The token-counting endpoint documents its count as an estimate that can differ
+# from the billed input "by a small amount"; reserve this much above it.
+TOKEN_COUNT_MARGIN = 0.05
 
 
 def _priceable(profile: Any) -> bool:
@@ -240,18 +244,20 @@ class LiveDispatcher:
                                 "invalid numeric bound, rate, or expected token count")
 
         # A send can only be capped if its worst case is priced first: the
-        # caller's input estimate plus the transport's own output ceiling.
+        # counted prompt size plus the transport's own output ceiling.
         out_ceiling = expected_out
+        count_fn = None
         if self.confirm_egress:
             if self.dispatch_fn is None:
                 raise RuntimeError(
                     "confirm_egress set but no dispatch_fn wired — fail-closed, refusing egress"
                 )
             out_ceiling = getattr(self.dispatch_fn, "max_tokens", None)
-            if type(out_ceiling) is not int or out_ceiling <= 0 or expected_in <= 0:
+            count_fn = getattr(self.dispatch_fn, "count_tokens", None)
+            if type(out_ceiling) is not int or out_ceiling <= 0 or not callable(count_fn):
                 return self._reject(st, profile_id, "blocked-gate4",
-                                    "egress needs expected input tokens and a dispatch_fn"
-                                    " max_tokens ceiling to reserve worst-case cost")
+                                    "egress needs a dispatch_fn max_tokens ceiling and"
+                                    " count_tokens to reserve worst-case cost")
 
         # 2) §5 attempt cap (counts every dispatch, any arm)
         if st["attempts"] >= self.caps.max_attempts:
@@ -292,8 +298,21 @@ class LiveDispatcher:
                                 f"exceeded {self.caps.same_profile_repairs} same-profile repair(s)")
 
         # 6) reserve the worst case against both caps BEFORE sending
-        #    (equality passes: spent + reserve <= limit)
-        reserve = self._cost(profile, expected_in, out_ceiling)
+        #    (equality passes: spent + reserve <= limit). Under egress the
+        #    prompt is counted, so a low estimate cannot shrink the reservation;
+        #    the margin goes on before the rate tier is chosen.
+        reserve_in = expected_in
+        if count_fn is not None:
+            try:
+                counted = count_fn(profile_id, request)
+            except Exception as exc:  # nothing was created or billed; refuse the send
+                return self._reject(st, profile_id, "blocked-gate4",
+                                    f"token count failed before send: {type(exc).__name__}: {exc}")
+            if type(counted) is not int or counted < 0:
+                return self._reject(st, profile_id, "blocked-gate4",
+                                    "token count was not a non-negative int")
+            reserve_in = max(expected_in, math.ceil(counted * (1 + TOKEN_COUNT_MARGIN)))
+        reserve = self._cost(profile, reserve_in, out_ceiling)
         if st["spent"] + reserve > self.caps.max_cost_per_task:
             return self._reject(st, profile_id, "blocked-cost-cap",
                                 f"reserve ${reserve:.4f} puts task at ${st['spent'] + reserve:.2f}"
@@ -340,8 +359,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--review-bound", type=float, required=True,
                     help="required-check price bound (USD) for the Gate-4 preflight")
     ap.add_argument("--expected-in-tokens", type=int, default=0,
-                    help="input tokens the dispatch would use; required with --confirm-egress,"
-                         " where it is the prompt estimate the worst-case reservation prices")
+                    help="dry-run mode: input tokens the dispatch would use; with"
+                         " --confirm-egress, optional: the prompt is counted through the API"
+                         " and the larger of the count (+5%%) and this estimate is reserved")
     ap.add_argument("--expected-out-tokens", type=int, default=0,
                     help="dry-run mode: output tokens the dispatch would use (a live send"
                          " reserves the adapter's max_tokens instead)")

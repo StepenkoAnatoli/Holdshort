@@ -193,6 +193,7 @@ with tempfile.TemporaryDirectory() as td:
         calls.append(pid)
         return 10_000, 1_000
     fake_dispatch.max_tokens = 1_000
+    fake_dispatch.count_tokens = lambda pid, req: 0
 
     d = new(tmp, dispatch_fn=fake_dispatch, confirm_egress=False)
     d.attempt("T10", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
@@ -227,6 +228,7 @@ with tempfile.TemporaryDirectory() as td:
         calls.append(args)
         return 10_000, 1_000
     record.max_tokens = 1_000
+    record.count_tokens = lambda pid, req: 0
     d = new(tmp, confirm_egress=True, dispatch_fn=record)
     for idx, value in enumerate((float('nan'), float('inf'), -float('inf'),
                                  -0.01, True, '0.01', 10**1000)):
@@ -264,14 +266,21 @@ with tempfile.TemporaryDirectory() as td:
 
 
 # T13 reserve worst-case cost before any send (usage review F01) ------------------------------
-def transport(returns, max_tokens):
-    """Fake dispatch_fn: hands back queued (in, out) usage, declares its output ceiling."""
+def transport(returns, max_tokens, counts=None):
+    """Fake dispatch_fn: hands back queued (in, out) usage, declares its output
+    ceiling, and counts each prompt as the next queued count (0 when none)."""
     calls = []
 
     def fn(pid, req):
         calls.append(pid)
         return returns.pop(0)
+
+    def count_tokens(pid, req):
+        fn.counted.append((pid, req))
+        return counts.pop(0) if counts else 0
     fn.max_tokens = max_tokens
+    fn.count_tokens = count_tokens
+    fn.counted = []
     return fn, calls
 
 
@@ -363,13 +372,14 @@ with tempfile.TemporaryDirectory() as td:
 
 with tempfile.TemporaryDirectory() as td:
     tmp = Path(td)
-    # fail-closed: egress without a declared output ceiling or an input estimate
+    # fail-closed: egress without a declared output ceiling or a token counter
     # cannot reserve a worst case, so nothing is sent and no attempt is consumed
     calls = []
 
     def bare(pid, req):
         calls.append(pid)
         return 1_000, 100
+    bare.count_tokens = lambda pid, req: 1_000
     d = new(tmp, dispatch_fn=bare, confirm_egress=True)
     for ceiling in ("absent", None, 0, -1, True, 1.5, "4096"):
         if ceiling != "absent":
@@ -379,10 +389,91 @@ with tempfile.TemporaryDirectory() as td:
         check(f"T13g bad output ceiling {ceiling!r} refused", e.decision == "blocked-gate4",
               e.reason)
     bare.max_tokens = 4_096
-    e = d.attempt("T13g", "cloud-C", "req", work_bound=0.01, review_bound=0.01)
-    check("T13g missing input estimate refused", e.decision == "blocked-gate4", e.reason)
+    del bare.count_tokens
+    e = d.attempt("T13g", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
+                  expected_in=1_000)
+    check("T13g missing token counter refused", e.decision == "blocked-gate4", e.reason)
     check("T13g nothing sent", calls == [], str(calls))
     check("T13g no attempts consumed", d._task("T13g")["attempts"] == 0)
+
+
+# T14 egress counts the prompt before reserving, so a low estimate cannot slip through ----------
+with tempfile.TemporaryDirectory() as td:
+    tmp = Path(td)
+    # review repro: a 1-token placeholder estimate for a prompt the API counts at 300k on
+    # cloud-F; 315,000 (count + 5%) @ $10 + 4096 @ $50 = $3.36 > $1.00 cap, so no send
+    fn, calls = transport([(300_000, 100)], max_tokens=4_096, counts=[300_000])
+    d = new(tmp, dispatch_fn=fn, confirm_egress=True)
+    e = d.attempt("T14", "cloud-F", "big prompt", work_bound=0.01, review_bound=0.01,
+                  expected_in=1)
+    check("T14 counted prompt beats a low estimate", e.decision == "blocked-cost-cap"
+          and calls == [], f"{e.decision} {calls} {e.reason}")
+    check("T14 counter saw the request", fn.counted == [("cloud-F", "big prompt")],
+          str(fn.counted))
+
+with tempfile.TemporaryDirectory() as td:
+    tmp = Path(td)
+    # with a counter, the caller's estimate is optional
+    fn, calls = transport([(1_000, 100)], max_tokens=4_096, counts=[1_000])
+    d = new(tmp, dispatch_fn=fn, confirm_egress=True)
+    e = d.attempt("T14b", "cloud-C", "req", work_bound=0.01, review_bound=0.01)
+    check("T14b counted send needs no estimate", e.decision == "dispatched"
+          and calls == ["cloud-C"], f"{e.decision} {e.reason}")
+
+with tempfile.TemporaryDirectory() as td:
+    tmp = Path(td)
+    # the margin is applied before the rate tier is chosen: Haiku counted at 99,000
+    # reserves 103,950 tokens at the >100k rate ($0.0622), which does not fit the $0.05
+    # left after $0.95; at the base tier it would have reserved only $0.0119
+    fn, calls = transport([(470_000, 1_000), (99_000, 100)], max_tokens=4_096,
+                          counts=[0, 99_000])
+    d = new(tmp, dispatch_fn=fn, confirm_egress=True)
+    d.attempt("T14c", "cloud-S", "req", work_bound=0.01, review_bound=0.01,
+              expected_in=470_000)
+    e = d.attempt("T14c", "cloud-C", "req", work_bound=0.01, review_bound=0.01)
+    check("T14c margin can cross the long-context tier", e.decision == "blocked-cost-cap"
+          and calls == ["cloud-S"], f"{e.decision} {calls} {e.reason}")
+
+with tempfile.TemporaryDirectory() as td:
+    tmp = Path(td)
+    # a failed or nonsensical count refuses before the send; nothing was billed
+    for bad in ("raise", None, -1, True, 1.5, "1000"):
+        fn, calls = transport([(1_000, 100)], max_tokens=4_096)
+        if bad == "raise":
+            def boom(pid, req):
+                raise OSError("count endpoint unreachable")
+            fn.count_tokens = boom
+        else:
+            fn.count_tokens = lambda pid, req, v=bad: v
+        d = new(tmp, dispatch_fn=fn, confirm_egress=True)
+        e = d.attempt(f"T14d-{bad}", "cloud-C", "req", work_bound=0.01, review_bound=0.01,
+                      expected_in=1_000)
+        check(f"T14d bad count {bad!r} refused before send", e.decision == "blocked-gate4"
+              and calls == [] and d._task(f"T14d-{bad}")["attempts"] == 0, e.reason)
+
+with tempfile.TemporaryDirectory() as td:
+    tmp = Path(td)
+    # an attempt an earlier gate refuses never reaches the counter
+    fn, calls = transport([], max_tokens=4_096)
+    d = new(tmp, dispatch_fn=fn, confirm_egress=True)
+    e = d.attempt("T14e", "cloud-S", "req", work_bound=0.90, review_bound=0.20,
+                  expected_in=1_000)
+    check("T14e no count after a Gate-4 refusal", e.decision == "blocked-gate4"
+          and fn.counted == [], str(fn.counted))
+
+with tempfile.TemporaryDirectory() as td:
+    # end to end through the real adapter with mocked transports: the count blocks the
+    # send, and the count payload carries no max_tokens
+    import dispatch_adapter as da
+    sent, counted = [], []
+    fn = da.build_dispatch_fn(api_key="placeholder", env_fallback={},
+                              transport=lambda p, m, k: sent.append(m) or (1, 1),
+                              count_transport=lambda p, m, k: counted.append(
+                                  (m, "max_tokens" in p)) or 300_000)
+    d = new(Path(td), dispatch_fn=fn, confirm_egress=True)
+    e = d.attempt("T14f", "cloud-F", "x", work_bound=0.01, review_bound=0.01, expected_in=1)
+    check("T14f adapter count blocks before send", e.decision == "blocked-cost-cap"
+          and sent == [] and counted == [("claude-fable-5-1", False)], f"{e.decision} {counted}")
 
 print(f"\n{'ALL PASS' if failures == 0 else f'{failures} FAILURES'}")
 sys.exit(0 if failures == 0 else 1)

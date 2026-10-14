@@ -120,6 +120,7 @@ class TaskPersistence(unittest.TestCase):
                 calls.append(args)
                 return 1000, 1000
             send.max_tokens = 1000
+            send.count_tokens = lambda pid, req: 0
             def dispatcher():
                 return ld.LiveDispatcher(PRICES, tmp / "ledger.jsonl", now_fn=lambda: now[0],
                                          task_store=tmp / "task_state", confirm_egress=True,

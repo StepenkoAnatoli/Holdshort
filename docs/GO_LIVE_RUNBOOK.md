@@ -82,30 +82,30 @@ python tools/live_dispatcher.py \
   --profile cloud-C \
   --task-id live-001 --request "<task prompt from the §3.1 contract>" \
   --work-bound 0.01 --review-bound 0.01 \
-  --expected-in-tokens <upper bound on the prompt's input tokens> \
   --ledger tools/pilot_ledger.jsonl \
   --task-store tools/task_state
 ```
 
-`--expected-in-tokens` is REQUIRED for a live send. Before any HTTP call the dispatcher
-reserves that many input tokens plus the adapter's `max_tokens` (4096) of output at the
-profile's rates, and refuses with `blocked-cost-cap` if the reservation does not fit what is
-left of the task's $1.00 (with `--task-store`, earlier sends of the same task count). The
-pilot cap only sees sends made by the same process, and each CLI run is a new process, so
-pilot totals come from `pilot_report` after each send (§4). Without an estimate it refuses
-with `blocked-gate4` (exit 1, no HTTP). Overestimate rather than under: the estimate is not
-checked against the prompt, so an underestimate can take the task over its cap once. That
-send is still recorded at its actual cost, and the ledger reason says it exceeded the
-reservation.
+Before the send, the dispatcher posts the prompt to api.anthropic.com's free
+`/v1/messages/count_tokens` endpoint, adds 5% to the count, and reserves that many input
+tokens (or `--expected-in-tokens`, if larger) plus the adapter's `max_tokens` (4096) of output
+at the profile's rates. It refuses with `blocked-cost-cap` if the reservation does not fit
+what is left of the task's $1.00 (with `--task-store`, earlier sends of the same task count),
+and with `blocked-gate4` (exit 1, no message sent) if the count fails. The pilot cap only
+sees sends made by the same process, and each CLI run is a new process, so pilot totals come
+from `pilot_report` after each send (§4). The count is the API's own estimate, so a send can
+still slightly exceed its reservation; it is recorded at actual cost, and the ledger reason
+says so.
 
 `--task-store tools/task_state` is REQUIRED in the pilot invocation: it persists the 300 s
 whole-task deadline and the attempt/repair counters across restarts (§6 limitation closed
 by this flag; `tools/test_task_persistence.py` pins the behavior).
 
 Expected: **exit 0**, ledger line `"decision": "dispatched"` with a **nonzero `cost_usd`**
-computed from the adapter's actual usage tokens against the prices-2 rates. Refusal cases
-(exit 2, pre-flight, no HTTP): missing `.env` key; profile with no approved Anthropic mapping
-(`cloud-C-alt` is refused — its provider is NOT approved).
+computed from the adapter's actual usage tokens against the prices-2 rates. Refusal cases,
+all before any HTTP call: missing `.env` key (exit 2, `dispatch-refused`); profile with no
+approved Anthropic mapping (`cloud-C-alt` is refused — its provider is NOT approved; exit 1,
+ledger line `blocked-gate4`).
 
 The ledger lands at `tools/pilot_ledger.jsonl` (gitignored by design; committed only if the
 pilot-close report asks). Keep the output JSON of each send in your session log.
