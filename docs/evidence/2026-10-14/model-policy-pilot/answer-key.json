@@ -1,0 +1,88 @@
+{
+  "answers": [
+    {
+      "id": "S03",
+      "route": "blocked",
+      "first_failing_gate": 1,
+      "human_gate": "none",
+      "outcome": null
+    },
+    {
+      "id": "S04",
+      "route": "blocked",
+      "first_failing_gate": 2,
+      "human_gate": "none",
+      "outcome": null
+    },
+    {
+      "id": "S06",
+      "route": "blocked",
+      "first_failing_gate": 4,
+      "human_gate": "none",
+      "outcome": null
+    },
+    {
+      "id": "S08",
+      "route": "blocked",
+      "first_failing_gate": 4,
+      "human_gate": "none",
+      "outcome": null
+    },
+    {
+      "id": "S01",
+      "route": "direct",
+      "first_failing_gate": null,
+      "human_gate": "none",
+      "outcome": null
+    },
+    {
+      "id": "S05",
+      "route": "blocked",
+      "first_failing_gate": 2,
+      "human_gate": "none",
+      "outcome": null
+    },
+    {
+      "id": "X01",
+      "route": "blocked",
+      "first_failing_gate": 3,
+      "human_gate": "none",
+      "outcome": null
+    },
+    {
+      "id": "X02",
+      "route": "blocked",
+      "first_failing_gate": 4,
+      "human_gate": "none",
+      "outcome": null
+    },
+    {
+      "id": "X03",
+      "route": "direct",
+      "first_failing_gate": null,
+      "human_gate": "none",
+      "outcome": null
+    },
+    {
+      "id": "X04",
+      "route": "direct",
+      "first_failing_gate": null,
+      "human_gate": "review-before-merge",
+      "outcome": null
+    },
+    {
+      "id": "X05",
+      "route": "direct",
+      "first_failing_gate": null,
+      "human_gate": "none",
+      "outcome": null
+    },
+    {
+      "id": "X06",
+      "route": "blocked",
+      "first_failing_gate": 3,
+      "human_gate": "none",
+      "outcome": "unverified"
+    }
+  ]
+}

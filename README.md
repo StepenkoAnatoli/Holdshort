@@ -216,6 +216,12 @@ It is cumulative session telemetry, not a final bill or proof of savings. Cached
 input is included in input totals; reasoning output is included in output totals.
 Unknown dollar cost remains unknown.
 
+A [three-model policy pilot](docs/MODEL_POLICY_PILOT_2026-10-14.md) records
+Luna, GPT-6.1 Sol and Astra on twelve identical synthetic decisions. All matched
+the expected decision fields; the report also records a reservation-binding ambiguity,
+coverage gaps and unavailable per-model telemetry. This small run does not
+establish a production model ranking.
+
 ## Documentation
 
 | Start here when you want to… | Read |
