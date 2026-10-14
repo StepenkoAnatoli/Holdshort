@@ -46,12 +46,14 @@ python tools/live_dispatcher.py \
   --profile cloud-C \
   --task-id live-001 --request "<task prompt from the runbook §3.1 contract>" \
   --work-bound 0.01 --review-bound 0.01 \
+  --expected-in-tokens <upper bound on the prompt's input tokens> \
   --ledger tools/pilot_ledger.jsonl \
   --task-store tools/task_state
 ```
 
 ```
 □ BOTH flags present: --live AND --confirm-egress (separately nothing sends)
+□ --expected-in-tokens set: worst-case cost is reserved before the send (blocked-gate4 without it)
 □ --task-store always on (deadline/counters survive restarts)
 □ exit 0, ledger "dispatched", nonzero cost_usd
 ```

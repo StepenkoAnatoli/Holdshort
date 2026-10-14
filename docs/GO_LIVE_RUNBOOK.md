@@ -82,9 +82,17 @@ python tools/live_dispatcher.py \
   --profile cloud-C \
   --task-id live-001 --request "<task prompt from the §3.1 contract>" \
   --work-bound 0.01 --review-bound 0.01 \
+  --expected-in-tokens <upper bound on the prompt's input tokens> \
   --ledger tools/pilot_ledger.jsonl \
   --task-store tools/task_state
 ```
+
+`--expected-in-tokens` is REQUIRED for a live send. Before any HTTP call the dispatcher
+reserves that many input tokens plus the adapter's `max_tokens` (4096) of output at the
+profile's rates, and refuses with `blocked-cost-cap` / `blocked-pilot-cap` if the
+reservation does not fit the remaining allowance. Without an estimate it refuses with
+`blocked-gate4` (exit 1, no HTTP). Overestimate rather than under: an underestimated prompt
+is still recorded at its actual cost, and the ledger reason says it exceeded the reservation.
 
 `--task-store tools/task_state` is REQUIRED in the pilot invocation: it persists the 300 s
 whole-task deadline and the attempt/repair counters across restarts (§6 limitation closed
