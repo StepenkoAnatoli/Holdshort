@@ -10,6 +10,9 @@ model routing to contribute.
   describe small tasks with clear acceptance checks.
 - [Help wanted](https://github.com/StepenkoAnatoli/SmartRouter/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22help%20wanted%22)
   identifies work where community contributions would help.
+- [LLM testing issues](https://github.com/StepenkoAnatoli/SmartRouter/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22llm%20evaluation%22)
+  cover unseen fixtures, repeated GPT comparisons, Claude, offline Gemini adapters,
+  local models, and usage capture. Each issue defines its acceptance criteria.
 - For a substantial change, open an issue describing the problem and proposed scope
   before investing in the implementation. Avoid duplicating an existing issue.
 

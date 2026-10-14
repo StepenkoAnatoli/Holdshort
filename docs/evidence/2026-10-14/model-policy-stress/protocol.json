@@ -1,0 +1,228 @@
+{
+  "schema_version": 1,
+  "frozen_at": "2026-10-14T08:11:38.666582+00:00",
+  "revision": "9e1411ad6acd39f7d90f02b0f130a0535f402596",
+  "requested_models": [
+    "gpt-6-luna",
+    "gpt-6.1-sol",
+    "gpt-6-astra"
+  ],
+  "reasoning_effort": "medium",
+  "runs_per_model": 2,
+  "native_model_run_limit": 6,
+  "feedback_repairs": 0,
+  "case_count": 24,
+  "cases": [
+    {
+      "id": "N01",
+      "mode": "choose",
+      "prompt": "Only profile P is available. Actor authorization is unknown, its required tool is absent, and its price is unknown. Pick the route and earliest failing gate."
+    },
+    {
+      "id": "N02",
+      "mode": "choose",
+      "prompt": "Only P is available. The task is read-only public-code embedding. The provider destination is unknown and not authorized; it promises not to edit files. All later gates would pass. Pick the route."
+    },
+    {
+      "id": "N03",
+      "mode": "choose",
+      "prompt": "Only P is available. Its task qualification fingerprint expired before now. The price is also unknown. Permission is valid. Pick the earliest failing gate."
+    },
+    {
+      "id": "N04",
+      "mode": "choose",
+      "prompt": "Only P is available. The mandatory acceptance runner is unavailable before start, and all-in work would also exceed the cash cap. Pick the earliest gate."
+    },
+    {
+      "id": "N05",
+      "mode": "choose",
+      "prompt": "Only P is available. Cash cap=0.10, spent=0.06, and 0.02 is reserved EXCLUSIVELY for a different task, so the new task has no existing reservation. New work bound=0.015 and mandatory review=0.005. Calls already used=1; two call slots are reserved EXCLUSIVELY for that different task. This new task needs one additional call; call limit=4. Return calculation with free_cash, all_in_cash, additional_calls, and prospective_calls. Use decimal arithmetic."
+    },
+    {
+      "id": "N06",
+      "mode": "choose",
+      "prompt": "Only P is available. Cash cap=0.10, spent=0.06, and 0.02 is reserved EXCLUSIVELY for a different task. New task work=0.015 and review=0.005. Calls used=1; two slots are reserved EXCLUSIVELY for the other task. The new task needs TWO additional calls and has no existing call reservation; call limit=4. Return free_cash, all_in_cash, additional_calls, prospective_calls."
+    },
+    {
+      "id": "N07",
+      "mode": "choose",
+      "prompt": "Only P is available. Free cash=0.08. Work=0.035, mandatory review=0.010, brief/context overhead=0.015, conservative repair allowance=0.025, and re-priming=0.005. All five amounts are disjoint and mandatory in the conservative bound. Return free_cash and all_in_cash; call fields must be null."
+    },
+    {
+      "id": "N08",
+      "mode": "choose",
+      "prompt": "Only P is available. Calls used=1; the two existing reservations are explicitly BOUND TO THIS TASK and fully cover its two planned calls. No other task holds a slot. Call limit=3. Do not reserve the same two calls again. Cash is sufficient. Return additional_calls and prospective_calls; cash fields must be null."
+    },
+    {
+      "id": "N09",
+      "mode": "choose",
+      "prompt": "Only P is available. Now equals the price quote valid-until timestamp exactly. The task deadline is later and cash/calls suffice. The quote cannot be refreshed. Pick the route and gate."
+    },
+    {
+      "id": "N10",
+      "mode": "validate_proposal",
+      "prompt": "Validate the Host proposal delegate. The current profile cannot perform this bounded unit, but eligible worker W can; delegated all-overhead bound=0.12 versus 0.60 for an eligible full-context direct alternative. Dedicated worktree and branch are available. Worker owns one unit: repair src/widget.py, checked by python tests/check_widget.py expecting exit 0. Source fixture://N10; permitted effects ONLY src/widget.py; no dependency edits or deployment. Emit a complete Brief with isolation worktree+branch, branch sr/a1b2c3d4/widget, cash allowance 0.12, calls 2, deadline 2030-01-01T00:05:00Z, attempts 1, ownership worker, nested-allowed false, max-nesting-depth 0, and nonempty stop triggers."
+    },
+    {
+      "id": "N11",
+      "mode": "validate_proposal",
+      "prompt": "Validate Host proposal delegate. Required isolation is worktree+branch, but the host can offer only a shared mutable checkout. The worker is otherwise qualified, affordable and economical. Do not silently weaken isolation."
+    },
+    {
+      "id": "N12",
+      "mode": "validate_proposal",
+      "prompt": "Validate Host proposal recommend-escalation. The current direct profile cannot satisfy the advanced output contract. Stronger profile E has fresh tested qualification, authorized identity/destination, affordable known bounds and available activation by the host. No worker unit is offered: the proposal is a recommendation for host activation, not a claimed switch or delegation."
+    },
+    {
+      "id": "N13",
+      "mode": "validate_proposal",
+      "prompt": "Validate Host proposal recommend-escalation. Current P cannot meet the output contract. Stronger E is the only alternate, but its qualification is expired. It is cheaper and available. A cheaper label must not resurrect it."
+    },
+    {
+      "id": "N14",
+      "mode": "validate_proposal",
+      "prompt": "Validate Host proposal speculative. Uncertainty about which approach will succeed is high, the host explicitly opts in, and eligible candidates P and Q have independent worktrees. Known WORST-CASE disjoint bounds: P=0.18, Q=0.16, shared verification=0.04, orchestration=0.02. Free cash=0.40. P needs 2 calls, Q needs 2, verification needs 1; all are new, used/reserved=0, limit=5. Cancelled candidates still consume incurred costs and calls. The comparison including all overhead supports the proposed parallel unit; it is not nested. Emit a complete SpeculativeSet with profiles exactly P and Q, max-parallel 2, shared cash 0.40, shared calls 5, cancel-policy first-success, winner-owns true."
+    },
+    {
+      "id": "N15",
+      "mode": "validate_proposal",
+      "prompt": "Validate Host proposal speculative. P and Q are eligible, high uncertainty and known affordable shared bounds are present, but the host has NOT opted in. Audit this proposal only; do not choose a fallback route."
+    },
+    {
+      "id": "N16",
+      "mode": "validate_proposal",
+      "prompt": "Validate Host proposal speculative. P and Q are eligible and the host opted in, but this is a speculative set NESTED inside another speculative set. Cash and call ceilings fit. Audit this proposal only."
+    },
+    {
+      "id": "N17",
+      "mode": "choose",
+      "prompt": "Only P is available for a high-consequence migration. Required ephemeral-container isolation, privacy, qualification, acceptance checks, budget and economics all pass. The user has not requested a checkpoint."
+    },
+    {
+      "id": "N18",
+      "mode": "choose",
+      "prompt": "Only P is available. The user explicitly requested review-before-dispatch for this task, and the host has already obtained and recorded that exact approval. No workflow gate remains pending; all other gates pass. Preserve the requested HumanGate in the eligible decision."
+    },
+    {
+      "id": "C01",
+      "mode": "code_trace",
+      "prompt": "Trace the following synthetic transport-order example. Return answer with transport_calls and recorded_attempts. Identify whether a transport can occur before the cost refusal; do not assume intended behavior.",
+      "code": "calls = 0\nattempts = 0\ndef transport():\n    global calls\n    calls += 1\n    return 2.0\ncost = transport()\nif cost <= 1.0:\n    attempts += 1\nRESULT = {\"transport_calls\": calls, \"recorded_attempts\": attempts}\n"
+    },
+    {
+      "id": "C02",
+      "mode": "code_trace",
+      "prompt": "Trace two dispatcher instances in this synthetic example. Return accepted_calls, physical_total_cost and global_cap_exceeded. The GLOBAL pilot allowance is 1.0.",
+      "code": "class D:\n    def __init__(self): self.spent = 0.0\n    def send(self, cost):\n        if self.spent + cost > 1.0: return False\n        self.spent += cost\n        return True\na, b = D(), D()\naccepted = int(a.send(.75)) + int(b.send(.75))\nRESULT = {\"accepted_calls\": accepted, \"physical_total_cost\": a.spent+b.spent, \"global_cap_exceeded\": a.spent+b.spent > 1.0}\n"
+    },
+    {
+      "id": "C03",
+      "mode": "code_trace",
+      "prompt": "Trace this correct fail-closed corruption path. Return initializations, transport_calls and blocked. A corruption exception must not be confused with a missing file.",
+      "code": "class CorruptState(Exception): pass\ninitializations = 0\ntransport_calls = 0\ndef load(): raise CorruptState()\ntry:\n    state = load()\n    if state is None: initializations += 1\n    transport_calls += 1\n    blocked = False\nexcept CorruptState:\n    blocked = True\nRESULT = {\"initializations\": initializations, \"transport_calls\": transport_calls, \"blocked\": blocked}\n"
+    },
+    {
+      "id": "C04",
+      "mode": "code_trace",
+      "prompt": "Trace this wall-clock rollback sample. Return allowed and elapsed. The earlier wall time was 1000; the clock stepped backward to 700. Do not fix the code.",
+      "code": "started = 1000\nnow = 700\nelapsed = now-started\nallowed = elapsed < 300\nRESULT = {\"allowed\": allowed, \"elapsed\": elapsed}\n"
+    },
+    {
+      "id": "C05",
+      "mode": "code_trace",
+      "prompt": "Trace this numeric validation sample. Return dispatches and rejected. Python NaN comparison semantics apply; do not replace NaN with zero.",
+      "code": "work_bound = float(\"nan\")\nreview_bound = .01\nall_in = work_bound + review_bound\nrejected = all_in > 1.0\ndispatches = 0 if rejected else 1\nRESULT = {\"dispatches\": dispatches, \"rejected\": rejected}\n"
+    },
+    {
+      "id": "C06",
+      "mode": "code_trace",
+      "prompt": "Trace this schema guard sample. Return cash_accepted and parallel_accepted. State what the CODE accepts rather than what the policy should accept.",
+      "code": "def cash_ok(x):\n    return isinstance(x, (int,float)) and not isinstance(x,bool) and not x < 0\ndef set_ok(doc):\n    return bool(doc.get(\"candidates\")) and doc.get(\"winner-owns\") is True\nRESULT = {\"cash_accepted\": cash_ok(float(\"nan\")), \"parallel_accepted\": set_ok({\"candidates\":[{\"profile\":\"P\"}], \"max-parallel\":0, \"winner-owns\":True})}\n"
+    }
+  ],
+  "common_defaults": "All cases are independent, fictional and advisory. Unless explicitly overridden: profiles P/Q/W/E have known immutable synthetic identities (profile-id, codex-harness, synthetic-provider, synthetic-model, revision r1, tools-output-config c1), authorized public-data destinations, fresh task qualification, active required tools/modalities, sufficient tested context and compatible output. All required objective checks are available; no preexisting stop rule or pending workflow gate exists. Known conservative all-in cost is 0.04 for direct and 0.09 for delegation; free cash=1.00, calls used=0, reserved=0, limit=6. Synthetic now is 2030-01-01T00:01:40Z and deadline is 2030-01-01T00:05:00Z. Host accounting is reliable. No human checkpoint, speculative opt-in or nesting is enabled. No output authorizes an actual effect. A case overrides only the facts it explicitly changes. Decimal equality must be respected.",
+  "metrics": [
+    "route",
+    "first_failing_gate",
+    "human_gate",
+    "proposal_valid",
+    "calculation",
+    "required_object_conformance",
+    "code_trace",
+    "dispatch_performed"
+  ],
+  "sources": {
+    "skills/smart-router/SKILL.md": "4324e9baa108b193f51be20102fcb049ab4cbbb64de8390cfa00f72a541eb6e3",
+    "skills/smart-router/references/gates.md": "fef1f275b719be9869d50f40c6ec2bcda969b79a7ad464e9d69bb22cb8b7a098",
+    "skills/smart-router/references/host-hil-policy.md": "2793416c364d0335f48bfa70916382e36e15016ad8727be4ac488d10f20a7cb1",
+    "skills/smart-router/references/spec-v2.md": "783ffb8f07949104b19a5ff529ce7a8259ddc109c7ebed839fd961aea4389a73"
+  },
+  "limitations": [
+    "generated unseen tasks, not an independently authored holdout",
+    "two runs with changed case order confound stochastic and order variation",
+    "positive non-direct cases validate proposed routes, not unique route selection",
+    "model aliases requested; resolved revisions and per-agent billing not exposed",
+    "synthetic code traces are not proof the repository exhibits every sample bug"
+  ],
+  "packets": {
+    "1": {
+      "sha256": "2ac81e17695d52192c04322b0190c2140871eea734a9bb21277902a8a4ddaea3",
+      "case_order": [
+        "N01",
+        "N02",
+        "N03",
+        "N04",
+        "N05",
+        "N06",
+        "N07",
+        "N08",
+        "N09",
+        "N10",
+        "N11",
+        "N12",
+        "N13",
+        "N14",
+        "N15",
+        "N16",
+        "N17",
+        "N18",
+        "C01",
+        "C02",
+        "C03",
+        "C04",
+        "C05",
+        "C06"
+      ]
+    },
+    "2": {
+      "sha256": "7eb2fa8009ba77946a5ea9836facb1224fd5d57978d3f205990cd85caa1114b2",
+      "case_order": [
+        "C01",
+        "N12",
+        "N14",
+        "N15",
+        "N13",
+        "N06",
+        "N02",
+        "C03",
+        "N10",
+        "N03",
+        "N05",
+        "N08",
+        "N18",
+        "N16",
+        "N17",
+        "N04",
+        "C04",
+        "C05",
+        "C02",
+        "C06",
+        "N09",
+        "N11",
+        "N01",
+        "N07"
+      ]
+    }
+  },
+  "answer_key_sha256": "75d494aace8c2927410f31d50ec73a9f3ac4be73fa7cf7fc383b562bc532220a"
+}

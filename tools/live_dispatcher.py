@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 from dataclasses import asdict, dataclass
@@ -53,6 +54,15 @@ LEDGER_DEFAULT = REPO_ROOT / "tools" / "pilot_ledger.jsonl"
 TASK_STATE_DEFAULT = REPO_ROOT / "tools" / "task_state"
 
 REASON_MAX = 512  # bounded ledger lines, per the pilot observation rules
+
+
+def finite_nonnegative(value: Any) -> bool:
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(value) and value >= 0
+    except OverflowError:
+        return False
 
 
 @dataclass
@@ -100,6 +110,13 @@ class LiveDispatcher:
         task_store: Optional[Path] = None,
     ) -> None:
         caps = prices["pilot_caps"]
+        for key in ("max_cost_per_task_usd", "max_cost_per_pilot_usd",
+                    "max_elapsed_seconds_per_task"):
+            if not finite_nonnegative(caps.get(key)):
+                raise ValueError("pilot monetary and time caps must be finite and non-negative")
+        for key in ("max_attempts_per_task", "same_profile_repairs_allowed_per_task"):
+            if type(caps.get(key)) is not int or caps[key] < 0:
+                raise ValueError("pilot attempt and repair caps must be non-negative integers")
         self.caps = CapConfig(
             caps["max_attempts_per_task"],
             caps["max_cost_per_task_usd"],
@@ -195,6 +212,17 @@ class LiveDispatcher:
             return self._reject(st, profile_id, "unknown-profile",
                                 f"{profile_id!r} absent from prices-2.json (Gate-4 fail-closed)")
 
+        # NaN comparisons are false: reject non-finite inputs explicitly before
+        # any transport or counter mutation, rather than treating them as free.
+        if (not finite_nonnegative(work_bound) or not finite_nonnegative(review_bound)
+                or not finite_nonnegative(work_bound + review_bound)
+                or not isinstance(profile, dict)
+                or any(not finite_nonnegative(profile.get(k)) for k in
+                       ("input_rate_per_mtok", "output_rate_per_mtok"))
+                or any(type(t) is not int or t < 0 for t in (expected_in, expected_out))):
+            return self._reject(st, profile_id, "blocked-gate4",
+                                "invalid numeric bound, rate, or expected token count")
+
         # 2) §5 attempt cap (counts every dispatch, any arm)
         if st["attempts"] >= self.caps.max_attempts:
             return self._reject(st, profile_id, "blocked-attempt-cap",
@@ -202,6 +230,18 @@ class LiveDispatcher:
 
         # 3) §5 wall-clock deadline (strictly-before rule: equality expires)
         now = self.now_fn()
+        # Retain a high-water mark across optional persisted task restarts.
+        # An observed rollback is terminal: a later forward jump cannot renew it.
+        previous = st.get("last_observed", st["started"])
+        if st.get("clock_stopped", False) or now < previous:
+            st["clock_stopped"] = True
+            if self._resumer is not None:
+                self._resumer.persist(st)
+            return self._reject(st, profile_id, "blocked-deadline",
+                                "task stopped after an observed wall-clock rollback")
+        st["last_observed"] = now
+        if self._resumer is not None:
+            self._resumer.persist(st)
         if now - st["started"] >= self.caps.max_seconds_per_task:
             return self._reject(st, profile_id, "blocked-deadline",
                                 f"elapsed {now - st['started']:.0f}s >= cap {self.caps.max_seconds_per_task}s")

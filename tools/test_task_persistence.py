@@ -111,6 +111,33 @@ class TaskPersistence(unittest.TestCase):
             self.assertNotIn("L-3", d._tasks)
             self.assertIsNone(e.attempt_no, "unknown counters must not be reported as zero")
 
+    def test_observed_clock_rollback_stays_terminal_across_restarts(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            now = [1000.0]
+            calls = []
+            def dispatcher():
+                return ld.LiveDispatcher(PRICES, tmp / "ledger.jsonl", now_fn=lambda: now[0],
+                                         task_store=tmp / "task_state", confirm_egress=True,
+                                         dispatch_fn=lambda *args: (calls.append(args) or (1000, 1000)))
+            d1 = dispatcher()
+            self.assertEqual(d1.attempt('clock', 'cloud-C', 'req', work_bound=.01,
+                                       review_bound=.01).decision, 'dispatched')
+            now[0] = 1200.0
+            self.assertEqual(d1.attempt('clock', 'cloud-S', 'req', work_bound=.01,
+                                       review_bound=.01).decision, 'dispatched')
+            now[0] = 1190.0
+            d2 = dispatcher()
+            self.assertEqual(d2.attempt('clock', 'cloud-C-alt', 'req', work_bound=.01,
+                                       review_bound=.01).decision, 'blocked-deadline')
+            now[0] = 1210.0
+            d3 = dispatcher()
+            self.assertEqual(d3.attempt('clock', 'cloud-C-alt', 'req', work_bound=.01,
+                                       review_bound=.01).decision, 'blocked-deadline')
+            self.assertEqual(len(calls), 2, 'rollback must refuse before transport')
+            self.assertEqual(d3._task('clock')['attempts'], 2)
+            self.assertTrue(d3._task('clock')['clock_stopped'])
+
     def test_invalid_state_refuses_egress_and_preserves_original(self):
         base = {"task_id": "L-3", "attempts": 1, "spent": 0.2,
                 "started": 1.0, "repairs": 0, "last_profile": "cloud-C"}
@@ -119,9 +146,11 @@ class TaskPersistence(unittest.TestCase):
             store = tp.TaskStateStore(tmp / "task_state")
             p = store.path_for("L-3")
             p.parent.mkdir()
-            for mutation in ({"spent": float("nan")}, {"attempts": True},
+            for mutation in ({"spent": float("nan")}, {"spent": 10**1000},
+                             {"started": 10**1000}, {"attempts": True},
                              {"started": "bad"}, {"task_id": "other"},
-                             {"repairs": -1}, {"clock": "monotonic"}):
+                             {"repairs": -1}, {"clock": "monotonic"},
+                             {"last_observed": float('nan')}, {"clock_stopped": 'yes'}):
                 original = json.dumps(dict(base, **mutation))
                 p.write_text(original, encoding="utf-8")
                 calls = []
