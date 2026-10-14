@@ -64,6 +64,21 @@ class Adapter(unittest.TestCase):
         self.assertEqual(t.calls[0]["model"], "claude-haiku-5-5")  # pinned mapping
         self.assertTrue(t.calls[0]["key_seen"])
 
+    def test_escalation_tiers_pinned(self):
+        t = mock_transport_factory()
+        fn = da.build_dispatch_fn(api_key="sk-ant-x", transport=t, env_fallback={})
+        fn("cloud-O", "x")
+        fn("cloud-F", "x")
+        self.assertEqual(t.calls[0]["model"], "claude-opus-5-5")   # pinned mapping
+        self.assertEqual(t.calls[1]["model"], "claude-fable-5-1")  # pinned mapping
+
+    def test_every_mapped_profile_is_priced(self):
+        # Gate-4 fail-closed: a profile the adapter can dispatch but prices-2 cannot
+        # price would be rejected by the dispatcher; keep the two files in step.
+        prices = json.loads(da.PRICES_PATH.read_text(encoding="utf-8"))
+        for pid in da.MODEL_FOR_PROFILE:
+            self.assertIn(pid, prices["profiles"], f"{pid} mapped but absent from prices-2.json")
+
     def test_unpriced_profile_refused(self):
         t = mock_transport_factory()
         fn = da.build_dispatch_fn(api_key="sk-ant-x", transport=t, env_fallback={})
