@@ -177,7 +177,7 @@ CLOSE_TMP="$(mktemp -d)" || die "mktemp -d"
 # NOTE: a §2 refusal line (unknown-profile, cost 0) stays in the ledger: the
 # close path must disclose it honestly (blocked:gate closure), never skip it.
 ASSIGN="$CLOSE_TMP/assign.json"
-printf '%s' '{"dryrun-1": {"arm": "A", "cell": "T-01"}, "dryrun-2": {"arm": "B", "cell": "T-02"}}' > "$ASSIGN" \
+printf '%s' '{"dryrun-1": {"arm": "B", "cell": "T-01"}, "dryrun-2": {"arm": "B", "cell": "T-02"}}' > "$ASSIGN" \
   || die "write assignments"
 python tools/pilot_close.py \
   --ledger "$DRY_TMP/dryrun_ledger.jsonl" --with-sheet \

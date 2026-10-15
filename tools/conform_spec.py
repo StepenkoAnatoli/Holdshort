@@ -92,52 +92,76 @@ def _iso_level(value: str, where: str) -> int:
     return ISOLATION.index(value)
 
 
+def _string(value, where: str) -> None:
+    if not isinstance(value, str) or not value.strip():
+        raise Violation(f"{where} must be a non-empty string")
+
+
+def _string_list(value, where: str) -> None:
+    if not isinstance(value, list) or any(not isinstance(x, str) for x in value):
+        raise Violation(f"{where} must be a list of strings")
+
+
+def _check_common_brief(doc: dict, where: str) -> None:
+    """Validate the shared Brief/NestedBrief contract before comparing bounds."""
+    _string(doc["objective"], f"{where} objective")
+    _iso_ok(doc["isolation"], where)
+    checks = doc["acceptance"].get("checks") if isinstance(doc["acceptance"], dict) else None
+    if not isinstance(checks, list) or not checks:
+        raise Violation(f"{where} acceptance has zero checks (§12: no completion claim "
+                        "without observed evidence; Gate 3 needs the contract before start)")
+    for c in checks:
+        if not isinstance(c, dict) or "command" not in c or "expect" not in c:
+            raise Violation(f"{where} acceptance checks need command + expect (§10)")
+        _string(c["command"], f"{where} acceptance command")
+        _string(c["expect"], f"{where} acceptance expect")
+    al = doc["allowance"]
+    if not isinstance(al, dict):
+        raise Violation(f"{where} allowance must be an object")
+    for key in ("cash", "calls", "deadline"):
+        if key not in al:
+            raise Violation(f"{where} allowance lacks {key!r}")
+    if (not _is_num(al["cash"]) or al["cash"] < 0
+            or type(al["calls"]) is not int or al["calls"] < 0):
+        raise Violation(f"{where} allowance needs finite non-negative cash and integer calls")
+    _iso_datetime(al["deadline"], f"{where} allowance.deadline", timezone_required=True)
+    if type(doc["attempts"]) is not int or doc["attempts"] < 0:
+        raise Violation(f"{where} attempts must be a non-negative int")
+    if not isinstance(doc["nested-allowed"], bool):
+        raise Violation(f"{where} nested-allowed must be true/false")
+    if type(doc["max-nesting-depth"]) is not int or doc["max-nesting-depth"] not in (0, 1, 2):
+        raise Violation(f"{where} max-nesting-depth must be an integer 0, 1, or 2")
+    for key in ("permitted-effects", "non-goals"):
+        _string_list(doc[key], f"{where} {key}")
+
+
 def check_brief(doc: dict) -> None:
+    if not isinstance(doc, dict):
+        raise Violation("Brief must be an object")
     for key in ("objective", "acceptance", "sources", "permitted-effects", "non-goals",
                 "isolation", "branch-hint", "allowance", "attempts", "stop-triggers",
                 "ownership", "nested-allowed", "max-nesting-depth"):
         if key not in doc:
             raise Violation(f"Brief lacks §10.1 key {key!r}")
-    _iso_ok(doc["isolation"], "Brief")
-    checks = doc["acceptance"].get("checks") if isinstance(doc["acceptance"], dict) else None
-    if not isinstance(checks, list) or not checks:
-        raise Violation("Brief acceptance has zero checks (§12: no completion claim "
-                        "without observed evidence; Gate 3 needs the contract before start)")
-    for c in checks:
-        if not isinstance(c, dict) or "command" not in c or "expect" not in c:
-            raise Violation("Brief acceptance checks need command + expect (§10.1)")
-    al = doc["allowance"]
-    if not isinstance(al, dict):
-        raise Violation("Brief allowance must be an object")
-    for key in ("cash", "calls", "deadline"):
-        if key not in al:
-            raise Violation(f"Brief allowance lacks {key!r}")
-    if (not _is_num(al["cash"]) or al["cash"] < 0
-            or type(al["calls"]) is not int or al["calls"] < 0):
-        raise Violation("Brief allowance needs finite non-negative cash and integer calls")
-    _iso_datetime(al["deadline"], "Brief allowance.deadline")
-    if not isinstance(doc["attempts"], int) or isinstance(doc["attempts"], bool) or doc["attempts"] < 0:
-        raise Violation("Brief attempts must be a non-negative int")
-    if not isinstance(doc["nested-allowed"], bool):
-        raise Violation("Brief nested-allowed must be true/false")
-    if doc["max-nesting-depth"] not in (0, 1, 2):
-        raise Violation("Brief max-nesting-depth must be 0, 1, or 2")
-    if type(doc["max-nesting-depth"]) is not int:
-        raise Violation("Brief max-nesting-depth must be an integer")
+    _check_common_brief(doc, "Brief")
+    if not isinstance(doc["branch-hint"], str):
+        raise Violation("Brief branch-hint must be a string")
     if doc["ownership"] != "worker":
         raise Violation("Brief ownership must be worker")
-    for key in ("sources", "permitted-effects", "non-goals", "stop-triggers"):
-        if not isinstance(doc[key], list) or any(not isinstance(x, str) for x in doc[key]):
-            raise Violation(f"Brief {key} must be a list of strings")
+    for key in ("sources", "stop-triggers"):
+        _string_list(doc[key], f"Brief {key}")
 
 
-def _iso_datetime(value, where: str) -> None:
+def _iso_datetime(value, where: str, *, timezone_required: bool = False) -> datetime.datetime:
     if not isinstance(value, str):
         raise Violation(f"{where} must be an ISO-8601 datetime string")
     try:
-        datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as e:
         raise Violation(f"{where} {value!r} is not ISO-8601 ({e})") from e
+    if timezone_required and parsed.utcoffset() is None:
+        raise Violation(f"{where} must include a timezone offset")
+    return parsed
 
 
 def check_speculative(doc: dict) -> None:
@@ -172,18 +196,21 @@ def check_outcome(doc: dict) -> None:
 
 
 def check_nested(doc: dict, parent_brief: dict | None, parent_state: dict | None) -> None:
+    if not isinstance(doc, dict):
+        raise Violation("NestedBrief must be an object")
     for key in ("parent-task-id", "parent-brief-fingerprint", "nesting-depth",
                 "max-nesting-depth", "objective", "acceptance", "permitted-effects",
                 "non-goals", "isolation", "allowance", "attempts", "ownership",
                 "nested-allowed"):
         if key not in doc:
             raise Violation(f"NestedBrief lacks §10.4 key {key!r}")
+    _check_common_brief(doc, "NestedBrief")
+    for key in ("parent-task-id", "parent-brief-fingerprint"):
+        _string(doc[key], f"NestedBrief {key}")
+    if type(doc["nesting-depth"]) is not int or doc["nesting-depth"] < 1:
+        raise Violation("NestedBrief nesting-depth must be a positive int")
     if doc["ownership"] != "parent-worker":
         raise Violation("NestedBrief ownership must stay the parent worker (§8.3/§10.4)")
-    if not isinstance(doc["nested-allowed"], bool):
-        raise Violation("NestedBrief nested-allowed must be true/false")
-    if doc["nesting-depth"] != parent_depth(parent_state) + 1:
-        raise Violation("NestedBrief nesting-depth must be parent depth + 1")
     if doc["nesting-depth"] > doc["max-nesting-depth"]:
         raise Violation("NestedBrief depth exceeds max-nesting-depth (§10.4)")
     if doc["nesting-depth"] == doc["max-nesting-depth"] and doc["nested-allowed"]:
@@ -191,49 +218,79 @@ def check_nested(doc: dict, parent_brief: dict | None, parent_state: dict | None
     if parent_brief is None or parent_state is None:
         raise FailClosed("NestedBrief offered without --parent-brief/--parent-state: "
                          "sub-allowance bounds are unverifiable, never assumed")
-    _iso_ok(doc["isolation"], "NestedBrief")
+    check_brief(parent_brief)
+    if parent_brief["nested-allowed"] is not True:
+        raise Violation("NestedBrief parent has not permitted nesting (§8.3)")
+    if doc["max-nesting-depth"] > parent_brief["max-nesting-depth"]:
+        raise Violation("NestedBrief max-nesting-depth exceeds the parent's (§8.3/§10.4)")
+    if doc["nesting-depth"] != parent_depth(parent_state) + 1:
+        raise Violation("NestedBrief nesting-depth must be parent depth + 1")
     if _iso_level(doc["isolation"], "NestedBrief") < _iso_level(
-            parent_brief.get("isolation", "none"), "parent Brief"):
+            parent_brief["isolation"], "parent Brief"):
         raise Violation("NestedBrief isolation weaker than the parent's (§10.4)")
     rem = parent_state
-    for key in ("cash", "calls"):
+    for key in ("cash", "calls", "attempts"):
         if key not in rem:
             raise FailClosed(f"parent-state lacks remaining {key!r}")
+    if not _is_num(rem["cash"]) or rem["cash"] < 0:
+        raise FailClosed("parent-state remaining cash must be finite and non-negative")
+    for key in ("calls", "attempts"):
+        if type(rem[key]) is not int or rem[key] < 0:
+            raise FailClosed(f"parent-state remaining {key} must be a non-negative int")
+    if (rem["cash"] > parent_brief["allowance"]["cash"]
+            or rem["calls"] > parent_brief["allowance"]["calls"]
+            or rem["attempts"] > parent_brief["attempts"]):
+        raise FailClosed("parent-state remaining counters exceed the parent's original bounds")
     if doc["allowance"]["cash"] > rem["cash"] or doc["allowance"]["calls"] > rem["calls"]:
         raise Violation("NestedBrief allowance exceeds the parent's REMAINING allowance (§10.4)")
-    if doc["allowance"]["deadline"] > parent_brief["allowance"]["deadline"]:
+    if _iso_datetime(doc["allowance"]["deadline"], "NestedBrief deadline", timezone_required=True) > \
+            _iso_datetime(parent_brief["allowance"]["deadline"], "parent deadline", timezone_required=True):
         raise Violation("NestedBrief deadline past the parent's deadline (§10.4)")
-    if doc["attempts"] > rem.get("attempts", doc["attempts"]):
+    if doc["attempts"] > rem["attempts"]:
         raise Violation("NestedBrief attempts exceed the parent's remaining attempts")
     uncovered = [e for e in doc["permitted-effects"]
                  if e not in parent_brief.get("permitted-effects", [])]
     if uncovered:
         raise Violation(f"NestedBrief effects outside the parent's: {uncovered[:5]} (§10.4)")
+    omitted = [g for g in parent_brief["non-goals"] if g not in doc["non-goals"]]
+    if omitted:
+        raise Violation(f"NestedBrief omits the parent's non-goals: {omitted[:5]} (§10.4)")
 
 
 def parent_depth(state: dict | None) -> int:
     if state is None:
         return 1  # top-level Brief is depth 1; checked structurally elsewhere
+    if not isinstance(state, dict):
+        raise FailClosed("parent-state must be an object")
     d = state.get("depth", 1)
-    if not isinstance(d, int) or d < 1:
+    if type(d) is not int or d < 1:
         raise FailClosed("parent-state depth must be a positive int")
     return d
 
 
 def check_record(doc: dict) -> None:
+    if not isinstance(doc, dict):
+        raise Violation("LedgerRecord must be an object")
     for key in ("task-id", "seq", "kind", "ts", "counters", "detail"):
         if key not in doc:
             raise Violation(f"LedgerRecord lacks §10.5 key {key!r}")
+    _string(doc["task-id"], "LedgerRecord task-id")
+    if not isinstance(doc["detail"], str):
+        raise Violation("LedgerRecord detail must be a string")
     if doc["kind"] not in KINDS:
         raise Violation(f"LedgerRecord kind {doc['kind']!r} outside {list(KINDS)}")
     if not isinstance(doc["seq"], int) or isinstance(doc["seq"], bool) or doc["seq"] < 1:
-        raise Violation("LedgerRecord seq starts at 1 and strictly increases")
+        raise Violation("LedgerRecord seq must be a positive integer")
     _iso_datetime(doc["ts"], "LedgerRecord ts")
     c = doc["counters"]
-    for key in ("calls-used", "calls-limit", "cash-spent", "cash-cap",
-                "repairs-used", "repairs-allowed"):
+    if not isinstance(c, dict):
+        raise Violation("LedgerRecord counters must be an object")
+    for key in ("calls-used", "calls-limit", "repairs-used", "repairs-allowed"):
+        if key not in c or type(c[key]) is not int or c[key] < 0:
+            raise Violation(f"LedgerRecord counters.{key} must be a non-negative integer")
+    for key in ("cash-spent", "cash-cap"):
         if key not in c or not _is_num(c[key]) or c[key] < 0:
-            raise Violation(f"LedgerRecord counters.{key} must be a non-negative number")
+            raise Violation(f"LedgerRecord counters.{key} must be a finite non-negative number")
     if c["repairs-used"] > c["repairs-allowed"]:
         raise Violation("LedgerRecord repairs-used exceeds repairs-allowed (§10.5)")
     if doc.get("deadline") is not None:

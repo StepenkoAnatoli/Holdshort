@@ -217,8 +217,17 @@ attempts and unknown-usage reservations; complete receipts settle known cost.
 Verification cash and model-call slots remain protected until the host completes
 the required checks. See [dispatch accounting and recovery](docs/DISPATCH_ACCOUNTING.md).
 
-Input counting still uses the provider's estimate plus a 5% margin. A send can
-exceed that estimate; its known cost is recorded and further dispatch stops.
+The default HTTP adapter refuses redirects and applies a finite, positive timeout
+to both token counting and model requests. Reporting and evaluation tools reject
+malformed evidence; missing usage from a physical send remains unknown. The
+[gap audit follow-ups](docs/GAP_AUDIT_FOLLOWUPS_2026-10-15.md) explain the fixes,
+regression checks, and remaining limits.
+
+Input counting still uses the provider's estimate plus a 5% margin. This does not
+establish a strict maximum bill. A send can exceed the estimate; its known cost
+is recorded and further dispatch stops. A reliable live billing bound remains
+unqualified.
+
 Older ledgers without a reservation authority require reconciliation. These
 changes have synthetic process and crash coverage, not live-provider qualification.
 Corrupt persisted task state now blocks dispatch and preserves the original file.
@@ -241,6 +250,12 @@ Unknown dollar cost remains unknown.
 The [usage telemetry guide](docs/USAGE_TELEMETRY.md) shows how to export these
 metadata fields, try a synthetic example, and interpret missing counters.
 
+The version 2 evaluation sheet has room for **80 observations, 20 per arm**. The
+ratified Phase 3 pool still contains only five tasks with two repeats each:
+**10 observations per arm**, below its minimum of 20. A representative task pool
+must be qualified and recorded prospectively before a live trial. Extra empty
+slots do not resolve that protocol gap. See the [pilot report](docs/PHASE4_PILOT_REPORT.md#8-live-sampling-plan--how-each-matrix-cell-fills-with-measured-observations-row-4-start).
+
 A [three-model policy pilot](docs/MODEL_POLICY_PILOT_2026-10-14.md) records
 Luna, GPT-6.1 Sol and Astra on twelve identical synthetic decisions. All matched
 the expected decision fields; the report also records a reservation-binding ambiguity,
@@ -261,6 +276,7 @@ gaps with replayable evidence. Usage and billed cost remain unknown.
 | Reserve dispatch budget and recover uncertain usage | [Dispatch accounting and recovery](docs/DISPATCH_ACCOUNTING.md) |
 | Understand autonomous stops and optional HITL | [Host policy](skills/smart-router/references/host-hil-policy.md) |
 | Inspect observed use, bugs, and GPT usage | [Engineering review](docs/SMARTROUTER_USAGE_REVIEW_2026-10-13.md) |
+| Review the gap audit fixes and unresolved limits | [Audit follow-ups](docs/GAP_AUDIT_FOLLOWUPS_2026-10-15.md) |
 | Export and interpret token counters | [Usage telemetry guide](docs/USAGE_TELEMETRY.md) |
 | Check reservation arithmetic in model answers | [Reservation comparison fixtures](docs/RESERVATION_COMPARISON_FIXTURES.md) |
 | Review the local pilot and its limits | [Pilot report](docs/PHASE4_PILOT_REPORT.md) |

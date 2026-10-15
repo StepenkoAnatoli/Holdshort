@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import sys
 import tempfile
+import traceback
 import unittest
+from email.message import Message
 from pathlib import Path
+from unittest.mock import patch
+from urllib.response import addinfourl
 
 TOOLS = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("da", TOOLS / "dispatch_adapter.py")
@@ -22,6 +27,17 @@ def mock_transport_factory(response_doc: dict = None, code_path=None):
         return 100, 50
     transport.calls = calls
     return transport
+
+
+class Response:
+    def __init__(self, body):
+        self.body = body
+    def __enter__(self):
+        return self
+    def __exit__(self, *exc):
+        return False
+    def read(self):
+        return self.body
 
 
 class Adapter(unittest.TestCase):
@@ -105,22 +121,10 @@ class Adapter(unittest.TestCase):
     def test_http_count_transport_posts_to_count_endpoint(self):
         seen = []
 
-        class Resp:
-            def __init__(self, body):
-                self.body = body
-            def __enter__(self):
-                return self
-            def __exit__(self, *exc):
-                return False
-            def read(self):
-                return self.body
-
-        def fake_urlopen(req, timeout):
+        def fake_open(req, timeout):
             seen.append((req.full_url, req.get_method(), json.loads(req.data)))
-            return Resp(b'{"input_tokens": 14}')
-        real = da.urllib.request.urlopen
-        da.urllib.request.urlopen = fake_urlopen
-        try:
+            return Response(b'{"input_tokens": 14}')
+        with patch.object(da._HTTP_OPENER, "open", side_effect=fake_open):
             payload = {"model": "claude-haiku-5-5",
                        "messages": [{"role": "user", "content": "hi"}]}
             n = da._http_count_transport(payload, "claude-haiku-5-5", "sk-ant-x")
@@ -128,12 +132,127 @@ class Adapter(unittest.TestCase):
             self.assertEqual(seen[0][:2], ("https://api.anthropic.com/v1/messages/count_tokens",
                                            "POST"))
             self.assertEqual(seen[0][2], payload)
-            fake_body = [b'{"usage": {}}']
-            da.urllib.request.urlopen = lambda req, timeout: Resp(fake_body[0])
+        with patch.object(da._HTTP_OPENER, "open", return_value=Response(b'{"usage": {}}')):
             with self.assertRaises(KeyError):  # a missing count is never zero-filled
                 da._http_count_transport(payload, "claude-haiku-5-5", "sk-ant-x")
-        finally:
-            da.urllib.request.urlopen = real
+
+    def test_default_transports_use_configured_timeout(self):
+        seen = []
+        def fake_open(req, timeout):
+            seen.append((req.full_url, timeout))
+            if req.full_url.endswith("/count_tokens"):
+                return Response(b'{"input_tokens": 14}')
+            return Response(b'{"usage": {"input_tokens": 14, "output_tokens": 3}}')
+
+        for timeout in (0.5, 7, da.REQUEST_TIMEOUT_S):
+            with self.subTest(timeout=timeout), patch.object(
+                    da._HTTP_OPENER, "open", side_effect=fake_open):
+                fn = da.build_dispatch_fn(api_key="test", timeout_s=timeout)
+                self.assertEqual(fn.count_tokens("cloud-C", "hi"), 14)
+                self.assertEqual(fn("cloud-C", "hi"), (14, 3))
+                self.assertEqual(seen[-2:], [
+                    (da.APPROVED_ENDPOINT + "/v1/messages/count_tokens", timeout),
+                    (da.APPROVED_ENDPOINT + "/v1/messages", timeout)])
+
+    def test_invalid_timeouts_refused_before_transport(self):
+        for timeout in (None, True, False, 0, -1, float("nan"), float("inf"),
+                        -float("inf"), "1", 10 ** 1000):
+            with self.subTest(timeout=timeout), patch.object(da._HTTP_OPENER, "open") as opened:
+                with self.assertRaises(da.DispatchRefused):
+                    da.build_dispatch_fn(api_key="test", timeout_s=timeout)
+                opened.assert_not_called()
+
+    def test_timeout_does_not_change_injected_transport_signature(self):
+        seen = []
+        def send(payload, model, key):
+            seen.append(("send", model, key))
+            return 14, 3
+        def count(payload, model, key):
+            seen.append(("count", model, key))
+            return 14
+        fn = da.build_dispatch_fn(api_key="test", timeout_s=0.5,
+                                  transport=send, count_transport=count)
+        self.assertEqual(fn.count_tokens("cloud-C", "hi"), 14)
+        self.assertEqual(fn("cloud-C", "hi"), (14, 3))
+        self.assertEqual([call[0] for call in seen], ["count", "send"])
+
+    def test_http_failures_close_response_and_hide_remote_details(self):
+        marker = "SYNTHETIC PRIVATE MARKER"
+        for operation in ("count", "send"):
+            with self.subTest(operation=operation):
+                response = io.BytesIO(marker.encode("utf-8"))
+                error = da.urllib.error.HTTPError(
+                    da.APPROVED_ENDPOINT + "/" + marker, 400, marker, Message(), response)
+                with patch.object(da._HTTP_OPENER, "open", side_effect=error) as opened:
+                    fn = da.build_dispatch_fn(api_key=marker)
+                    action = fn.count_tokens if operation == "count" else fn
+                    try:
+                        action("cloud-C", "synthetic request")
+                    except da.DispatchRefused as refused:
+                        self.assertNotIn(marker, str(refused))
+                        self.assertNotIn(marker, traceback.format_exc())
+                        self.assertIsNone(refused.__cause__)
+                        self.assertTrue(refused.__suppress_context__)
+                    else:
+                        self.fail("HTTP failure must refuse without returning guessed usage")
+                    opened.assert_called_once()
+                self.assertTrue(response.closed)
+
+    def test_connection_failures_hide_remote_details_without_retry(self):
+        marker = "SYNTHETIC PRIVATE MARKER"
+        for operation in ("count", "send"):
+            with self.subTest(operation=operation):
+                error = da.urllib.error.URLError(marker)
+                with patch.object(da._HTTP_OPENER, "open", side_effect=error) as opened:
+                    fn = da.build_dispatch_fn(api_key=marker)
+                    action = fn.count_tokens if operation == "count" else fn
+                    try:
+                        action("cloud-C", "synthetic request")
+                    except da.DispatchRefused as refused:
+                        self.assertNotIn(marker, str(refused))
+                        self.assertNotIn(marker, traceback.format_exc())
+                        self.assertIsNone(refused.__cause__)
+                        self.assertTrue(refused.__suppress_context__)
+                    else:
+                        self.fail("connection failure must refuse without returning guessed usage")
+                    opened.assert_called_once()
+
+    def test_redirects_refused_for_count_and_send_without_second_request(self):
+        # Exercise urllib's HTTPErrorProcessor and our redirect handler together.
+        # Synthetic handlers replace both HTTP and HTTPS transport, so even a
+        # regression that follows a redirect cannot make a network connection.
+        class SyntheticTransport(da.urllib.request.HTTPHandler, da.urllib.request.HTTPSHandler):
+            def __init__(self, code, destination):
+                super().__init__()
+                self.code = code
+                self.destination = destination
+                self.requests = []
+            def https_open(self, req):
+                self.requests.append((req.full_url, req.get_header("X-api-key")))
+                headers = Message()
+                headers["Location"] = self.destination
+                response = addinfourl(io.BytesIO(b""), headers, req.full_url, self.code)
+                response.msg = "Synthetic redirect"
+                return response
+            http_open = https_open
+
+        for operation in ("count", "send"):
+            for code in (301, 302, 303, 307, 308):
+                for destination in ("https://foreign.invalid/receiver",
+                                    da.APPROVED_ENDPOINT + "/another-path",
+                                    "http://api.anthropic.com/receiver"):
+                    with self.subTest(operation=operation, code=code, destination=destination):
+                        synthetic = SyntheticTransport(code, destination)
+                        opener = da.urllib.request.build_opener(
+                            da.urllib.request.ProxyHandler({}), da._NoRedirectHandler(), synthetic)
+                        with patch.object(da, "_HTTP_OPENER", opener):
+                            fn = da.build_dispatch_fn(api_key="test")
+                            action = fn.count_tokens if operation == "count" else fn
+                            with self.assertRaises(da.DispatchRefused):
+                                action("cloud-C", "hi")
+                        path = "/v1/messages/count_tokens" if operation == "count" else "/v1/messages"
+                        self.assertEqual(synthetic.requests,
+                                         [(da.APPROVED_ENDPOINT + path, "test")])
 
     def test_escalation_tiers_pinned(self):
         t = mock_transport_factory()

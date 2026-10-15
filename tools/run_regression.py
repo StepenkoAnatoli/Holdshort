@@ -91,6 +91,7 @@ CHECKS = [
     ("test_clone_freshness", [sys.executable, "tools/test_clone_freshness.py"]),
     ("live_fill_sheet_integrity", [sys.executable, "tools/live_fill_tally.py", "--mode", "gate"]),
     ("test_pilot_report", [sys.executable, "tools/test_pilot_report.py"]),
+    ("test_live_fill_tally", [sys.executable, "tools/test_live_fill_tally.py"]),
     ("test_arm_matrix", [sys.executable, "tools/test_arm_matrix.py"]),
     ("test_secrets_env_guard", [sys.executable, "tools/test_secrets_env_guard.py"]),
     ("test_fixture_key_hygiene", [sys.executable, "tools/test_fixture_key_hygiene.py"]),

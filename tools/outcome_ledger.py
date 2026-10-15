@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -49,8 +50,11 @@ def validate(entry: dict) -> dict:
     if not isinstance(entry, dict):
         raise FailClosed("outcome must be an object")
     for key in ("task-id", "outcome", "evidence", "owner-profile"):
-        if key not in entry or entry[key] in (None, ""):
+        if key not in entry:
             raise FailClosed(f"outcome lacks required {key!r}")
+    for key in ("task-id", "owner-profile"):
+        if not isinstance(entry[key], str) or not entry[key].strip():
+            raise FailClosed(f"outcome {key} must be a non-empty string")
     if entry["outcome"] not in OUTCOMES:
         raise FailClosed(f"outcome {entry['outcome']!r} not in {list(OUTCOMES)}")
     ev = entry["evidence"]
@@ -59,19 +63,28 @@ def validate(entry: dict) -> dict:
     for key in ("checks", "actual-spend", "files-touched", "notes"):
         if key not in ev:
             raise FailClosed(f"evidence lacks required {key!r}")
+    if not isinstance(ev["checks"], list):
+        raise FailClosed("evidence checks must be a list")
     for c in ev["checks"]:
         if not isinstance(c, dict) or not all(k in c for k in ("command", "exit-code", "output-ref")):
             raise FailClosed("every check needs command, exit-code, and output-ref")
-        if not isinstance(c["exit-code"], int):
+        if not isinstance(c["command"], str) or not c["command"].strip():
+            raise FailClosed("check command must be a non-empty string")
+        if type(c["exit-code"]) is not int:
             raise FailClosed("check exit-code must be an int")
-    if not isinstance(ev["actual-spend"], (int, float)):
-        raise FailClosed("evidence actual-spend must be a number")
+        if not isinstance(c["output-ref"], str):
+            raise FailClosed("check output-ref must be a string")
+    spend = ev["actual-spend"]
+    try:
+        valid_spend = type(spend) in (int, float) and math.isfinite(spend) and spend >= 0
+    except OverflowError:
+        valid_spend = False
+    if not valid_spend:
+        raise FailClosed("evidence actual-spend must be a finite non-negative number")
     if not isinstance(ev["files-touched"], list) or not all(isinstance(f, str) for f in ev["files-touched"]):
         raise FailClosed("evidence files-touched must be a list of strings")
     if not isinstance(ev["notes"], str):
         raise FailClosed("evidence notes must be a string")
-    if not isinstance(entry["owner-profile"], str):
-        raise FailClosed("owner-profile must be a string")
     return entry
 
 

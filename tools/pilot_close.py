@@ -111,13 +111,13 @@ def split_arg(s, sep=":"):
 
 
 def build_sheet_section(entries, assignments: Optional[Dict[str, dict]],
-                        sheet_path: Path) -> dict:
+                        sheet_path: Path, prices=None) -> dict:
     """Session-close sheet mode: regenerate/refresh the live-fill sheet from the
     ledger mechanically, tally it, and return the embeddable summary.
 
     Honest rules:
-      * if the sheet file exists: NEVER overwrite recorded slots — refresh only
-        its tally block from the current state (idempotent);
+      * if the sheet file exists: preserve recorded slots, reconcile their source
+        identities, and import newly appended evidence once (idempotent);
       * if absent: generate the §8 skeleton and fill slots mechanically from
         the ledger via the assignments map (task_id → {arm, cell}); lines that
         cannot be placed become findings, never silently dropped;
@@ -133,19 +133,21 @@ def build_sheet_section(entries, assignments: Optional[Dict[str, dict]],
         action = "generated-skeleton"
 
     filled_lines, missed = 0, []
-    if assignments is not None and action == "generated-skeleton":
+    if assignments is not None:
         # DELEGATED to live_fill_tally.import_from_ledger — the single source of
         # truth for mechanical slot-filling (line order, skip-filled idempotency,
         # §8 latency delta with not_computable_first_dispatch, D-arm
         # gate_runner_route=ledger-only, unassignable lines as findings never
         # dropped). Duplicating it here DID drift once; don't re-duplicate.
         import live_fill_tally as lft  # noqa: E402
-        missed = lft.import_from_ledger(sheet, entries, assignments)
-        filled_lines = sum(1 for cid in sheet["cells"]
-                           for o in sheet["cells"][cid]["observations"]
-                           if o.get("task_id") is not None)
+        before = lft.tally_summary(sheet, prices)["observations_recorded"]
+        missed = lft.import_from_ledger(sheet, entries, assignments, prices)
+        filled_lines = lft.tally_summary(sheet, prices)["observations_recorded"] - before
+    else:
+        missed = [{"line": None, "task_id": None, "kind": "missing-assignments",
+                   "detail": "current ledger cannot be assigned to evaluation cells"}]
 
-    if action == "generated-skeleton":
+    if action == "generated-skeleton" or filled_lines:
         sheet_path.parent.mkdir(parents=True, exist_ok=True)
         sheet_path.write_text(json.dumps(sheet, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
                               encoding="utf-8")
@@ -157,7 +159,7 @@ def build_sheet_section(entries, assignments: Optional[Dict[str, dict]],
             w.writerows(gf.csv_rows(sheet))
 
     import live_fill_tally as lft  # noqa: E402
-    summary = lft.tally_summary(sheet)
+    summary = lft.tally_summary(sheet, prices)
     summary["sheet_action"] = action
     summary["ledger_lines_placed"] = filled_lines
     summary["ledger_lines_unplaced"] = missed
@@ -181,7 +183,7 @@ def embed_sheet_markdown(summary: dict) -> str:
         lines.append("")
         lines.append("_Sheet integrity violations (§8 drift rule applies):_")
         for v in summary["problems"]:
-            lines.append(f"- {v['detail']}")
+            lines.append(f"- {v.get('detail', str(v)) if isinstance(v, dict) else v}")
     return "\n".join(lines)
 
 
@@ -213,10 +215,11 @@ def main(argv=None) -> int:
         assignments = None
         if Path(args.assignments).is_file():
             assignments = json.loads(Path(args.assignments).read_text(encoding="utf-8"))
-        sheet_summary = build_sheet_section(entries, assignments, Path(args.sheet))
+        sheet_summary = build_sheet_section(entries, assignments, Path(args.sheet), prices)
         closure["live_fill_sheet"] = sheet_summary
         if not sheet_summary["integrity_ok"]:
             sheet_violations = len(sheet_summary["problems"])
+        sheet_violations += len(sheet_summary["ledger_lines_unplaced"])
     if args.markdown:
         print(markdown(closure))
         if sheet_summary is not None:

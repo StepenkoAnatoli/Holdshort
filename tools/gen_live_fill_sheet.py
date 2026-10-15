@@ -7,7 +7,7 @@ in a structure that can be tallied against the §8 live sampling plan:
 
   tools/live_fill_sheet.json  — per-cell records: planned fill (20 obs/arm,
     2 repeats per task), observed slots (empty), tally fields
-  tools/live_fill_sheet.csv   — same, one row per (cell, repeat) slot = 40 rows
+  tools/live_fill_sheet.csv   — same, 80 observation slots across the four arms
 
 Both files are SKELETONS — every measured field starts empty ("not_measured")
 and is only filled from real dispatches. The tally tool (tools/live_fill_tally.py)
@@ -18,6 +18,7 @@ Regenerate with:  python tools/gen_live_fill_sheet.py [--out-dir tools]
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 import csv
 import json
 import sys
@@ -67,18 +68,25 @@ EMPTY_OBS = {
 
 
 def build_sheet() -> dict:
+    # T-columns are task categories. Each holds two independently assigned live
+    # tasks, with two repeats each; five columns therefore hold 20 trials/arm.
+    if OBS_PER_ARM % (len(TASKS) * REPEATS_PER_TASK):
+        raise ValueError("sampling target must fit whole assigned tasks and repeats")
+    tasks_per_cell = OBS_PER_ARM // (len(TASKS) * REPEATS_PER_TASK)
+    if tasks_per_cell < 1:
+        raise ValueError("sampling target cannot cover every task category")
     cells: Dict[str, dict] = {}
     slot_no = 0
     for arm in ARMS:
         for task in TASKS:
             cell_id = f"{arm}|{task}"
             observations = []
-            for rep in range(1, REPEATS_PER_TASK + 1):
+            for position in range(tasks_per_cell * REPEATS_PER_TASK):
                 slot_no += 1
-                obs = {k: (dict(v) if isinstance(v, (dict, list)) else v)
-                       for k, v in EMPTY_OBS.items()}
+                obs = deepcopy(EMPTY_OBS)
                 obs["slot"] = slot_no
-                obs["repeat"] = rep
+                obs["repeat"] = position % REPEATS_PER_TASK + 1
+                obs["assignment_slot"] = position // REPEATS_PER_TASK + 1
                 obs["cell_id"] = cell_id
                 observations.append(obs)
             cells[cell_id] = {
@@ -87,15 +95,15 @@ def build_sheet() -> dict:
                 "task_id": task,
                 "task_category": TASK_CATEGORY[task],
                 "planned_profile": PROFILE_BY_ARM[arm] or "route-resolved by gate-runner",
-                "planned_observations": OBS_PER_ARM // REPEATS_PER_TASK // len(TASKS) * REPEATS_PER_TASK
-                                        if arm in "ABC" else None,
+                "planned_observations": tasks_per_cell * REPEATS_PER_TASK,
+                "planned_tasks": tasks_per_cell,
                 "planned_repeats_per_task": REPEATS_PER_TASK,
                 "observations": observations,
                 "filled": False,
                 "nonlive_ground_truth": {"arm_semantics_only": True},
             }
     return {
-        "sheet_version": 1,
+        "sheet_version": 2,
         "extends": "docs/PHASE4_PILOT_REPORT.md §8 (live sampling plan)",
         "authority": "docs/PHASE3_PREREGISTRATION.md §11 (RATIFIED: 20 obs/arm, 2 repeats cold-cache, 50/50 tuning/holdout) + PHASE4_LIVE_START_PACKET.md §3 row-4 (SIGNED)",
         "arms": list(ARMS),
@@ -118,14 +126,14 @@ def csv_rows(sheet: dict) -> List[dict]:
         for obs in c["observations"]:
             rows.append({
                 "slot": obs["slot"], "cell_id": cell_id, "arm": c["arm"],
-                "task_id": c["task_id"], "task_category": c["task_category"],
+                "planned_task_id": c["task_id"], "task_category": c["task_category"],
                 "repeat": obs["repeat"], "planned_profile": c["planned_profile"],
                 **{k: obs[k] for k in EMPTY_OBS},
             })
     return rows
 
 
-CSV_FIELDS = ["slot", "cell_id", "arm", "task_id", "task_category", "repeat",
+CSV_FIELDS = ["slot", "cell_id", "arm", "planned_task_id", "task_category", "repeat",
               "planned_profile"] + list(EMPTY_OBS)
 
 

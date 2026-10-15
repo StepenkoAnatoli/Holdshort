@@ -36,6 +36,114 @@ class PilotReport(unittest.TestCase):
         self.assertAlmostEqual(r["per_profile"]["cloud-C"]["spend_usd"], 0.003, places=6)
         self.assertEqual(r["problems"], [])
 
+    def test_invalid_usage_and_cost_never_report_intact(self):
+        for change in ({"cost_usd": float('nan')}, {"cost_usd": float('inf')},
+                       {"cost_usd": -1}, {"cost_usd": True}, {"input_tokens": 10000.9},
+                       {"input_tokens": "10000"}, {"output_tokens": False},
+                       {"task_id": []}, {"decision": {}}, {"reservation_id": []}):
+            with self.subTest(change=change):
+                e = entry("T1", "cloud-C", "dispatched", 10000, 1000, .0015)
+                e.update(change)
+                r = pr.build_report(PRICES, [e])
+                self.assertEqual(r["accounting_status"], "GAPS_FOUND")
+                self.assertFalse(r["pilot"]["total_spend_complete"])
+                self.assertEqual(r["pilot"]["invalid_ledger_lines"], [1])
+                json.dumps(r, allow_nan=False)
+
+    def test_invalid_supersession_cannot_hide_pending_reservation(self):
+        pending = entry("T1", "cloud-C", "dispatch-reserved", None, None, None)
+        pending.update(reservation_id="synthetic", reserved_cost_usd=.1, known_cost_usd=0)
+        bad = entry("T1", "cloud-C", "dispatched", 10000, 1000, float('nan'))
+        bad["reservation_id"] = "synthetic"
+        r = pr.build_report(PRICES, [pending, bad])
+        self.assertFalse(r["pilot"]["total_spend_complete"])
+        self.assertEqual(r["pilot"]["unknown_usage_dispatches"], 1)
+        self.assertEqual(r["pilot"]["reserved_usd"], .1)
+
+    def test_incomplete_reconciliation_preserves_uncertain_evidence(self):
+        pending = entry("T1", "cloud-C", "dispatch-reserved", None, None, None)
+        pending.update(reservation_id="synthetic", reserved_cost_usd=.1, known_cost_usd=0)
+        uncertain = dict(pending, decision="dispatch-error")
+        receipt = entry("T1", "cloud-C", "dispatch-reconciled", 10000, 1000, .0015)
+        receipt["reservation_id"] = "synthetic"
+        for prefix in ([pending], [pending, uncertain]):
+            for field in ("input_tokens", "output_tokens", "cost_usd"):
+                with self.subTest(prefix_length=len(prefix), field=field):
+                    rows = prefix + [dict(receipt, **{field: None})]
+                    report = pr.build_report(PRICES, rows)
+                    self.assertEqual(report["accounting_status"], "GAPS_FOUND")
+                    self.assertFalse(report["pilot"]["total_spend_complete"])
+                    self.assertEqual(report["pilot"]["invalid_ledger_lines"], [len(rows)])
+                    self.assertEqual(report["pilot"]["unknown_usage_dispatches"], 1)
+                    self.assertEqual(report["pilot"]["reserved_usd"], .1)
+                    self.assertEqual(list(pr.effective_entries(rows)), [(len(prefix), prefix[-1])])
+                    json.dumps(report, allow_nan=False)
+
+    def test_complete_receipt_reconciles_reserved_or_uncertain_dispatch(self):
+        pending = entry("T1", "cloud-C", "dispatch-reserved", None, None, None)
+        pending.update(reservation_id="synthetic", reserved_cost_usd=.1, known_cost_usd=0)
+        uncertain = dict(pending, decision="dispatch-error", known_cost_usd=.001)
+        receipt = entry("T1", "cloud-C", "dispatch-reconciled", 10000, 1000, .0015)
+        receipt["reservation_id"] = "synthetic"
+        for prefix in ([pending], [pending, uncertain]):
+            with self.subTest(prefix_length=len(prefix)):
+                rows = prefix + [receipt]
+                report = pr.build_report(PRICES, rows)
+                self.assertEqual(report["accounting_status"], "intact")
+                self.assertTrue(report["pilot"]["total_spend_complete"])
+                self.assertEqual(report["pilot"]["dispatches"], 1)
+                self.assertEqual(report["pilot"]["total_spend_usd"], .0015)
+                self.assertEqual(report["pilot"]["reserved_usd"], 0)
+                self.assertEqual(list(pr.effective_entries(rows)), [(len(rows), receipt)])
+
+    def test_reconciliation_preserves_known_charge_floor_and_identity(self):
+        pending = entry("T1", "cloud-C", "dispatch-reserved", None, None, None)
+        pending.update(reservation_id="synthetic", reserved_cost_usd=.1, known_cost_usd=.001)
+        uncertain = dict(pending, decision="dispatch-error", known_cost_usd=0)
+        receipt = entry("T1", "cloud-C", "dispatch-reconciled", 1000, 100, .00015)
+        receipt["reservation_id"] = "synthetic"
+        for prefix in ([pending], [pending, uncertain]):
+            for replacement in (receipt, dict(receipt, task_id="T2"),
+                                dict(receipt, profile_id="cloud-S"), dict(receipt, purpose="verification")):
+                with self.subTest(prefix_length=len(prefix), replacement=replacement):
+                    rows = prefix + [replacement]
+                    self.assertIn(len(rows), pr.ledger_problems(rows))
+                    self.assertEqual(pr.build_report(PRICES, rows)["accounting_status"], "GAPS_FOUND")
+
+    def test_nonobject_record_is_reported_without_crashing(self):
+        r = pr.build_report(PRICES, [None, []])
+        self.assertEqual(r["pilot"]["invalid_ledger_lines"], [1, 2])
+        self.assertEqual(r["accounting_status"], "GAPS_FOUND")
+
+    def test_invalid_caps_are_rejected(self):
+        import copy
+        for field, value in (("max_cost_per_task_usd", float('nan')), ("max_attempts_per_task", 1.5)):
+            prices = copy.deepcopy(PRICES); prices["pilot_caps"][field] = value
+            with self.assertRaises(ValueError):
+                pr.build_report(prices, [])
+
+    def test_reservation_identity_and_settlement_order_are_checked(self):
+        pending = entry("T1", "cloud-C", "dispatch-reserved", None, None, None)
+        pending.update(reservation_id="synthetic", reserved_cost_usd=.1, known_cost_usd=0)
+        settled = entry("T1", "cloud-C", "dispatched", 10000, 1000, .0015)
+        settled["reservation_id"] = "synthetic"
+        self.assertEqual(pr.build_report(PRICES,[pending,settled])["accounting_status"], "intact")
+        for rows in ([settled], [pending,dict(settled,task_id="T2")], [pending,settled,settled]):
+            with self.subTest(rows=rows):
+                self.assertEqual(pr.build_report(PRICES,rows)["accounting_status"], "GAPS_FOUND")
+
+    def test_nonphysical_usage_and_false_settled_reservation_are_rejected(self):
+        for decision in ("blocked-gate4", "verification-complete", "dispatch-cancelled", "dispatch-reserved"):
+            row = entry("T1", "cloud-C", decision, 10000, 1000, .0015)
+            self.assertEqual(pr.build_report(PRICES,[row])["accounting_status"], "GAPS_FOUND")
+
+    def test_verification_cannot_complete_unknown_usage(self):
+        pending = entry("T1", "cloud-C", "dispatch-reserved", None, None, None)
+        verified = entry("T1", "cloud-C", "verification-complete",0,0,0)
+        r = pr.build_report(PRICES,[pending,verified])
+        self.assertEqual(r["per_task"][0]["outcome"], "usage-unknown")
+        self.assertEqual(r["accounting_status"], "GAPS_FOUND")
+
     def test_cost_mismatch_is_gapped(self):
         # recomputed = $0.0015; ledger claims $0.0020 → must flag
         entries = [entry("T1", "cloud-C", "dispatched", 10_000, 1_000, 0.002)]
