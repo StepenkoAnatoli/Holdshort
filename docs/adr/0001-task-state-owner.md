@@ -82,3 +82,55 @@ with consumers the repo cannot see or change atomically.
   hosts re-instructed before the bytes change.
 - v2 (write-side routing) is proposed after v1 soaks — a new decision, not an
   amendment here.
+
+## Appendix A — Step ② plan (as executed; realized in PR #86)
+
+The migration order in the Decision (① owner, ② dispatcher delegates, ③
+crosscheck swaps, ④ `pilot_report` derives) was planned in detail before any
+dispatcher code changed. This appendix records that plan and its outcome, so a
+future reader can re-run or undo it.
+
+### Gate (re-verified 2026-10-15, before proceeding)
+
+- PR #73 (draft): tests only (`test_dispatch_adapter.py`, `test_live_dispatcher.py`).
+  Does not touch `live_dispatcher.py`.
+- PR #74: `host_watchdog.py` (+92/-13), `run_regression.py` (+1), plus docs and
+  other tools. Does not touch `live_dispatcher.py`.
+- The **in-flight local work** staged on `codex/close-gap-audit-findings` **does
+  rewrite the state layer**: `live_dispatcher.py` +173, `dispatch_budget.py`
+  +198, `task_crosscheck.py` +88. This is the "Trigger to revisit" condition, so
+  step ② was written as a **draft stacked on step ①** and must be rebased (and
+  re-shaped if that work has already consolidated reads) before merge.
+
+### Shipped shape (PR #86, base `feat/task-state-owner-step1`)
+
+Two commits, each gate-green alone:
+
+1. **owner — one mapping.** `tools/task_state_owner.py`: hoist the authority
+   `charged` → shared `spent` conversion into `authority_view(task)`; `read()`
+   returns it. `deepcopy` is kept (matching `_remember`'s original semantics —
+   the cached/persisted view must share no mutable structure with the authority
+   document); the value stays byte-for-byte the float the mirror already persists.
+2. **dispatcher — delegate.** `tools/live_dispatcher.py`: construct a read-only
+   `TaskStateOwner` in `__init__` (mirror wired; **no watchdog path** — the
+   dispatcher never read watchdog state and v1 does not change that).
+   `_remember()` calls `authority_view()`. `_task()` delegates the read to
+   `owner.read()` and keeps only **creation** (a write) locally, preserving the
+   corrupt-mirror G5 refusal and the legacy-counters `BudgetStateError` guard.
+   No call sites change (`_reject`/`_record`/`_reserved_attempt`/
+   `reconcile_dispatch`/`complete_verification`/`abandon_task` still call
+   `_task`/`_remember`).
+
+Tests: `tools/test_task_state_owner.py` grew 6 wiring tests (single mapping,
+absent-task creation, G5 through `_task`, counters-without-authority refusal,
+mirror kept current). Verified 20/20; neighbours `test_live_dispatcher`,
+`test_task_persistence`, `test_task_crosscheck`, `test_dispatch_budget`,
+`test_pilot_report` all exit 0; full regression gate PASS on both commits.
+
+### Kill re-check after ②
+
+- Dispatcher suite flakiness.
+- Real agent-written mirror files false-rejecting (the mapping is byte-identical,
+  so any difference is a real regression, not a rounding artefact).
+- Out of scope: write/init routing (owner stays read-only) and step ③.
+
