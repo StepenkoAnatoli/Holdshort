@@ -134,3 +134,49 @@ mirror kept current). Verified 20/20; neighbours `test_live_dispatcher`,
   so any difference is a real regression, not a rounding artefact).
 - Out of scope: write/init routing (owner stays read-only) and step ③.
 
+## Appendix B — Re-shape trigger fired before step ③ (2026-10-15)
+
+Decision #3 (crosscheck stops swallowing corrupt state; step ③) was **not built
+on `main`**. It was already implemented — differently — by the in-flight
+state-layer work staged on `codex/close-gap-audit-findings` (unpushed at the
+time). Building step ③ on `main` would have duplicated and competed with it, so
+the "Trigger to revisit" ("rewrite the state layer so the owner duplicates new
+logic — re-shape") fired and step ③ was **held**.
+
+### What the in-flight work already does
+
+- `task_crosscheck.check_authority()` inspects the budget authority through a new
+  **`dispatch_budget.read_authority()`** and emits reconciliation findings:
+  `journal-divergence`, `mirror-lag`, `accounting-gaps`, `unsettled-reservation`,
+  `optional-mirror-stale`, `authority-attempt-mismatch`. That is the #81 fix
+  (crosscheck consults the authority, not only the ledger).
+- `task_crosscheck.state_view()` now records an `invalid-task-mirror` finding
+  instead of silently skipping a corrupt file, and drops the second unvalidated
+  fallback. That is decision #3's fail-loud intent, delivered as a finding rather
+  than a raised exception.
+- `dispatch_budget.py` gains a side-effect-free `read_authority()` plus a
+  locking/lease/receipts layer (`_lock`/`_unlock`, `lease`, `write_receipt`,
+  `_recover`).
+
+### Re-shape plan (after that work lands)
+
+1. **`owner.read()` builds on `read_authority()`.** Today the owner reads via
+   `BudgetStore.transaction()`, which rewrites the authority row on every read;
+   `read_authority()` is side-effect-free. The owner should use it — a strictly
+   better v1 than the one shipped in step ①/②.
+2. **One finding vocabulary.** `task_crosscheck` consumes `Owner.reconcile()` (or
+   the owner adopts the crosscheck's finding kinds) so authority↔mirror
+   disagreement is named once, not in two modules.
+3. **Delete the dead code** the in-flight change left in `task_crosscheck.py`:
+   `state_view_file_guess` and the now-unused `_sanitize` import.
+
+### Status
+
+- Step ② (PR #86) remains a **draft**, pending a rebase on the in-flight
+  `live_dispatcher.py`.
+- Step ③ is **held** until the in-flight state-layer work lands, then re-shaped
+  per the plan above (most likely folded into the owner rather than a second
+  crosscheck implementation).
+- On-disk formats stay frozen; appendices A and B change no format.
+
+
