@@ -148,8 +148,10 @@ class TestRead(OwnerCase):
 class TestReconcile(OwnerCase):
     def test_consistent_stores_yield_no_findings(self):
         self.dispatch()
-        hw.save_state(self.wd, {"task_id": "L-1", "attempts": 1,
-                                "repairs_used": 0, "history": []})
+        hw.save_state(self.wd, {
+            "task_id": "L-1", "attempts": 1, "repairs_used": 0,
+            "history": [{"outcome": "success", "ts": 1.0, "elapsed_s": 1.0,
+                         "log_tail": ""}]})
         result = self.owner.reconcile("L-1")
         self.assertEqual(result["findings"], [])
         self.assertEqual(result["authority"]["attempts"], 1)
@@ -195,8 +197,18 @@ class TestReconcile(OwnerCase):
         # Watchdog counts host launches, authority counts dispatches: they can
         # legitimately differ, so this is a finding, never an exception.
         self.dispatch()
-        hw.save_state(self.wd, {"task_id": "L-1", "attempts": 3,
-                                "repairs_used": 2, "history": []})
+        # A valid on-disk watchdog state (host_watchdog enforces attempts ==
+        # len(history) and repairs_used <= the single-repair allowance): two
+        # failed launches, one repair consumed — ahead of the authority's one
+        # dispatch / zero repairs, which is a finding, not an error.
+        hw.save_state(self.wd, {
+            "task_id": "L-1", "attempts": 2, "repairs_used": 1,
+            "history": [
+                {"outcome": "failed", "ts": 1.0, "elapsed_s": 1.0, "log_tail": "",
+                 "failing_tests": ["t_a"], "diff_hash": "h1", "error": "boom-1"},
+                {"outcome": "failed", "ts": 2.0, "elapsed_s": 1.0, "log_tail": "",
+                 "failing_tests": ["t_b"], "diff_hash": "h2", "error": "boom-2"},
+            ]})
         result = self.owner.reconcile("L-1")
         kinds = [f["kind"] for f in result["findings"]]
         self.assertIn("watchdog-attempts-ahead", kinds)
