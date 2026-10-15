@@ -37,6 +37,7 @@ replay) hold on every read.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -63,6 +64,20 @@ def from_watchdog(doc: Dict) -> Dict:
     """One vocabulary: the watchdog's `repairs_used` is the shared `repairs`."""
     view = dict(doc)
     view["repairs"] = view.pop("repairs_used")
+    return view
+
+
+def authority_view(task: Dict) -> Dict:
+    """The authority's record in the shared vocabulary: `charged` -> `spent`.
+
+    This is the single mapping (ADR-0001). The owner's read() and the
+    dispatcher's _remember() both call it, so the two can never drift. The
+    deepcopy matches _remember's original semantics (the cached/persisted view
+    shares no mutable structure with the authority document) and `spent` is
+    byte-for-byte the float the mirror already persists.
+    """
+    view = deepcopy(task)
+    view["spent"] = float(money(view["charged"]))
     return view
 
 
@@ -98,12 +113,9 @@ class TaskStateOwner:
             task = doc["tasks"].get(task_id)
             if task is None:
                 return None
-            view = dict(task)
-            # Vocabulary mapping, stated once: the authority's Decimal-string
-            # `charged` is the shared float `spent` — the same conversion the
-            # dispatcher's _remember persists into the mirror.
-            view["spent"] = float(money(view["charged"]))
-            return view
+            # The single mapping lives in authority_view (shared with the
+            # dispatcher's _remember, step 2).
+            return authority_view(task)
 
     def read_mirror(self, task_id: str) -> Optional[Dict]:
         """The validated mirror record, or None when no mirror is configured
