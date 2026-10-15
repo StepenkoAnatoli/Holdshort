@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import hashlib
 from pathlib import Path
 from typing import Dict
 
@@ -28,48 +29,171 @@ MEASURED_REQUIRED = ("ts", "profile_dispatched", "input_tokens", "output_tokens"
                      "cost_usd", "latency_s", "outcome", "task_id")
 
 
-def check_integrity(sheet: dict) -> list:
-    problems = []
-    for cell_id, c in sheet["cells"].items():
-        for obs in c["observations"]:
-            marked = all(obs.get(k) != NOT_MEASURED for k in MEASURED_REQUIRED)
-            if marked and not c.get("filled"):
-                continue  # record exists but cell not yet marked filled: fine mid-fill
-            if c.get("filled") and not marked:
-                problems.append(f"{cell_id} slot {obs.get('slot')}: cell says filled "
-                                "but this observation still has not_measured fields")
-            if obs.get("accounting_intact") is False and c.get("filled"):
-                problems.append(f"{cell_id}: filled with accounting_intact=false "
-                                "(§8 completion rule violated)")
-        n = sum(1 for obs in c["observations"]
-                if all(obs.get(k) != NOT_MEASURED for k in MEASURED_REQUIRED))
-        c["_recorded"] = n
+def load_prices():
+    return json.loads(Path(__file__).with_name("prices-2.json").read_text(encoding="utf-8"))
+
+
+def empty_observation(obs):
+    return (isinstance(obs, dict) and obs.get("task_id") is None
+            and all(obs.get(k) == NOT_MEASURED for k in MEASURED_REQUIRED if k != "task_id"))
+
+
+def source_fingerprint(entry, line):
+    fields = {k: entry.get(k) for k in
+              ("task_id", "profile_id", "ts", "input_tokens", "output_tokens", "cost_usd", "decision", "reservation_id")}
+    fields["ledger_line_no"] = line
+    return hashlib.sha256(json.dumps(fields, sort_keys=True, allow_nan=False).encode("utf-8")).hexdigest()
+
+
+def observation_problems(obs, prices):
+    import pilot_report as pr
+    if not isinstance(obs, dict):
+        return ["observation must be an object"]
+    entry = {"task_id": obs.get("task_id"), "profile_id": obs.get("profile_dispatched"),
+             "ts": obs.get("ts"), "input_tokens": obs.get("input_tokens"),
+             "output_tokens": obs.get("output_tokens"), "cost_usd": obs.get("cost_usd"),
+             "decision": obs.get("outcome"), "reason": "sheet observation",
+             "reservation_id": obs.get("reservation_id")}
+    problems = pr.entry_problems(entry)
+    for field in ("input_tokens", "output_tokens"):
+        if type(obs.get(field)) is not int or obs[field] < 0:
+            problems.append(f"{field} must be measured nonnegative integer usage")
+    if not pr.finite_nonnegative(obs.get("cost_usd")):
+        problems.append("cost_usd must be measured finite nonnegative cost")
+    if obs.get("accounting_intact") is not True:
+        problems.append("accounting_intact must be true")
+    if type(obs.get("ledger_line_no")) is not int or obs["ledger_line_no"] < 1:
+        problems.append("ledger_line_no must be a positive integer")
+    latency = obs.get("latency_s")
+    if latency != "not_computable_first_dispatch" and not pr.finite_nonnegative(latency):
+        problems.append("latency_s must be measured or explicitly unavailable on first dispatch")
+    if not problems:
+        if entry["decision"] in ("dispatched", "dispatch-error", "dispatch-reconciled"):
+            expected = pr.recompute_cost(prices, entry["profile_id"], entry["input_tokens"], entry["output_tokens"])
+            if expected is None or not pr.finite_nonnegative(expected) or abs(expected - entry["cost_usd"]) > 1e-9:
+                problems.append("observation cost does not match configured profile rates")
+        elif entry["input_tokens"] or entry["output_tokens"] or entry["cost_usd"]:
+            problems.append("a blocked observation cannot carry dispatch usage")
+        entry["reservation_id"] = obs.get("reservation_id")
+        if obs.get("source_fingerprint") != source_fingerprint(entry, obs["ledger_line_no"]):
+            problems.append("observation changed from its imported evidence")
     return problems
 
 
-def tally_summary(sheet: dict) -> dict:
+def check_integrity(sheet: dict, prices=None, *, recorded_counts=None) -> list:
+    prices = load_prices() if prices is None else prices
+    problems = []
+    if (not isinstance(sheet, dict) or not isinstance(sheet.get("cells"), dict)
+            or not isinstance(sheet.get("arms"), list)
+            or not sheet["arms"] or any(arm not in ("A", "B", "C", "D") for arm in sheet["arms"])
+            or len(set(sheet["arms"])) != len(sheet["arms"])
+            or type(sheet.get("observations_per_arm_target")) is not int
+            or sheet["observations_per_arm_target"] <= 0):
+        return ["sheet has invalid cells, arms, or observation target"]
+    from gen_live_fill_sheet import ARMS, TASKS, OBS_PER_ARM, REPEATS_PER_TASK, PROFILE_BY_ARM
+    if (set(sheet["arms"]) != set(ARMS) or set(sheet["cells"]) != {f"{arm}|{task}" for arm in ARMS for task in TASKS}
+            or sheet["observations_per_arm_target"] < OBS_PER_ARM
+            or sheet.get("repeats_per_task") != REPEATS_PER_TASK):
+        problems.append("sheet does not cover the ratified arms, task columns, target, and repeats")
+    capacity = {arm: 0 for arm in sheet["arms"]}
+    evidence_lines = set()
+    evidence_hashes = set()
+    for cell_id, c in sheet["cells"].items():
+        if (not isinstance(c, dict) or not isinstance(c.get("arm"), str) or c["arm"] not in capacity
+                or not isinstance(c.get("observations"), list) or type(c.get("filled")) is not bool
+                or type(c.get("planned_tasks")) is not int or c["planned_tasks"] <= 0
+                or type(c.get("planned_repeats_per_task")) is not int or c["planned_repeats_per_task"] <= 0
+                or not isinstance(c.get("task_category"), str)
+                or not isinstance(c.get("task_id"), str) or c["task_id"] not in TASKS
+                or cell_id != f"{c['arm']}|{c['task_id']}"
+                or not isinstance(c.get("planned_profile"), str)):
+            problems.append(f"{cell_id}: malformed cell")
+            continue
+        observations = c["observations"]
+        capacity[c["arm"]] += len(observations)
+        planned = c.get("planned_observations")
+        if (type(planned) is not int or planned <= 0 or len(observations) != planned
+                or planned != c["planned_tasks"] * c["planned_repeats_per_task"]
+                or c["planned_repeats_per_task"] != REPEATS_PER_TASK):
+            problems.append(f"{cell_id}: capacity does not match its observation plan")
+        if c["arm"] in ("A", "B", "C") and c["planned_profile"] != PROFILE_BY_ARM[c["arm"]]:
+            problems.append(f"{cell_id}: fixed-arm profile differs from the sampling plan")
+        recorded = 0
+        task_counts = {}
+        assignment_by_task = {}
+        for obs in observations:
+            if empty_observation(obs):
+                if c["filled"]:
+                    problems.append(f"{cell_id}: cell says filled but an observation is not measured")
+                continue
+            failures = observation_problems(obs, prices)
+            if not failures:
+                planned_profile = c.get("planned_profile")
+                if (c["arm"] in ("A", "B", "C") and obs["outcome"] in ("dispatched", "dispatch-error", "dispatch-reconciled")
+                        and obs["profile_dispatched"] != planned_profile):
+                    failures.append("observation profile does not match its fixed arm")
+                if obs.get("cell_id") != cell_id:
+                    failures.append("observation is assigned to another cell")
+                line = obs["ledger_line_no"]
+                fingerprint = obs.get("source_fingerprint")
+                if line in evidence_lines or isinstance(fingerprint, str) and fingerprint in evidence_hashes:
+                    failures.append("duplicate source evidence")
+                if not isinstance(fingerprint, str) or len(fingerprint) != 64:
+                    failures.append("source_fingerprint must identify imported evidence")
+                evidence_lines.add(line)
+                if isinstance(fingerprint, str):
+                    evidence_hashes.add(fingerprint)
+                task = obs["task_id"]
+                task_counts[task] = task_counts.get(task, 0) + 1
+                if (type(obs.get("repeat")) is not int or obs["repeat"] != task_counts[task]
+                        or task_counts[task] > c.get("planned_repeats_per_task", 0)):
+                    failures.append("task repeat count does not match its plan")
+                assignment_by_task.setdefault(task, len(assignment_by_task) + 1)
+                if obs.get("assignment_slot") != assignment_by_task[task]:
+                    failures.append("task assignment slot does not match imported task")
+                if len(assignment_by_task) > c.get("planned_tasks", 0):
+                    failures.append("too many independently assigned tasks in cell")
+            if failures:
+                problems.extend(f"{cell_id}: {failure}" for failure in failures)
+            else:
+                recorded += 1
+        if recorded_counts is not None:
+            recorded_counts[cell_id] = recorded
+        if c["filled"] and recorded != planned:
+            problems.append(f"{cell_id}: filled count does not match validated observations")
+    for arm, count in capacity.items():
+        if count < sheet["observations_per_arm_target"]:
+            problems.append(f"arm {arm}: insufficient capacity for observation target")
+    return problems
+
+
+def tally_summary(sheet: dict, prices=None) -> dict:
     """Machine-readable fill status: per-cell + per-arm + totals + integrity.
     Used by this tool's human output and by pilot_close.py --with-sheet
     (session-close embeds this dict verbatim in the close report). Recorded
-    counts here match import_from_ledger's "empty" predicate exactly: a slot
-    with ANY measured field set + task_id counts as recorded (first-dispatch
-    slots legally carry not_computable_first_dispatch latency)."""
-    problems = check_integrity(sheet)
-    for cell_id, c in sheet["cells"].items():
-        c["_recorded"] = sum(1 for obs in c["observations"]
-                             if any(obs.get(k) != NOT_MEASURED
-                                    for k in MEASURED_REQUIRED) and obs.get("task_id"))
+    Counts include only complete, validated observations. First-dispatch slots
+    may explicitly carry not_computable_first_dispatch latency."""
+    recorded_counts = {}
+    problems = check_integrity(sheet, prices, recorded_counts=recorded_counts)
+    if not isinstance(sheet, dict) or not isinstance(sheet.get("cells"), dict) or not isinstance(sheet.get("arms"), list):
+        return {"per_cell": {}, "per_arm": {}, "target_per_arm": 0, "cells_filled": 0,
+                "cells_total": 0, "observations_recorded": 0, "observations_max": 0,
+                "problems": problems, "integrity_ok": False}
     per_cell = {}
-    per_arm: Dict[str, int] = {arm: 0 for arm in sheet["arms"]}
+    per_arm: Dict[str, int] = {arm: 0 for arm in sheet.get("arms", []) if isinstance(arm, str)}
     cells_filled = 0
-    for cell_id in sorted(sheet["cells"]):
+    for cell_id in sorted(sheet["cells"], key=str):
         c = sheet["cells"][cell_id]
-        n = c.get("_recorded", 0)
+        if not isinstance(c, dict) or not isinstance(c.get("arm"), str) or c["arm"] not in per_arm:
+            continue
+        n = recorded_counts.get(cell_id, 0)
         per_arm[c["arm"]] += n
         cells_filled += 1 if c.get("filled") else 0
-        per_cell[cell_id] = {"arm": c["arm"], "task_category": c["task_category"],
+        per_cell[cell_id] = {"arm": c["arm"], "task_category": c.get("task_category", "unknown"),
                              "recorded": n, "filled": bool(c.get("filled"))}
-    target = sheet["observations_per_arm_target"]
+    target = sheet.get("observations_per_arm_target", 0)
+    if type(target) is not int or target < 0:
+        target = 0
     return {
         "per_cell": per_cell,
         "per_arm": per_arm,
@@ -89,7 +213,7 @@ def summarize_sheet(sheet_path: Path) -> tuple:
         return None, 2
     try:
         sheet = json.loads(sheet_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, OSError):
         return None, 2
     return tally_summary(sheet), None
 
@@ -108,7 +232,7 @@ def load_ledger(path: Path):
     return entries
 
 
-def import_from_ledger(sheet: dict, entries: list, assignments: dict) -> list:
+def import_from_ledger(sheet: dict, entries: list, assignments: dict, prices=None) -> list:
     """Fill empty slots mechanically from ledger lines. Returns findings list.
 
     Assignments map (required) routes each LIVE task into a sheet cell:
@@ -126,21 +250,50 @@ def import_from_ledger(sheet: dict, entries: list, assignments: dict) -> list:
       * D-arm gate-runner route is not carried by ledger lines: recorded as
         gate_runner_route = "ledger-only"
     """
+    prices = load_prices() if prices is None else prices
     findings: list = []  # rows: {"line", "task_id", "kind", "detail"}
     def _finding(kind: str, detail: str) -> None:
         findings.append({"line": idx, "task_id": tid, "kind": kind, "detail": detail})
+    if not isinstance(assignments, dict):
+        return [{"line": None, "task_id": None, "kind": "bad-assignment", "detail": "assignments must be an object"}]
+    if not isinstance(sheet, dict) or not isinstance(sheet.get("cells"), dict):
+        return [{"line": None, "task_id": None, "kind": "invalid-sheet", "detail": "sheet cells must be an object"}]
+    if sheet["cells"]:
+        violations = check_integrity(sheet, prices)
+        if violations:
+            return [{"line": None, "task_id": None, "kind": "invalid-sheet", "detail": "; ".join(violations)}]
     per_task_prev_ts: dict = {}
     empties: dict = {}
+    imported = {}
     for cell_id, c in sheet["cells"].items():
-        empties[cell_id] = [o for o in c["observations"]
-                            if any(o.get(k) == NOT_MEASURED for k in MEASURED_REQUIRED)]
-    from pilot_report import effective_entries
-    for idx, e in effective_entries(entries):
+        empties[cell_id] = [o for o in c["observations"] if empty_observation(o)]
+        for obs in c["observations"]:
+            if not empty_observation(obs) and type(obs.get("ledger_line_no")) is int:
+                imported[obs["ledger_line_no"]] = (cell_id, obs)
+    from pilot_report import effective_entries, ledger_problems
+    for idx, errors in ledger_problems(entries).items():
+        e = entries[idx - 1]
+        findings.append({"line": idx, "task_id": e.get("task_id") if isinstance(e, dict) else None,
+                         "kind": "invalid-ledger-entry", "detail": "; ".join(errors)})
+    effective = list(effective_entries(entries))
+    current_lines = {idx for idx, _ in effective}
+    for idx, (_, obs) in imported.items():
+        if idx not in current_lines:
+            findings.append({"line": idx, "task_id": obs["task_id"], "kind": "missing-source-evidence",
+                             "detail": "recorded source is absent or superseded in current ledger; original observation preserved"})
+    for idx, e in effective:
         tid = e.get("task_id")
         if e.get("decision") in ("verification-complete", "dispatch-cancelled"):
             continue  # acceptance evidence is not an additional model trial
         if any(e.get(field) is None for field in ("input_tokens", "output_tokens", "cost_usd")):
             _finding("unknown-usage", "unsettled dispatch is not a completed measured observation")
+            continue
+        digest = source_fingerprint(e, idx)
+        if idx in imported:
+            old_cell, old = imported[idx]
+            if old.get("source_fingerprint") != digest or assignments.get(tid) != {"arm": sheet["cells"][old_cell]["arm"], "cell": sheet["cells"][old_cell]["task_id"]}:
+                _finding("changed-evidence", "recorded source or assignment changed; original observation preserved")
+            per_task_prev_ts[tid] = e["ts"]
             continue
         a = assignments.get(tid)
         if a is None:
@@ -159,13 +312,12 @@ def import_from_ledger(sheet: dict, entries: list, assignments: dict) -> list:
         if not empty:
             _finding("over-capacity", f"cell {cell_id!r} has no empty slot — line not imported (over-capacity task/repeat beyond plan)")
             continue
-        obs = empty.pop(0)
+        obs = dict(empty[0])
         ts = e.get("ts")
-        in_toks = int(e.get("input_tokens", 0))
-        out_toks = int(e.get("output_tokens", 0))
+        in_toks = e["input_tokens"]
+        out_toks = e["output_tokens"]
         prev = per_task_prev_ts.get(tid)
         latency = (ts - prev) if (prev is not None and isinstance(ts, (int, float))) else "not_computable_first_dispatch"
-        per_task_prev_ts[tid] = ts
         obs.update({
             "task_id": tid,
             "ts": ts,
@@ -177,12 +329,36 @@ def import_from_ledger(sheet: dict, entries: list, assignments: dict) -> list:
             "outcome": e.get("decision"),
             "ledger_line_no": idx,
             "gate_runner_route": "ledger-only" if cell["arm"] == "D" else obs.get("gate_runner_route"),
-            "accounting_intact": True,   # proven flags follow below via cost check
+            "accounting_intact": True,
+            "source_fingerprint": digest,
+            "reservation_id": e.get("reservation_id"),
         })
+        if (arm in ("A", "B", "C") and obs["outcome"] in ("dispatched", "dispatch-error", "dispatch-reconciled")
+                and obs["profile_dispatched"] != cell["planned_profile"]):
+            _finding("wrong-arm-profile", "observation profile does not match its fixed arm")
+            continue
+        errors = observation_problems(obs, prices)
+        if errors:
+            _finding("invalid-observation", "; ".join(errors))
+            continue
+        recorded_for_task = sum(1 for recorded in cell["observations"] if recorded.get("task_id") == tid)
+        if recorded_for_task >= cell["planned_repeats_per_task"]:
+            _finding("over-repeat-limit", "task already has its planned repeat count")
+            continue
+        assigned_tasks = list(dict.fromkeys(o["task_id"] for o in cell["observations"] if not empty_observation(o)))
+        if tid not in assigned_tasks and len(assigned_tasks) >= cell["planned_tasks"]:
+            _finding("over-task-capacity", "cell already contains its planned assigned tasks")
+            continue
+        if tid not in assigned_tasks:
+            assigned_tasks.append(tid)
+        obs["repeat"] = recorded_for_task + 1
+        obs["assignment_slot"] = assigned_tasks.index(tid) + 1
+        per_task_prev_ts[tid] = ts
+        empty.pop(0).update(obs)
+        imported[idx] = (cell_id, obs)
         # mark cell filled when it has no empties left
         if not empties[cell_id]:
             cell["filled"] = True
-    # accounting_intact per slot: recompute against prices via pilot_report when possible
     return findings
 
 
@@ -199,6 +375,7 @@ def main(argv=None) -> int:
     ap.add_argument("--assignments", metavar="MAP_JSON", default=None,
                     help="task_id → arm map {'L-001': 'A', …} used by --import")
     args = ap.parse_args(argv)
+    import_findings = []
 
     if args.import_ledger:
         if not args.assignments:
@@ -211,9 +388,14 @@ def main(argv=None) -> int:
                   file=__import__("sys").stderr)
             return 2
         sheet = json.loads(sheet_p.read_text(encoding="utf-8"))
+        violations = check_integrity(sheet)
+        if violations:
+            print("live_fill_tally: existing sheet is invalid; preserved for reconciliation", file=__import__("sys").stderr)
+            return 1
         entries = load_ledger(Path(args.import_ledger))
         amap = json.loads(Path(args.assignments).read_text(encoding="utf-8"))
         findings = import_from_ledger(sheet, entries, amap)
+        import_findings = findings
         sheet_p.write_text(json.dumps(sheet, indent=2, ensure_ascii=False, sort_keys=True) + chr(10),
                            encoding="utf-8", newline=chr(10))
         if findings:
@@ -222,14 +404,13 @@ def main(argv=None) -> int:
             for f in findings:
                 print("  -", f, file=__import__("sys").stderr)
         n_filled = sum(1 for c in sheet["cells"].values() if c.get("filled"))
-        n_rec = sum(c.get("_recorded", 0) for c in sheet["cells"].values()) if False else None
         print(f"import done: sheet written to {sheet_p}; findings: {len(findings)}; "
               f"cells marked filled: {n_filled}")
         if getattr(args, "mode", "full") != "gate":
             # fall through to the normal tally print so the same invocation tallies
             pass
         else:
-            return 0
+            return 1 if findings or check_integrity(sheet) else 0
 
     p = Path(args.sheet)
     if not p.is_file():
@@ -244,18 +425,22 @@ def main(argv=None) -> int:
         print(f"live_fill_tally: corrupt sheet: {e}", file=__import__("sys").stderr)
         return 2
 
-    problems = check_integrity(sheet)
+    summary = tally_summary(sheet)
+    problems = summary["problems"]
+    if problems:
+        print("live_fill_tally: invalid sheet — " + "; ".join(problems), file=__import__("sys").stderr)
+        return 1
 
     per_arm: Dict[str, int] = {arm: 0 for arm in sheet["arms"]}
     cells_filled = 0
-    print(f"{'cell':6} {'recorded':>8} /{sheet['repeats_per_task'] * len(sheet['cells']) // len(sheet['cells'])} {'filled':>6}")
+    print(f"{'cell':6} {'recorded':>8} {'planned':>8} {'filled':>6}")
     for cell_id in sorted(sheet["cells"]):
         c = sheet["cells"][cell_id]
-        n = c.get("_recorded", 0)
+        n = summary["per_cell"][cell_id]["recorded"]
         per_arm[c["arm"]] += n
         tag = "yes" if c.get("filled") else "no"
         cells_filled += 1 if c.get("filled") else 0
-        print(f"{cell_id:6} {n:>8} {tag:>6}")
+        print(f"{cell_id:6} {n:>8} {c['planned_observations']:>8} {tag:>6}")
     recorded = sum(per_arm.values())
     print()
     for arm, n in per_arm.items():
@@ -265,7 +450,7 @@ def main(argv=None) -> int:
     print(f"\ncells filled: {cells_filled}/{len(sheet['cells'])} · "
           f"observations recorded: {recorded}/{target * len(per_arm)}")
 
-    if problems:
+    if problems or import_findings:
         print("\nINTEGRITY VIOLATIONS:", file=__import__("sys").stderr)
         for pr_ in problems:
             print("  -", pr_, file=__import__("sys").stderr)

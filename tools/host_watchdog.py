@@ -114,21 +114,89 @@ def decide(*, repairs_used: int, allowance: int, prev: dict | None, curr: dict,
 
 # ---------------------------------------------------------------- state + package
 
+def _nonnegative_integer(value: Any) -> bool:
+    return type(value) is int and value >= 0
+
+
+def _nonnegative_finite(value: Any) -> bool:
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(value) and value >= 0
+    except OverflowError:
+        return False
+
+
+def _validate_state(doc: Any, task_id: str) -> None:
+    """Validate persisted authority before it can authorize another command.
+
+    Older complete states may omit the optional terminal/repair flags. Missing
+    identity or counters, including an existing empty object, are not a new task:
+    their bytes must be preserved for host reconciliation rather than reset.
+    """
+    if not isinstance(doc, dict) or doc.get("task_id") != task_id:
+        raise ValueError("state must identify the requested task (never reuse across tasks)")
+    for field in ("attempts", "repairs_used"):
+        if not _nonnegative_integer(doc.get(field)):
+            raise ValueError(f"{field} must be a nonnegative integer")
+    if doc["repairs_used"] > REPAIR_ALLOWANCE_DEFAULT:
+        raise ValueError("repairs_used exceeds the single-repair allowance")
+    history = doc.get("history")
+    if not isinstance(history, list) or doc["attempts"] != len(history):
+        raise ValueError("history must contain exactly one record per attempt")
+    failed = 0
+    for record in history:
+        if not isinstance(record, dict) or record.get("outcome") not in ("success", "failed", "timeout"):
+            raise ValueError("history contains an invalid attempt record")
+        if not all(_nonnegative_finite(record.get(field)) for field in ("ts", "elapsed_s")):
+            raise ValueError("history timestamps and durations must be finite and nonnegative")
+        if not isinstance(record.get("log_tail"), str):
+            raise ValueError("history log_tail must be a string")
+        if record["outcome"] == "failed":
+            failed += 1
+            tests = record.get("failing_tests")
+            if (not isinstance(tests, list) or not all(isinstance(test, str) for test in tests)
+                    or not isinstance(record.get("diff_hash"), str)
+                    or not isinstance(record.get("error"), str)):
+                raise ValueError("failed history records must contain typed progress signals")
+    if doc["repairs_used"] > failed:
+        raise ValueError("repair counter is inconsistent with attempt history")
+    if "repair_pending" in doc and type(doc["repair_pending"]) is not bool:
+        raise ValueError("repair_pending must be a boolean")
+    if "terminal_reason" in doc and (
+            not isinstance(doc["terminal_reason"], str) or not doc["terminal_reason"].strip()):
+        raise ValueError("terminal_reason must be a nonempty string")
+    if failed and doc["repairs_used"] == 0 and (
+            "terminal_reason" not in doc or history[-1]["outcome"] != "failed" or failed != 1):
+        raise ValueError("failed attempts without a consumed repair must be terminal")
+    if any(record["outcome"] == "timeout" for record in history) and (
+            "terminal_reason" not in doc or history[-1]["outcome"] != "timeout"
+            or any(record["outcome"] == "timeout" for record in history[:-1])):
+        raise ValueError("a timeout must be the terminal attempt")
+    if doc.get("repair_pending") and (
+            doc["repairs_used"] != 1 or failed != 1 or not history or history[-1]["outcome"] != "failed"
+            or "terminal_reason" in doc):
+        raise ValueError("pending repair is inconsistent with counters or terminal state")
+
+
+def _unique_state_object(pairs):
+    doc = {}
+    for key, value in pairs:
+        if key in doc:
+            raise ValueError(f"duplicate state field: {key}")
+        doc[key] = value
+    return doc
+
+
 def load_state(path: Path, task_id: str) -> dict[str, Any]:
-    if not path.is_file():
+    if not path.exists() and not path.is_symlink():
         return {"task_id": task_id, "attempts": 0, "repairs_used": 0, "history": []}
     try:
-        doc = json.loads(path.read_text(encoding="utf-8"))
+        doc = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_state_object)
+        _validate_state(doc, task_id)
     except Exception as e:
-        raise SystemExit(f"host_watchdog: FAIL-CLOSED — state file {path} unreadable ({e})")
-    if not isinstance(doc, dict) or doc.get("task_id") not in (task_id, None):
-        if isinstance(doc, dict) and doc.get("task_id") and doc["task_id"] != task_id:
-            raise SystemExit(f"host_watchdog: FAIL-CLOSED — state file holds task "
-                             f"{doc.get('task_id')!r}, not {task_id!r} (never reuse across tasks)")
-        raise SystemExit(f"host_watchdog: FAIL-CLOSED — state file {path} malformed")
-    doc.setdefault("attempts", 0)
-    doc.setdefault("repairs_used", 0)
-    doc.setdefault("history", [])
+        raise SystemExit(f"host_watchdog: FAIL-CLOSED — state file {path} invalid ({e}); "
+                         "preserved for host reconciliation")
     return doc
 
 
@@ -201,12 +269,23 @@ def parse_args(argv: list[str] | None = None):
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    cmd = [c for c in args.command if c != "--"]
+    cmd = args.command[1:] if args.command[:1] == ["--"] else args.command
+    if not args.task_id.strip():
+        safe_print("host_watchdog: FAIL-CLOSED — --task-id must be nonempty", file=sys.stderr)
+        return 3
     if not math.isfinite(args.timeout) or args.timeout <= 0:
         safe_print("host_watchdog: FAIL-CLOSED — --timeout must be > 0", file=sys.stderr)
         return 3
     if args.allowance not in (0, REPAIR_ALLOWANCE_DEFAULT):
         safe_print("host_watchdog: FAIL-CLOSED — --allowance must be 0 or 1 (R01/R02/R03)", file=sys.stderr)
+        return 3
+    if not _nonnegative_integer(args.calls_used) or (
+            args.calls_limit is not None and not _nonnegative_integer(args.calls_limit)):
+        safe_print("host_watchdog: FAIL-CLOSED — call counters must be nonnegative integers", file=sys.stderr)
+        return 3
+    if not _nonnegative_finite(args.cash_spent) or (
+            args.cash_cap is not None and not _nonnegative_finite(args.cash_cap)):
+        safe_print("host_watchdog: FAIL-CLOSED — cash values must be finite and nonnegative", file=sys.stderr)
         return 3
     try:
         state = load_state(args.state, args.task_id)
@@ -245,7 +324,7 @@ def main(argv: list[str] | None = None) -> int:
 
     started = time.monotonic()
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=args.timeout)
+        proc = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=args.timeout)
         proc.stdout = sanitize(proc.stdout or "")
         proc.stderr = sanitize(proc.stderr or "")
         elapsed = time.monotonic() - started

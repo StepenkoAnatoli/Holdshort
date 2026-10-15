@@ -20,12 +20,16 @@ Hermetic and fast: sleeps are sub-second; no network; state files live in temp d
 from __future__ import annotations
 
 import importlib.util
+import copy
+import io
 import json
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parent.parent
 TOOL = REPO / "tools" / "host_watchdog.py"
@@ -53,6 +57,224 @@ def run_watchdog(state: Path, task: str, *extra: str, cmd: list[str] | None = No
 
 
 class Watchdog(unittest.TestCase):
+
+    def test_invalid_budget_configuration_never_launches_or_changes_state(self):
+        cases = [
+            ["--cash-spent=nan"], ["--cash-spent=inf"], ["--cash-spent=-inf"],
+            ["--cash-spent=-1"], ["--cash-cap=nan"], ["--cash-cap=inf"],
+            ["--cash-cap=-inf"], ["--cash-cap=-1"],
+            ["--calls-used=-1"], ["--calls-limit=-1"], ["--task-id", " "],
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            state = Path(td) / "state.json"
+            original = json.dumps({"task_id": "validated", "attempts": 0,
+                                   "repairs_used": 0, "history": []}).encode()
+            state.write_bytes(original)
+            for flags in cases:
+                with self.subTest(flags=flags), patch.object(wd.subprocess, "run") as run:
+                    with redirect_stderr(io.StringIO()), redirect_stdout(io.StringIO()):
+                        result = wd.main(["--task-id", "validated", "--state", str(state),
+                                          "--timeout", "10", *flags, "--", "synthetic-command"])
+                    self.assertEqual(result, 3)
+                    run.assert_not_called()
+                    self.assertEqual(state.read_bytes(), original)
+            self.assertEqual(list(Path(td).iterdir()), [state], "invalid config must not create a stop package")
+
+    def test_fractional_call_counters_are_rejected_before_launch(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            marker = root / "ran.txt"
+            for flag in ("--calls-used=0.5", "--calls-limit=1.5"):
+                with self.subTest(flag=flag):
+                    result = run_watchdog(root / "state.json", "typed", "--timeout", "10", flag,
+                        cmd=[sys.executable, "-c", f"open({str(marker)!r}, 'w').write('ran')"])
+                    self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                    self.assertFalse(marker.exists())
+                    self.assertFalse((root / "state.json").exists())
+
+    def test_invalid_saved_state_is_preserved_and_never_launches(self):
+        zero = {"task_id": "validated", "attempts": 0, "repairs_used": 0, "history": []}
+        failed = {"task_id": "validated", "attempts": 1, "repairs_used": 1,
+                  "history": [{"ts": 1.0, "outcome": "failed", "elapsed_s": 0.1,
+                               "failing_tests": [], "diff_hash": "a", "error": "failed",
+                               "log_tail": ""}], "repair_pending": True}
+        cases = [("empty object", {}), ("array", []), ("null", None)]
+        for field in ("task_id", "attempts", "repairs_used", "history"):
+            doc = copy.deepcopy(zero)
+            del doc[field]
+            cases.append((f"missing {field}", doc))
+        for field, value in (
+                ("task_id", None), ("task_id", 3), ("task_id", "another-task"),
+                ("attempts", "1"), ("attempts", True), ("attempts", 0.5), ("attempts", -1),
+                ("attempts", 1), ("repairs_used", "0"), ("repairs_used", False),
+                ("repairs_used", -1), ("repairs_used", 2), ("repairs_used", 1),
+                ("history", {}), ("repair_pending", "false"), ("repair_pending", 1),
+                ("repair_pending", True), ("terminal_reason", False), ("terminal_reason", "")):
+            doc = copy.deepcopy(zero)
+            doc[field] = value
+            cases.append((f"invalid {field}={value!r}", doc))
+        for field, value in (
+                ("outcome", "unknown"), ("ts", float("nan")), ("ts", True), ("ts", -1),
+                ("elapsed_s", float("inf")), ("elapsed_s", -0.1), ("log_tail", []),
+                ("failing_tests", {}), ("failing_tests", [3]), ("diff_hash", None), ("error", [])):
+            doc = copy.deepcopy(failed)
+            doc["history"][0][field] = value
+            cases.append((f"invalid record {field}={value!r}", doc))
+        doc = copy.deepcopy(failed)
+        doc["terminal_reason"] = "blocked"
+        cases.append(("terminal with pending repair", doc))
+        doc = copy.deepcopy(failed)
+        doc["history"] = ["invalid-record"]
+        cases.append(("string history record", doc))
+        doc = copy.deepcopy(failed)
+        doc["repairs_used"] = 0
+        doc["repair_pending"] = False
+        cases.append(("reset repair counter after failure", doc))
+        doc = copy.deepcopy(zero)
+        doc["attempts"] = 1
+        doc["history"] = [{"ts": 1, "outcome": "timeout", "elapsed_s": 1, "log_tail": ""}]
+        cases.append(("timeout without terminal authority", doc))
+        with tempfile.TemporaryDirectory() as td:
+            state = Path(td) / "state.json"
+            for name, doc in cases:
+                with self.subTest(name=name), patch.object(wd.subprocess, "run") as run:
+                    original = json.dumps(doc).encode()
+                    state.write_bytes(original)
+                    with redirect_stderr(io.StringIO()), redirect_stdout(io.StringIO()):
+                        result = wd.main(["--task-id", "validated", "--state", str(state),
+                                          "--timeout", "10", "--", "synthetic-command"])
+                    self.assertEqual(result, 3)
+                    run.assert_not_called()
+                    self.assertEqual(state.read_bytes(), original, "invalid counters must never reset")
+            self.assertEqual(list(Path(td).iterdir()), [state])
+
+    def test_unreadable_or_ambiguous_json_state_is_preserved(self):
+        cases = [b"{", b"\xff", b'{"task_id":"validated","attempts":9,"attempts":0,"repairs_used":0,"history":[]}']
+        with tempfile.TemporaryDirectory() as td:
+            state = Path(td) / "state.json"
+            for original in cases:
+                with self.subTest(original=original), patch.object(wd.subprocess, "run") as run:
+                    state.write_bytes(original)
+                    with redirect_stderr(io.StringIO()):
+                        result = wd.main(["--task-id", "validated", "--state", str(state),
+                                          "--timeout", "10", "--", "synthetic-command"])
+                    self.assertEqual(result, 3)
+                    run.assert_not_called()
+                    self.assertEqual(state.read_bytes(), original)
+
+    def test_existing_directory_is_not_initialized_as_new_state(self):
+        with tempfile.TemporaryDirectory() as td, patch.object(wd.subprocess, "run") as run:
+            with redirect_stderr(io.StringIO()):
+                result = wd.main(["--task-id", "validated", "--state", td,
+                                  "--timeout", "10", "--", "synthetic-command"])
+            self.assertEqual(result, 3)
+            run.assert_not_called()
+            self.assertEqual(list(Path(td).iterdir()), [])
+
+    def test_complete_legacy_state_keeps_consumed_repair_counter(self):
+        with tempfile.TemporaryDirectory() as td:
+            state = Path(td) / "state.json"
+            history = [
+                {"ts": 1, "outcome": "failed", "elapsed_s": 0.1, "log_tail": "",
+                 "failing_tests": [], "diff_hash": "a", "error": "failed"},
+                {"ts": 2, "outcome": "success", "elapsed_s": 0.1, "log_tail": ""},
+            ]
+            state.write_text(json.dumps({"task_id": "legacy", "attempts": 2,
+                                         "repairs_used": 1, "history": history}))
+            with patch.object(wd.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "ok", "")):
+                with redirect_stdout(io.StringIO()):
+                    result = wd.main(["--task-id", "legacy", "--state", str(state),
+                                      "--timeout", "10", "--", "synthetic-command"])
+            self.assertEqual(result, 0)
+            saved = json.loads(state.read_text())
+            self.assertEqual(saved["attempts"], 3)
+            self.assertEqual(saved["repairs_used"], 1)
+            self.assertEqual(saved["history"][:2], history)
+
+    def test_target_command_argument_terminators_are_preserved(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            received = root / "args.json"
+            result = run_watchdog(root / "state.json", "argv", "--timeout", "10",
+                cmd=[sys.executable, "-c",
+                     f"import json,sys; open({str(received)!r}, 'w').write(json.dumps(sys.argv[1:]))",
+                     "--", "-literal", "--"])
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(json.loads(received.read_text()), ["--", "-literal", "--"])
+
+    def test_zero_cash_ceiling_blocks_without_launching(self):
+        with tempfile.TemporaryDirectory() as td, patch.object(wd.subprocess, "run") as run:
+            with redirect_stderr(io.StringIO()):
+                result = wd.main(["--task-id", "zero", "--state", str(Path(td) / "state.json"),
+                                  "--timeout", "10", "--cash-spent=0", "--cash-cap=0",
+                                  "--", "synthetic-command"])
+            self.assertEqual(result, 2, "valid exhausted ceilings remain terminal stops")
+            run.assert_not_called()
+
+    def test_repair_pending_cannot_reopen_two_failed_attempts(self):
+        with tempfile.TemporaryDirectory() as td:
+            state = Path(td) / "state.json"
+            record = {"ts": 1, "outcome": "failed", "elapsed_s": 0.1, "log_tail": "",
+                      "failing_tests": [], "diff_hash": "a", "error": "failed"}
+            original = json.dumps({"task_id": "bounded", "attempts": 2, "repairs_used": 1,
+                                   "history": [record, dict(record, ts=2, diff_hash="b")],
+                                   "repair_pending": True}).encode()
+            state.write_bytes(original)
+            with patch.object(wd.subprocess, "run") as run, redirect_stderr(io.StringIO()):
+                result = wd.main(["--task-id", "bounded", "--state", str(state),
+                                  "--timeout", "10", "--", "synthetic-command"])
+            self.assertEqual(result, 3)
+            run.assert_not_called()
+            self.assertEqual(state.read_bytes(), original)
+
+    def test_first_failed_attempt_after_success_can_consume_one_pending_repair(self):
+        with tempfile.TemporaryDirectory() as td:
+            state = Path(td) / "state.json"
+            history = [
+                {"ts": 1, "outcome": "success", "elapsed_s": 0.1, "log_tail": ""},
+                {"ts": 2, "outcome": "failed", "elapsed_s": 0.1, "log_tail": "",
+                 "failing_tests": [], "diff_hash": "a", "error": "failed"},
+            ]
+            state.write_text(json.dumps({"task_id": "bounded", "attempts": 2, "repairs_used": 1,
+                                         "history": history, "repair_pending": True}))
+            with patch.object(wd.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "ok", "")):
+                with redirect_stdout(io.StringIO()):
+                    result = wd.main(["--task-id", "bounded", "--state", str(state),
+                                      "--timeout", "10", "--", "synthetic-command"])
+            self.assertEqual(result, 0)
+            saved = json.loads(state.read_text())
+            self.assertEqual(saved["attempts"], 3)
+            self.assertEqual(saved["repairs_used"], 1)
+            self.assertFalse(saved["repair_pending"])
+
+    def test_invalid_utf8_child_output_keeps_diagnostics_and_attempts(self):
+        # Force the supervisor's default text codec to UTF-8, even on a Windows
+        # machine whose locale codec would otherwise accept the synthetic byte.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for child_exit in (0, 1):
+                with self.subTest(child_exit=child_exit):
+                    state = root / f"state-{child_exit}.json"
+                    command = [sys.executable, "-c",
+                               "import os,sys; os.write(1,b'output-\\xff-tail'); "
+                               "os.write(2,b'error-\\xff-tail'); " + f"sys.exit({child_exit})"]
+                    result = subprocess.run(
+                        [sys.executable, "-X", "utf8", str(TOOL), "--task-id", "bytes",
+                         "--state", str(state), "--timeout", "10", "--allowance", "0", "--", *command],
+                        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+                    self.assertEqual(result.returncode, 0 if child_exit == 0 else 2,
+                                     result.stdout + result.stderr)
+                    self.assertNotIn("UnicodeDecodeError", result.stdout + result.stderr)
+                    self.assertNotIn("Traceback", result.stdout + result.stderr)
+                    saved = json.loads(state.read_text(encoding="utf-8"))
+                    self.assertEqual(saved["attempts"], 1)
+                    self.assertEqual(saved["history"][0]["outcome"], "success" if child_exit == 0 else "failed")
+                    self.assertIn("output-\ufffd-tail", saved["history"][0]["log_tail"])
+                    if child_exit == 1:
+                        self.assertIn("error-\ufffd-tail", saved["history"][0]["log_tail"])
+                        package = json.loads((root / f"state-{child_exit}.blocked.json").read_text(encoding="utf-8"))
+                        self.assertIn("output-\ufffd-tail", package["log_tail"])
+                        self.assertIn("error-\ufffd-tail", package["log_tail"])
 
     # H8 (pure, fastest first) ------------------------------------------------
     def test_h8_timeout_equality_expires(self):

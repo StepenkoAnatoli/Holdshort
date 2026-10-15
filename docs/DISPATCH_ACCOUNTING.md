@@ -10,6 +10,8 @@ The implementation has been tested with synthetic transports and real local
 processes. It does not establish provider qualification, final billing accuracy
 or savings. Input counts still use the provider's estimate plus a 5% margin;
 an unexpected overrun is recorded at known cost and stops further dispatch.
+A reliable strict live billing bound remains unqualified: recording an overrun
+does not prevent the first charge from exceeding its estimate.
 
 ## What is reserved
 
@@ -37,6 +39,16 @@ otherwise zero. Set it explicitly for multiple model checks, zero-priced model
 checks, or local checks that require no model call. A local check can use the
 host's acceptance process without a model dispatch. The host must declare the
 complete required verification plan and run its checks.
+
+## Default HTTP adapter
+
+The default adapter uses its own HTTP opener and refuses redirects before a
+credential-bearing request can be forwarded. It does not follow a redirect even
+when the original endpoint was approved. The configured `timeout_s` must be a
+finite, positive number and is passed to both the token-count and model-send
+transports. This is an HTTP timeout, not proof of an end-to-end task deadline or
+that a timed-out provider request incurred no charge. Custom transports remain
+responsible for their own destination and timeout behavior.
 
 ## Persistent authority
 
@@ -147,7 +159,38 @@ cash. `total_spend_usd` is the known subtotal when that flag is false, not a
 complete charge. `pilot_close.py` subtracts retained reservations from headroom
 and waits for verification completion on new journaled tasks. The live-fill
 importer reports unknown usage without filling a completed measurement slot.
-Historical records retain their original interpretation.
+Malformed token counts, nonfinite or negative costs, inconsistent reservation
+histories, and invalid required fields refuse an `intact` verdict. Fractional
+token counts are not rounded into valid evidence. A physical send with null
+usage stays unknown even in a historical ledger; it does not become a zero-cost
+observation. Historical source records remain unchanged.
+
+## Evaluation sheets and source consistency
+
+The version 2 live-fill sheet contains 20 category cells and **80 observation
+slots: 20 per arm**. Each of the five category columns has positions for two
+distinct assigned tasks, with two repeats per task. The importer checks the
+repeat limit, assignment to a cell, fixed-profile arm, configured token cost,
+and source ledger identity before counting an observation as measured. Missing
+required values do not satisfy the completion rule.
+
+Recorded observations carry a source fingerprint tied to their ledger line.
+Repeated imports and pilot close reconcile those identities and add newly
+appended observations once. Changed, missing, or superseded source evidence is
+reported for reconciliation. These fingerprints detect consistency changes;
+they do not authenticate provider receipts, model outputs, or acceptance.
+
+Invalid prior recorded sheets are retained for reconciliation. They are not
+silently upgraded, cleared, or recounted as valid version 2 evidence. Preserve
+the original sheet and ledger before preparing a replacement.
+
+Sheet capacity is separate from evaluation readiness. The ratified Phase 3 pool
+has five tasks and two repeats per task, giving only **10 observations per arm**
+against its minimum of 20. Before a live trial, a qualified prospective task pool
+must supply the missing distinct tasks while preserving representative coverage
+and the tuning/holdout split. Extra slots do not amend or complete the protocol.
+See the [sampling caveat](PHASE4_PILOT_REPORT.md#8-live-sampling-plan--how-each-matrix-cell-fills-with-measured-observations-row-4-start)
+and [audit follow-ups](GAP_AUDIT_FOLLOWUPS_2026-10-15.md).
 
 ## Reproduce the evidence
 

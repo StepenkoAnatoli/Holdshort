@@ -16,6 +16,7 @@ Run as part of the regression gate (tools/run_regression.py).
 from __future__ import annotations
 
 import importlib.util
+import copy
 import json
 import subprocess
 import sys
@@ -179,7 +180,7 @@ class Conform(unittest.TestCase):
 
     # K7 ----------------------------------------------------------------------
     def _nested_ok(self) -> tuple[dict, dict, dict]:
-        pb = brief()
+        pb = brief(**{"nested-allowed": True, "max-nesting-depth": 2})
         nested = {"parent-task-id": "p", "parent-brief-fingerprint": "sha256:x",
                   "nesting-depth": 2, "max-nesting-depth": 2, "objective": "sub",
                   "acceptance": {"checks": [{"command": "t", "expect": "0"}]},
@@ -205,6 +206,112 @@ class Conform(unittest.TestCase):
                 with self.assertRaises(cs.Violation):
                     cs.check_nested(bad, pb, state)
 
+    def test_brief_and_nested_share_typed_acceptance_validation(self):
+        nested, pb, state = self._nested_ok()
+        for acceptance in (None, [], {"checks": []}, {"checks": {}},
+                           {"checks": [None]},
+                           {"checks": [{"command": 3, "expect": "0"}]},
+                           {"checks": [{"command": "t", "expect": False}]},
+                           {"checks": [{"command": " ", "expect": "0"}]}):
+            with self.subTest(acceptance=acceptance):
+                with self.assertRaises(cs.Violation):
+                    cs.check_brief(brief(acceptance=acceptance))
+                with self.assertRaises(cs.Violation):
+                    cs.check_nested(dict(nested, acceptance=acceptance), pb, state)
+
+    def test_nested_rejects_malformed_allowance_and_exact_integer_fields(self):
+        nested, pb, state = self._nested_ok()
+        for key, values in (("cash", [-1, True, float('nan'), float('inf'), 10**1000]),
+                            ("calls", [-1, True, 1.5])):
+            for value in values:
+                with self.subTest(key=key, value_type=type(value).__name__):
+                    bad = copy.deepcopy(nested)
+                    bad["allowance"][key] = value
+                    with self.assertRaises(cs.Violation):
+                        cs.check_nested(bad, pb, state)
+        for allowance in (None, [], {}, {"cash": 0.1, "calls": 1}):
+            with self.assertRaises(cs.Violation):
+                cs.check_nested(dict(nested, allowance=allowance), pb, state)
+        for key in ("attempts", "nesting-depth", "max-nesting-depth"):
+            for value in (True, 1.5, -1, "2"):
+                with self.subTest(key=key, value=value):
+                    with self.assertRaises(cs.Violation):
+                        cs.check_nested(dict(nested, **{key: value}), pb, state)
+        for key in ("permitted-effects", "non-goals"):
+            for value in (None, "src/", [5]):
+                with self.assertRaises(cs.Violation):
+                    cs.check_nested(dict(nested, **{key: value}), pb, state)
+        for key in ("parent-task-id", "parent-brief-fingerprint", "objective"):
+            for value in (None, 5, " "):
+                with self.assertRaises(cs.Violation):
+                    cs.check_nested(dict(nested, **{key: value}), pb, state)
+
+    def test_nested_deadline_compares_instants_and_requires_timezone(self):
+        nested, pb, state = self._nested_ok()
+        pb["allowance"]["deadline"] = "2030-01-01T10:00:00+00:00"
+        # 09:30 at -02:00 is 11:30 UTC, despite sorting before the parent's text.
+        nested["allowance"]["deadline"] = "2030-01-01T09:30:00-02:00"
+        with self.assertRaisesRegex(cs.Violation, "deadline past"):
+            cs.check_nested(nested, pb, state)
+        # 11:00 at +02:00 is 09:00 UTC, despite sorting after the parent's text.
+        nested["allowance"]["deadline"] = "2030-01-01T11:00:00+02:00"
+        cs.check_nested(nested, pb, state)
+        nested["allowance"]["deadline"] = "2030-01-01T10:00:00Z"
+        cs.check_nested(nested, pb, state)  # equal instants are permitted
+        for deadline in ("2030-01-01T09:00:00", "2030-01-01", None, "soon"):
+            nested["allowance"]["deadline"] = deadline
+            with self.assertRaises(cs.Violation):
+                cs.check_nested(nested, pb, state)
+        nested["allowance"]["deadline"] = "2030-01-01T09:00:00Z"
+        pb["allowance"]["deadline"] = "2030-01-01T10:00:00"
+        with self.assertRaisesRegex(cs.Violation, "timezone"):
+            cs.check_nested(nested, pb, state)
+
+    def test_nested_cannot_omit_parent_limits_or_permission(self):
+        nested, pb, state = self._nested_ok()
+        pb["non-goals"] = ["no database writes"]
+        with self.assertRaisesRegex(cs.Violation, "non-goals"):
+            cs.check_nested(nested, pb, state)
+        nested["non-goals"].append("no database writes")
+        cs.check_nested(nested, pb, state)
+        for change in ({"nested-allowed": False}, {"max-nesting-depth": 1}):
+            with self.assertRaises(cs.Violation):
+                cs.check_nested(nested, dict(pb, **change), state)
+
+    def test_nested_parent_remaining_state_is_required_and_validated(self):
+        nested, pb, state = self._nested_ok()
+        for key in ("cash", "calls", "attempts"):
+            bad = dict(state)
+            del bad[key]
+            with self.assertRaises(cs.FailClosed):
+                cs.check_nested(nested, pb, bad)
+        for key, values in (("cash", [-1, True, float('nan'), float('inf'), 2.0]),
+                            ("calls", [-1, True, 1.5, 5]),
+                            ("attempts", [-1, True, 1.5, 2]),
+                            ("depth", [-1, 0, True, 1.5])):
+            for value in values:
+                with self.subTest(key=key, value_type=type(value).__name__):
+                    with self.assertRaises(cs.FailClosed):
+                        cs.check_nested(nested, pb, dict(state, **{key: value}))
+        for bad in ([], "state", 1):
+            with self.assertRaises(cs.FailClosed):
+                cs.check_nested(nested, pb, bad)
+        for key in ("cash", "calls", "attempts"):
+            with self.assertRaises(cs.Violation):
+                cs.check_nested(nested, pb, dict(state, **{key: 0}))
+
+    def test_nested_malformed_contract_exits_as_violation(self):
+        nested, pb, state = self._nested_ok()
+        nested["allowance"] = None
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            result = run("--nested", str(write(tdp, "nested.json", nested)),
+                         "--parent-brief", str(write(tdp, "parent.json", pb)),
+                         "--parent-state", str(write(tdp, "state.json", state)))
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("VIOLATION", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+
     # K8 ----------------------------------------------------------------------
     def test_k8_ledger_record_bounds(self):
         rec = {"task-id": "t", "seq": 2, "kind": "dispatch", "ts": "2026-10-12T10:00:00Z",
@@ -224,6 +331,53 @@ class Conform(unittest.TestCase):
             with self.subTest(**{key: val}):
                 with self.assertRaises(cs.Violation):
                     cs.check_record(bad)
+
+    def test_record_discrete_counters_are_exact_nonnegative_integers(self):
+        rec = {"task-id": "t", "seq": 1, "kind": "spend", "ts": "2030-01-01T00:00:00Z",
+               "counters": {"calls-used": 0, "calls-limit": 0, "cash-spent": 0.025,
+                            "cash-cap": 1.5, "repairs-used": 0, "repairs-allowed": 0},
+               "detail": ""}
+        cs.check_record(rec)  # zero discrete counts and fractional money are valid
+        for key in ("calls-used", "calls-limit", "repairs-used", "repairs-allowed"):
+            for value in (True, False, 0.0, 0.5, -1, "1", None):
+                bad = copy.deepcopy(rec)
+                bad["counters"][key] = value
+                with self.subTest(key=key, value=value):
+                    with self.assertRaisesRegex(cs.Violation, "non-negative integer"):
+                        cs.check_record(bad)
+            bad = copy.deepcopy(rec)
+            del bad["counters"][key]
+            with self.assertRaises(cs.Violation):
+                cs.check_record(bad)
+        for key in ("cash-spent", "cash-cap"):
+            for value in (True, -0.01, float('nan'), float('inf'), 10**1000):
+                bad = copy.deepcopy(rec)
+                bad["counters"][key] = value
+                with self.subTest(key=key, value_type=type(value).__name__):
+                    with self.assertRaisesRegex(cs.Violation, "finite non-negative"):
+                        cs.check_record(bad)
+
+    def test_record_malformed_shapes_exit_as_violations(self):
+        rec = {"task-id": "t", "seq": 1, "kind": "spend", "ts": "2030-01-01T00:00:00Z",
+               "counters": {"calls-used": 0, "calls-limit": 1, "cash-spent": 0,
+                            "cash-cap": 1, "repairs-used": 0, "repairs-allowed": 1},
+               "detail": "synthetic"}
+        for key, values in (("counters", [None, [], "counts", 1]),
+                            ("task-id", [None, [], 1, " "]),
+                            ("detail", [None, {}, 1])):
+            for value in values:
+                with self.subTest(key=key, value=value):
+                    with self.assertRaises(cs.Violation):
+                        cs.check_record(dict(rec, **{key: value}))
+        for value in (None, [], "record"):
+            with self.assertRaises(cs.Violation):
+                cs.check_record(value)
+        with tempfile.TemporaryDirectory() as td:
+            bad = dict(rec, counters=None)
+            result = run("--record", str(write(Path(td), "record.json", bad)))
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("VIOLATION", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
 
     # K9 ----------------------------------------------------------------------
     def test_k9_malformed_json_fails_closed(self):

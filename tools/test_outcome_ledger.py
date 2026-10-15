@@ -133,6 +133,72 @@ class OutcomeLedger(unittest.TestCase):
             self.assertEqual(len(entries), 2, "history is appended, never rewritten")
             self.assertEqual(ol.latest_for(entries, "t1")["outcome"], "accepted")
 
+    def test_invalid_ids_and_evidence_types_never_create_a_ledger(self):
+        with tempfile.TemporaryDirectory() as td:
+            led = Path(td) / "L.jsonl"
+            cases = []
+            for key in ("task-id", "owner-profile"):
+                for value in (None, 3, [], {}, " "):
+                    doc = good()
+                    doc[key] = value
+                    cases.append(doc)
+            for key, values in (("checks", [None, {}, "", 5]),
+                                ("files-touched", [None, {}, "src/a.py", [3]]),
+                                ("notes", [None, [], 5])):
+                for value in values:
+                    doc = good()
+                    doc["evidence"][key] = value
+                    cases.append(doc)
+            for key, values in (("command", [None, 3, " "]),
+                                ("exit-code", [None, True, 0.0, "0"]),
+                                ("output-ref", [None, {}, 3])):
+                for value in values:
+                    doc = good()
+                    doc["evidence"]["checks"][0][key] = value
+                    cases.append(doc)
+            for index, doc in enumerate(cases):
+                with self.subTest(index=index):
+                    with self.assertRaises(ol.FailClosed):
+                        ol.record(led, doc)
+                    self.assertFalse(led.exists(), "invalid evidence must fail before append")
+
+    def test_spend_requires_finite_nonnegative_number_on_write_and_read(self):
+        for spend in (True, -1, float('nan'), float('inf'), -float('inf'), 10**1000):
+            with self.subTest(spend_type=type(spend).__name__):
+                doc = good()
+                doc["evidence"]["actual-spend"] = spend
+                with tempfile.TemporaryDirectory() as td:
+                    led = Path(td) / "L.jsonl"
+                    with self.assertRaises(ol.FailClosed):
+                        ol.record(led, doc)
+                    self.assertFalse(led.exists())
+                    led.write_text(json.dumps(doc) + "\n", encoding="utf-8")
+                    with self.assertRaisesRegex(ol.FailClosed, "line 1 invalid"):
+                        ol.read_all(led)
+
+    def test_empty_checks_and_additive_evidence_remain_schema_valid(self):
+        doc = good()
+        doc["evidence"]["checks"] = []
+        doc["evidence"]["review-ref"] = {"host": "independent-review"}
+        doc["future-field"] = [1, 2]
+        self.assertIs(ol.validate(doc), doc)
+        self.assertEqual(doc["evidence"]["review-ref"], {"host": "independent-review"})
+        # Schema validity leaves acceptance truth to the host's verifier.
+        doc = good()
+        doc["evidence"]["checks"][0]["exit-code"] = -9
+        ol.validate(doc)  # failed/signalled checks are valid recorded evidence too
+
+    def test_cli_invalid_spend_fails_closed_without_appending(self):
+        with tempfile.TemporaryDirectory() as td:
+            led = Path(td) / "L.jsonl"
+            result = subprocess.run(
+                [sys.executable, str(TOOL), "record", "--ledger", str(led),
+                 "--task-id", "t1", "--outcome", "accepted", "--owner", "worker",
+                 "--spend", "nan"], capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn("FAIL-CLOSED", result.stderr)
+            self.assertFalse(led.exists())
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

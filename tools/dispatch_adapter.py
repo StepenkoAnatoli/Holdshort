@@ -20,8 +20,11 @@ belongs on api.openai.com and is NOT approved for this pilot.
 from __future__ import annotations
 
 import json
+import math
 import sys
+import urllib.error
 import urllib.request
+from functools import partial
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Callable
 
@@ -42,6 +45,24 @@ REQUEST_TIMEOUT_S = 120
 
 class DispatchRefused(RuntimeError):
     """Fail-closed refusal: caller must not attempt any other route."""
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects before urllib can forward a credential-bearing request."""
+
+    def http_error_302(self, req, fp, code, msg, headers):
+        fp.close()
+        raise DispatchRefused("HTTP redirect refused: only the approved endpoint is allowed")
+
+    http_error_301 = http_error_302
+    http_error_303 = http_error_302
+    http_error_307 = http_error_302
+    http_error_308 = http_error_302
+
+
+# Do not use urlopen's global opener: its default redirect handler can copy
+# x-api-key to another origin. Both token counting and dispatch use this opener.
+_HTTP_OPENER = urllib.request.build_opener(_NoRedirectHandler())
 
 
 def parse_env_file(path: Path) -> Dict[str, str]:
@@ -90,7 +111,7 @@ def build_dispatch_fn(
     env_fallback: Optional[Dict[str, str]] = None,
     endpoint: str = APPROVED_ENDPOINT,
     max_tokens: int = MAX_TOKENS_DEFAULT,
-    timeout_s: int = REQUEST_TIMEOUT_S,
+    timeout_s: float = REQUEST_TIMEOUT_S,
     transport: Optional[Callable[[dict, str, str], Tuple[int, int]]] = None,
     count_transport: Optional[Callable[[dict, str, str], int]] = None,
 ):
@@ -100,10 +121,19 @@ def build_dispatch_fn(
     fail-closed ledger entry via its gate pipeline — the exception is never
     swallowed into a zero-fill).
     """
+    if type(timeout_s) not in (int, float):
+        raise DispatchRefused("timeout_s must be a finite positive number")
+    try:
+        timeout_s = float(timeout_s)
+    except OverflowError:
+        raise DispatchRefused("timeout_s must be a finite positive number") from None
+    if not math.isfinite(timeout_s) or timeout_s <= 0:
+        raise DispatchRefused("timeout_s must be a finite positive number")
+
     if transport is None:
-        transport = _http_transport
+        transport = partial(_http_transport, timeout_s=timeout_s)
         if count_transport is None:
-            count_transport = _http_count_transport
+            count_transport = partial(_http_count_transport, timeout_s=timeout_s)
     else:
         # test/mocked transport still goes through consent checks below
         pass
@@ -148,7 +178,7 @@ def build_dispatch_fn(
     return dispatch_fn
 
 
-def _post(path: str, payload: dict, key: str) -> dict:
+def _post(path: str, payload: dict, key: str, *, timeout_s: float = REQUEST_TIMEOUT_S) -> dict:
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         method="POST",
@@ -160,17 +190,30 @@ def _post(path: str, payload: dict, key: str) -> dict:
             "content-type": "application/json",
         },
     )
-    with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_S) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with _HTTP_OPENER.open(req, timeout=timeout_s) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        # HTTPError owns the response even though open() never returned it.
+        # Remote error reasons/bodies may contain private request material.
+        try:
+            error.close()
+        finally:
+            raise DispatchRefused("approved provider HTTP request failed; usage is unknown") from None
+    except urllib.error.URLError:
+        raise DispatchRefused("approved provider connection failed; usage is unknown") from None
 
 
-def _http_count_transport(payload: dict, model: str, key: str) -> int:
+def _http_count_transport(payload: dict, model: str, key: str,
+                          *, timeout_s: float = REQUEST_TIMEOUT_S) -> int:
     # no zero-fill: a missing count must fail the reservation, not price the prompt at $0
-    return _post("/v1/messages/count_tokens", payload, key)["input_tokens"]
+    return _post("/v1/messages/count_tokens", payload, key,
+                 timeout_s=timeout_s)["input_tokens"]
 
 
-def _http_transport(payload: dict, model: str, key: str) -> Tuple[int, int]:
-    doc = _post("/v1/messages", payload, key)
+def _http_transport(payload: dict, model: str, key: str,
+                    *, timeout_s: float = REQUEST_TIMEOUT_S) -> Tuple[int, int]:
+    doc = _post("/v1/messages", payload, key, timeout_s=timeout_s)
     usage = doc.get("usage")
     if (not isinstance(usage, dict) or any(type(usage.get(field)) is not int
             or usage[field] < 0 for field in ("input_tokens", "output_tokens"))):

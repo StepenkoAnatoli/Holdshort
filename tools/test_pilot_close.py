@@ -38,12 +38,12 @@ class PilotCloseSheetMode(unittest.TestCase):
 
     def test_with_sheet_embeds_fill_status_and_is_idempotent(self):
         sheet = Path(self.td.name) / "sheet.json"
-        assign = {"L-001": {"arm": "A", "cell": "T-01"}}
+        assign = {"L-001": {"arm": "B", "cell": "T-01"}}
         entries = pr.load_jsonl(Path(self.td.name) / "led.jsonl")
         s1 = pc.build_sheet_section(entries, assign, sheet)
         self.assertEqual(s1["sheet_action"], "generated-skeleton")
         self.assertEqual(s1["ledger_lines_placed"], 2)
-        self.assertEqual(s1["per_cell"]["A|T-01"]["recorded"], 2)
+        self.assertEqual(s1["per_cell"]["B|T-01"]["recorded"], 2)
         self.assertTrue(s1["integrity_ok"])
         s2 = pc.build_sheet_section(entries, assign, sheet)
         self.assertEqual(s2["sheet_action"], "loaded-existing")
@@ -58,6 +58,30 @@ class PilotCloseSheetMode(unittest.TestCase):
         self.assertTrue(all(m["kind"] == "unassigned" for m in s["ledger_lines_unplaced"]))
         md = pc.embed_sheet_markdown(s)
         self.assertIn("Unplaced ledger lines", md)
+
+    def test_existing_sheet_imports_appended_evidence(self):
+        sheet = Path(self.td.name)/"append.json"
+        assign = {"L-001":{"arm":"B","cell":"T-01"}}
+        entries = entries_completed_one_task()
+        first = pc.build_sheet_section(entries[:1],assign,sheet)
+        second = pc.build_sheet_section(entries,assign,sheet)
+        self.assertEqual(first["observations_recorded"],1)
+        self.assertEqual(second["observations_recorded"],2)
+        self.assertEqual(second["ledger_lines_placed"],1)
+        self.assertEqual(second["ledger_lines_unplaced"],[])
+
+    def test_markdown_renders_string_integrity_findings(self):
+        sheet = Path(self.td.name)/"bad.json"
+        sheet.write_text("{}",encoding="utf-8")
+        summary = pc.build_sheet_section(entries_completed_one_task(),{},sheet)
+        self.assertFalse(summary["integrity_ok"])
+        self.assertIn("integrity violations",pc.embed_sheet_markdown(summary))
+
+    def test_unplaced_findings_fail_session_close(self):
+        root=Path(self.td.name); mapping=root/"map.json"
+        mapping.write_text("{}",encoding="utf-8")
+        rc=pc.main(["--ledger",str(root/"led.jsonl"),"--with-sheet","--sheet",str(root/"unplaced.json"),"--assignments",str(mapping)])
+        self.assertEqual(rc,1)
 
     def setUp(self):
         import tempfile
