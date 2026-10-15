@@ -15,6 +15,18 @@ da = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(da)
 
 
+class FakeResponse:
+    """Stands in for urlopen's response: a context manager with read()."""
+    def __init__(self, body: bytes):
+        self.body = body
+    def __enter__(self):
+        return self
+    def __exit__(self, *exc):
+        return False
+    def read(self):
+        return self.body
+
+
 def mock_transport_factory(response_doc: dict = None, code_path=None):
     calls = []
     def transport(payload, model, key):
@@ -105,19 +117,9 @@ class Adapter(unittest.TestCase):
     def test_http_count_transport_posts_to_count_endpoint(self):
         seen = []
 
-        class Resp:
-            def __init__(self, body):
-                self.body = body
-            def __enter__(self):
-                return self
-            def __exit__(self, *exc):
-                return False
-            def read(self):
-                return self.body
-
         def fake_urlopen(req, timeout):
             seen.append((req.full_url, req.get_method(), json.loads(req.data)))
-            return Resp(b'{"input_tokens": 14}')
+            return FakeResponse(b'{"input_tokens": 14}')
         real = da.urllib.request.urlopen
         da.urllib.request.urlopen = fake_urlopen
         try:
@@ -129,7 +131,7 @@ class Adapter(unittest.TestCase):
                                            "POST"))
             self.assertEqual(seen[0][2], payload)
             fake_body = [b'{"usage": {}}']
-            da.urllib.request.urlopen = lambda req, timeout: Resp(fake_body[0])
+            da.urllib.request.urlopen = lambda req, timeout: FakeResponse(fake_body[0])
             with self.assertRaises(KeyError):  # a missing count is never zero-filled
                 da._http_count_transport(payload, "claude-haiku-5-5", "sk-ant-x")
         finally:
@@ -174,10 +176,51 @@ class Adapter(unittest.TestCase):
         rc = da.main(["--check", "endpoint"])
         self.assertEqual(rc, 0)
 
-    def test_usage_parse_tolerates_missing_tokens(self):
-        # exercise _http_transport's parse logic without network: reimplement inline check
-        doc = {"usage": {"input_tokens": 12, "output_tokens": 34}}
-        self.assertEqual((doc["usage"]["input_tokens"], doc["usage"]["output_tokens"]), (12, 34))
+    def test_http_transport_reads_usage(self):
+        seen = []
+
+        def fake_urlopen(req, timeout):
+            seen.append((req.full_url, req.get_method()))
+            return FakeResponse(b'{"usage": {"input_tokens": 12, "output_tokens": 34}}')
+        real = da.urllib.request.urlopen
+        da.urllib.request.urlopen = fake_urlopen
+        try:
+            payload = {"model": "claude-haiku-5-5", "max_tokens": 16,
+                       "messages": [{"role": "user", "content": "hi"}]}
+            self.assertEqual(da._http_transport(payload, "claude-haiku-5-5", "sk-ant-x"),
+                             (12, 34))
+            self.assertEqual(seen, [("https://api.anthropic.com/v1/messages", "POST")])
+        finally:
+            da.urllib.request.urlopen = real
+
+    def test_http_transport_never_returns_unreadable_usage(self):
+        # a 200 whose usage cannot be read must raise, never come back as token counts:
+        # the dispatcher treats any exception from the send as unknown usage and keeps
+        # the reservation (test_live_dispatcher T16 checks that end to end)
+        bodies = [json.dumps(b).encode("utf-8") for b in (
+            {"id": "msg_1"},                                          # no usage block
+            {"usage": None},
+            {"usage": []},
+            {"usage": {}},
+            {"usage": {"output_tokens": 34}},                         # input missing
+            {"usage": {"input_tokens": 12}},                          # output missing
+            {"usage": {"input_tokens": None, "output_tokens": 34}},
+            {"usage": {"input_tokens": 12, "output_tokens": None}},
+            {"usage": {"input_tokens": -1, "output_tokens": 34}},
+            {"usage": {"input_tokens": 12, "output_tokens": 3.5}},
+            {"usage": {"input_tokens": "12", "output_tokens": 34}},
+            {"usage": {"input_tokens": True, "output_tokens": 34}},
+            ["not", "an", "object"],
+        )] + [b"", b"<html>gateway</html>", b"\xff\xfe"]           # not JSON / not UTF-8
+        real = da.urllib.request.urlopen
+        try:
+            for raw in bodies:
+                da.urllib.request.urlopen = lambda req, timeout, raw=raw: FakeResponse(raw)
+                with self.subTest(body=raw), self.assertRaises(Exception):
+                    da._http_transport({"model": "claude-haiku-5-5"}, "claude-haiku-5-5",
+                                       "sk-ant-x")
+        finally:
+            da.urllib.request.urlopen = real
 
 
 if __name__ == "__main__":

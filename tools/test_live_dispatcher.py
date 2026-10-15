@@ -17,6 +17,8 @@ Covers the §5 cap surface and the Gate-4 fail-closed contract:
   T13 egress reserves worst-case cost (expected input + the dispatch_fn's
       max_tokens, long-context tier included) before any send, settles to
       actual usage, and records a send that overran its reservation
+  T16 through the CLI and the real HTTP transport, a 200 whose usage cannot be
+      read is recorded as unknown (never $0), keeps its reservation and stops the pilot
 """
 from __future__ import annotations
 
@@ -524,6 +526,59 @@ with tempfile.TemporaryDirectory() as td:
     check("T14h unmapped profile exits 2", rc == 2, str(rc))
     check("T14h refusal sends nothing, no ledger line", sent == [] and counted == []
           and entries(ledger(tmp)) == [], f"{sent} {counted}")
+
+# T16 end to end through the CLI and the real HTTP transport: a 200 whose usage cannot be
+# read is never recorded as measured; the reservation is kept and the pilot stops ----------
+import pilot_report
+
+
+class Body:
+    def __init__(self, raw):
+        self.raw = raw
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self):
+        return self.raw
+
+
+for label, raw in (("no usage block", b'{"id": "msg_synthetic", "content": []}'),
+                   ("non-JSON body", b"<html>gateway</html>")):
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        import dispatch_adapter as da
+        sent = []
+        real_build, real_urlopen = da.build_dispatch_fn, da.urllib.request.urlopen
+        da.build_dispatch_fn = lambda: real_build(api_key="placeholder", env_fallback={},
+                                                  count_transport=lambda p, m, k: 1_000)
+        da.urllib.request.urlopen = lambda req, timeout: sent.append(req.full_url) or Body(raw)
+
+        def run(task_id):
+            return ld.main(["--live", "--confirm-egress", "--profile", "cloud-S",
+                            "--task-id", task_id, "--request", "x", "--work-bound", "0.05",
+                            "--review-bound", "0.01", "--ledger", str(ledger(tmp))])
+        try:
+            rc = run("T16")
+            rc_next = run("T16-next")
+        finally:
+            da.build_dispatch_fn, da.urllib.request.urlopen = real_build, real_urlopen
+        es = entries(ledger(tmp))
+        err = [x for x in es if x["task_id"] == "T16" and x["decision"] == "dispatch-error"]
+        check(f"T16 {label}: one real send, recorded as unknown usage", rc == 1
+              and sent == ["https://api.anthropic.com/v1/messages"] and len(err) == 1
+              and err[0]["usage_status"] == "unknown"
+              and (err[0]["input_tokens"], err[0]["output_tokens"], err[0]["cost_usd"])
+              == (None, None, None), f"{rc} {sent} {es}")
+        report = pilot_report.build_report(prices(), es)
+        check(f"T16 {label}: pilot_report shows a gap", report["accounting_status"] == "GAPS_FOUND"
+              and any("usage unknown" in p for p in report["problems"]), str(report["problems"]))
+        check(f"T16 {label}: pilot stopped, next task not sent", rc_next == 1 and len(sent) == 1
+              and es[-1]["task_id"] == "T16-next" and es[-1]["decision"] == "blocked-uncertain",
+              f"{rc_next} {sent} {es[-1]}")
 
 print(f"\n{'ALL PASS' if failures == 0 else f'{failures} FAILURES'}")
 sys.exit(0 if failures == 0 else 1)
