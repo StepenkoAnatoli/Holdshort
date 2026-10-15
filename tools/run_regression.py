@@ -84,6 +84,7 @@ CHECKS = [
     ("test_pricing", [sys.executable, "tools/test_pricing.py"]),
     ("test_pilot_close", [sys.executable, "tools/test_pilot_close.py"]),
     ("test_task_persistence", [sys.executable, "tools/test_task_persistence.py"]),
+    ("test_task_state_owner", [sys.executable, "tools/test_task_state_owner.py"]),
     ("test_task_crosscheck", [sys.executable, "tools/test_task_crosscheck.py"]),
     ("test_install_hooks", [sys.executable, "tools/test_install_hooks.py"]),
     ("test_hook_wiring", [sys.executable, "tools/test_hook_wiring.py"]),
