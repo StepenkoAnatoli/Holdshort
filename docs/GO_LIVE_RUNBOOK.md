@@ -4,8 +4,9 @@ Owner authorization is in force: [PHASE4_LIVE_START_PACKET.md](PHASE4_LIVE_START
 SIGNED 2026-10-10 — **$1.00/task, $20.00/pilot, 4 attempts + 1 same-profile repair,
 api.anthropic.com ONLY, 90-day window**. The real Anthropic adapter is wired
 (`tools/dispatch_adapter.py`, via `live_dispatcher.py --live`). This is the exact mechanical
-sequence for the first live session. Every step is executable as written, except the two places
-only the owner's hands can act (key pasting, the GO decision) — both marked **OWNER**.
+sequence for a qualified live session. Initial credentials and authorization are
+host configuration. Once those prerequisites are satisfied, bounded execution
+runs autonomously; a human approval step applies only when explicitly requested.
 
 ---
 
@@ -32,7 +33,8 @@ python tools/live_dispatcher.py --live \                        # adapter presen
 ```
 
 **Stop-condition**: any unexpected result blocks the session; fix and re-run before step 1.
-The expected exit-2 above proves the fail-closed path: no key ⇒ no HTTP call.
+The expected exit-2 proves refusal before egress when billing qualification or
+credentials are missing. The default record is unqualified even if a key exists.
 Clone-freshness exit 1 (the tree under you is not the pushed tree) or exit 2 (remote
 unreachable — provenance unverified) blocks the same way.
 
@@ -57,24 +59,45 @@ credential outlives the session that created it — is
 ## 2. Dry-run warm-up — no network, proves the pipeline (no OWNER needed)
 
 ```bash
+warmup_dir="$(mktemp -d)"
 python tools/live_dispatcher.py \
   --profile cloud-C --task-id dryrun-1 --request "probe" \
   --work-bound 0.01 --review-bound 0.01 \
   --expected-in-tokens 10000 --expected-out-tokens 1000 \
-  --ledger /tmp/dryrun_ledger.jsonl
+  --ledger "$warmup_dir/dryrun_ledger.jsonl"
 # expect: {"decision": "dispatched", "cost_usd": 0.0015, ...}, exit 0
 
 python tools/live_dispatcher.py --profile cloud-XYZ --task-id dryrun-2 \
-  --request "x" --work-bound 0.01 --review-bound 0.01 --ledger /tmp/dryrun_ledger.jsonl
+  --request "x" --work-bound 0.01 --review-bound 0.01 --ledger "$warmup_dir/dryrun_ledger.jsonl"
 # expect: {"decision": "unknown-profile", ...} Gate-4 fail-closed, exit 1
 ```
 
-## 3. Live dispatch — both flags required, one send *(OWNER: the GO decision)*
+Create a new temporary directory each time you repeat this warm-up. A ledger's
+SQLite authority retains attempts and deadlines even for dry runs. Reusing a
+prior warm-up ledger correctly resumes its counters; it does not start a fresh
+probe. Keep real pilot state separate and preserve it for reconciliation.
 
-**OWNER checkpoint**: confirm `.env` holds a real key and you say GO. Nothing sends without
+## 3. Live dispatch — qualified configuration, both flags required
+
+**Authorization check:** the existing authorization and exact supported scope
+must remain valid. No additional per-send human approval is required. Nothing sends without
 `--live` (wires the adapter) **and** `--confirm-egress` (explicit consent) together.
 
 **Exact pilot-start invocation** (one live send, smallest profile scope, `cloud-C`):
+
+The checked-in billing qualification is explicitly unqualified, so the real
+adapter currently refuses before key lookup, token counting, or network access.
+Supply a current host-reviewed record with `--billing-qualification` only after
+the exact endpoint, model, request mode, rates, enforceable token ceilings, and
+captured evidence have been checked. Artifact hashes verify consistency, not
+the truth of a provider contract. The supported guarantee concerns modeled
+request tokens; no final provider-bill guarantee is made.
+
+The prospective task pool and frozen schedule are generated with
+`python tools/eval_pool.py plan`. Run `python tools/eval_pool.py self-check`
+before preparing fresh trial workspaces. Each trial has a separate budget task
+ID; fixtures and their tuning/holdout allocation stay identical across arms.
+These local fixture checks do not qualify a live model or establish performance.
 
 ```bash
 python tools/live_dispatcher.py \
@@ -86,16 +109,15 @@ python tools/live_dispatcher.py \
   --task-store tools/task_state
 ```
 
-Before the send, the dispatcher posts the prompt to api.anthropic.com's free
-`/v1/messages/count_tokens` endpoint, adds 5% to the count, and reserves that many input
-tokens (or `--expected-in-tokens`, if larger) plus the adapter's `max_tokens` (4096) of output
-at the profile's rates. It refuses with `blocked-cost-cap` if the reservation does not fit
+Before a qualified send, the adapter checks the free count against the recorded
+provider-enforced input ceiling. The dispatcher reserves that ceiling plus the
+adapter's output ceiling at the applicable rates. The estimate is not used as
+proof of a billable upper bound. It refuses with `blocked-cost-cap` if this does not fit
 what is left of the task's $1.00 after known spend and mandatory verification.
 If the count request itself fails (rate limit, network, key), the run stops with an error
 before a model send and writes no dispatch ledger line. The persistent authority
 beside the ledger coordinates task and pilot reservations across CLI runs and
-concurrent instances. The count is still an estimate: an overrun is recorded at
-known cost and stops the pilot. A send with unknown usage keeps its reservation
+concurrent instances. A known overrun is recorded and stops the pilot. A send with unknown usage keeps its reservation
 and attempt instead of being treated as free. Read
 [dispatch accounting and recovery](DISPATCH_ACCOUNTING.md) before resuming an
 older pilot: a nonempty legacy ledger without an authority is refused pending

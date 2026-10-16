@@ -1,0 +1,205 @@
+{
+  "arms": [
+    "A",
+    "B",
+    "C",
+    "D"
+  ],
+  "fixture_qualification": "local-contracts",
+  "fixtures": [
+    {
+      "category": "text-bugfix",
+      "cell": "T-01",
+      "checks": "from pathlib import Path\nassert Path('README.md').read_bytes() == b'Run setup to receive the local report.\\nNo provider call is made.\\n'\n",
+      "files": {
+        "README.md": "Run setup to recieve the local report.\nNo provider call is made.\n",
+        "policy.txt": "local-only\n"
+      },
+      "fixture_id": "PE-01",
+      "prompt": "Correct the misspelled word recieve to receive in README.md. Preserve all other bytes and the trailing newline. Do not change policy.txt.",
+      "reference": {
+        "README.md": "Run setup to receive the local report.\nNo provider call is made.\n",
+        "policy.txt": "local-only\n"
+      },
+      "title": "Correct a user-facing setup instruction",
+      "writable_paths": [
+        "README.md"
+      ]
+    },
+    {
+      "category": "code-bugfix",
+      "cell": "T-01",
+      "checks": "from ranges import inclusive_range\nassert inclusive_range(2,2) == [2]\nassert inclusive_range(0,2) == [0,1,2]\nassert inclusive_range(-2,0) == [-2,-1,0]\nassert inclusive_range(3,1) == []\n",
+      "files": {
+        "ranges.py": "def inclusive_range(start, end):\n    return list(range(start, end))\n"
+      },
+      "fixture_id": "PE-02",
+      "prompt": "Fix inclusive_range(start,end) in ranges.py so it includes both endpoints, returns an empty list for descending bounds, and preserves the public signature.",
+      "reference": {
+        "ranges.py": "def inclusive_range(start, end):\n    return list(range(start, end + 1))\n"
+      },
+      "title": "Include the final index in an inclusive range",
+      "writable_paths": [
+        "ranges.py"
+      ]
+    },
+    {
+      "category": "bounded-refactor",
+      "cell": "T-02",
+      "checks": "import labels\nassert callable(getattr(labels,'normalize_name',None))\nassert labels.normalize_name(' A ') == 'a'\nassert labels.summarize([' A ','B']) == {'labels':['a','b'],'count':2}\nseen=[]\ndef observed(value):\n    seen.append(value)\n    return 'checked:' + value\nlabels.normalize_name = observed\nassert labels.summarize(['x','y']) == {'labels':['checked:x','checked:y'],'count':2}\nassert seen == ['x','y']\nassert labels.summarize([]) == {'labels':[],'count':0}\n",
+      "files": {
+        "labels.py": "def summarize(names):\n    return {'labels': [name.strip().lower() for name in names], 'count': len(names)}\n"
+      },
+      "fixture_id": "PE-03",
+      "prompt": "Extract normalize_name(value) from summarize in labels.py. summarize must call the helper once per input. Preserve output shape, order and count.",
+      "reference": {
+        "labels.py": "def normalize_name(value):\n    return value.strip().lower()\n\ndef summarize(names):\n    return {'labels': [normalize_name(name) for name in names], 'count': len(names)}\n"
+      },
+      "title": "Extract a reusable name normalizer",
+      "writable_paths": [
+        "labels.py"
+      ]
+    },
+    {
+      "category": "bounded-refactor",
+      "cell": "T-02",
+      "checks": "from dataclasses import is_dataclass\nimport models,pricing\nassert callable(getattr(models,'PriceRecord',None))\nassert models.PriceRecord is pricing.PriceRecord\nassert is_dataclass(models.PriceRecord)\nassert models.PriceRecord(2,0.5) == pricing.PriceRecord(2,0.5)\nassert pricing.total(models.PriceRecord(2,0.5)) == 1.0\nassert pricing.total(models.PriceRecord(0,3.0)) == 0\n",
+      "files": {
+        "models.py": "\"\"\"Shared records.\"\"\"\n",
+        "pricing.py": "from dataclasses import dataclass\n@dataclass\nclass PriceRecord:\n    units: int\n    rate: float\n\ndef total(record):\n    return record.units * record.rate\n"
+      },
+      "fixture_id": "PE-04",
+      "prompt": "Move PriceRecord from pricing.py into models.py. Existing callers must still import PriceRecord from pricing. Both imports must refer to the same dataclass; total must preserve behavior. Change only the two provided files.",
+      "reference": {
+        "models.py": "from dataclasses import dataclass\n@dataclass\nclass PriceRecord:\n    units: int\n    rate: float\n",
+        "pricing.py": "from models import PriceRecord\n\ndef total(record):\n    return record.units * record.rate\n"
+      },
+      "title": "Move a shared record without breaking imports",
+      "writable_paths": [
+        "models.py",
+        "pricing.py"
+      ]
+    },
+    {
+      "category": "local-request-handler",
+      "cell": "T-03",
+      "checks": "import api\nassert api.handle('GET','/summary') == (200,{'count':2,'total':7})\napi.ROWS = [5,8,1]\nassert api.handle('GET','/summary') == (200,{'count':3,'total':14})\nassert api.handle('GET','/health') == (200,{'status':'ok'})\nassert api.handle('POST','/summary') == (404,{'error':'not-found'})\nassert api.handle('GET','/missing') == (404,{'error':'not-found'})\n",
+      "files": {
+        "api.py": "ROWS = [3, 4]\ndef handle(method, path, payload=None):\n    if method == 'GET' and path == '/health':\n        return 200, {'status':'ok'}\n    return 404, {'error':'not-found'}\n"
+      },
+      "fixture_id": "PE-05",
+      "prompt": "Extend the local handle(method,path,payload=None) request function with GET /summary returning (200,{count:2,total:7}). Compute the result from ROWS. Preserve GET /health and the 404 fallback. Do not create a server or use the network.",
+      "reference": {
+        "api.py": "ROWS = [3, 4]\ndef handle(method, path, payload=None):\n    if method == 'GET' and path == '/health':\n        return 200, {'status':'ok'}\n    if method == 'GET' and path == '/summary':\n        return 200, {'count':len(ROWS),'total':sum(ROWS)}\n    return 404, {'error':'not-found'}\n"
+      },
+      "title": "Add a read-only summary route",
+      "writable_paths": [
+        "api.py"
+      ]
+    },
+    {
+      "category": "local-request-handler",
+      "cell": "T-03",
+      "checks": "from api import handle\nassert handle('POST','/normalize',[' A ','B']) == (200,{'values':['a','b']})\nassert handle('POST','/normalize',[]) == (200,{'values':[]})\nfor value in (None,'x',{},[1],['x',False]):\n    assert handle('POST','/normalize',value) == (400,{'error':'expected-string-list'})\nassert handle('GET','/version') == (200,{'version':1})\nassert handle('GET','/normalize') == (404,{'error':'not-found'})\n",
+      "files": {
+        "api.py": "def handle(method, path, payload=None):\n    if method == 'GET' and path == '/version':\n        return 200, {'version':1}\n    return 404, {'error':'not-found'}\n"
+      },
+      "fixture_id": "PE-06",
+      "prompt": "Add POST /normalize to the local request function. A list of strings returns (200,{values:[trimmed lowercase strings]}). Other payloads return (400,{error:expected-string-list}). Preserve the version route and 404 fallback. Do not start a server or use the network.",
+      "reference": {
+        "api.py": "def handle(method, path, payload=None):\n    if method == 'GET' and path == '/version':\n        return 200, {'version':1}\n    if method == 'POST' and path == '/normalize':\n        if not isinstance(payload,list) or any(not isinstance(item,str) for item in payload):\n            return 400, {'error':'expected-string-list'}\n        return 200, {'values':[item.strip().lower() for item in payload]}\n    return 404, {'error':'not-found'}\n"
+      },
+      "title": "Add a validated normalization route",
+      "writable_paths": [
+        "api.py"
+      ]
+    },
+    {
+      "category": "validation",
+      "cell": "T-04",
+      "checks": "from validation import parse_limit\nassert parse_limit(0) == 0\nassert parse_limit(7) == 7\nfor value in (True,False,-1,1.0,0.5,'1',None,float('nan'),float('inf')):\n    try:\n        parse_limit(value)\n    except ValueError as error:\n        assert str(error) == 'limit must be a nonnegative integer'\n    else:\n        raise AssertionError('invalid limit accepted')\n",
+      "files": {
+        "validation.py": "def parse_limit(value):\n    return int(value)\n"
+      },
+      "fixture_id": "PE-07",
+      "prompt": "Make parse_limit accept only nonnegative built-in integers, excluding booleans. Reject every other value with ValueError whose message is limit must be a nonnegative integer. Preserve integer zero.",
+      "reference": {
+        "validation.py": "def parse_limit(value):\n    if type(value) is not int or value < 0:\n        raise ValueError('limit must be a nonnegative integer')\n    return value\n"
+      },
+      "title": "Reject coercible but invalid discrete limits",
+      "writable_paths": [
+        "validation.py"
+      ]
+    },
+    {
+      "category": "validation",
+      "cell": "T-04",
+      "checks": "from config import load_config\nassert load_config('{\"a\":{\"b\":2}}') == {'a':{'b':2}}\nfor value,key in (('{\"x\":1,\"x\":2}','x'),('{\"a\":{\"b\":1,\"b\":2}}','b')):\n    try:\n        load_config(value)\n    except ValueError as error:\n        assert str(error) == 'duplicate key: ' + key\n    else:\n        raise AssertionError('duplicate key accepted')\nfor value in ('[]','null','1','\"text\"'):\n    try:\n        load_config(value)\n    except ValueError as error:\n        assert str(error) == 'configuration must be an object'\n    else:\n        raise AssertionError('non-object configuration accepted')\n",
+      "files": {
+        "config.py": "import json\ndef load_config(text):\n    return json.loads(text)\n"
+      },
+      "fixture_id": "PE-08",
+      "prompt": "load_config(text) must return a JSON object and reject duplicate keys at every nesting level with ValueError duplicate key: NAME. Reject non-object roots with ValueError configuration must be an object. Preserve valid nested values.",
+      "reference": {
+        "config.py": "import json\ndef _unique(pairs):\n    result = {}\n    for key,value in pairs:\n        if key in result:\n            raise ValueError('duplicate key: ' + key)\n        result[key] = value\n    return result\n\ndef load_config(text):\n    value = json.loads(text,object_pairs_hook=_unique)\n    if not isinstance(value,dict):\n        raise ValueError('configuration must be an object')\n    return value\n"
+      },
+      "title": "Reject ambiguous duplicate JSON configuration",
+      "writable_paths": [
+        "config.py"
+      ]
+    },
+    {
+      "category": "utility-state",
+      "cell": "T-05",
+      "checks": "import selection\nfirst=selection.SelectionModel(['a','b'])\nsecond=selection.SelectionModel(['a','b'])\nfirst.toggle('b')\nassert [item['class'] for item in first.render()] == ['chip','chip--selected']\nassert [item['class'] for item in second.render()] == ['chip','chip']\nfirst.toggle('b')\nassert first.selected == set()\ntry:\n    first.toggle('unknown')\nexcept ValueError as error:\n    assert str(error) == 'unknown item'\nelse:\n    raise AssertionError('unknown selection accepted')\nseen=[]\ndef observed(label,selected):\n    seen.append((label,selected))\n    return {'observed':label}\nselection.chip=observed\nassert first.render() == [{'observed':'a'},{'observed':'b'}]\nassert seen == [('a',False),('b',False)]\n",
+      "files": {
+        "design_system.py": "def chip(label, selected):\n    return {'component':'chip','label':label,'class':'chip--selected' if selected else 'chip'}\n",
+        "selection.py": "from design_system import chip\nclass SelectionModel:\n    def __init__(self,items):\n        self.items = list(items)\n        self.selected = set()\n    def toggle(self,item):\n        pass\n    def render(self):\n        return [chip(item,item in self.selected) for item in self.items]\n"
+      },
+      "fixture_id": "PE-09",
+      "prompt": "Implement SelectionModel.toggle(item): toggle only known items, raise ValueError unknown item otherwise, retain input order when rendering, and keep instances independent. Rendering must keep using the existing chip primitive from design_system.py; do not modify that file.",
+      "reference": {
+        "design_system.py": "def chip(label, selected):\n    return {'component':'chip','label':label,'class':'chip--selected' if selected else 'chip'}\n",
+        "selection.py": "from design_system import chip\nclass SelectionModel:\n    def __init__(self,items):\n        self.items = list(items)\n        self.selected = set()\n    def toggle(self,item):\n        if item not in self.items:\n            raise ValueError('unknown item')\n        if item in self.selected:\n            self.selected.remove(item)\n        else:\n            self.selected.add(item)\n    def render(self):\n        return [chip(item,item in self.selected) for item in self.items]\n"
+      },
+      "title": "Implement independent selection state",
+      "writable_paths": [
+        "selection.py"
+      ]
+    },
+    {
+      "category": "utility-state",
+      "cell": "T-05",
+      "checks": "from history import History\nhistory=History('a')\nother=History('z')\nhistory.push('b'); history.push('c'); history.undo()\nassert history.value == 'b'\nhistory.undo(); history.undo()\nassert history.value == 'a'\nhistory.redo()\nassert history.value == 'b'\nhistory.push('d'); history.redo()\nassert history.value == 'd'\nhistory.undo()\nassert history.value == 'b'\nassert other.value == 'z'\n",
+      "files": {
+        "history.py": "class History:\n    def __init__(self,initial):\n        self.entries=[initial]\n        self.index=0\n    @property\n    def value(self):\n        return self.entries[self.index]\n    def push(self,value):\n        self.entries=self.entries[:self.index+1]+[value]\n        self.index+=1\n    def undo(self):\n        pass\n    def redo(self):\n        pass\n"
+      },
+      "fixture_id": "PE-10",
+      "prompt": "Implement History.undo and redo without changing push or the public value property. Undo at the first entry and redo at the last entry are no-ops. A push after undo must discard redo history. Keep different History instances independent.",
+      "reference": {
+        "history.py": "class History:\n    def __init__(self,initial):\n        self.entries=[initial]\n        self.index=0\n    @property\n    def value(self):\n        return self.entries[self.index]\n    def push(self,value):\n        self.entries=self.entries[:self.index+1]+[value]\n        self.index+=1\n    def undo(self):\n        if self.index>0:\n            self.index-=1\n    def redo(self):\n        if self.index<len(self.entries)-1:\n            self.index+=1\n"
+      },
+      "title": "Implement undo and redo with branch truncation",
+      "writable_paths": [
+        "history.py"
+      ]
+    }
+  ],
+  "historical_ratification": false,
+  "live_model_qualification": "pending",
+  "manifest_sha256": "c6efcd0a114c9a07c1a565f31a0ac5efa518fdd182c03b629168954aa55effd4",
+  "observations_per_arm": 20,
+  "plan_revision": "d7c00f96a17c35e6c47c5ba1f7e3a9160c966042",
+  "pool_id": "smartrouter-prospective-v1",
+  "repeats": 2,
+  "schema_version": 1,
+  "scope": "Prospective engineering fixture pack; not prior owner ratification, representative-model evidence, frontend/browser qualification, or spend authorization.",
+  "seed_inputs": {
+    "ordering": "d7c00f96a17c35e6c47c5ba1f7e3a9160c966042|seed_ordering_1",
+    "split": "d7c00f96a17c35e6c47c5ba1f7e3a9160c966042|seed_holdout_1"
+  },
+  "seeds": {
+    "ordering": 14410658242273238690,
+    "split": 6520794217341159832
+  }
+}

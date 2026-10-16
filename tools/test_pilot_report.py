@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import io
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from contextlib import redirect_stdout, redirect_stderr
 
 TOOLS = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("pr", TOOLS / "pilot_report.py")
@@ -24,6 +26,176 @@ def entry(tid, pid, dec, in_t, out_t, cost):
 
 
 class PilotReport(unittest.TestCase):
+
+    def test_unsettled_return_cannot_be_appended_as_a_canonical_event(self):
+        reserved = entry("A", "cloud-C", "dispatch-reserved", None, None, None)
+        reserved.update(reservation_id="reservation", reserved_cost_usd=.01,
+                        review_reserved_usd=.02, purpose="work", usage_status="unknown")
+        returned = dict(reserved, decision="dispatch-unsettled", input_tokens=10000,
+                        output_tokens=1000, cost_usd=.0015, settlement_status="unsettled")
+        self.assertNotIn("dispatch-unsettled", pr.KNOWN_DECISIONS)
+        self.assertTrue(any("return-only" in problem for problem in pr.entry_problems(returned)))
+        report = pr.build_report(PRICES, [reserved, returned])
+        self.assertEqual(report["accounting_status"], "GAPS_FOUND")
+        self.assertFalse(report["pilot"]["total_spend_complete"])
+        self.assertTrue(any("return-only" in problem for problem in report["problems"]))
+
+    def _authority_fixture(self, directory):
+        import live_dispatcher as ld
+        ledger = Path(directory) / "ledger.jsonl"
+        dispatcher = ld.LiveDispatcher(PRICES, ledger, now_fn=lambda: 1000)
+        result = dispatcher.attempt("authority-task", "cloud-C", "synthetic", work_bound=.01,
+                                    review_bound=.02, expected_in=10000, expected_out=1000)
+        self.assertEqual(result.decision, "dispatched")
+        return ledger
+
+    def _report_cli(self, ledger):
+        output = io.StringIO()
+        with redirect_stdout(output), redirect_stderr(io.StringIO()):
+            status = pr.main(["--ledger", str(ledger)])
+        return status, json.loads(output.getvalue())
+
+    def test_cli_reads_authority_without_optional_task_store_or_writes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = self._authority_fixture(directory)
+            authority = ledger.with_name(ledger.name + ".budget.sqlite3")
+            before = (ledger.read_bytes(), authority.read_bytes())
+            status, report = self._report_cli(ledger)
+            self.assertEqual(status, 0, report["problems"])
+            self.assertEqual(report["accounting_source"], "sqlite-authority")
+            self.assertEqual(report["pilot"]["total_spend_usd"], .0015)
+            self.assertEqual(report["pilot"]["reserved_usd"], .02)
+            self.assertEqual(report["pilot"]["authority_attempts"], 1)
+            self.assertTrue(report["source_evidence"]["mirror_complete"])
+            self.assertEqual(before, (ledger.read_bytes(), authority.read_bytes()))
+
+    def test_cli_lagging_settlement_mirror_uses_committed_cost_and_preserves_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = self._authority_fixture(directory)
+            authority = ledger.with_name(ledger.name + ".budget.sqlite3")
+            ledger.write_text(ledger.read_text().splitlines()[0] + "\n", encoding="utf-8")
+            before = (ledger.read_bytes(), authority.read_bytes())
+            status, report = self._report_cli(ledger)
+            self.assertEqual(status, 1)
+            self.assertEqual(report["pilot"]["total_spend_usd"], .0015)
+            self.assertEqual(report["pilot"]["reserved_usd"], .02)
+            self.assertFalse(report["pilot"]["total_spend_complete"])
+            self.assertTrue(any("lags" in problem for problem in report["problems"]))
+            self.assertEqual(before, (ledger.read_bytes(), authority.read_bytes()))
+
+    def test_cli_missing_or_empty_mirror_still_reports_authority(self):
+        for missing in (True, False):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as directory:
+                ledger = self._authority_fixture(directory)
+                authority = ledger.with_name(ledger.name + ".budget.sqlite3")
+                if missing:
+                    ledger.unlink()
+                else:
+                    ledger.write_text("", encoding="utf-8")
+                before = authority.read_bytes()
+                status, report = self._report_cli(ledger)
+                self.assertEqual(status, 1)
+                self.assertEqual(report["source_evidence"]["jsonl_events"], 0)
+                self.assertEqual(report["pilot"]["total_spend_usd"], .0015)
+                self.assertEqual(report["pilot"]["authority_attempts"], 1)
+                self.assertEqual(authority.read_bytes(), before)
+                self.assertEqual(ledger.exists(), not missing)
+
+    def test_cli_corrupt_authority_never_certifies_complete_ledger(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = self._authority_fixture(directory)
+            authority = ledger.with_name(ledger.name + ".budget.sqlite3")
+            authority.write_bytes(b"synthetic corrupted authority")
+            before = (ledger.read_bytes(), authority.read_bytes())
+            status, report = self._report_cli(ledger)
+            self.assertEqual(status, 1)
+            self.assertEqual(report["accounting_source"], "sqlite-authority-unavailable")
+            self.assertFalse(report["pilot"]["total_spend_complete"])
+            self.assertFalse(report["pilot"]["reserved_complete"])
+            self.assertTrue(report["pilot"]["halted"])
+            self.assertEqual(report["per_task"][0]["outcome"], "accounting-unverified")
+            self.assertEqual(before, (ledger.read_bytes(), authority.read_bytes()))
+
+    def test_missing_mirror_preserves_authority_unknown_send_and_held_cash(self):
+        import live_dispatcher as ld
+        def unknown_send(*args):
+            raise TimeoutError("synthetic timeout")
+        unknown_send.max_tokens = 1
+        unknown_send.count_tokens = lambda *args: 0
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = Path(directory) / "ledger.jsonl"
+            dispatcher = ld.LiveDispatcher(PRICES, ledger, now_fn=lambda: 1000,
+                                           dispatch_fn=unknown_send, confirm_egress=True)
+            dispatcher.attempt("unknown-task", "cloud-C", "synthetic", work_bound=.01, review_bound=.02)
+            ledger.unlink()
+            status, report = self._report_cli(ledger)
+            self.assertEqual(status, 1)
+            self.assertEqual(report["pilot"]["unknown_usage_dispatches"], 1)
+            self.assertEqual(report["pilot"]["authority_attempts"], 1)
+            self.assertEqual(report["pilot"]["reserved_usd"], .03)
+            self.assertFalse(report["pilot"]["total_spend_complete"])
+            self.assertEqual(report["per_task"][0]["outcome"], "usage-unknown")
+            self.assertFalse(ledger.exists(), "reporting must not recover or replay the mirror")
+
+    def test_cli_divergence_uses_authority_and_labels_legacy_mode(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = self._authority_fixture(directory)
+            rows = pr.load_jsonl(ledger)
+            rows[-1]["cost_usd"] = 999
+            ledger.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+            status, report = self._report_cli(ledger)
+            self.assertEqual(status, 1)
+            self.assertEqual(report["pilot"]["total_spend_usd"], .0015)
+            self.assertTrue(any("diverges" in problem for problem in report["problems"]))
+            legacy = Path(directory) / "legacy.jsonl"
+            legacy.write_text(json.dumps(entry("legacy", "cloud-C", "dispatched", 10000, 1000, .0015)), encoding="utf-8")
+            status, report = self._report_cli(legacy)
+            self.assertEqual(status, 0)
+            self.assertEqual(report["accounting_source"], "legacy-ledger")
+            self.assertEqual(report["source_evidence"]["legacy_limit"], "no reservation authority checked")
+
+    def test_refusals_preserve_unknown_and_verified_outcomes(self):
+        unknown = entry("U", "cloud-C", "dispatch-error", None, None, None)
+        unknown.update(reserved_cost_usd=.1, review_reserved_usd=.02)
+        work = entry("V", "cloud-C", "dispatched", 10000, 1000, .0015)
+        verified = entry("V", "cloud-C", "verification-complete", 0, 0, 0)
+        rows = [unknown, entry("U", "cloud-C", "blocked-uncertain", 0, 0, 0),
+                work, verified, entry("V", "cloud-C", "blocked-verified", 0, 0, 0)]
+        report = pr.build_report(PRICES, rows)
+        by_id = {r["task_id"]: r for r in report["per_task"]}
+        self.assertEqual(by_id["U"]["outcome"], "usage-unknown")
+        self.assertEqual(by_id["V"]["outcome"], "verified")
+        self.assertEqual(by_id["V"]["last_refusal"]["decision"], "blocked-verified")
+        self.assertFalse(by_id["U"]["spend_complete"])
+
+    def test_reservation_overrun_is_a_problem_even_inside_caps(self):
+        row = entry("O", "cloud-C", "dispatched", 10000, 1000, .0015)
+        row["reserved_cost_usd"] = .001
+        report = pr.build_report(PRICES, [row])
+        self.assertEqual(report["accounting_status"], "GAPS_FOUND")
+        self.assertTrue(report["pilot"]["halted"])
+        self.assertEqual(report["pilot"]["reservation_overruns"], 1)
+
+    def test_later_known_work_cannot_complete_an_unknown_verification_send(self):
+        unknown = entry("A", "cloud-C", "dispatch-error", None, None, None)
+        unknown.update(purpose="verification", review_reserved_usd=.1)
+        known = entry("A", "cloud-C", "dispatched", 10000, 1000, .0015)
+        known["usage_status"] = "observed"
+        rows = [unknown, known, entry("A", "cloud-C", "verification-complete", 0, 0, 0)]
+        report = pr.build_report(PRICES, rows)
+        self.assertEqual(report["per_task"][0]["outcome"], "usage-unknown")
+        self.assertFalse(report["per_task"][0]["spend_complete"])
+        self.assertEqual(report["accounting_status"], "GAPS_FOUND")
+
+    def test_abandonment_is_terminal_and_does_not_claim_acceptance(self):
+        work = entry("A", "cloud-C", "dispatched", 10000, 1000, .0015)
+        work.update(usage_status="observed", review_reserved_usd=.1)
+        rows = [work, entry("A", "cloud-C", "task-abandoned", 0, 0, 0),
+                entry("A", "cloud-C", "blocked-abandoned", 0, 0, 0)]
+        report = pr.build_report(PRICES, rows)
+        self.assertEqual(report["per_task"][0]["outcome"], "abandoned")
+        self.assertEqual(report["pilot"]["reserved_usd"], 0)
+        self.assertEqual(report["pilot"]["total_spend_usd"], .0015)
 
     def test_clean_ledger_aggregates(self):
         # cloud-C: $0.10/MTok in, $0.50/MTok out → 10_000 in / 1_000 out = $0.0015

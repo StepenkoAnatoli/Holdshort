@@ -32,6 +32,57 @@ def state_doc(tid, attempts, spent):
 
 class Crosscheck(unittest.TestCase):
 
+    def authority_dispatcher(self, root):
+        import live_dispatcher as ld
+        def send(profile, request):
+            return 1000, 100
+        send.max_tokens = 4096
+        send.count_tokens = lambda profile, request: 1000
+        return ld.LiveDispatcher(PRICES, root / "ledger.jsonl", dispatch_fn=send, confirm_egress=True)
+
+    def test_authority_without_optional_task_store_is_consistent_and_read_only(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            dispatcher = self.authority_dispatcher(root)
+            self.assertEqual(dispatcher.attempt("A", "cloud-C", "x", work_bound=.01, review_bound=0).decision, "dispatched")
+            before = dispatcher.budget.path.read_bytes()
+            rows = [json.loads(line) for line in dispatcher.ledger_path.read_text().splitlines()]
+            result = tc.check(root / "absent-tasks", PRICES, rows, ledger_path=dispatcher.ledger_path)
+            self.assertTrue(result["consistent"], result["findings"])
+            self.assertEqual(result["source"], "sqlite-authority")
+            self.assertEqual(dispatcher.budget.path.read_bytes(), before)
+            self.assertFalse((root / "absent-tasks").exists())
+
+    def test_authority_journal_lag_is_visible_even_without_task_mirrors(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            dispatcher = self.authority_dispatcher(root)
+            mirror = dispatcher.budget._mirror
+            def lag(doc):
+                if doc["events"] and doc["events"][-1]["decision"] == "dispatched":
+                    raise OSError("synthetic mirror failure")
+                return mirror(doc)
+            dispatcher.budget._mirror = lag
+            dispatcher.attempt("A", "cloud-C", "x", work_bound=.01, review_bound=0)
+            rows = [json.loads(line) for line in dispatcher.ledger_path.read_text().splitlines()]
+            result = tc.check(root / "absent", PRICES, rows, ledger_path=dispatcher.ledger_path)
+            self.assertFalse(result["consistent"])
+            self.assertIn("mirror-lag", {row["kind"] for row in result["findings"]})
+
+    def test_authority_checksum_failure_is_not_reported_as_consistent(self):
+        import sqlite3
+        from contextlib import closing
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            dispatcher = self.authority_dispatcher(root)
+            dispatcher.attempt("A", "cloud-C", "x", work_bound=.01, review_bound=0)
+            with closing(sqlite3.connect(dispatcher.budget.path)) as connection:
+                with connection:
+                    connection.execute("UPDATE authority SET payload = '{}' WHERE id=1")
+            result = tc.check(root / "absent", PRICES, [], ledger_path=dispatcher.ledger_path)
+            self.assertFalse(result["consistent"])
+            self.assertEqual(result["findings"][0]["kind"], "authority-unreadable")
+
     def test_consistent_state_and_ledger(self):
         with tempfile.TemporaryDirectory() as td:
             sd = Path(td) / "state"
@@ -56,6 +107,22 @@ class Crosscheck(unittest.TestCase):
             kinds = {f["kind"] for f in r["findings"]}
             self.assertIn("spend-under-report", kinds)
             self.assertIn("attempts-under-report", kinds)
+
+    def test_legacy_malformed_state_and_ledger_never_report_consistent(self):
+        with tempfile.TemporaryDirectory() as td:
+            sd = Path(td)
+            rows = [ledger_entry("A", "cloud-C", "dispatched", 10000, 1000, .0015)]
+            for change in ({"spent": float("nan")}, {"task_id": []}, {"attempts": 1.5}):
+                with self.subTest(change=change):
+                    state = state_doc("A", 1, .0015)
+                    state.update(change)
+                    (sd / "A.json").write_text(json.dumps(state), encoding="utf-8")
+                    self.assertFalse(tc.check(sd, PRICES, rows)["consistent"])
+            (sd / "A.json").unlink()
+            rows[0]["cost_usd"] = float("nan")
+            result = tc.check(sd, PRICES, rows)
+            self.assertFalse(result["consistent"])
+            self.assertIn("accounting-gaps", {f["kind"] for f in result["findings"]})
 
     def test_missing_state_for_dispatched_task_flagged(self):
         with tempfile.TemporaryDirectory() as td:

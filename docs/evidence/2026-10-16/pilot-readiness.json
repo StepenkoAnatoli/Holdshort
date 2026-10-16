@@ -1,0 +1,208 @@
+{
+  "allocation": {
+    "arms": 4,
+    "fixtures": 10,
+    "holdout_per_arm": 10,
+    "repeats_per_fixture_per_arm": 2,
+    "total_per_arm": 20,
+    "trials": 80,
+    "tuning_per_arm": 10
+  },
+  "architecture": {
+    "additional_deepening_candidates": 0,
+    "existing_migration": "ADR-0001 Appendix B / PR #86; assigned separately, not implemented here",
+    "sampled_runtime_modules": 10,
+    "structural_moves": 0
+  },
+  "base_commit": "b764c67092023255b2214513c810f512b5669545",
+  "entrypoint_controls": [
+    {
+      "cost_usd": 0.0015,
+      "decision": "dispatched",
+      "dry_run": true,
+      "exit_code": 0,
+      "report": {
+        "accounting_source": "sqlite-authority",
+        "accounting_status": "intact",
+        "exit_code": 0,
+        "reserved_usd": 0.01,
+        "total_spend_usd": 0.0015
+      },
+      "run": 1
+    },
+    {
+      "cost_usd": 0.0015,
+      "decision": "dispatched",
+      "dry_run": true,
+      "exit_code": 0,
+      "run": 2
+    },
+    {
+      "cost_usd": 0.0015,
+      "decision": "dispatched",
+      "dry_run": true,
+      "exit_code": 0,
+      "run": 3
+    },
+    {
+      "basis": "checked-in qualified:false; adapter setup refuses before key lookup/network",
+      "default_live_exit_code": 2,
+      "provider_calls": 0,
+      "refusal": {
+        "decision": "dispatch-refused",
+        "reason": "live modeled-token billing qualification is not established"
+      }
+    }
+  ],
+  "external_comparison_evidence": "official primary-source fetches without Research-Kit ledger; at most WELL-SUPPORTED",
+  "final_provider_bill_guaranteed": false,
+  "fixture_controls": {
+    "fixtures": [
+      {
+        "baseline_rejected": true,
+        "fixture_id": "PE-01",
+        "passed": true,
+        "reference_accepted": true
+      },
+      {
+        "baseline_rejected": true,
+        "fixture_id": "PE-02",
+        "passed": true,
+        "reference_accepted": true
+      },
+      {
+        "baseline_rejected": true,
+        "fixture_id": "PE-03",
+        "passed": true,
+        "reference_accepted": true
+      },
+      {
+        "baseline_rejected": true,
+        "fixture_id": "PE-04",
+        "passed": true,
+        "reference_accepted": true
+      },
+      {
+        "baseline_rejected": true,
+        "fixture_id": "PE-05",
+        "passed": true,
+        "reference_accepted": true
+      },
+      {
+        "baseline_rejected": true,
+        "fixture_id": "PE-06",
+        "passed": true,
+        "reference_accepted": true
+      },
+      {
+        "baseline_rejected": true,
+        "fixture_id": "PE-07",
+        "passed": true,
+        "reference_accepted": true
+      },
+      {
+        "baseline_rejected": true,
+        "fixture_id": "PE-08",
+        "passed": true,
+        "reference_accepted": true
+      },
+      {
+        "baseline_rejected": true,
+        "fixture_id": "PE-09",
+        "passed": true,
+        "reference_accepted": true
+      },
+      {
+        "baseline_rejected": true,
+        "fixture_id": "PE-10",
+        "passed": true,
+        "reference_accepted": true
+      }
+    ],
+    "live_model_qualification": "pending",
+    "manifest_sha256": "c6efcd0a114c9a07c1a565f31a0ac5efa518fdd182c03b629168954aa55effd4",
+    "passed": true,
+    "pool_id": "smartrouter-prospective-v1",
+    "provider_calls": 0
+  },
+  "live_billing_qualified": false,
+  "not_established": [
+    "live model quality or savings",
+    "final provider bill accuracy",
+    "provider receipt authenticity",
+    "multi-machine coordination",
+    "untrusted-code containment"
+  ],
+  "prospective_plan": {
+    "fixture_qualification": "local-contracts",
+    "live_model_qualification": "pending",
+    "manifest_sha256": "c6efcd0a114c9a07c1a565f31a0ac5efa518fdd182c03b629168954aa55effd4",
+    "pool_id": "smartrouter-prospective-v1",
+    "schedule_sha256": "110b8344e0f6dc93eff08993172f27b5b3813ff0ff57915fdde6fa1f56568d45"
+  },
+  "provider_calls": 0,
+  "review_date": "2026-10-16",
+  "schema_version": 1,
+  "scope": "pilot-readiness runtime, configuration, contracts and tests; not the entire repository",
+  "source_files": {
+    ".githooks/pre-commit": "8de67d7c3ca06b5d1c112ac4f13f3a1e125b6f4284364fa13653ce688aa5e16d",
+    ".github/workflows/regression-gate.yml": "974a46c2ceb60bbb8b1774029ff8f0f96960ec9172fa10372caf412142bb91c6",
+    "skills/smart-router/SKILL.md": "4324e9baa108b193f51be20102fcb049ab4cbbb64de8390cfa00f72a541eb6e3",
+    "skills/smart-router/references/gates.md": "fef1f275b719be9869d50f40c6ec2bcda969b79a7ad464e9d69bb22cb8b7a098",
+    "skills/smart-router/references/host-hil-policy.md": "536d37b1a0c136ab2935972b8aa32fec6b25eae8fb6003b5385c9e3706adbe21",
+    "skills/smart-router/references/spec-v2.md": "783ffb8f07949104b19a5ff529ce7a8259ddc109c7ebed839fd961aea4389a73",
+    "tests/fixtures/prospective-eval/pool-v1.json": "4b9b9a08750d5c817e013b4afb7d024135923fa8466706d197d5215ae36422ac",
+    "tools/billing_qualification.py": "95e9cbefc45d2b8ebcb289370084733edd7ece91bd7ba40a6c2aa1b8753d9476",
+    "tools/dispatch_adapter.py": "40207e41c3b4682f1128bb19e07cbad5b8b2b7d3476eeda7282edd597492f452",
+    "tools/dispatch_budget.py": "93048e2ee36ebe33f2bec806fd656b07d016f40a7bdcf2a27a298baacbeb94e4",
+    "tools/eval_pool.py": "f8b2c3c9f54c0f243b3e4d15a6e80e161fb6a470f22a425a67927f361e99882c",
+    "tools/host_watchdog.py": "8750207483e76868215d4f10ee2235d60c42f7fb5aba368f85208a763125a173",
+    "tools/live_billing_qualification.json": "cab4db66b6e062245628d96e4fd708a62431afef2d8af79862dd8eb5a2706e83",
+    "tools/live_dispatcher.py": "c98c8cbcbae3fc5baf357974f24e1961b3bf9d6a760f07cc7ba65935803d3e9c",
+    "tools/live_fill_tally.py": "b0c381a7eb6fd33062192fa3a181fd24044b0875da4ba482af7dc904f7169923",
+    "tools/pilot_close.py": "feabcaa93e58e75eaeaf465890ba36ad02da6fb7f4fefad1fbbcbde8a21b8e47",
+    "tools/pilot_report.py": "cfda5f58a70a0920976ea687dcee2d0c0a81066a6e2db80d0f48848a0aca00d5",
+    "tools/prices-2.json": "8373519c39e6075bd9d223648c058785c302e9fffa728e153e58bd10ad2e96c4",
+    "tools/pricing.py": "44be4960a1416d3e9f579028a55b4ac536f64d7097c86b21ba5869bf72710dd6",
+    "tools/run_regression.py": "630f33ef94b216ed603c77c8b552433e93bbace07820c99d6c39f54fb967a6c2",
+    "tools/task_crosscheck.py": "22cfc173c6bf58e590fa6d9c70df0d3f28fbe587ca55a57dfd8ef009ffe7f182",
+    "tools/task_persistence.py": "15c6a9c98da401b0ad36bb36fe30277461fe23cf18e4d98dead46929b4f490ab",
+    "tools/task_state_owner.py": "e7d4dfc24211cfe47a59b55854efc70bece9ffdba9e525216ae1bd650fa157c0",
+    "tools/test_billing_qualification.py": "aa85820e7cfbc14526d54ea6f3bd968a5f7d7a7d1acad233504b1b97499c2da2",
+    "tools/test_dispatch_adapter.py": "7e8795587e7980d5b111928b27bc82872040f077f81ced47c612e65d43e74416",
+    "tools/test_dispatch_budget.py": "05b0d80885fd773e636791b3e67d11578b6f9e8e2e74f1ac7dbe7291215233fa",
+    "tools/test_eval_pool.py": "b6cc87cf7c1adca6f2459d477ec957524589878e78e11ea25c56f3f525e5a1d5",
+    "tools/test_host_watchdog.py": "dbc4ca80558d646e8df7d608b6e14412167459a80597e228139a24b862484980",
+    "tools/test_live_dispatcher.py": "e033b75fb6d0b58985620a1e45e81fd2e48f48acd351a3ded76cb0ca98f8ac11",
+    "tools/test_live_fill_tally.py": "dbe03790ceec363509c53eaaf58bb35f16a9aa8272e6e85a3872d51d7871f1c5",
+    "tools/test_pilot_close.py": "73206f7d11d902917841c325fd48a3e25b388956a4a1bab38e9490a70bdd02af",
+    "tools/test_pilot_report.py": "af591766401ce748debcb320f5191806fbb81a02c506492cc1a3f768300e96c4",
+    "tools/test_pricing.py": "5b5272356c6d7d1c9b4aa049d762a0596b4c5c828d368a446cd5b438d31d2db8",
+    "tools/test_task_crosscheck.py": "ae099f21ff518ce1245b02b88c9b98222359db1c5ed3bdb413d2c28525482f45",
+    "tools/test_task_persistence.py": "aadf0fd3644a9901737d91d48f20878858391a6d56988fb07b980c36f6a2dc35",
+    "tools/test_task_state_owner.py": "c2e200bd621f2e2d38b97b9d7f25ae7c1e617d9bb8e7478aa00dfd09f72770d4"
+  },
+  "source_hash_convention": "SHA-256 of UTF-8 text with CRLF/CR normalized to LF; not raw-byte billing qualification hashes",
+  "source_set_sha256": "42b62fda1449ed3d2270db994e87dbe6ea863940653316276a3cbc760d3ed986",
+  "validation": {
+    "final_required_gate": {
+      "command": "python tools/run_regression.py",
+      "entries": 50,
+      "result_location": "staged-tree pre-commit output and exact-head GitHub PR check; not asserted by this manifest"
+    },
+    "observed_focused_tests": {
+      "billing_qualification": 9,
+      "dispatch_adapter": 33,
+      "dispatch_budget": 32,
+      "eval_pool": 12,
+      "live_fill_tally": 28,
+      "pilot_close": 20,
+      "pilot_report": 31
+    },
+    "preintegration_gate": {
+      "base": "23d79da",
+      "entries": 49,
+      "result": "PASS"
+    }
+  }
+}

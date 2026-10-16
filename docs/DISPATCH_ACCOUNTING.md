@@ -8,10 +8,11 @@ tracked in [#47](https://github.com/StepenkoAnatoli/SmartRouter/issues/47) and
 
 The implementation has been tested with synthetic transports and real local
 processes. It does not establish provider qualification, final billing accuracy
-or savings. Input counts still use the provider's estimate plus a 5% margin;
-an unexpected overrun is recorded at known cost and stops further dispatch.
-A reliable strict live billing bound remains unqualified: recording an overrun
-does not prevent the first charge from exceeding its estimate.
+or savings. The real adapter now requires an explicit qualification record and
+uses a provider-enforced input ceiling for modeled token reservations. Injected
+estimate-only transports retain their documented 5% margin and carry their own
+qualification responsibility. An unexpected overrun is recorded and stops
+dispatch. No unconditional final provider-bill guarantee is established.
 
 ## What is reserved
 
@@ -50,6 +51,26 @@ transports. This is an HTTP timeout, not proof of an end-to-end task deadline or
 that a timed-out provider request incurred no charge. Custom transports remain
 responsible for their own destination and timeout behavior.
 
+### Billing qualification
+
+`tools/live_billing_qualification.json` is deliberately unqualified. The default
+real adapter refuses before key lookup or network access until the host supplies
+a valid record using `--billing-qualification`. A record binds the approved
+endpoint, exact model/profile mapping, standard global plaintext request mode,
+price revision and file hash, validity interval, and provider-enforced input and
+output token ceilings. Local captured evidence must cover provider limits,
+rates, and request scope; its paths and hashes are checked on every count/send.
+Updating the record requires rebuilding the adapter. A stale dispatcher price
+snapshot also refuses execution.
+
+The request pins standard service, global inference, and nonstreaming output.
+Unexpected response model, cache/tool usage, billing modifiers, or malformed
+usage cannot settle as ordinary two-counter spend. They remain unknown. A count
+is checked against the qualified ceiling; it does not prove that ceiling.
+Captured evidence hashes establish consistency, while the trusted host remains
+responsible for the evidence's truth and applicability. The scope is explicitly
+`modeled-request-tokens`, with `final_bill_guaranteed: false`.
+
 ## Persistent authority
 
 With a ledger at `.local/pilot/ledger.jsonl`, the authority is stored at
@@ -65,7 +86,11 @@ before transport. The append-only JSONL ledger is a mirror of its durable event
 journal, with matching reservation IDs on reservation and settlement records.
 Prompts, provider keys and exception contents are not included in these events.
 
-Keep the database, ledger and optional task-state directory together. The
+Keep the database, ledger, its `.budget.sqlite3.recovery` directory, and optional
+task-state directory together at their pinned absolute paths. Relative CLI paths
+resolve against the repository root, so changing the working directory cannot
+create a fresh allowance. Moving a pilot requires deliberate reconciliation;
+path/cap/binding changes refuse execution rather than resetting counters. The
 database files are ignored by Git. This is coordination on one local filesystem;
 it is not a distributed budget service for multiple machines or network shares.
 
@@ -104,7 +129,64 @@ The CLI also accepts `--purpose verification` and `--review-calls`. Completion
 and receipt reconciliation are host APIs, so a standalone CLI send does not
 automatically release required verification budget.
 
+A failed verification still consumes its physical attempt. Once its usage is
+settled, an available attempt and retained review cash can support retrying the
+required check without buying another work call. A refusal keeps
+`purpose: verification` in its journal record.
+
+The host can close an unsuccessful or expired task with
+`dispatcher.abandon_task(task_id, evidence_ref="path/to/failure-evidence")`.
+This requires no unresolved reservation, preserves spent cash and attempts,
+releases unused review cash/call slots, and records terminal `task-abandoned`.
+Reports label it `abandoned`, never completed. A different task halting the pilot
+does not prevent recording this task's already verified completion.
+
 ## Failed sends and uncertain usage
+
+The SQLite commit and its derived JSONL append are distinct outcomes. If the
+authority commits but the mirror append fails, the returned result retains the
+committed decision, reservation ID, usage, and cost, with `mirror_status: pending`.
+A completed send is never relabeled as a pre-send refusal because its mirror is
+behind.
+
+After transport, a reservation-bound recovery receipt is flushed before
+settlement. It contains accounting metadata, not the prompt or key. If settlement
+cannot reach the authority, `dispatch-unsettled` retains the observed usage and
+reservation ID. This is a **return-only observation**, not an authoritative
+journal event. Preserve it as recovery evidence; never append a returned result
+to the canonical JSONL yourself. Recover the matching reservation instead of
+starting another attempt. The next successful authority transaction replays each receipt
+once before admitting another send. A kernel-owned lease identifies a running
+transport; process death or a finished transport with no settled receipt leaves
+an uncertain reservation and stops admission. This preserves concurrent running
+transports while refusing to treat an orphan as free allowance. If receipt
+storage fails too, known in-memory evidence is still returned and the retained
+reservation requires reconciliation. An explicit new `attempt` is not a request
+idempotency key; hosts must use the returned reservation identity when recovering.
+
+### Host compatibility amendment — 2026-10-16
+
+The correctness fixes for issues #75–#83 intentionally extend the accounting
+contract. They are separate from ADR-0001's read-owner migration; deploy the
+matching dispatcher, report, crosscheck, tally, and host instructions together.
+Existing paths, field names, and decision meanings remain unchanged.
+
+| Addition | Meaning and compatibility rule |
+| --- | --- |
+| `task-abandoned` | Canonical terminal event: release unused verification allowance, retain attempts and charges, and never claim acceptance. |
+| `blocked-abandoned` | Canonical refusal: an abandoned task cannot resume. |
+| Task `abandoned` flag | Optional boolean; absence in an older authority means `false`. Never remove or reset a true value to resume work. |
+| Event profile `<not-dispatched>` | Used only for abandonment before any physical send; zero usage and zero cost. It is a sentinel, never a dispatchable model profile. |
+| `settlement_status` | Optional returned/event metadata: `committed` or `unsettled`; null/absence makes no additional durability claim. |
+| `mirror_status` | Optional return metadata: `synchronized` or `pending`; null/absence is unspecified. A pending mirror does not mean the send failed to happen. |
+| `transport_started_at`, `transport_finished_at` | Optional observed timestamps. Null/absence means latency was not measured; timestamp spacing between events is not transport latency. |
+| `dispatch-unsettled` | Return-only observation with the original reservation identity and any known usage. Not part of `KNOWN_DECISIONS` for canonical journals; recover, do not append or blindly resend. |
+
+Older readers that do not understand a canonical terminal event must stop with
+an unknown-contract finding. They must not coerce it into completion, zero
+spending, or permission to retry. Preserve optional metadata when copying
+records. A host updating this checkout must load these instructions before
+resuming a persisted pilot. No new human approval checkpoint is introduced.
 
 | Observation | Durable result |
 | --- | --- |
@@ -184,11 +266,21 @@ Invalid prior recorded sheets are retained for reconciliation. They are not
 silently upgraded, cleared, or recounted as valid version 2 evidence. Preserve
 the original sheet and ledger before preparing a replacement.
 
-Sheet capacity is separate from evaluation readiness. The ratified Phase 3 pool
-has five tasks and two repeats per task, giving only **10 observations per arm**
-against its minimum of 20. Before a live trial, a qualified prospective task pool
-must supply the missing distinct tasks while preserving representative coverage
-and the tuning/holdout split. Extra slots do not amend or complete the protocol.
+The historical five-task pool could supply only 10 observations per arm. The
+prospective amendment in Phase 3 §13 now supplies ten locally checked fixtures
+and a pinned 80-trial schedule. `python tools/eval_pool.py plan` produces the
+complete assignments map. Imports of that map bind the sheet to the pool and
+schedule hashes, distinguish fixture identity from each execution's budget task
+ID, preserve its split/repeat assignment, and check execution order. A repair or
+verification call cannot masquerade as another independent repeat. Legacy maps
+remain readable but are explicitly not bound to this prospective plan.
+
+Actual transport start/finish timestamps determine `latency_s` when available.
+Missing timing remains `not_measured_transport_latency`; the separate
+`inter_observation_interval_s` is never presented as transport latency.
+Reconciliation retains original execution timing instead of measuring the host's
+wait for accounting evidence. Local fixture checks establish task contracts;
+they do not qualify live models or provide model-performance measurements.
 See the [sampling caveat](PHASE4_PILOT_REPORT.md#8-live-sampling-plan--how-each-matrix-cell-fills-with-measured-observations-row-4-start)
 and [audit follow-ups](GAP_AUDIT_FOLLOWUPS_2026-10-15.md).
 

@@ -1,5 +1,7 @@
 """Reservation, process concurrency and crash tests. No provider requests."""
 from copy import deepcopy
+from dataclasses import asdict
+from contextlib import contextmanager
 import json
 import multiprocessing as mp
 import os
@@ -10,7 +12,7 @@ import unittest
 from unittest.mock import patch
 
 import live_dispatcher as ld
-from dispatch_budget import BudgetStateError
+from dispatch_budget import BudgetStateError, read_authority
 import dispatch_adapter as adapter
 import pilot_report
 import pilot_close
@@ -68,7 +70,71 @@ def crash_writer(folder):
     dispatcher(folder, send).attempt("crash", "p", "synthetic", work_bound=.75, review_bound=.1)
 
 
+def live_owner_writer(folder, task, entered, release, results):
+    config = prices()
+    config["pilot_caps"].update(max_cost_per_task_usd=2, max_cost_per_pilot_usd=2)
+    def send(*args):
+        entered.put(task)
+        if not release.wait(20):
+            raise TimeoutError("synthetic owner not released")
+        return 500_000, 0
+    send.max_tokens = 1
+    send.count_tokens = lambda *args: 0
+    result = dispatcher(folder, send, config).attempt(task, "p", "synthetic", work_bound=.5, review_bound=0)
+    results.put(result.decision)
+
+
 class DispatchBudget(unittest.TestCase):
+    def test_invalid_purpose_refuses_without_state_or_transport_mutation(self):
+        for existing in (False, True):
+            for purpose in ("invalid-purpose", "", None, [], {}):
+                with self.subTest(existing=existing, purpose=purpose), tempfile.TemporaryDirectory() as folder:
+                    send, calls = transport(100_000)
+                    d = dispatcher(folder, send)
+                    if existing:
+                        self.assertEqual(d.attempt("task", "p", "initial", work_bound=.1,
+                                                  review_bound=0).decision, "dispatched")
+                    before = {str(path.relative_to(folder)): path.read_bytes()
+                              for path in Path(folder).rglob("*") if path.is_file()}
+                    calls_before = list(calls)
+                    with patch.object(d, "_task", side_effect=AssertionError("task must not be read or created")):
+                        result = d.attempt("task", "p", "invalid", work_bound=.1,
+                                           review_bound=0, purpose=purpose)
+                    self.assertEqual(result.decision, "blocked-gate4")
+                    self.assertEqual(result.purpose, "work")
+                    self.assertEqual(pilot_report.entry_problems(asdict(result)), [])
+                    self.assertEqual(calls, calls_before)
+                    self.assertEqual(before, {str(path.relative_to(folder)): path.read_bytes()
+                                             for path in Path(folder).rglob("*") if path.is_file()})
+
+    def test_zero_dispatch_abandonment_is_canonical_and_preserves_empty_last_profile(self):
+        for refusal in (None, "unknown-profile", "blocked-gate4"):
+            with self.subTest(refusal=refusal), tempfile.TemporaryDirectory() as folder:
+                send, calls = transport(100_000)
+                d = dispatcher(folder, send)
+                if refusal is not None:
+                    profile = "missing-profile" if refusal == "unknown-profile" else "p"
+                    result = d.attempt("task", profile, "preflight", work_bound=2, review_bound=0)
+                    self.assertEqual(result.decision, refusal)
+                result = d.abandon_task("task", evidence_ref="fixture://not-started")
+                self.assertEqual(result.decision, "task-abandoned")
+                self.assertEqual(result.profile_id, "<not-dispatched>")
+                self.assertEqual(pilot_report.entry_problems(asdict(result)), [])
+                snapshot = read_authority(d.ledger_path)
+                task = snapshot["tasks"]["task"]
+                self.assertTrue(task["abandoned"])
+                self.assertFalse(task["verified"])
+                self.assertEqual(task["last_profile"], "")
+                self.assertEqual(task["attempts"], 0)
+                self.assertEqual(task["repairs"], 0)
+                self.assertEqual(float(task["charged"]), 0)
+                report = pilot_report.build_report(d.prices, snapshot["events"])
+                self.assertEqual(report["accounting_status"], "intact", report["problems"])
+                self.assertEqual(report["per_task"][0]["outcome"], "abandoned")
+                self.assertEqual(d.attempt("task", "p", "after", work_bound=.1,
+                                           review_bound=0).decision, "blocked-abandoned")
+                self.assertEqual(calls, [])
+
     def test_honest_full_bound_blocks_second_send_across_restart(self):
         with tempfile.TemporaryDirectory() as folder:
             send, calls = transport(1_000_000)
@@ -198,8 +264,8 @@ class DispatchBudget(unittest.TestCase):
             self.assertEqual(events[0]["usage_status"], "unknown")
             self.assertEqual(d.attempt("crash", "p", "again", work_bound=.01, review_bound=0).decision,
                              "blocked-uncertain")
-            self.assertEqual(d.attempt("other", "p", "other", work_bound=.2, review_bound=0).decision,
-                             "blocked-pilot-cap")
+            self.assertEqual(d.attempt("other", "p", "other", work_bound=.01, review_bound=0).decision,
+                             "blocked-uncertain")
             self.assertEqual(calls, [])
             identifier = task["pending"]["id"]
             with self.assertRaises(ValueError):
@@ -328,15 +394,292 @@ class DispatchBudget(unittest.TestCase):
                         raise OSError("simulated crash before mirror")
                     return original(doc)
                 with patch.object(d.budget, "_mirror", broken):
-                    self.assertEqual(d.attempt("task", "p", "req", work_bound=.75, review_bound=.1).decision,
-                                     "blocked:budget-state")
+                    result = d.attempt("task", "p", "req", work_bound=.75, review_bound=.1)
+                    self.assertEqual(result.decision, "dispatched")
+                    self.assertIsNotNone(result.reservation_id)
+                    self.assertEqual(result.input_tokens, 750_000)
+                    self.assertEqual(result.cost_usd, .75)
+                    self.assertEqual(result.settlement_status, "committed")
+                    if phase == "dispatched":
+                        self.assertEqual(result.mirror_status, "pending")
                 restored = dispatcher(folder, send)
                 self.assertEqual(restored._task("task")["attempts"], 1)
-                self.assertEqual(restored.pilot_spent, .75 if phase == "dispatched" else 0)
-                self.assertEqual(restored.pilot_reserved, .1 if phase == "dispatched" else .85)
-                self.assertEqual(len(calls), 1 if phase == "dispatched" else 0)
+                self.assertEqual(restored.pilot_spent, .75)
+                self.assertEqual(restored.pilot_reserved, .1)
+                self.assertEqual(len(calls), 1)
                 events = [json.loads(line) for line in restored.ledger_path.read_text().splitlines()]
-                self.assertEqual(events[-1]["decision"], phase)
+                self.assertEqual(events[-1]["decision"], "dispatched")
+
+    def test_settlement_lock_failure_retains_usage_and_recovers_overrun_before_send(self):
+        for receipt_failure in (False, True):
+            with self.subTest(receipt_failure=receipt_failure), tempfile.TemporaryDirectory() as folder:
+                config = prices()
+                config["pilot_caps"].update(max_cost_per_task_usd=2, max_cost_per_pilot_usd=2)
+                holder = None
+                sends = []
+                def send(*args):
+                    sends.append("A")
+                    holder.execute("BEGIN IMMEDIATE")
+                    return 1_500_000, 0
+                send.max_tokens, send.count_tokens = 1, lambda *args: 0
+                d = dispatcher(folder, send, config)
+                d._task("A")
+                real_connect = sqlite3.connect
+                holder = real_connect(d.budget.path, isolation_level=None)
+                def fast_connect(*args, **kwargs):
+                    kwargs["timeout"] = .05
+                    return real_connect(*args, **kwargs)
+                try:
+                    with patch("dispatch_budget.sqlite3.connect", fast_connect):
+                        if receipt_failure:
+                            with patch.object(d.budget, "write_receipt", side_effect=OSError("synthetic disk full")):
+                                result = d.attempt("A", "p", "PRIVATE_PROMPT_MARKER", work_bound=.5, review_bound=0)
+                        else:
+                            result = d.attempt("A", "p", "PRIVATE_PROMPT_MARKER", work_bound=.5, review_bound=0)
+                finally:
+                    holder.rollback()
+                    holder.close()
+                self.assertEqual(result.decision, "dispatch-unsettled")
+                self.assertEqual(result.input_tokens, 1_500_000)
+                self.assertEqual(result.cost_usd, 1.5)
+                self.assertEqual(result.known_cost_usd, 1.5)
+                self.assertIsNotNone(result.reservation_id)
+                self.assertEqual(result.settlement_status, "unsettled")
+                for path in d.budget.recovery_dir.glob("*.json"):
+                    self.assertNotIn("PRIVATE_PROMPT_MARKER", path.read_text())
+                later, later_calls = transport(500_000)
+                restarted = dispatcher(folder, later, config)
+                blocked = restarted.attempt("B", "p", "new", work_bound=.5, review_bound=0)
+                self.assertEqual(blocked.decision, "blocked-uncertain")
+                self.assertEqual(later_calls, [])
+                if receipt_failure:
+                    snapshot = read_authority(d.ledger_path)
+                    self.assertEqual(snapshot["tasks"]["A"]["pending"]["status"], "uncertain")
+                    restarted.reconcile_dispatch("A", result.reservation_id, input_tokens=1_500_000,
+                        output_tokens=0, evidence_ref="fixture://host-retained-receipt", transport_finished=True)
+                snapshot = read_authority(d.ledger_path)
+                self.assertEqual(float(snapshot["tasks"]["A"]["charged"]), 1.5)
+                self.assertTrue(snapshot["overrun"])
+                self.assertTrue(snapshot["halted"])
+                self.assertIsNone(snapshot["tasks"]["A"]["pending"])
+                self.assertEqual(restarted.pilot_spent, 1.5)
+                self.assertEqual(sends, ["A"])
+
+    def test_live_owned_concurrent_transports_are_not_orphans(self):
+        context = mp.get_context("spawn")
+        with tempfile.TemporaryDirectory() as folder:
+            entered, results = context.Queue(), context.Queue()
+            release = context.Event()
+            children = [context.Process(target=live_owner_writer, args=(folder, task, entered, release, results))
+                        for task in ("A", "B")]
+            try:
+                for child in children:
+                    child.start()
+                self.assertEqual({entered.get(timeout=20), entered.get(timeout=20)}, {"A", "B"})
+                snapshot = read_authority(Path(folder) / "ledger.jsonl")
+                self.assertFalse(snapshot.get("halted", False))
+                self.assertTrue(all(task["pending"]["status"] == "pending" for task in snapshot["tasks"].values()))
+            finally:
+                release.set()
+                for child in children:
+                    child.join(timeout=20)
+                    if child.is_alive():
+                        child.terminate()
+                        child.join()
+                entered.close()
+            self.assertEqual([child.exitcode for child in children], [0, 0])
+            self.assertEqual([results.get(timeout=5) for _ in children], ["dispatched", "dispatched"])
+            results.close()
+
+    def test_another_caller_can_replay_receipt_before_original_settlement(self):
+        with tempfile.TemporaryDirectory() as folder:
+            send_a, calls_a = transport(300_000)
+            send_b, calls_b = transport(200_000)
+            a, b = dispatcher(folder, send_a), dispatcher(folder, send_b)
+            original = a.budget.transaction
+            interleaved = []
+            @contextmanager
+            def transaction(*args, **kwargs):
+                if kwargs.get("settling") is not None and not interleaved:
+                    interleaved.append(True)
+                    result_b = b.attempt("B", "p", "B", work_bound=.2, review_bound=0)
+                    self.assertEqual(result_b.decision, "dispatched")
+                with original(*args, **kwargs) as doc:
+                    yield doc
+            with patch.object(a.budget, "transaction", transaction):
+                result = a.attempt("A", "p", "A", work_bound=.3, review_bound=0)
+            self.assertEqual(result.decision, "dispatched")
+            self.assertEqual(result.settlement_status, "committed")
+            self.assertEqual(result.cost_usd, .3)
+            self.assertEqual(len(calls_a), 1)
+            self.assertEqual(len(calls_b), 1)
+            self.assertEqual(a.pilot_spent, .5)
+            snapshot = read_authority(a.ledger_path)
+            self.assertEqual([e["task_id"] for e in snapshot["events"] if e["decision"] == "dispatched"], ["A", "B"])
+
+    def test_failed_verification_keeps_one_owed_slot_within_attempt_cap(self):
+        for known_failure in (False, True):
+            with self.subTest(known_failure=known_failure), tempfile.TemporaryDirectory() as folder:
+                config = prices()
+                config["pilot_caps"]["max_attempts_per_task"] = 4
+                outputs = [(300_000, 0), ld.DispatchFailure("synthetic", input_tokens=0, output_tokens=0)
+                           if known_failure else TimeoutError("synthetic"), (100_000, 0)]
+                def send(*args):
+                    output = outputs.pop(0)
+                    if isinstance(output, Exception):
+                        raise output
+                    return output
+                send.max_tokens, send.count_tokens = 1, lambda *args: 0
+                d = dispatcher(folder, send, config)
+                d.attempt("A", "p", "work", work_bound=.3, review_bound=.2)
+                failed = d.attempt("A", "p", "check", work_bound=.1, review_bound=0, purpose="verification")
+                self.assertEqual(failed.decision, "dispatch-error")
+                if not known_failure:
+                    d.reconcile_dispatch("A", failed.reservation_id, input_tokens=0, output_tokens=0,
+                        evidence_ref="fixture://not-billed", transport_finished=True)
+                self.assertEqual(d._task("A")["review_calls_reserved"], 1)
+                retried = d.attempt("A", "p", "check-again", work_bound=.1, review_bound=0, purpose="verification")
+                self.assertEqual(retried.decision, "dispatched")
+                self.assertEqual(retried.purpose, "verification")
+                refused = d.attempt("A", "p", "extra-check", work_bound=.1, review_bound=0, purpose="verification")
+                self.assertEqual(refused.decision, "blocked-gate4")
+                self.assertEqual(refused.purpose, "verification")
+                self.assertEqual(outputs, [])
+
+    def test_failed_verification_never_restores_beyond_attempt_cap(self):
+        with tempfile.TemporaryDirectory() as folder:
+            config = prices()
+            config["pilot_caps"]["max_attempts_per_task"] = 2
+            send, _ = transport(100_000)
+            d = dispatcher(folder, send, config)
+            d.attempt("A", "p", "work", work_bound=.1, review_bound=.2)
+            def fail(*args):
+                raise ld.DispatchFailure("synthetic", input_tokens=0, output_tokens=0)
+            fail.max_tokens, fail.count_tokens = 1, lambda *args: 0
+            d.dispatch_fn = fail
+            d.attempt("A", "p", "check", work_bound=.1, review_bound=0, purpose="verification")
+            self.assertEqual(d._task("A")["review_calls_reserved"], 0)
+            self.assertEqual(d.attempt("A", "p", "again", work_bound=.1, review_bound=0,
+                                     purpose="verification").decision, "blocked-attempt-cap")
+
+    def test_abandonment_releases_review_without_claiming_verification(self):
+        with tempfile.TemporaryDirectory() as folder:
+            send, calls = transport(500_000)
+            d = dispatcher(folder, send)
+            clock = [1000]
+            d.now_fn = lambda: clock[0]
+            d.attempt("A", "p", "work", work_bound=.5, review_bound=.4)
+            clock[0] = 1300
+            self.assertEqual(d.attempt("A", "p", "check", work_bound=.4, review_bound=0,
+                                      purpose="verification").decision, "blocked-deadline")
+            closed = d.abandon_task("A", evidence_ref="fixture://deadline-expired")
+            self.assertEqual(closed.decision, "task-abandoned")
+            task = d._task("A")
+            self.assertTrue(task["abandoned"])
+            self.assertFalse(task["verified"])
+            self.assertEqual(task["attempts"], 1)
+            self.assertEqual(task["spent"], .5)
+            self.assertEqual(d.pilot_reserved, 0)
+            self.assertEqual(d.attempt("A", "p", "again", work_bound=.1, review_bound=0).decision,
+                             "blocked-abandoned")
+            with self.assertRaises(BudgetStateError):
+                d.complete_verification("A", evidence_ref="fixture://not-verified")
+            fresh, fresh_calls = transport(200_000)
+            self.assertEqual(dispatcher(folder, fresh).attempt("B", "p", "new", work_bound=.2,
+                review_bound=0).decision, "dispatched")
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(len(fresh_calls), 1)
+
+    def test_own_completion_is_allowed_while_another_task_halts_pilot(self):
+        with tempfile.TemporaryDirectory() as folder:
+            send, _ = transport(100_000)
+            a = dispatcher(folder, send)
+            a.attempt("A", "p", "work", work_bound=.1, review_bound=.2)
+            a.attempt("A", "p", "check", work_bound=.1, review_bound=0, purpose="verification")
+            overrun, _ = transport(500_000)
+            b = dispatcher(folder, overrun)
+            b.attempt("B", "p", "overrun", work_bound=.1, review_bound=0)
+            result = a.complete_verification("A", evidence_ref="fixture://passed")
+            self.assertEqual(result.decision, "verification-complete")
+            self.assertTrue(a._task("A")["verified"])
+            self.assertEqual(a.pilot_reserved, 0)
+            self.assertTrue(read_authority(a.ledger_path)["halted"])
+
+    def test_abandonment_cannot_release_an_unsettled_send(self):
+        with tempfile.TemporaryDirectory() as folder:
+            def fail(*args):
+                raise TimeoutError("synthetic")
+            fail.max_tokens, fail.count_tokens = 1, lambda *args: 0
+            d = dispatcher(folder, fail)
+            d.attempt("A", "p", "work", work_bound=.5, review_bound=.2)
+            with self.assertRaises(BudgetStateError):
+                d.abandon_task("A", evidence_ref="fixture://still-unknown")
+            self.assertEqual(d.pilot_reserved, .7)
+
+    def test_optional_task_store_can_be_omitted_but_not_rebound(self):
+        with tempfile.TemporaryDirectory() as folder:
+            send, calls = transport(100_000)
+            first = dispatcher(folder, send)
+            first.attempt("A", "p", "one", work_bound=.1, review_bound=0)
+            omitted = dispatcher(folder, send, store=False)
+            self.assertEqual(omitted.attempt("A", "p", "two", work_bound=.1, review_bound=0).decision, "dispatched")
+            self.assertEqual(omitted._task("A")["attempts"], 2)
+            different = ld.LiveDispatcher(prices(), first.ledger_path, now_fn=lambda: 1000,
+                dispatch_fn=send, confirm_egress=True, task_store=Path(folder) / "different")
+            refused = different.attempt("B", "p", "three", work_bound=.1, review_bound=0)
+            self.assertEqual(refused.decision, "blocked:budget-state")
+            self.assertIn("explicit task-store", refused.reason)
+            self.assertEqual(len(calls), 2)
+
+    def test_qualified_adapter_cannot_use_different_dispatcher_prices(self):
+        with tempfile.TemporaryDirectory() as folder:
+            send, calls = transport(100_000)
+            send.price_configuration = prices()
+            send.price_configuration["profiles"]["p"]["input_rate_per_mtok"] = 2
+            with patch.object(send, "count_tokens") as count:
+                result = dispatcher(folder, send).attempt("A", "p", "synthetic", work_bound=.1, review_bound=0)
+            self.assertEqual(result.decision, "blocked-gate4")
+            self.assertEqual(calls, [])
+            count.assert_not_called()
+
+    def test_actual_transport_duration_survives_unknown_usage_reconciliation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            clock = [1000]
+            def send(*args):
+                clock[0] = 1003.5
+                raise TimeoutError("synthetic")
+            send.max_tokens, send.count_tokens = 1, lambda *args: 0
+            d = dispatcher(folder, send)
+            d.now_fn = lambda: clock[0]
+            failed = d.attempt("A", "p", "synthetic", work_bound=.5, review_bound=.1)
+            self.assertEqual(failed.transport_started_at, 1000)
+            self.assertEqual(failed.transport_finished_at, 1003.5)
+            clock[0] = 1100
+            result = d.reconcile_dispatch("A", failed.reservation_id, input_tokens=100_000,
+                output_tokens=0, evidence_ref="fixture://receipt", transport_finished=True)
+            self.assertEqual(result.ts, 1100)
+            self.assertEqual(result.transport_started_at, 1000)
+            self.assertEqual(result.transport_finished_at, 1003.5)
+
+    def test_authority_snapshot_is_read_only_and_does_not_repair_mirror(self):
+        with tempfile.TemporaryDirectory() as folder:
+            missing = Path(folder) / "missing" / "ledger.jsonl"
+            with self.assertRaises(BudgetStateError):
+                read_authority(missing)
+            self.assertFalse(missing.parent.exists())
+            send, _ = transport(100_000)
+            d = dispatcher(folder, send)
+            original = d.budget._mirror
+            def fail_final(doc):
+                if doc["events"] and doc["events"][-1]["decision"] == "dispatched":
+                    raise OSError("synthetic derived failure")
+                return original(doc)
+            with patch.object(d.budget, "_mirror", fail_final):
+                d.attempt("A", "p", "one", work_bound=.1, review_bound=0)
+            before = d.ledger_path.read_bytes()
+            snapshot = read_authority(d.ledger_path)
+            self.assertEqual(snapshot["tasks"]["A"]["charged"], "0.1")
+            self.assertEqual(d.ledger_path.read_bytes(), before)
 
     def test_missing_corrupt_or_changed_authority_never_resets(self):
         for mutation in ("delete", "corrupt", "payload", "caps", "ledger", "store"):
@@ -370,10 +713,17 @@ class DispatchBudget(unittest.TestCase):
                 self.assertEqual(len(calls), 1)
 
     def test_real_adapter_missing_usage_is_refused_after_response(self):
-        for usage in (None, {}, {"input_tokens": True, "output_tokens": 0}, {"input_tokens": 1}):
-            with self.subTest(usage=usage), patch.object(adapter, "_post", return_value={"usage": usage}):
-                with self.assertRaises(RuntimeError):
-                    adapter._http_transport({}, "synthetic", "placeholder")
+        from test_billing_qualification import synthetic_fixture
+        with tempfile.TemporaryDirectory() as folder:
+            qualification, price_path, _ = synthetic_fixture(folder)
+            fn = adapter.build_dispatch_fn(api_key="placeholder", qualification_path=qualification,
+                                           prices_path=price_path, now_fn=lambda: 1500)
+            for usage in (None, {}, {"input_tokens": True, "output_tokens": 0}, {"input_tokens": 1}):
+                with self.subTest(usage=usage), patch.object(adapter, "_post", return_value={
+                        "model": "claude-haiku-5-5", "usage": usage}) as posted:
+                    with self.assertRaises(RuntimeError):
+                        fn("cloud-C", "synthetic")
+                    posted.assert_called_once()
 
     def test_deadline_expiring_during_durable_commit_cancels_before_transport(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -414,7 +764,9 @@ class DispatchBudget(unittest.TestCase):
             close = pilot_close.close_ledger(prices(), entries())
             self.assertEqual(close["pilot_totals"]["headroom_usd"], .15)
             self.assertEqual(close["pilot_totals"]["completed"], 0)
-            sheet = {"cells": {}}
+            from gen_live_fill_sheet import build_sheet
+            sheet = build_sheet()
+            sheet.pop("evaluation_plan", None)  # Empty legacy-format fixture; this test audits unknown accounting.
             findings = live_fill_tally.import_from_ledger(sheet, entries(), {})
             self.assertEqual([item["kind"] for item in findings], ["unknown-usage"])
             task = d._task("task")

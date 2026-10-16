@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import io
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from contextlib import redirect_stdout, redirect_stderr
 
 TOOLS = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("pc", TOOLS / "pilot_close.py")
@@ -96,6 +98,96 @@ class PilotCloseSheetMode(unittest.TestCase):
 
 class PilotClose(unittest.TestCase):
 
+    def _authority_fixture(self, directory):
+        import live_dispatcher as ld
+        ledger = Path(directory) / "ledger.jsonl"
+        dispatcher = ld.LiveDispatcher(PRICES, ledger, now_fn=lambda: 1000)
+        result = dispatcher.attempt("authority-task", "cloud-C", "synthetic", work_bound=.01,
+                                    review_bound=.02, expected_in=10000, expected_out=1000)
+        self.assertEqual(result.decision, "dispatched")
+        return ledger
+
+    def _close_cli(self, ledger, *extra):
+        output = io.StringIO()
+        with redirect_stdout(output), redirect_stderr(io.StringIO()):
+            status = pc.main(["--ledger", str(ledger), *extra])
+        return status, json.loads(output.getvalue())
+
+    def test_cli_uses_authority_without_optional_store(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = self._authority_fixture(directory)
+            authority = ledger.with_name(ledger.name + ".budget.sqlite3")
+            before = (ledger.read_bytes(), authority.read_bytes())
+            status, closed = self._close_cli(ledger)
+            self.assertEqual(status, 0, closed["pilot_totals"]["problems"])
+            self.assertEqual(closed["pilot_totals"]["accounting_source"], "sqlite-authority")
+            self.assertEqual(closed["pilot_totals"]["total_spend_usd"], .0015)
+            self.assertEqual(closed["closures"][0]["disposition"], "awaiting-verification")
+            self.assertEqual(before, (ledger.read_bytes(), authority.read_bytes()))
+
+    def test_cli_lagging_mirror_does_not_invent_sheet_source_records(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = self._authority_fixture(directory)
+            ledger.write_text(ledger.read_text().splitlines()[0] + "\n", encoding="utf-8")
+            mapping = Path(directory) / "assignments.json"
+            mapping.write_text(json.dumps({"authority-task": {"arm": "B", "cell": "T-01"}}), encoding="utf-8")
+            status, closed = self._close_cli(ledger, "--with-sheet", "--sheet", str(Path(directory) / "sheet.json"),
+                                            "--assignments", str(mapping))
+            self.assertEqual(status, 1)
+            self.assertEqual(closed["pilot_totals"]["total_spend_usd"], .0015)
+            self.assertFalse(closed["pilot_totals"]["total_spend_complete"])
+            self.assertEqual(closed["live_fill_sheet"]["observations_recorded"], 0)
+            self.assertTrue(any(finding["kind"] == "unknown-usage" for finding in
+                                closed["live_fill_sheet"]["ledger_lines_unplaced"]))
+            self.assertEqual(len(ledger.read_text().splitlines()), 1)
+
+    def test_cli_missing_mirror_reports_known_authority_totals(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = self._authority_fixture(directory)
+            ledger.unlink()
+            status, closed = self._close_cli(ledger)
+            self.assertEqual(status, 1)
+            self.assertEqual(closed["pilot_totals"]["total_spend_usd"], .0015)
+            self.assertFalse(closed["pilot_totals"]["total_spend_complete"])
+            self.assertEqual(closed["pilot_totals"]["source_evidence"]["jsonl_events"], 0)
+            self.assertFalse(ledger.exists())
+
+    def test_cli_corrupt_authority_makes_headroom_and_completion_unknown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = self._authority_fixture(directory)
+            authority = ledger.with_name(ledger.name + ".budget.sqlite3")
+            authority.write_bytes(b"synthetic corrupt authority")
+            before = (ledger.read_bytes(), authority.read_bytes())
+            status, closed = self._close_cli(ledger)
+            self.assertEqual(status, 1)
+            self.assertIsNone(closed["pilot_totals"]["headroom_usd"])
+            self.assertIsNone(closed["pilot_totals"]["within_pilot_cap"])
+            self.assertEqual(closed["closures"][0]["disposition"], "accounting-unverified")
+            self.assertIn("headroom unknown", pc.markdown(closed))
+            self.assertEqual(before, (ledger.read_bytes(), authority.read_bytes()))
+
+    def test_unknown_spend_is_explicit_in_json_and_markdown(self):
+        row = e("U", "cloud-C", "dispatch-error", None, None, None)
+        row.update(reserved_cost_usd=.1, review_reserved_usd=.02, known_cost_usd=.001)
+        closure = pc.close_ledger(PRICES, [row, e("U", "cloud-C", "blocked-uncertain", 0, 0, 0)])
+        task = closure["closures"][0]
+        self.assertEqual(task["disposition"], "usage-unknown")
+        self.assertFalse(task["spend_complete"])
+        self.assertIsNone(task["within_cost_cap"])
+        self.assertIsNone(closure["pilot_totals"]["within_pilot_cap"])
+        md = pc.markdown(closure)
+        self.assertIn("known 0.001000; incomplete", md)
+        self.assertIn("UNKNOWN", md)
+        self.assertIn("reserved", md)
+
+    def test_verified_task_stays_completed_after_refused_retry(self):
+        rows = entries_completed_one_task()[:1]
+        rows += [e("L-001", "cloud-C", "verification-complete", 0, 0, 0),
+                 e("L-001", "cloud-C", "blocked-verified", 0, 0, 0)]
+        closure = pc.close_ledger(PRICES, rows)
+        self.assertEqual(closure["pilot_totals"]["completed"], 1)
+        self.assertEqual(closure["closures"][0]["disposition"], "completed")
+
     def test_completed_task_closure(self):
         r = pc.close_ledger(PRICES, entries_completed_one_task())
         c = r["closures"][0]
@@ -148,7 +240,7 @@ class PilotClose(unittest.TestCase):
     def test_markdown_block_shape(self):
         r = pc.close_ledger(PRICES, entries_completed_one_task())
         md = pc.markdown(r)
-        self.assertIn("| Task | Attempts | Spend (USD) | Disposition | Caps OK |", md)
+        self.assertIn("| Task | Attempts | Spend (USD) | Reserved (USD) | Disposition | Caps OK |", md)
         self.assertIn("| L-001 | 2 | 0.003000", md)
         self.assertIn("Pilot totals", md)
         self.assertIn("No section-7 decision", md)

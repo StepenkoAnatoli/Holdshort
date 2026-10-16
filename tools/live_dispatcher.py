@@ -99,6 +99,10 @@ class LedgerEntry:
     purpose: str = "work"
     review_calls_reserved: int = 0
     known_cost_usd: float = 0.0
+    settlement_status: Optional[str] = None
+    mirror_status: Optional[str] = None
+    transport_started_at: Optional[float] = None
+    transport_finished_at: Optional[float] = None
 
 
 class DispatchFailure(RuntimeError):
@@ -142,6 +146,7 @@ class LiveDispatcher:
         self._resumer = (ResumableTasks(TaskStateStore(Path(task_store), now_fn=now_fn))
                          if task_store is not None else None)
         self.budget = BudgetStore(ledger_path, asdict(self.caps), task_store)
+        self.budget.apply_receipt = self._settle_receipt
 
     @property
     def pilot_spent(self):
@@ -175,7 +180,8 @@ class LiveDispatcher:
                 task = dict(legacy or {"task_id": task_id, "attempts": 0, "started": now,
                                       "repairs": 0, "last_profile": ""})
                 task.pop("spent", None)
-                task.update(charged="0", review_reserved="0", review_calls_reserved=0, pending=None, verified=False)
+                task.update(charged="0", review_reserved="0", review_calls_reserved=0, pending=None,
+                            verified=False, abandoned=False)
                 task.setdefault("last_observed", task["started"])
                 task.setdefault("clock_stopped", False)
                 doc["tasks"][task_id] = task
@@ -190,11 +196,11 @@ class LiveDispatcher:
         self._remember(task)
         return entry
 
-    def _reject(self, st, profile, decision, reason):
+    def _reject(self, st, profile, decision, reason, *, purpose="work"):
         if st["task_id"] not in self._tasks:
             self._task(st["task_id"])
         with self.budget.transaction() as doc:
-            return self._record(doc, doc["tasks"][st["task_id"]], profile, decision, reason)
+            return self._record(doc, doc["tasks"][st["task_id"]], profile, decision, reason, purpose=purpose)
 
     @staticmethod
     def _cost(profile, in_toks, out_toks):
@@ -209,7 +215,9 @@ class LiveDispatcher:
 
     def _check(self, doc, task, profile, work, review, purpose, review_calls):
         def reject(decision, reason):
-            return self._record(doc, task, profile, decision, reason)
+            return self._record(doc, task, profile, decision, reason, purpose=purpose)
+        if task.get("abandoned", False):
+            return reject("blocked-abandoned", "task was abandoned; counters and evidence retained")
         if task["verified"]:
             return reject("blocked-verified", "task already verified; counters and evidence retained")
         if task["attempts"] >= self.caps.max_attempts:
@@ -255,41 +263,48 @@ class LiveDispatcher:
                                  expected_out=expected_out, purpose=purpose, review_calls=review_calls)
         except CorruptState:
             return LedgerEntry(self.now_fn(), task_id, None, profile_id, None, None, None,
-                               "blocked:state-corrupt", "persisted state invalid; preserved", usage_status="unknown")
-        except BudgetStateError:
+                               "blocked:state-corrupt", "persisted state invalid; preserved", usage_status="unknown", purpose=purpose)
+        except BudgetStateError as exc:
+            safe_reason, _ = redaction.redact_text(str(exc))
             return LedgerEntry(self.now_fn(), task_id, None, profile_id, None, None, None,
-                               "blocked:budget-state", "budget authority unavailable or inconsistent; preserved",
-                               usage_status="unknown")
+                               "blocked:budget-state", safe_reason, usage_status="unknown", purpose=purpose)
 
     def _attempt(self, task_id, profile_id, request, *, work_bound, review_bound,
                  expected_in, expected_out, purpose, review_calls):
         if any(not isinstance(value, str) or not value.strip() for value in (task_id, profile_id)):
             return LedgerEntry(self.now_fn(), "<invalid>", None, "<invalid>", 0, 0, 0.0,
                                "blocked-gate4", "task and profile IDs must be nonempty strings")
+        if not isinstance(purpose, str) or purpose not in ("work", "verification"):
+            # An invalid enum cannot enter the durable journal as refusal metadata.
+            return LedgerEntry(self.now_fn(), task_id, None, profile_id, 0, 0, 0.0,
+                               "blocked-gate4", "dispatch purpose must be work or verification",
+                               purpose="work")
         st = self._task(task_id)
         profile = deepcopy(self.prices["profiles"].get(profile_id))
         if profile is None:
-            return self._reject(st, profile_id, "unknown-profile", "profile has no known price bound")
+            return self._reject(st, profile_id, "unknown-profile", "profile has no known price bound", purpose=purpose)
         if review_calls is None:
             review_calls = 1 if finite_nonnegative(review_bound) and review_bound > 0 and purpose == "work" else 0
         if (not finite_nonnegative(work_bound) or not finite_nonnegative(review_bound)
                 or not finite_nonnegative(work_bound + review_bound) or not _priceable(profile)
                 or any(type(t) is not int or t < 0 for t in (expected_in, expected_out))
                 or type(review_calls) is not int or review_calls < 0
-                or purpose not in ("work", "verification")
                 or (purpose == "verification" and (review_bound != 0 or review_calls != 0))):
-            return self._reject(st, profile_id, "blocked-gate4", "invalid bound, rate, token count or dispatch purpose")
+            return self._reject(st, profile_id, "blocked-gate4", "invalid bound, rate, token count or dispatch purpose", purpose=purpose)
         work, review = money(work_bound), money(review_bound)
         if purpose == "work" and work + review > money(self.caps.max_cost_per_task):
-            return self._reject(st, profile_id, "blocked-gate4", "all-in bound exceeds task cap")
+            return self._reject(st, profile_id, "blocked-gate4", "all-in bound exceeds task cap", purpose=purpose)
         ceiling, count_fn = expected_out, None
         if self.confirm_egress:
             if self.dispatch_fn is None:
                 raise RuntimeError("confirm_egress set but no dispatch_fn wired; refusing egress")
+            qualified_prices = getattr(self.dispatch_fn, "price_configuration", None)
+            if qualified_prices is not None and self.prices != qualified_prices:
+                return self._reject(st, profile_id, "blocked-gate4", "dispatcher prices differ from qualified adapter prices", purpose=purpose)
             ceiling = getattr(self.dispatch_fn, "max_tokens", None)
             count_fn = getattr(self.dispatch_fn, "count_tokens", None)
             if type(ceiling) is not int or ceiling <= 0 or not callable(count_fn):
-                return self._reject(st, profile_id, "blocked-gate4", "egress requires max_tokens and count_tokens")
+                return self._reject(st, profile_id, "blocked-gate4", "egress requires max_tokens and count_tokens", purpose=purpose)
         with self.budget.transaction() as doc:
             blocked = self._check(doc, doc["tasks"][task_id], profile_id, work, review, purpose, review_calls)
             if blocked:
@@ -302,15 +317,22 @@ class LiveDispatcher:
                 raise ValueError("token count is not a non-negative integer")
             with localcontext() as arithmetic:
                 arithmetic.prec = 1024
-                margin = (Decimal(counted) * (1 + Decimal(str(TOKEN_COUNT_MARGIN)))).to_integral_value(rounding=ROUND_CEILING)
+                margin = Decimal(counted) if callable(getattr(self.dispatch_fn, "input_token_ceiling", None)) else (
+                    Decimal(counted) * (1 + Decimal(str(TOKEN_COUNT_MARGIN)))).to_integral_value(rounding=ROUND_CEILING)
             reserve_in = max(expected_in, int(margin))
         try:
             reserve = max(work, self._decimal_cost(profile, reserve_in, ceiling))
         except ArithmeticError:
-            return self._reject(st, profile_id, "blocked-gate4", "unrepresentable price bound")
+            return self._reject(st, profile_id, "blocked-gate4", "unrepresentable price bound", purpose=purpose)
         if not finite_nonnegative(float(reserve)):
-            return self._reject(st, profile_id, "blocked-gate4", "unrepresentable price bound")
+            return self._reject(st, profile_id, "blocked-gate4", "unrepresentable price bound", purpose=purpose)
         identifier = uuid.uuid4().hex
+        with self.budget.lease(identifier) as release:
+            return self._reserved_attempt(task_id, profile_id, profile, request, reserve, review,
+                                          purpose, review_calls, identifier, expected_in, expected_out, release)
+
+    def _reserved_attempt(self, task_id, profile_id, profile, request, reserve, review,
+                          purpose, review_calls, identifier, expected_in, expected_out, release):
         with self.budget.transaction() as doc:
             task = doc["tasks"][task_id]
             blocked = self._check(doc, task, profile_id, reserve, review, purpose, review_calls)
@@ -377,6 +399,76 @@ class LiveDispatcher:
             failure = True
             in_toks = getattr(exc, "input_tokens", None)
             out_toks = getattr(exc, "output_tokens", None)
+        finished_at = self.now_fn()
+        receipt = {"schema_version": 1, "task_id": task_id, "reservation_id": identifier,
+                   "input_tokens": in_toks if type(in_toks) is int and in_toks >= 0 else None,
+                   "output_tokens": out_toks if type(out_toks) is int and out_toks >= 0 else None,
+                   "transport_failed": failure, "ts": finished_at,
+                   "transport_started_at": send_now if self.confirm_egress else None,
+                   "transport_finished_at": finished_at if self.confirm_egress and finite_nonnegative(finished_at) and finished_at >= send_now else None}
+        if not finite_nonnegative(receipt["ts"]):
+            receipt["ts"] = task["last_observed"]
+        # Construct the truthful physical outcome before any further authority IO.
+        result = self._settle_receipt(deepcopy(doc), receipt)
+        try:
+            self.budget.write_receipt(receipt)
+        except (OSError, ValueError, TypeError, KeyError, OverflowError, BudgetStateError):
+            pass  # Still try settlement; on failure the orphan reservation blocks sends.
+        finally:
+            release()  # The physical transport is finished; pending is no longer live-owned.
+        try:
+            with self.budget.transaction(settling=identifier) as settled:
+                result = self._settle_receipt(settled, receipt)
+            result.settlement_status = "committed"
+            result.mirror_status = "pending" if self.budget.mirror_pending else "synchronized"
+            try:
+                self._remember(settled["tasks"][task_id])
+            except (OSError, ValueError, CorruptState):
+                result.mirror_status = "pending"
+            return result
+        except (BudgetStateError, CorruptState):
+            result.decision = "dispatch-unsettled"
+            result.reason = "transport finished; observed usage retained; authority settlement requires recovery"
+            result.settlement_status = "unsettled"
+            result.mirror_status = "pending"
+            return result
+
+    def _restore_verification_slot(self, task, pending):
+        if (pending["purpose"] == "verification" and not pending.get("verification_slot_restored", False)
+                and task["attempts"] + task["review_calls_reserved"] + 1 <= self.caps.max_attempts):
+            task["review_calls_reserved"] += 1
+            pending["verification_slot_restored"] = True
+
+    def _settle_receipt(self, doc, receipt):
+        """Pure, idempotent application of a safe observation under the authority lock."""
+        if (receipt.get("schema_version") != 1 or type(receipt.get("transport_failed")) is not bool
+                or not finite_nonnegative(receipt.get("ts"))):
+            raise BudgetStateError("invalid observed send receipt; preserved")
+        task_id, identifier = receipt["task_id"], receipt["reservation_id"]
+        for event in reversed(doc["events"]):
+            if event.get("reservation_id") == identifier and event.get("decision") in (
+                    "dispatched", "dispatch-error", "dispatch-reconciled"):
+                return LedgerEntry(**{key: value for key, value in event.items()
+                                      if key in LedgerEntry.__dataclass_fields__})
+        task = doc["tasks"][task_id]
+        pending = task["pending"]
+        if pending is None or pending["id"] != identifier:
+            raise BudgetStateError("reservation identity lost; refusing settlement")
+        profile = pending["profile"]
+        purpose, reserve = pending["purpose"], money(pending["bound"])
+        in_toks, out_toks = receipt["input_tokens"], receipt["output_tokens"]
+        for value in (in_toks, out_toks):
+            if value is not None and (type(value) is not int or value < 0):
+                raise BudgetStateError("invalid observed token count; preserved")
+        failure = receipt["transport_failed"]
+        for key in ("transport_started_at", "transport_finished_at"):
+            value = receipt.get(key)
+            if value is not None and not finite_nonnegative(value):
+                raise BudgetStateError("invalid transport timestamp; preserved")
+            pending[key] = value
+        if (pending.get("transport_finished_at") is not None and pending.get("transport_started_at") is not None
+                and pending["transport_finished_at"] < pending["transport_started_at"]):
+            raise BudgetStateError("transport timestamps are reversed; preserved")
         known = all(type(value) is int and value >= 0 for value in (in_toks, out_toks))
         try:
             cost = self._decimal_cost(profile, in_toks, out_toks) if known else None
@@ -404,10 +496,10 @@ class LiveDispatcher:
                     known_floor = Decimal("0")
             except ArithmeticError:
                 known_floor = Decimal("0")
-        with self.budget.transaction() as doc:
-            task = doc["tasks"][task_id]
-            if not task["pending"] or task["pending"]["id"] != identifier:
-                raise BudgetStateError("reservation identity lost; refusing settlement")
+        if failure or not known:
+            self._restore_verification_slot(task, pending)
+        with localcontext() as arithmetic:
+            arithmetic.prec = 1024
             if known:
                 task["charged"] = str(money(task["charged"]) + cost)
                 if purpose == "verification":
@@ -433,15 +525,17 @@ class LiveDispatcher:
                 reason = "send usage unknown; attempt and reservations retained; pilot stopped"
             doc["halted"] = bool(doc.get("overrun", False) or any(
                 t["pending"] and t["pending"]["status"] == "uncertain" for t in doc["tasks"].values()))
-            result = LedgerEntry(self.now_fn(), task_id, task["attempts"], profile_id,
+            result = LedgerEntry(receipt["ts"], task_id, task["attempts"], pending["profile_id"],
                                  in_toks if known else partial_in, out_toks if known else partial_out,
                                  float(cost) if known else None,
                                  "dispatch-error" if failure or not known else "dispatched", reason,
                                  identifier, float(reserve), float(money(task["review_reserved"])),
                                  "observed" if known else "unknown", purpose, task["review_calls_reserved"],
                                  float(cost if known else known_floor))
+            result.settlement_status = "committed"
+            result.transport_started_at = pending.get("transport_started_at")
+            result.transport_finished_at = pending.get("transport_finished_at")
             BudgetStore.event(doc, asdict(result))
-            self._remember(task)
         return result
 
     def reconcile_dispatch(self, task_id, reservation_id, *, input_tokens,
@@ -470,6 +564,7 @@ class LiveDispatcher:
             task["charged"] = str(money(task["charged"]) + cost - previously_known)
             if pending["purpose"] == "verification":
                 task["review_reserved"] = str(max(Decimal("0"), money(task["review_reserved"]) - cost + previously_known))
+                self._restore_verification_slot(task, pending)
             task["pending"] = None
             if cost > money(pending["bound"]):
                 doc["overrun"] = True
@@ -481,6 +576,8 @@ class LiveDispatcher:
                                 reservation_id, float(money(pending["bound"])),
                                 float(money(task["review_reserved"])), "observed", pending["purpose"],
                                 task["review_calls_reserved"], float(cost))
+            entry.transport_started_at = pending.get("transport_started_at")
+            entry.transport_finished_at = pending.get("transport_finished_at")
             BudgetStore.event(doc, asdict(entry))
             self._remember(task)
             return entry
@@ -496,15 +593,32 @@ class LiveDispatcher:
         self._task(task_id)
         with self.budget.transaction() as doc:
             task = doc["tasks"][task_id]
-            if task["pending"] is not None or doc.get("halted", False):
-                raise BudgetStateError("unsettled or halted pilot cannot release reservations")
-            if not task["attempts"] or task["verified"]:
+            if task["pending"] is not None:
+                raise BudgetStateError("this task has an unsettled reservation")
+            if not task["attempts"] or task["verified"] or task.get("abandoned", False):
                 raise BudgetStateError("task has no unfinished dispatch to verify")
             task["review_reserved"] = "0"
             task["review_calls_reserved"] = 0
             task["verified"] = True
             return self._record(doc, task, task["last_profile"], "verification-complete",
                                 "host accepted verification evidence: " + evidence_ref)
+
+    def abandon_task(self, task_id, *, evidence_ref):
+        """Close failed/expired work without claiming verification or erasing spend."""
+        if not isinstance(evidence_ref, str) or not evidence_ref.strip():
+            raise ValueError("task abandonment requires an evidence reference")
+        self._task(task_id)
+        with self.budget.transaction() as doc:
+            task = doc["tasks"][task_id]
+            if task["pending"] is not None:
+                raise BudgetStateError("unsettled task cannot release reservations")
+            if task["verified"] or task.get("abandoned", False):
+                raise BudgetStateError("task is already terminal")
+            task["review_reserved"] = "0"
+            task["review_calls_reserved"] = 0
+            task["abandoned"] = True
+            return self._record(doc, task, task["last_profile"] or "<not-dispatched>", "task-abandoned",
+                                "host abandoned task: " + evidence_ref)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -531,6 +645,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="permit a real network dispatch (Phase 4 owner authorization required)")
     ap.add_argument("--live", action="store_true",
                     help="wire the real Anthropic adapter as dispatch_fn (requires .env key and --confirm-egress)")
+    ap.add_argument("--billing-qualification", default=None,
+                    help="host qualification record for the approved modeled request billing scope")
     ap.add_argument("--ledger", default=str(LEDGER_DEFAULT))
     ap.add_argument("--task-store", default=None,
                     help="optional JSON state mirrors; authoritative counters always persist beside the ledger")
@@ -544,13 +660,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         from dispatch_adapter import build_dispatch_fn, DispatchRefused
         refused = (DispatchRefused,)
         try:
-            dispatch_fn = build_dispatch_fn()  # refuses without .env key or on non-approved endpoint
+            kwargs = {}
+            if args.billing_qualification:
+                qualification_path = Path(args.billing_qualification)
+                kwargs["qualification_path"] = qualification_path if qualification_path.is_absolute() else REPO_ROOT / qualification_path
+            dispatch_fn = build_dispatch_fn(**kwargs)  # refuses missing key or unqualified billing scope
         except DispatchRefused as e:
             print(json.dumps({"decision": "dispatch-refused", "reason": str(e)}), file=sys.stderr)
             return 2
 
-    task_store = Path(args.task_store) if args.task_store else None
-    d = LiveDispatcher(prices, Path(args.ledger), confirm_egress=args.confirm_egress,
+    def repository_path(value):
+        path = Path(value)
+        return path if path.is_absolute() else REPO_ROOT / path
+    task_store = repository_path(args.task_store) if args.task_store else None
+    d = LiveDispatcher(prices, repository_path(args.ledger), confirm_egress=args.confirm_egress,
                        dispatch_fn=dispatch_fn, task_store=task_store)
     try:
         e = d.attempt(args.task_id, args.profile, args.request,

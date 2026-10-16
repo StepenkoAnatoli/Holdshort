@@ -83,7 +83,8 @@ class LiveFill(unittest.TestCase):
         summary = tally.tally_summary(sheet)
         self.assertTrue(summary["integrity_ok"])
         self.assertEqual(summary["observations_recorded"], 4)
-        self.assertEqual(cell["observations"][1]["latency_s"], 1)
+        self.assertEqual(cell["observations"][1]["inter_observation_interval_s"], 1)
+        self.assertEqual(cell["observations"][1]["latency_s"], tally.UNKNOWN_LATENCY)
 
     def test_reimport_is_idempotent_even_with_empty_slots(self):
         sheet = self.sheet(); entries = [entry(), entry(ts=101)]
@@ -91,6 +92,115 @@ class LiveFill(unittest.TestCase):
         before = copy.deepcopy(sheet)
         self.assertEqual(tally.import_from_ledger(sheet, entries, self.assignments()), [])
         self.assertEqual(sheet, before)
+
+    def frozen_rows(self):
+        plan = tally.frozen_evaluation_plan()
+        rows = []
+        for trial in plan["trials"]:
+            profile = "cloud-S" if trial["arm"] == "A" else "cloud-C"
+            row = entry(trial["task_id"], 100 + trial["schedule_index"], profile_id=profile,
+                        cost_usd=report.recompute_cost(PRICES, profile, 1000, 100))
+            rows.append(row)
+        return plan, rows
+
+    def test_frozen_plan_counts_fixture_repeats_with_unique_execution_ids(self):
+        plan, rows = self.frozen_rows()
+        sheet = self.sheet()
+        self.assertEqual(tally.import_from_ledger(sheet, rows[:37], plan["assignments"]), [])
+        self.assertEqual(tally.import_from_ledger(sheet, rows, plan["assignments"]), [])
+        summary = tally.tally_summary(sheet)
+        self.assertEqual(summary["per_arm"], {arm: 20 for arm in "ABCD"})
+        self.assertEqual(summary["cells_filled"], 20)
+        self.assertTrue(summary["evaluation_plan_bound"])
+        self.assertEqual(summary["live_model_qualification"], "pending")
+        self.assertTrue(summary["integrity_ok"], summary["problems"])
+        before = copy.deepcopy(sheet)
+        self.assertEqual(tally.import_from_ledger(sheet, rows, plan["assignments"]), [])
+        self.assertEqual(sheet, before)
+
+    def test_frozen_plan_rejects_assignment_split_and_execution_order_drift(self):
+        plan, rows = self.frozen_rows()
+        mapping = copy.deepcopy(plan["assignments"])
+        mapping[rows[0]["task_id"]]["split"] = "invented"
+        findings = tally.import_from_ledger(self.sheet(), rows, mapping)
+        self.assertEqual(findings[0]["kind"], "invalid-plan")
+        sheet = self.sheet()
+        findings = tally.import_from_ledger(sheet, [rows[1], rows[0]], plan["assignments"])
+        self.assertEqual(findings[0]["kind"], "schedule-drift")
+        self.assertEqual(tally.tally_summary(sheet)["observations_recorded"], 0)
+
+    def test_frozen_plan_malformed_metadata_produces_findings_without_crash(self):
+        plan, rows = self.frozen_rows()
+        sheet = self.sheet()
+        sheet["cells"]["A|T-01"]["observations"] = None
+        before = copy.deepcopy(sheet)
+        findings = tally.import_from_ledger(sheet, rows, plan["assignments"])
+        self.assertEqual(findings[0]["kind"], "invalid-sheet")
+        self.assertEqual(sheet, before)
+        sheet = self.sheet()
+        self.assertEqual(tally.import_from_ledger(sheet, rows[:1], plan["assignments"]), [])
+        obs = next(obs for cell in sheet["cells"].values() for obs in cell["observations"] if obs["task_id"])
+        obs["fixture_id"] = []
+        self.assertFalse(tally.tally_summary(sheet)["integrity_ok"])
+
+    def test_frozen_assignment_map_rejects_coerced_numeric_metadata(self):
+        plan, rows = self.frozen_rows()
+        for field, value in (("schedule_index", True), ("schedule_index", 1.0),
+                             ("repeat", float(plan["assignments"][rows[0]["task_id"]]["repeat"]))):
+            with self.subTest(field=field, value=value):
+                mapping = copy.deepcopy(plan["assignments"])
+                mapping[rows[0]["task_id"]][field] = value
+                sheet = self.sheet(); before = copy.deepcopy(sheet)
+                findings = tally.import_from_ledger(sheet, rows[:1], mapping)
+                self.assertEqual(findings[0]["kind"], "invalid-plan")
+                self.assertEqual(sheet, before)
+
+    def test_frozen_observations_reject_coerced_numeric_metadata(self):
+        plan, rows = self.frozen_rows()
+        for field, value in (("schedule_index", True), ("schedule_index", 1.0),
+                             ("assignment_slot", True), ("assignment_slot", 1.0)):
+            with self.subTest(field=field, value=value):
+                sheet = self.sheet()
+                self.assertEqual(tally.import_from_ledger(sheet, rows[:1], plan["assignments"]), [])
+                self.assertTrue(tally.tally_summary(sheet)["integrity_ok"])
+                obs = next(obs for cell in sheet["cells"].values()
+                           for obs in cell["observations"] if obs["task_id"])
+                obs[field] = value
+                self.assertFalse(tally.tally_summary(sheet)["integrity_ok"])
+
+    def test_sheet_repeats_metadata_requires_an_integer(self):
+        sheet = self.sheet()
+        sheet["repeats_per_task"] = float(sheet["repeats_per_task"])
+        self.assertFalse(tally.tally_summary(sheet)["integrity_ok"])
+
+    def test_frozen_plan_does_not_count_a_repair_as_another_repeat(self):
+        plan, rows = self.frozen_rows()
+        sheet = self.sheet()
+        findings = tally.import_from_ledger(sheet, [rows[0], dict(rows[0], ts=200)], plan["assignments"])
+        self.assertEqual(findings[0]["kind"], "duplicate-trial-work")
+        self.assertEqual(tally.tally_summary(sheet)["observations_recorded"], 1)
+
+    def test_verification_and_terminal_refusals_do_not_fill_trials(self):
+        sheet = self.sheet()
+        rows = [entry(), entry(ts=101, purpose="verification"),
+                entry(ts=102, decision="blocked-verified", input_tokens=0, output_tokens=0, cost_usd=0)]
+        self.assertEqual(tally.import_from_ledger(sheet, rows, self.assignments()), [])
+        self.assertEqual(tally.tally_summary(sheet)["observations_recorded"], 1)
+
+    def test_reconciliation_preserves_execution_time_and_real_duration(self):
+        sheet = self.sheet()
+        pending = entry(ts=100, decision="dispatch-reserved", input_tokens=None, output_tokens=None,
+                        cost_usd=None, reservation_id="r", reserved_cost_usd=.1)
+        failed = entry(ts=105, decision="dispatch-error", input_tokens=None, output_tokens=None,
+                       cost_usd=None, reservation_id="r", reserved_cost_usd=.1,
+                       transport_started_at=100, transport_finished_at=105)
+        receipt = entry(ts=3700, decision="dispatch-reconciled", reservation_id="r")
+        self.assertEqual(tally.import_from_ledger(sheet, [pending, failed, receipt], self.assignments()), [])
+        obs = sheet["cells"]["B|T-01"]["observations"][0]
+        self.assertEqual(obs["ts"], 105)
+        self.assertEqual(obs["source_event_ts"], 3700)
+        self.assertEqual(obs["latency_s"], 5)
+        self.assertTrue(tally.tally_summary(sheet)["integrity_ok"])
 
     def test_changed_source_or_assignment_is_reported_and_preserved(self):
         for changed, assignments in ([entry(ts=101)], self.assignments()), ([entry()], {"live-1": {"arm": "C", "cell": "T-01"}}):
