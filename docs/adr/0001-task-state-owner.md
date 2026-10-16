@@ -199,4 +199,58 @@ introduces no automatic migration, new approval checkpoint, or reset of prior
 charges. Appendix B's #86 reshape remains held until the accounting fixes land
 and adopts their read-only snapshot path. It does not own these runtime changes.
 
+## Appendix B.2 amendment — re-shape landed; finding vocabulary chosen (2026-10-16)
+
+The accounting fixes above have landed (`main @ b924cdb`, PR #88), releasing the
+Appendix B hold, so `#86` was **rebuilt on merged `main`** rather than rebased.
+All three re-shape items are done, plus two correctness fixes found on the way:
+the `_task` create path now re-checks existence **inside** the creation
+transaction (a check-then-create race could otherwise erase a concurrent
+creator's counters), and a task-id collision — the lossy `a/b` vs `a_b`, or
+`Task-A` vs `task-a` on a case-insensitive filesystem — is detected by the
+**stored** `task_id` and refused (`TaskIdCollision(CorruptState)`), leaving the
+outward `blocked:state-corrupt` string byte-identical.
+
+1. `owner.read()` uses `dispatch_budget.read_authority()` (the side-effect-free
+   snapshot); the absent-authority path reuses the read-only initial view and
+   returns `None` **without writing**. No read mutates the authority.
+2. The finding vocabulary is unified — decision below.
+3. `task_crosscheck.state_view_file_guess` and its now-unused `_sanitize` import
+   are deleted, with a regression test that a corrupt mirror carrying no ledger
+   task still yields an `invalid-task-mirror` finding.
+
+### Decision (Appendix B item 2)
+
+The owner **adopts the crosscheck's finding kinds**; `task_crosscheck` is **not**
+restructured to delegate to `Owner.reconcile()`.
+
+- Owner findings carry the crosscheck's shape `{"task_id", "kind", "detail"}`.
+- The authority↔mirror divergence is named **`optional-mirror-stale`** in both
+  modules, with the crosscheck's condition (any difference, `!=` — a *lagging*
+  mirror is reported, not only one that is ahead). The owner-local
+  `mirror-ahead-of-authority` is retired.
+- Kinds the crosscheck has no counterpart for stay owner-local: the watchdog
+  comparisons (`watchdog-without-authority`, `watchdog-{attempts,repairs}-ahead`)
+  and `mirror-without-authority`.
+
+### Rejected alternative
+
+**`task_crosscheck` consumes `Owner.reconcile()`** — the direction Appendix B
+called "most likely". Set aside for now, not because it is wrong but because of
+its blast radius: the crosscheck's remaining findings need inputs the owner does
+not take — the ledger journal (`journal-divergence`, `mirror-lag`), accounting
+arithmetic (`accounting-gaps`, `unsettled-reservation`) and the attempt/authority
+cross-check (`authority-attempt-mismatch`). Delegating only the per-task
+comparison would split the crosscheck's finding set across two modules while the
+owner still could not produce the rest. Sharing the *names* achieves "one
+vocabulary" at a fraction of the churn, and leaves the held step ③ (crosscheck
+swaps) available as its own change.
+
+**Trigger to reopen:** a third place names an authority↔mirror divergence, the
+owner's comparison drifts from the crosscheck's again, or step ③ is scheduled —
+then revisit whether the crosscheck delegates its per-task check to the owner.
+
+Formats stay frozen: findings are in-memory reports, never written to task state;
+no path, field name or decision string changes.
+
 

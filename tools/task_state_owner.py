@@ -30,22 +30,24 @@ Contract:
                   counts host launches while the authority counts dispatches,
                   so the two can legitimately differ.
 
-No writes, no cache, no new files: this module owns no state (ADR-0001).
-Reads reuse `BudgetStore.transaction()`, the same sanctioned read path the
-dispatcher itself uses, so the authority's invariants (validation, journal
-replay) hold on every read.
+No writes, no cache, no new files: this module owns no state (ADR-0001). The
+authority read is `dispatch_budget.read_authority()`, the side-effect-free
+read-only snapshot the dispatcher's crosscheck already uses, so a read never
+rewrites the authority row, replays a recovery receipt, or mirrors the ledger.
+The authority's invariants (decode, validation) still hold on every read.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 from typing import Dict, List, Optional
 
 try:
-    from dispatch_budget import BudgetStore, money
+    from dispatch_budget import BudgetStore, BudgetStateError, money, read_authority
     from task_persistence import TaskStateStore
     from host_watchdog import load_state
 except ImportError:  # direct import when repo root on path
-    from tools.dispatch_budget import BudgetStore, money
+    from tools.dispatch_budget import BudgetStore, BudgetStateError, money, read_authority
     from tools.task_persistence import TaskStateStore
     from tools.host_watchdog import load_state
 
@@ -63,6 +65,20 @@ def from_watchdog(doc: Dict) -> Dict:
     """One vocabulary: the watchdog's `repairs_used` is the shared `repairs`."""
     view = dict(doc)
     view["repairs"] = view.pop("repairs_used")
+    return view
+
+
+def authority_view(task: Dict) -> Dict:
+    """The authority's record in the shared vocabulary: `charged` -> `spent`.
+
+    This is the single mapping (ADR-0001). The owner's read() and the
+    dispatcher's _remember() both call it, so the two can never drift. The
+    deepcopy matches _remember's original semantics (the cached/persisted view
+    shares no mutable structure with the authority document) and `spent` is
+    byte-for-byte the float the mirror already persists.
+    """
+    view = deepcopy(task)
+    view["spent"] = float(money(view["charged"]))
     return view
 
 
@@ -85,25 +101,47 @@ class TaskStateOwner:
     def read(self, task_id: str) -> Optional[Dict]:
         """The authority's record for task_id, normalized, or None if unknown.
 
+        The authority is read through the side-effect-free
+        `dispatch_budget.read_authority()`, a read-only snapshot: unlike the
+        dispatcher's write transactions it never rewrites the authority row,
+        replays a recovery receipt, or mirrors the ledger, so a read observes
+        no state a later reader could notice (ADR-0001).
+
         Raises CorruptState when a present mirror is unreadable or invalid
         (G5): a corrupt optional mirror still refuses the task even though the
         authority could answer — the file is preserved for forensics.
-        Raises BudgetStateError when the authority itself is unavailable.
+        Raises BudgetStateError when the authority itself is unavailable, or
+        when a legacy ledger / bare task counters exist with no committed
+        authority (the same rule the first transaction applies, #72).
         """
         if not isinstance(task_id, str) or not task_id.strip():
             raise ValueError("task ID must be a nonempty string")
         if self.mirror is not None:
             self.mirror.load(task_id)  # validation only; raises CorruptState, never masked
-        with self.budget.transaction() as doc:
-            task = doc["tasks"].get(task_id)
-            if task is None:
-                return None
-            view = dict(task)
-            # Vocabulary mapping, stated once: the authority's Decimal-string
-            # `charged` is the shared float `spent` — the same conversion the
-            # dispatcher's _remember persists into the mirror.
-            view["spent"] = float(money(view["charged"]))
-            return view
+        if not self.budget.path.exists():
+            # No committed authority yet. Reuse the authority's own read-only
+            # admissibility check (`_initial` only reads): a legacy ledger or
+            # bare task counters must still refuse, otherwise the pilot is
+            # simply new and the task is unknown. A read never creates it.
+            self.budget._initial()
+            return None
+        try:
+            doc = read_authority(self.budget.ledger)
+        except BudgetStateError:
+            # The authority exists but is not yet a readable committed snapshot
+            # (e.g. a peer is creating it concurrently). Fall back to the
+            # serialized/creation-path semantics: if a legacy ledger exists,
+            # _initial() raises; otherwise treat as not yet committed and let
+            # the caller materialise it in a serialized transaction.
+            try:
+                self.budget._initial()
+            except BudgetStateError:
+                raise
+            return None
+        task = doc["tasks"].get(task_id)
+        # The single mapping lives in authority_view (shared with the
+        # dispatcher's _remember, step 2).
+        return None if task is None else authority_view(task)
 
     def read_mirror(self, task_id: str) -> Optional[Dict]:
         """The validated mirror record, or None when no mirror is configured
@@ -127,6 +165,12 @@ class TaskStateOwner:
     def reconcile(self, task_id: str) -> Dict:
         """All three stores side by side, with findings (authority wins).
 
+        Finding shape and kind names come from `task_crosscheck`
+        ({"task_id", "kind", "detail"}), so an authority<->mirror divergence is
+        named once across both modules instead of in two vocabularies
+        (ADR-0001 Appendix B.2). Kinds the crosscheck has no counterpart for
+        (watchdog, mirror-without-authority) stay owner-local.
+
         A finding is a report, not a verdict: callers decide what to do with
         it. A corrupt mirror or an unreadable watchdog file raises instead of
         yielding findings — refusal is not a finding (G5).
@@ -135,24 +179,32 @@ class TaskStateOwner:
         mirror = self.read_mirror(task_id)
         watchdog = self.read_watchdog(task_id)
         findings: List[Dict] = []
-        if mirror is not None and (mirror["attempts"] or mirror["spent"]):
+        if mirror is not None:
             if authority is None:
+                if mirror["attempts"] or mirror["spent"]:
+                    findings.append({
+                        "task_id": task_id,
+                        "kind": "mirror-without-authority",
+                        "detail": "mirror carries counters for a task the authority "
+                                  "does not know; the dispatcher refuses this case",
+                    })
+            elif (mirror["attempts"] != authority["attempts"]
+                    or mirror["spent"] != authority["spent"]):
+                # Same kind, condition and meaning as task_crosscheck's
+                # authority-side finding (any difference — including a lagging
+                # mirror, which the crosscheck also reports).
                 findings.append({
-                    "kind": "mirror-without-authority",
-                    "detail": "mirror carries counters for a task the authority "
-                              "does not know; the dispatcher refuses this case",
-                })
-            elif (mirror["attempts"] > authority["attempts"]
-                    or mirror["spent"] > authority["spent"]):
-                findings.append({
-                    "kind": "mirror-ahead-of-authority",
-                    "detail": (f"mirror attempts/spent {mirror['attempts']}/"
-                               f"{mirror['spent']} exceed the authority's "
-                               f"{authority['attempts']}/{authority['spent']}"),
+                    "task_id": task_id,
+                    "kind": "optional-mirror-stale",
+                    "detail": (f"optional task mirror attempts/spent "
+                               f"{mirror['attempts']}/{mirror['spent']} differ "
+                               f"from the authority's {authority['attempts']}/"
+                               f"{authority['spent']}"),
                 })
         if watchdog is not None:
             if authority is None:
                 findings.append({
+                    "task_id": task_id,
                     "kind": "watchdog-without-authority",
                     "detail": "watchdog state exists for a task the authority "
                               "does not know",
@@ -161,6 +213,7 @@ class TaskStateOwner:
                 for name in ("attempts", "repairs"):
                     if watchdog[name] > authority[name]:
                         findings.append({
+                            "task_id": task_id,
                             "kind": f"watchdog-{name}-ahead",
                             "detail": (f"watchdog {name} {watchdog[name]} exceed "
                                        f"the authority's {authority[name]}; "

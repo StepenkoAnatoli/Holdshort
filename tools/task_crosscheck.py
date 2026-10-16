@@ -23,7 +23,6 @@ from typing import Dict, List
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 import pilot_report as pr  # noqa: E402
-from task_persistence import _sanitize  # noqa: E402
 
 
 def state_view(state_dir: Path, *, problems=None) -> Dict[str, dict]:
@@ -138,17 +137,6 @@ def check_authority(state_dir, prices, entries, ledger_path):
             "authority_event_count": len(journal), "ledger_event_count": len(entries),
             "known_spend_usd": float(spent), "reserved_usd": float(reserved),
             "halted": doc.get("halted", False), "overrun": doc.get("overrun", False)}
-
-
-def state_view_file_guess(state_dir: Path, task_id: str):
-    p = state_dir / f"{_sanitize(task_id)}.json"
-    if not p.is_file():
-        return None
-    try:
-        doc = json.loads(p.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None
-    return doc if isinstance(doc, dict) and doc.get("task_id") == task_id else None
 
 
 def main(argv: List[str] = None) -> int:
