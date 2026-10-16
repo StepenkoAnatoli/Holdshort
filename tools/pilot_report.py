@@ -33,6 +33,11 @@ try:
 except ImportError:
     from tools import pricing
 
+try:
+    from task_state_owner import authority_view
+except ImportError:
+    from tools.task_state_owner import authority_view
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PRICES_PATH = REPO_ROOT / "tools" / "prices-2.json"
 LEDGER_DEFAULT = REPO_ROOT / "tools" / "pilot_ledger.jsonl"
@@ -240,7 +245,7 @@ def build_accounting_report(prices: dict, inputs: dict) -> dict:
         journal = [event for _, event in effective_entries(inputs["accounting_entries"])]
         for task_id, task in authority["tasks"].items():
             row = rows.get(task_id)
-            charged = float(db.money(task["charged"]))
+            charged = authority_view(task)["spent"]
             task_events = [event for event in journal if event.get("task_id") == task_id]
             if any(type(event.get("attempt_no")) is not int or event["attempt_no"] < 0 for event in task_events):
                 problems.append(f"task {task_id}: committed journal has invalid attempt counters")
