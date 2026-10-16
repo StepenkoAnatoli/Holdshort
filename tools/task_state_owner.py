@@ -16,8 +16,11 @@ them. The vocabulary mapping lives here, once; no on-disk name changes (agent
 hosts read and write these files by the runbook prose — formats are a
 published contract, ADR-0001). Step 1 ships imported by nothing but its
 tests: the dispatcher keeps its behavior while the owner soaks. Step 2 routes
-`LiveDispatcher._task` through `read()`; step 3 retires `task_crosscheck`'s
-raw reader in favor of `reconcile()`.
+`LiveDispatcher._task` through `read()` (PR #86). Step 3's fail-loud fix also
+landed in #86 (`task_crosscheck` reports `invalid-task-mirror` instead of
+swallowing corruption); delegating `task_crosscheck` to `reconcile()` was set
+aside there (ADR-0001 Appendix B.2), so `reconcile()`'s production consumer is
+deferred to step 4 (`pilot_report`).
 
 Contract:
   read()          the authority's record wins; a valid stale mirror never
