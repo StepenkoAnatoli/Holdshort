@@ -53,7 +53,6 @@ PRICES_PATH = REPO_ROOT / "tools" / "prices-2.json"
 LEDGER_DEFAULT = REPO_ROOT / "tools" / "pilot_ledger.jsonl"
 TASK_STATE_DEFAULT = REPO_ROOT / "tools" / "task_state"
 
-REASON_MAX = 512  # bounded ledger lines, per the pilot observation rules
 # The token-counting endpoint documents its count as an estimate that can differ
 # from the billed input "by a small amount"; reserve this much above it.
 TOKEN_COUNT_MARGIN = 0.05

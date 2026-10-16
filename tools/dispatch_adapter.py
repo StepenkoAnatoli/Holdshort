@@ -41,7 +41,6 @@ except ImportError:
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PRICES_PATH = REPO_ROOT / "tools" / "prices-2.json"
 QUALIFICATION_PATH = REPO_ROOT / "tools" / "live_billing_qualification.json"
-ENV_PATH = Path.home() / ".env"  # only used if no local .env next to repo — .env in repo root is the documented location
 
 APPROVED_ENDPOINT = "https://api.anthropic.com"
 MODEL_FOR_PROFILE: Dict[str, str] = {
