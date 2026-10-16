@@ -20,8 +20,10 @@ tests: the dispatcher keeps its behavior while the owner soaks. Step 2 routes
 landed in #86 (`task_crosscheck` reports `invalid-task-mirror` instead of
 swallowing corruption); delegating `task_crosscheck` to `reconcile()` was set
 aside there (ADR-0001 Appendix B.2). Step 4 (PR #92) maps `pilot_report`'s
-authority charges through `authority_view()`, not `reconcile()`, so `reconcile()`
-still has no production caller — it is exercised by tests only.
+authority charges through `authority_view()`, not `reconcile()`. `read()` and
+`authority_view()` are the production surface; `reconcile()`, `read_mirror()` and
+`read_watchdog()` are the owner's supported library API, exercised by tests
+(ADR-0002).
 
 Contract:
   read()          the authority's record wins; a valid stale mirror never
@@ -178,6 +180,9 @@ class TaskStateOwner:
         A finding is a report, not a verdict: callers decide what to do with
         it. A corrupt mirror or an unreadable watchdog file raises instead of
         yielding findings — refusal is not a finding (G5).
+
+        No production caller yet: `read()` and `authority_view()` are the
+        owner's production surface; this is the owner's library API (ADR-0002).
         """
         authority = self.read(task_id)
         mirror = self.read_mirror(task_id)

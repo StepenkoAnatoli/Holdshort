@@ -270,10 +270,9 @@ change" and retiring its "step ③ is scheduled" reopen trigger.
 
 Migration item ④ (PR #92) also landed, but it wires `pilot_report` to the owner's
 `authority_view` — the single `charged` → `spent` mapping — **not** to
-`reconcile()`. `reconcile()` therefore still has no production consumer: it is
-called only from `test_task_state_owner.py`, so the owner's reconciliation half
-remains unwired in production. That is recorded here as an open item, not claimed
-as delivered. `task_state_owner.py`'s stale "step 3 retires `task_crosscheck`'s raw
-reader" note is corrected to match.
+`reconcile()`. That leaves `reconcile()` (and `read_mirror()`/`read_watchdog()`)
+with no production caller; **ADR-0002** records the decision to keep them as the
+owner's library API rather than wire or delete them. `task_state_owner.py`'s stale
+"step 3 retires `task_crosscheck`'s raw reader" note is corrected to match.
 
 
