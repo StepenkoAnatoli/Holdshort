@@ -19,8 +19,9 @@ tests: the dispatcher keeps its behavior while the owner soaks. Step 2 routes
 `LiveDispatcher._task` through `read()` (PR #86). Step 3's fail-loud fix also
 landed in #86 (`task_crosscheck` reports `invalid-task-mirror` instead of
 swallowing corruption); delegating `task_crosscheck` to `reconcile()` was set
-aside there (ADR-0001 Appendix B.2), so `reconcile()`'s production consumer is
-deferred to step 4 (`pilot_report`).
+aside there (ADR-0001 Appendix B.2). Step 4 (PR #92) maps `pilot_report`'s
+authority charges through `authority_view()`, not `reconcile()`, so `reconcile()`
+still has no production caller — it is exercised by tests only.
 
 Contract:
   read()          the authority's record wins; a valid stale mirror never
