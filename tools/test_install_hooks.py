@@ -7,7 +7,9 @@ Pins the contract that makes "fresh clone enforces by default" true:
   2. it refuses to claim success on a missing tracked hook (no silent no-op),
   3. it refuses on a hook that doesn't even parse (broken wiring must not
      masquerade as enforcement),
-  4. the effective hooksPath afterwards really is .githooks.
+  4. the effective hooksPath afterwards really is .githooks,
+  5. it refuses cleanly (a message, not a traceback) when `bash` is absent,
+     because the tracked gate is a bash script that cannot run without it.
 
 Run as part of the regression gate (tools/run_regression.py). Uses a throwaway
 git clone + isolated env so the developer's own repo/global config is never
@@ -16,6 +18,7 @@ mutated.
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import os
 import shutil
@@ -23,7 +26,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
+from unittest import mock
 
 TOOLS = Path(__file__).resolve().parent
 REPO = TOOLS.parent
@@ -124,6 +129,35 @@ class OnboardingPath(unittest.TestCase):
             finally:
                 ih.REPO_ROOT = orig
             self.assertEqual(rc, 1, "a hook that fails bash -n must abort wiring (exit 1)")
+        finally:
+            shutil.rmtree(c["tmp"], ignore_errors=True)
+
+    def test_refuses_cleanly_when_bash_is_absent(self):
+        c = _fresh_clone(self.bare)
+        try:
+            ih = _load_module()
+            orig = ih.REPO_ROOT
+            ih.REPO_ROOT = c["dst"]
+            ih.HOOK = c["dst"] / ".githooks" / "pre-commit"
+            real_run = subprocess.run
+
+            def fake_run(cmd, *args, **kwargs):
+                # Simulate a Windows box with no bash on PATH: the syntax probe
+                # raises FileNotFoundError, exactly as subprocess does there.
+                if isinstance(cmd, (list, tuple)) and cmd and cmd[0] == "bash":
+                    raise FileNotFoundError(2, "No such file or directory", "bash")
+                return real_run(cmd, *args, **kwargs)
+
+            err = io.StringIO()
+            try:
+                with mock.patch.object(ih.subprocess, "run", side_effect=fake_run):
+                    with redirect_stderr(err):
+                        rc = ih.main()
+            finally:
+                ih.REPO_ROOT, ih.HOOK = orig, ih.HOOK
+            self.assertEqual(rc, 1, "missing bash must be a clean refusal (exit 1), not a crash")
+            self.assertIn("bash", err.getvalue(),
+                          "the refusal must name the missing shell, not emit a traceback")
         finally:
             shutil.rmtree(c["tmp"], ignore_errors=True)
 
