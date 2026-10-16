@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -88,6 +89,25 @@ class OwnerCase(unittest.TestCase):
 class TestRead(OwnerCase):
     def test_unknown_task_is_none(self):
         self.assertIsNone(self.owner.read("L-404"))
+
+    def test_unknown_task_on_a_new_pilot_creates_no_authority(self):
+        # A read must not bring the authority into existence: the old
+        # transaction()-based read created it as a side effect.
+        self.assertFalse(self.d.budget.path.exists())
+        self.assertIsNone(self.owner.read("L-404"))
+        self.assertFalse(self.d.budget.path.exists(),
+                         "a read must not create the budget authority")
+
+    def test_read_does_not_write_the_authority(self):
+        # The old read path went through BudgetStore.transaction(), which
+        # rewrote the authority row on every read. read_authority() is a
+        # read-only snapshot: the file is untouched (ADR-0001 Appendix B.1).
+        self.dispatch()
+        path = self.d.budget.path
+        before = os.stat(path).st_mtime_ns
+        self.assertIsNotNone(self.owner.read("L-1"))
+        self.assertEqual(os.stat(path).st_mtime_ns, before,
+                         "owner.read must not rewrite the authority row")
 
     def test_read_returns_the_authority_record(self):
         self.dispatch()

@@ -30,10 +30,11 @@ Contract:
                   counts host launches while the authority counts dispatches,
                   so the two can legitimately differ.
 
-No writes, no cache, no new files: this module owns no state (ADR-0001).
-Reads reuse `BudgetStore.transaction()`, the same sanctioned read path the
-dispatcher itself uses, so the authority's invariants (validation, journal
-replay) hold on every read.
+No writes, no cache, no new files: this module owns no state (ADR-0001). The
+authority read is `dispatch_budget.read_authority()`, the side-effect-free
+read-only snapshot the dispatcher's crosscheck already uses, so a read never
+rewrites the authority row, replays a recovery receipt, or mirrors the ledger.
+The authority's invariants (decode, validation) still hold on every read.
 """
 from __future__ import annotations
 
@@ -42,11 +43,11 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 try:
-    from dispatch_budget import BudgetStore, money
+    from dispatch_budget import BudgetStore, money, read_authority
     from task_persistence import TaskStateStore
     from host_watchdog import load_state
 except ImportError:  # direct import when repo root on path
-    from tools.dispatch_budget import BudgetStore, money
+    from tools.dispatch_budget import BudgetStore, money, read_authority
     from tools.task_persistence import TaskStateStore
     from tools.host_watchdog import load_state
 
@@ -100,22 +101,35 @@ class TaskStateOwner:
     def read(self, task_id: str) -> Optional[Dict]:
         """The authority's record for task_id, normalized, or None if unknown.
 
+        The authority is read through the side-effect-free
+        `dispatch_budget.read_authority()`, a read-only snapshot: unlike the
+        dispatcher's write transactions it never rewrites the authority row,
+        replays a recovery receipt, or mirrors the ledger, so a read observes
+        no state a later reader could notice (ADR-0001).
+
         Raises CorruptState when a present mirror is unreadable or invalid
         (G5): a corrupt optional mirror still refuses the task even though the
         authority could answer — the file is preserved for forensics.
-        Raises BudgetStateError when the authority itself is unavailable.
+        Raises BudgetStateError when the authority itself is unavailable, or
+        when a legacy ledger / bare task counters exist with no committed
+        authority (the same rule the first transaction applies, #72).
         """
         if not isinstance(task_id, str) or not task_id.strip():
             raise ValueError("task ID must be a nonempty string")
         if self.mirror is not None:
             self.mirror.load(task_id)  # validation only; raises CorruptState, never masked
-        with self.budget.transaction() as doc:
-            task = doc["tasks"].get(task_id)
-            if task is None:
-                return None
-            # The single mapping lives in authority_view (shared with the
-            # dispatcher's _remember, step 2).
-            return authority_view(task)
+        if not self.budget.path.exists():
+            # No committed authority yet. Reuse the authority's own read-only
+            # admissibility check (`_initial` only reads): a legacy ledger or
+            # bare task counters must still refuse, otherwise the pilot is
+            # simply new and the task is unknown. A read never creates it.
+            self.budget._initial()
+            return None
+        doc = read_authority(self.budget.ledger)
+        task = doc["tasks"].get(task_id)
+        # The single mapping lives in authority_view (shared with the
+        # dispatcher's _remember, step 2).
+        return None if task is None else authority_view(task)
 
     def read_mirror(self, task_id: str) -> Optional[Dict]:
         """The validated mirror record, or None when no mirror is configured
