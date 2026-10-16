@@ -380,3 +380,104 @@ a §10 row 4 Phase-4-start owner action.
 | 3 | Qualification records (reviewer, expiry) per profile | plan §5 | **PENDING for live**; non-live uses plan §10 declared qualification |
 | 4 | Owner approves real spend/egress/environment for a live pilot | plan §14 Phase 4 gate | **PENDING** — non-live evaluation explicitly authorized by owner this turn |
 | 5 | Review chain merges this preregistration revision (draft PR #9 open, base PR #8) | plan P02 review chain | **OPEN** |
+
+## 13. Prospective engineering amendment — 2026-10-15
+
+**Status: new fixture pack checked locally; live-model qualification pending.**
+The current engineering goal authorizes preparing this prospective pool and its
+checks. This section does not rewrite the historical five-task ratification,
+claim earlier owner approval for new tasks, or authorize provider spending.
+
+The historical pool in §3.1 supplies five tasks × two repeats = **10 observations
+per arm**, below the minimum of 20. The new
+[`smartrouter-prospective-v1` manifest](../tests/fixtures/prospective-eval/pool-v1.json)
+defines ten distinct tasks with frozen prompts, baseline files, permitted writes,
+reference solutions, and executable acceptance scripts. Local qualification checks
+that every baseline fails and every reference solution passes. It is evidence
+about fixture contracts, not measured model performance or workload representativeness.
+
+| Fixture | Sheet category | Task and acceptance contract |
+| --- | --- | --- |
+| PE-01 | T-01 | Correct a user-facing instruction; require the exact intended bytes and preserve a read-only policy file. |
+| PE-02 | T-01 | Fix an inclusive range boundary; check singleton, positive, negative, and descending bounds. |
+| PE-03 | T-02 | Extract a name-normalization helper; preserve results and verify that callers use it once per input. |
+| PE-04 | T-02 | Move a shared dataclass across two modules; preserve both import paths, class identity, equality, and total calculation. |
+| PE-05 | T-03 | Add a local read-only summary handler; derive counts from data and preserve existing routes and method behavior. |
+| PE-06 | T-03 | Add a local normalization handler; check valid/empty lists, invalid payloads, and existing routes. |
+| PE-07 | T-04 | Validate a discrete limit without coercion; preserve zero and reject booleans, fractions, strings, negative and nonfinite inputs with the specified error. |
+| PE-08 | T-04 | Reject duplicate JSON keys at any nesting depth and non-object roots; preserve valid nested data and exact error contracts. |
+| PE-09 | T-05 | Implement selection state; check independent instances, toggle behavior, unknown items, ordering, and use of an existing rendering primitive. |
+| PE-10 | T-05 | Implement undo/redo state; check boundaries, redo truncation after a new branch, and independent instances. |
+
+The request handlers are pure local functions: they start no HTTP server and make
+no network requests. The state tasks test Python utility components; they do not
+qualify browser behavior or a frontend design system. This is an explicitly
+prospective code/text workload, not an assertion that all original §3 category
+shapes have already been exercised by real models.
+
+### 13.1 Frozen identities, allocation, and seeds
+
+The canonical JSON SHA-256, excluding only the top-level `manifest_sha256` field,
+is **`c6efcd0a114c9a07c1a565f31a0ac5efa518fdd182c03b629168954aa55effd4`**.
+The validator pins this digest. Changing a prompt, baseline, reference, permitted
+write, or acceptance check requires a new reviewed manifest version; recalculating
+the digest alone does not approve weaker checks. Renamed identical fixture
+content does not count as another task.
+
+The literal derivation strings below remove the ambiguity between §3.2's displayed
+formula and its seed table. These strings reproduce the existing table values;
+they do not alter historical seed ratification:
+
+| Use | Exact SHA-256 input | First 16 hex as decimal |
+| --- | --- | --- |
+| Stratified tuning/holdout split | `d7c00f96a17c35e6c47c5ba1f7e3a9160c966042\|seed_holdout_1` | `6520794217341159832` |
+| Interleaved trial order | `d7c00f96a17c35e6c47c5ba1f7e3a9160c966042\|seed_ordering_1` | `14410658242273238690` |
+
+One fixture in each paired category is allocated to tuning and the other to
+holdout. The split stays fixed across arms and repeats: **five tuning and five
+holdout fixtures**, yielding **20 total observations per arm, ten of them holdout**.
+Final holdout intervals must not be described as using 20 holdout observations.
+Tuning results must not be used to change the frozen holdout tasks or checks.
+
+`fixture_id` identifies the stable task across all arms. Each `(fixture_id, arm,
+repeat)` receives its own `trial_id` and budget `task_id`, such as
+`smartrouter-prospective-v1--PE-01--A--r1`. The frozen plan contains **80 unique
+trial identities**. Every four-trial block includes the four arms for one fixture
+and repeat, in a reproducible randomized arm order. A new repeat uses fresh
+isolation and a cold cache; transport retries remain attempts of that trial, not
+new evaluated observations.
+
+The canonical SHA-256 of the derived `fixtures` allocation and `trials` sequence
+is **`110b8344e0f6dc93eff08993172f27b5b3813ff0ff57915fdde6fa1f56568d45`**.
+The tool refuses an allocation or order that differs from this pinned schedule,
+including an incompatible random-number implementation, rather than quietly
+changing which trial runs next.
+
+### 13.2 Reproduce the local preparation
+
+```bash
+python tools/eval_pool.py self-check
+python tools/eval_pool.py plan
+python tools/test_eval_pool.py
+```
+
+`plan` prints the frozen fixtures, split, schedule, manifest identity, and
+assignment map without creating workspaces or calling a provider. To prepare one
+trial, select its ID from that plan and use a new destination:
+
+```bash
+python tools/eval_pool.py prepare --trial-id smartrouter-prospective-v1--PE-01--A--r1 --destination .local/eval/PE-01-A-r1
+python tools/eval_pool.py verify --fixture-id PE-01 --workspace .local/eval/PE-01-A-r1
+```
+
+Preparation writes only the baseline files, not the reference solution or
+acceptance script. Verification checks permitted writes before and after running
+the frozen acceptance script. The unmodified baseline should fail. The script
+executes candidate code: the host must supply appropriate isolation; this checker
+is not an operating-system sandbox.
+
+Before an actual comparative trial, the host still needs qualified model
+identities, the approved environment and destinations, a reliable spending bound,
+observed acceptance and request timing, cold-cache evidence, and binding of each
+receipt to the frozen trial. Passing these local checks supplies none of that
+external evidence. Historical pilot ledgers and reports remain unchanged.

@@ -1,11 +1,12 @@
 # Go-live quick reference sheet
 
 One-page card for driving the session, condensed from the full
-[GO_LIVE_RUNBOOK.md](GO_LIVE_RUNBOOK.md). **OWNER** marks the two steps only you can do.
+[GO_LIVE_RUNBOOK.md](GO_LIVE_RUNBOOK.md). Initial credentials and authorization
+are host setup; bounded execution is autonomous after prerequisites pass.
 If any box fails: **stop, fix, re-run that box** — details and rationale live in the runbook.
 
 Authorization (row-4, SIGNED 2026-10-10): $1.00/task · $20.00/pilot · 4 attempts + 1
-same-profile repair · 300 s/task wall-clock (task-store enforced) · api.anthropic.com ONLY.
+same-profile repair · 300 s/task wall-clock (SQLite authority enforced) · api.anthropic.com ONLY.
 
 # To onboard a new machine (one command): bash tools/setup_machine.sh <repo-url>
 # — wires the hook, proves enforcement, and ends with the §0–§2 preflight automated.
@@ -14,7 +15,7 @@ same-profile repair · 300 s/task wall-clock (task-store enforced) · api.anthro
 
 ```
 □ git rev-parse HEAD == ls-remote origin main        → parity-OK
-□ python tools/run_regression.py                     → all checks PASS, exit 0 (11 checks)
+□ python tools/run_regression.py                     → all registered checks PASS, exit 0
 □ git config core.hooksPath                          → .githooks
 □ python tools/check_secrets.py                      → clean, 0 hits
 □ mkdir -p tools/task_state                          → state dir exists
@@ -33,12 +34,16 @@ same-profile repair · 300 s/task wall-clock (task-store enforced) · api.anthro
 
 ## 2 · DRY-RUN (no network)
 
+Use a fresh `warmup_dir="$(mktemp -d)"` for each warm-up, and pass
+`--ledger "$warmup_dir/dryrun_ledger.jsonl"` to both commands. Reusing a prior
+ledger resumes its persisted attempt limits and deadline; see runbook §2.
+
 ```
 □ cloud-C dryrun-1   → {"decision":"dispatched","cost_usd":0.0015}, exit 0
 □ cloud-XYZ dryrun-2 → {"decision":"unknown-profile"} (Gate-4 fail-closed), exit 1
 ```
 
-## 3 · LIVE SEND (OWNER: say GO) — one task, cloud-C, one send
+## 3 · LIVE SEND — qualified scope, one task, cloud-C, one send
 
 ```bash
 python tools/live_dispatcher.py \
@@ -52,6 +57,10 @@ python tools/live_dispatcher.py \
 
 ```
 □ BOTH flags present: --live AND --confirm-egress (separately nothing sends)
+□ Fresh billing qualification matches endpoint/model/request mode/rate hash/token ceilings/evidence
+□ Checked-in qualification is unqualified: automatic refusal is the expected current live result
+□ Frozen prospective pool: 10 distinct fixtures, 80 unique trial IDs, fixed allocation and order
+□ python tools/eval_pool.py self-check → all baseline/reference controls pass (local contracts only)
 □ prompt counted and worst-case cost reserved before the send (a failed count stops the run, no ledger line)
 □ Keep ledger + .budget.sqlite3 authority + optional task mirrors together
 □ Declare required review cash and model call slots; complete verified acceptance in the host

@@ -15,6 +15,8 @@ import math
 import os
 from pathlib import Path
 import sqlite3
+import errno
+import uuid
 
 try:
     import redaction
@@ -80,11 +82,17 @@ def validate(doc):
         if (task["last_observed"] < task["started"] or type(task.get("clock_stopped")) is not bool
                 or type(task.get("verified")) is not bool):
             raise BudgetStateError("invalid task flags")
+        if (type(task.get("abandoned", False)) is not bool
+                or (task.get("abandoned", False) and task["verified"])):
+            raise BudgetStateError("invalid terminal task flags")
         money(task["charged"])
         money(task["review_reserved"])
         pending = task.get("pending")
+        if "pending" not in task:
+            raise BudgetStateError("task has no reservation state")
         if pending is not None:
             if (not isinstance(pending, dict) or not isinstance(pending.get("id"), str)
+                    or len(pending["id"]) != 32 or any(c not in "0123456789abcdef" for c in pending["id"])
                     or pending.get("status") not in ("pending", "uncertain")):
                 raise BudgetStateError("invalid reservation")
             money(pending["reserved"])
@@ -104,6 +112,52 @@ def validate(doc):
         raise BudgetStateError("invalid event journal")
 
 
+def read_authority(ledger_path):
+    """Read a consistent authority snapshot without creating, recovering or mirroring it."""
+    ledger = Path(ledger_path).resolve()
+    path = ledger.with_name(ledger.name + ".budget.sqlite3")
+    connection = None
+    try:
+        connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=10)
+        row = connection.execute("SELECT payload FROM authority WHERE id=1").fetchone()
+        if row is None:
+            raise BudgetStateError("budget authority has no committed snapshot")
+        doc = decode(row[0])
+        validate(doc)
+        return doc
+    except (sqlite3.Error, OSError, ValueError, TypeError, KeyError, OverflowError) as exc:
+        raise BudgetStateError("budget snapshot unavailable or inconsistent; preserved") from exc
+    finally:
+        if connection is not None:
+            connection.close()
+
+
+def _lock(handle):
+    handle.seek(0)
+    try:
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as exc:
+        if exc.errno in (errno.EACCES, errno.EAGAIN, errno.EDEADLK):
+            return False
+        raise
+    return True
+
+
+def _unlock(handle):
+    handle.seek(0)
+    if os.name == "nt":
+        import msvcrt
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 class BudgetStore:
     def __init__(self, ledger_path, caps, task_store=None):
         self.ledger = Path(ledger_path).resolve()
@@ -111,6 +165,109 @@ class BudgetStore:
         self.task_store = Path(task_store).resolve() if task_store else None
         self.identity = {"caps": caps, "ledger": str(self.ledger),
                          "task_store": str(self.task_store) if self.task_store else None}
+        self.recovery_dir = self.path.with_name(self.path.name + ".recovery")
+        self.apply_receipt = None
+        self.mirror_pending = False
+
+    @contextmanager
+    def lease(self, identifier):
+        """A kernel-owned lifetime marker; process death releases it without a clock/PID guess."""
+        self.recovery_dir.mkdir(parents=True, exist_ok=True)
+        handle = (self.recovery_dir / (identifier + ".lock")).open("a+b")
+        acquired = False
+        def release():
+            nonlocal acquired
+            if acquired:
+                try:
+                    _unlock(handle)
+                except OSError:
+                    pass  # Closing the descriptor also releases its kernel lock.
+                finally:
+                    acquired = False
+                    handle.close()
+        try:
+            if handle.seek(0, 2) == 0:
+                handle.write(b"\0")
+                handle.flush()
+            acquired = _lock(handle)
+            if not acquired:
+                raise BudgetStateError("reservation already has a live owner")
+            yield release
+        finally:
+            release()
+            handle.close()
+
+    def _owned(self, identifier):
+        path = self.recovery_dir / (identifier + ".lock")
+        try:
+            handle = path.open("r+b")
+        except FileNotFoundError:
+            return False
+        try:
+            acquired = _lock(handle)
+            if acquired:
+                _unlock(handle)
+            return not acquired
+        finally:
+            handle.close()
+
+    def write_receipt(self, receipt):
+        """Durably retain safe usage before attempting authority settlement."""
+        identifier = receipt["reservation_id"]
+        self.recovery_dir.mkdir(parents=True, exist_ok=True)
+        target = self.recovery_dir / (identifier + ".json")
+        if target.exists():
+            if decode(target.read_text(encoding="utf-8")) != receipt:
+                raise BudgetStateError("conflicting reservation receipt; preserved")
+            return
+        temporary = target.with_suffix(".tmp-" + uuid.uuid4().hex)
+        with temporary.open("x", encoding="utf-8") as handle:
+            handle.write(encode(receipt))
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.replace(target)
+        if os.name != "nt":
+            fd = os.open(self.recovery_dir, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+
+    def _recover(self, doc, settling=None):
+        changed = False
+        consumed = []
+        for path in sorted(self.recovery_dir.glob("*.json")):
+            if path.stem == settling:
+                continue  # The live owner applies its receipt in the yielded transaction.
+            receipt = decode(path.read_text(encoding="utf-8"))
+            identifier = receipt.get("reservation_id")
+            if (not isinstance(identifier, str) or path.stem != identifier
+                    or len(identifier) != 32 or any(c not in "0123456789abcdef" for c in identifier)
+                    or self.apply_receipt is None):
+                raise BudgetStateError("invalid or unsupported recovery receipt; preserved")
+            before = len(doc["events"])
+            self.apply_receipt(doc, receipt)
+            changed |= len(doc["events"]) != before
+            consumed.append(path)
+        for task in doc["tasks"].values():
+            pending = task["pending"]
+            if pending and pending["status"] == "pending" and not self._owned(pending["id"]):
+                pending["status"] = "uncertain"
+                changed = True
+        halted = bool(doc.get("overrun", False) or any(
+            task["pending"] and task["pending"]["status"] == "uncertain" for task in doc["tasks"].values()))
+        if doc.get("halted", False) != halted:
+            doc["halted"] = halted
+            changed = True
+        return changed, consumed
+
+    @staticmethod
+    def _remove_receipts(paths):
+        for path in paths:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass  # Replaying an already settled receipt is idempotent.
 
     def _bind_store(self):
         if self.task_store is None:
@@ -158,7 +315,7 @@ class BudgetStore:
                 os.fsync(handle.fileno())
 
     @contextmanager
-    def transaction(self):
+    def transaction(self, *, settling=None):
         connection = None
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -169,10 +326,28 @@ class BudgetStore:
             row = connection.execute("SELECT payload FROM authority WHERE id=1").fetchone()
             doc = decode(row[0]) if row else self._initial()
             validate(doc)
+            if self.task_store is None and isinstance(doc.get("identity"), dict):
+                # An optional JSON mirror is not part of whether a pilot exists.
+                self.identity["task_store"] = doc["identity"].get("task_store")
             if doc.get("identity") != self.identity:
-                raise BudgetStateError("pilot identity or caps changed; refusing counter reset")
+                raise BudgetStateError("pilot ledger path, explicit task-store binding or caps changed; refusing counter reset")
             self._bind_store()
-            self._mirror(doc)
+            changed, consumed = self._recover(doc, settling)
+            if changed:
+                validate(doc)
+                connection.execute("INSERT OR REPLACE INTO authority VALUES (1, ?)", (encode(doc),))
+                connection.commit()
+                self._remove_receipts(consumed)
+                connection.execute("BEGIN IMMEDIATE")
+                doc = decode(connection.execute("SELECT payload FROM authority WHERE id=1").fetchone()[0])
+            else:
+                self._remove_receipts(consumed)
+            try:
+                self._mirror(doc)
+            except (OSError, ValueError, TypeError, KeyError, OverflowError, BudgetStateError):
+                if settling is None:
+                    raise
+                # A derived mirror cannot prevent retaining an already observed send.
             # Preserve cents even beside the largest accepted finite float cap.
             # Prices and persisted balances must not lose small increments.
             with localcontext() as arithmetic:
@@ -182,12 +357,17 @@ class BudgetStore:
             connection.execute("INSERT OR REPLACE INTO authority VALUES (1, ?)",
                                (encode(doc),))
             connection.commit()
-            # A crash here leaves a durable journal suffix. The next transaction
-            # replays it. No caller gets permission to send before this completes.
-            connection.execute("BEGIN IMMEDIATE")
-            latest = decode(connection.execute("SELECT payload FROM authority WHERE id=1").fetchone()[0])
-            self._mirror(latest)
-            connection.commit()
+            # Authority has committed. A later derived-mirror failure cannot
+            # change a completed send into a refusal or erase its observed usage.
+            self.mirror_pending = False
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                latest = decode(connection.execute("SELECT payload FROM authority WHERE id=1").fetchone()[0])
+                self._mirror(latest)
+                connection.commit()
+            except (sqlite3.Error, OSError, ValueError, TypeError, KeyError, OverflowError, BudgetStateError):
+                connection.rollback()
+                self.mirror_pending = True
         except (sqlite3.Error, OSError, ValueError, TypeError, KeyError, OverflowError) as exc:
             if connection is not None:
                 connection.rollback()

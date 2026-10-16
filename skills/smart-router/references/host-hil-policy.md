@@ -63,6 +63,13 @@ Timeouts stop the supervised command. Descendant process-tree cleanup, crash-saf
 cash/call reservations, fresh model identity and end-to-end agent dispatch remain
 Host responsibilities; a policy verdict alone does not establish those guarantees.
 
+For dispatcher accounting, load the current
+[host compatibility amendment](../../../docs/DISPATCH_ACCOUNTING.md#host-compatibility-amendment--2026-10-16)
+before resuming a persisted pilot. Preserve terminal abandonment and reservation
+identities. `dispatch-unsettled` is return-only recovery evidence, not a journal
+append or permission to resend; a pending mirror does not prove a failed send.
+An unknown canonical decision stops automatically with a contract finding.
+
 ## 5. Class statistics
 
 `tools/class_breaker.py` records facts per task and recomputes rates only under

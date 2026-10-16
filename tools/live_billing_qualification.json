@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "qualified": false,
+  "qualification_scope": "modeled-request-tokens",
+  "final_bill_guaranteed": false,
+  "endpoint": "https://api.anthropic.com",
+  "request_mode": "anthropic-messages-plaintext-standard-global-v1",
+  "price_revision": "prices-2",
+  "price_sha256": null,
+  "verified_at": null,
+  "expires_at": null,
+  "evidence_refs": [],
+  "profiles": {},
+  "note": "Unqualified by default. A trusted host must review captured provider limits, rates and exact request scope before supplying a fresh matching record. Artifact hashes prove integrity, not truth. No final bill guarantee is established."
+}

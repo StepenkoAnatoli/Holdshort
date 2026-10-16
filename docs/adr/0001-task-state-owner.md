@@ -179,4 +179,24 @@ logic — re-shape") fired and step ③ was **held**.
   crosscheck implementation).
 - On-disk formats stay frozen; appendices A and B change no format.
 
+## Compatibility amendment — accounting correctness fixes, 2026-10-16
+
+The separately authorized known-finding fixes for #75–#83 require an additive
+accounting extension. Decision 2's freeze remains the rule for the read-owner
+migration, with this explicit exception for those runtime correctness fixes:
+canonical `task-abandoned` and `blocked-abandoned` events, optional task
+`abandoned` (legacy absence means false), optional settlement/mirror status and
+transport timestamps, and a `<not-dispatched>` event profile for zero-send
+abandonment. Existing paths, field names and decision meanings are preserved.
+`dispatch-unsettled` is a returned recovery observation only; it is not a
+canonical journal decision and does not extend `KNOWN_DECISIONS`.
+
+The exact defaults and old-reader stop behavior are published in
+[Dispatch accounting — host compatibility amendment](../DISPATCH_ACCOUNTING.md#host-compatibility-amendment--2026-10-16)
+and linked from the host policy. Matching tools and instructions must be deployed
+together; hosts must reload the instructions before resuming. This amendment
+introduces no automatic migration, new approval checkpoint, or reset of prior
+charges. Appendix B's #86 reshape remains held until the accounting fixes land
+and adopts their read-only snapshot path. It does not own these runtime changes.
+
 

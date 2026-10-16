@@ -14,6 +14,7 @@ tools/*.ledger.jsonl
 *.budget.sqlite3-journal
 *.budget.sqlite3-wal
 *.budget.sqlite3-shm
+*.budget.sqlite3.recovery/
 tools/live_fill_sheet.json
 tools/live_fill_sheet.csv
 # (live-fill artifacts are generated; generator + tally are tracked)

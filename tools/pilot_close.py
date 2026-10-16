@@ -42,8 +42,8 @@ def disposition_of(task_row: dict) -> str:
     return outcome or "unknown"
 
 
-def close_ledger(prices: dict, entries: List[dict]) -> dict:
-    base = pr.build_report(prices, entries)
+def close_ledger(prices: dict, entries: List[dict], *, accounting_report=None) -> dict:
+    base = pr.build_report(prices, entries) if accounting_report is None else accounting_report
     caps = base["pilot"]["caps"]
     accounting_gap = base["accounting_status"] != "intact"
 
@@ -53,10 +53,15 @@ def close_ledger(prices: dict, entries: List[dict]) -> dict:
             "task_id": st["task_id"],
             "attempts": st["attempts"],
             "spend_usd": round(st["spent"], 6),
+            "spend_complete": st.get("spend_complete", True),
+            "review_reserved_usd": round(st.get("review_reserved", 0), 6),
+            "uncertain_reserved_usd": round(st.get("uncertain_reserved", 0), 6),
+            "last_refusal": st.get("last_refusal"),
             "disposition": disposition_of(st),
             "same_profile_repairs_credited": st.get("same_profile_repairs_credited", 0),
             "within_attempt_cap": st["attempts"] <= caps["max_attempts_per_task"],
-            "within_cost_cap": st["spent"] <= caps["max_cost_per_task_usd"] + 1e-9,
+            "within_cost_cap": (st["spent"] <= caps["max_cost_per_task_usd"] + 1e-9
+                                if st.get("spend_complete", True) else None),
             "accounting_gap": accounting_gap,
         }
         closures.append(closed)
@@ -73,11 +78,17 @@ def close_ledger(prices: dict, entries: List[dict]) -> dict:
         "cap_pilot_usd": caps["max_cost_per_pilot_usd"],
         "reserved_usd": base["pilot"].get("reserved_usd", 0),
         "total_spend_complete": base["pilot"].get("total_spend_complete", True),
-        "headroom_usd": round(caps["max_cost_per_pilot_usd"] - base["pilot"]["total_spend_usd"]
-                              - base["pilot"].get("reserved_usd", 0), 6),
-        "within_pilot_cap": base["pilot"]["total_spend_usd"] <= caps["max_cost_per_pilot_usd"] + 1e-9,
+        "headroom_usd": (round(caps["max_cost_per_pilot_usd"] - base["pilot"]["total_spend_usd"]
+                               - base["pilot"].get("reserved_usd", 0), 6)
+                          if base["pilot"].get("reserved_complete", True) else None),
+        "within_pilot_cap": (base["pilot"]["total_spend_usd"] <= caps["max_cost_per_pilot_usd"] + 1e-9
+                             if base["pilot"].get("total_spend_complete", True) else None),
+        "halted": base["pilot"].get("halted", False),
+        "reservation_overruns": base["pilot"].get("reservation_overruns", 0),
         "accounting_status": base["accounting_status"],
         "problems": base["problems"],
+        "accounting_source": base.get("accounting_source", "provided-ledger"),
+        "source_evidence": base.get("source_evidence"),
     }
     return {
         "generator": "tools/pilot_close.py",
@@ -89,18 +100,25 @@ def close_ledger(prices: dict, entries: List[dict]) -> dict:
 
 
 def markdown(closure: dict) -> str:
-    rows = ["| Task | Attempts | Spend (USD) | Disposition | Caps OK |",
-            "| --- | --- | --- | --- | --- |"]
+    rows = ["| Task | Attempts | Spend (USD) | Reserved (USD) | Disposition | Caps OK |",
+            "| --- | --- | --- | --- | --- | --- |"]
     for c in closure["closures"]:
         caps_ok = c["within_attempt_cap"] and c["within_cost_cap"]
-        rows.append(f"| {c['task_id']} | {c['attempts']} | {c['spend_usd']:.6f} "
-                    f"| {c['disposition']} | {'OK' if caps_ok else 'FLAG'} |")
+        spend = f"{c['spend_usd']:.6f}" if c["spend_complete"] else f"known {c['spend_usd']:.6f}; incomplete"
+        caps_label = "UNKNOWN" if c["within_cost_cap"] is None else "OK" if caps_ok else "FLAG"
+        reserved = c["review_reserved_usd"] + c["uncertain_reserved_usd"]
+        rows.append(f"| {c['task_id']} | {c['attempts']} | {spend} | {reserved:.6f} "
+                    f"| {c['disposition']} | {caps_label} |")
     p = closure["pilot_totals"]
+    headroom = "unknown" if p["headroom_usd"] is None else f"${p['headroom_usd']:.6f}"
     rows.append("")
     rows.append(f"**Pilot totals**: {p['completed']}/{p['tasks_closed']} tasks completed, "
                 f"{p['blocked']} blocked; {p['dispatches']} dispatches; "
-                f"spend ${p['total_spend_usd']:.6f} of ${p['cap_pilot_usd']:.2f} "
-                f"(headroom ${p['headroom_usd']:.6f}); accounting {p['accounting_status']}.")
+                f"known spend ${p['total_spend_usd']:.6f} of ${p['cap_pilot_usd']:.2f} "
+                f"({'complete' if p['total_spend_complete'] else 'incomplete'}; ${p['reserved_usd']:.6f} reserved); "
+                f"(headroom {headroom}); accounting {p['accounting_status']}.")
+    if p["halted"]:
+        rows.append(f"Pilot stopped: unresolved usage or reservation overrun ({p['reservation_overruns']} overrun(s)).")
     rows.append("_No section-7 decision is derived from this table; see the Phase 4 report's section-4 fields._")
     return "\n".join(rows)
 
@@ -204,18 +222,19 @@ def main(argv=None) -> int:
     if prices.get("revision") != "prices-2":
         print("pilot_close: unexpected prices revision — stop", file=sys.stderr)
         return 2
-    entries = pr.load_jsonl(Path(args.ledger))
-    if not entries:
+    inputs = pr.load_accounting_inputs(Path(args.ledger))
+    if not inputs["accounting_entries"] and not inputs["authority_present"]:
         print("pilot_close: ledger empty or missing — nothing to close", file=sys.stderr)
         return 2
-    closure = close_ledger(prices, entries)
+    accounting = pr.build_accounting_report(prices, inputs)
+    closure = close_ledger(prices, inputs["accounting_entries"], accounting_report=accounting)
     sheet_summary = None
     sheet_violations = 0
     if args.with_sheet:
         assignments = None
         if Path(args.assignments).is_file():
             assignments = json.loads(Path(args.assignments).read_text(encoding="utf-8"))
-        sheet_summary = build_sheet_section(entries, assignments, Path(args.sheet), prices)
+        sheet_summary = build_sheet_section(inputs["raw_entries"], assignments, Path(args.sheet), prices)
         closure["live_fill_sheet"] = sheet_summary
         if not sheet_summary["integrity_ok"]:
             sheet_violations = len(sheet_summary["problems"])

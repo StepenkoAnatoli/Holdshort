@@ -21,9 +21,12 @@ Covers the §5 cap surface and the Gate-4 fail-closed contract:
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import live_dispatcher as ld
@@ -524,6 +527,73 @@ with tempfile.TemporaryDirectory() as td:
     check("T14h unmapped profile exits 2", rc == 2, str(rc))
     check("T14h refusal sends nothing, no ledger line", sent == [] and counted == []
           and entries(ledger(tmp)) == [], f"{sent} {counted}")
+
+# T16 real adapter/HTTP/CLI producer path, with synthetic qualification and IO.
+import pilot_report
+from test_billing_qualification import synthetic_fixture
+
+
+class Body:
+    def __init__(self, raw):
+        self.raw = raw
+    def __enter__(self):
+        return self
+    def __exit__(self, *exc):
+        return False
+    def read(self):
+        return self.raw
+
+
+for label, raw in (("no usage block", b'{"id":"synthetic","content":[]}'),
+                   ("non-JSON body", b"<html>synthetic gateway</html>")):
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        import dispatch_adapter as da
+        qualification, price_path, _ = synthetic_fixture(tmp)
+        sent = []
+        real_build = da.build_dispatch_fn
+        fn = real_build(api_key="placeholder", qualification_path=qualification,
+                        prices_path=price_path, now_fn=lambda: 1500,
+                        count_transport=lambda *args: 1000)
+        def fake_open(req, timeout):
+            sent.append(req.full_url)
+            return Body(raw)
+        def run(task_id):
+            return ld.main(["--live", "--confirm-egress", "--profile", "cloud-S", "--task-id", task_id,
+                            "--request", "synthetic", "--work-bound", "0.05", "--review-bound", "0.01",
+                            "--ledger", str(ledger(tmp))])
+        with patch.object(da, "build_dispatch_fn", return_value=fn), patch.object(da._HTTP_OPENER, "open", fake_open):
+            rc, rc_next = run("T16"), run("T16-next")
+        es = entries(ledger(tmp))
+        errors = [e for e in es if e["task_id"] == "T16" and e["decision"] == "dispatch-error"]
+        check(f"T16 {label}: actual HTTP producer retains unknown usage", rc == 1 and len(errors) == 1
+              and sent == [da.APPROVED_ENDPOINT + "/v1/messages"]
+              and (errors[0]["input_tokens"], errors[0]["output_tokens"], errors[0]["cost_usd"]) == (None, None, None),
+              str((rc, sent, errors)))
+        report = pilot_report.build_report(prices(), es)
+        check(f"T16 {label}: report remains incomplete", report["accounting_status"] == "GAPS_FOUND"
+              and not report["pilot"]["total_spend_complete"], str(report["problems"]))
+        check(f"T16 {label}: next task is not sent", rc_next == 1 and len(sent) == 1
+              and es[-1]["decision"] == "blocked-uncertain", str(es[-1]))
+
+# T17 a relative CLI ledger is repository-relative from either caller directory.
+with tempfile.TemporaryDirectory() as td:
+    root = Path(td)
+    one, two = root / "one", root / "two"
+    one.mkdir()
+    two.mkdir()
+    absolute_ledger = root / "pilot" / "ledger.jsonl"
+    relative_ledger = os.path.relpath(absolute_ledger, ld.REPO_ROOT)
+    argv = [sys.executable, str(Path(ld.__file__).resolve()), "--profile", "cloud-C", "--task-id", "T17",
+            "--request", "synthetic", "--work-bound", "0.01", "--review-bound", "0.01",
+            "--expected-in-tokens", "1000", "--expected-out-tokens", "100", "--ledger", relative_ledger]
+    results = [subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=30) for cwd in (one, two)]
+    observed = [json.loads(result.stdout) for result in results]
+    check("T17 caller directory does not create a new authority", [e["attempt_no"] for e in observed] == [1, 2]
+          and all(result.returncode == 0 for result in results), str(observed))
+    check("T17 absolute target holds both physical reservations", absolute_ledger.is_file()
+          and len([e for e in entries(absolute_ledger) if e["decision"] == "dispatch-reserved"]) == 2,
+          str(absolute_ledger))
 
 print(f"\n{'ALL PASS' if failures == 0 else f'{failures} FAILURES'}")
 sys.exit(0 if failures == 0 else 1)

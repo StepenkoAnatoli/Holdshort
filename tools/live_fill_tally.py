@@ -25,12 +25,26 @@ from pathlib import Path
 from typing import Dict
 
 NOT_MEASURED = "not_measured"
+UNKNOWN_LATENCY = "not_measured_transport_latency"
 MEASURED_REQUIRED = ("ts", "profile_dispatched", "input_tokens", "output_tokens",
                      "cost_usd", "latency_s", "outcome", "task_id")
 
 
 def load_prices():
     return json.loads(Path(__file__).with_name("prices-2.json").read_text(encoding="utf-8"))
+
+
+def frozen_evaluation_plan():
+    import eval_pool
+    return eval_pool.freeze_plan(eval_pool.load_pool())
+
+
+def _matches_assignment(actual, expected):
+    """Match frozen scalar metadata without Python's bool/int/float coercion."""
+    return isinstance(actual, dict) and all(
+        key in actual and type(actual[key]) is type(value) and actual[key] == value
+        for key, value in expected.items()
+    )
 
 
 def empty_observation(obs):
@@ -40,7 +54,7 @@ def empty_observation(obs):
 
 def source_fingerprint(entry, line):
     fields = {k: entry.get(k) for k in
-              ("task_id", "profile_id", "ts", "input_tokens", "output_tokens", "cost_usd", "decision", "reservation_id")}
+              ("task_id", "profile_id", "ts", "observation_ts", "input_tokens", "output_tokens", "cost_usd", "decision", "reservation_id", "purpose", "transport_started_at", "transport_finished_at")}
     fields["ledger_line_no"] = line
     return hashlib.sha256(json.dumps(fields, sort_keys=True, allow_nan=False).encode("utf-8")).hexdigest()
 
@@ -53,20 +67,35 @@ def observation_problems(obs, prices):
              "ts": obs.get("ts"), "input_tokens": obs.get("input_tokens"),
              "output_tokens": obs.get("output_tokens"), "cost_usd": obs.get("cost_usd"),
              "decision": obs.get("outcome"), "reason": "sheet observation",
-             "reservation_id": obs.get("reservation_id")}
+             "reservation_id": obs.get("reservation_id"),
+             "purpose": obs.get("purpose", "work"),
+             "transport_started_at": obs.get("transport_started_at"),
+             "transport_finished_at": obs.get("transport_finished_at")}
     problems = pr.entry_problems(entry)
     for field in ("input_tokens", "output_tokens"):
         if type(obs.get(field)) is not int or obs[field] < 0:
             problems.append(f"{field} must be measured nonnegative integer usage")
     if not pr.finite_nonnegative(obs.get("cost_usd")):
         problems.append("cost_usd must be measured finite nonnegative cost")
+    if not pr.finite_nonnegative(obs.get("source_event_ts", obs.get("ts"))):
+        problems.append("source_event_ts must be a finite nonnegative observation")
     if obs.get("accounting_intact") is not True:
         problems.append("accounting_intact must be true")
     if type(obs.get("ledger_line_no")) is not int or obs["ledger_line_no"] < 1:
         problems.append("ledger_line_no must be a positive integer")
     latency = obs.get("latency_s")
-    if latency != "not_computable_first_dispatch" and not pr.finite_nonnegative(latency):
-        problems.append("latency_s must be measured or explicitly unavailable on first dispatch")
+    if latency not in ("not_computable_first_dispatch", UNKNOWN_LATENCY) and not pr.finite_nonnegative(latency):
+        problems.append("latency_s must be measured or explicitly unavailable")
+    started, finished = obs.get("transport_started_at"), obs.get("transport_finished_at")
+    if started is not None and finished is not None:
+        if (not pr.finite_nonnegative(started) or not pr.finite_nonnegative(finished)
+                or finished < started or not pr.finite_nonnegative(latency)
+                or abs(latency - (finished - started)) > 1e-9):
+            problems.append("latency_s must match the observed transport interval")
+    elif latency != UNKNOWN_LATENCY:
+        problems.append("transport latency requires both start and finish evidence")
+    if obs.get("purpose", "work") != "work":
+        problems.append("a verification call is not an independent evaluation trial")
     if not problems:
         if entry["decision"] in ("dispatched", "dispatch-error", "dispatch-reconciled"):
             expected = pr.recompute_cost(prices, entry["profile_id"], entry["input_tokens"], entry["output_tokens"])
@@ -75,6 +104,8 @@ def observation_problems(obs, prices):
         elif entry["input_tokens"] or entry["output_tokens"] or entry["cost_usd"]:
             problems.append("a blocked observation cannot carry dispatch usage")
         entry["reservation_id"] = obs.get("reservation_id")
+        entry["observation_ts"] = obs.get("ts")
+        entry["ts"] = obs.get("source_event_ts", obs.get("ts"))
         if obs.get("source_fingerprint") != source_fingerprint(entry, obs["ledger_line_no"]):
             problems.append("observation changed from its imported evidence")
     return problems
@@ -90,14 +121,25 @@ def check_integrity(sheet: dict, prices=None, *, recorded_counts=None) -> list:
             or type(sheet.get("observations_per_arm_target")) is not int
             or sheet["observations_per_arm_target"] <= 0):
         return ["sheet has invalid cells, arms, or observation target"]
+    frozen = None
+    if "evaluation_plan" in sheet:
+        try:
+            frozen = frozen_evaluation_plan()
+            expected = {key: frozen[key] for key in ("pool_id", "manifest_sha256", "schedule_sha256")}
+            if sheet["evaluation_plan"] != expected:
+                return ["sheet evaluation plan differs from the frozen pool"]
+        except (ValueError, OSError):
+            return ["frozen evaluation pool cannot be validated"]
     from gen_live_fill_sheet import ARMS, TASKS, OBS_PER_ARM, REPEATS_PER_TASK, PROFILE_BY_ARM
     if (set(sheet["arms"]) != set(ARMS) or set(sheet["cells"]) != {f"{arm}|{task}" for arm in ARMS for task in TASKS}
             or sheet["observations_per_arm_target"] < OBS_PER_ARM
+            or type(sheet.get("repeats_per_task")) is not int
             or sheet.get("repeats_per_task") != REPEATS_PER_TASK):
         problems.append("sheet does not cover the ratified arms, task columns, target, and repeats")
     capacity = {arm: 0 for arm in sheet["arms"]}
     evidence_lines = set()
     evidence_hashes = set()
+    evidence_trials = set()
     for cell_id, c in sheet["cells"].items():
         if (not isinstance(c, dict) or not isinstance(c.get("arm"), str) or c["arm"] not in capacity
                 or not isinstance(c.get("observations"), list) or type(c.get("filled")) is not bool
@@ -143,13 +185,22 @@ def check_integrity(sheet: dict, prices=None, *, recorded_counts=None) -> list:
                 evidence_lines.add(line)
                 if isinstance(fingerprint, str):
                     evidence_hashes.add(fingerprint)
-                task = obs["task_id"]
+                if frozen is not None:
+                    assignment = frozen["assignments"].get(obs["task_id"])
+                    if assignment is None or not _matches_assignment(obs, assignment):
+                        failures.append("observation differs from its frozen trial assignment")
+                    if obs["task_id"] in evidence_trials:
+                        failures.append("one trial cannot be counted twice")
+                    evidence_trials.add(obs["task_id"])
+                task = (assignment["fixture_id"] if frozen is not None and assignment is not None
+                        else obs["task_id"])
                 task_counts[task] = task_counts.get(task, 0) + 1
-                if (type(obs.get("repeat")) is not int or obs["repeat"] != task_counts[task]
+                if (type(obs.get("repeat")) is not int or (frozen is None and obs["repeat"] != task_counts[task])
                         or task_counts[task] > c.get("planned_repeats_per_task", 0)):
                     failures.append("task repeat count does not match its plan")
                 assignment_by_task.setdefault(task, len(assignment_by_task) + 1)
-                if obs.get("assignment_slot") != assignment_by_task[task]:
+                if (type(obs.get("assignment_slot")) is not int
+                        or obs.get("assignment_slot") != assignment_by_task[task]):
                     failures.append("task assignment slot does not match imported task")
                 if len(assignment_by_task) > c.get("planned_tasks", 0):
                     failures.append("too many independently assigned tasks in cell")
@@ -204,6 +255,8 @@ def tally_summary(sheet: dict, prices=None) -> dict:
         "observations_max": target * len(per_arm),
         "problems": problems,
         "integrity_ok": not problems,
+        "evaluation_plan_bound": "evaluation_plan" in sheet,
+        "live_model_qualification": "pending",
     }
 
 
@@ -245,8 +298,8 @@ def import_from_ledger(sheet: dict, entries: list, assignments: dict, prices=Non
       * already-filled slots are skipped (idempotent re-import)
       * lines whose task has no assignment, wrong cell name, or whose target
         cell has no empty slot are NEVER silently dropped — findings
-      * latency = same-task consecutive ts delta; first dispatch per task is
-        "not_computable_first_dispatch"
+      * latency uses the observed transport interval, or is explicitly unavailable;
+        same-task timestamp deltas are separate inter-observation intervals
       * D-arm gate-runner route is not carried by ledger lines: recorded as
         gate_runner_route = "ledger-only"
     """
@@ -258,10 +311,26 @@ def import_from_ledger(sheet: dict, entries: list, assignments: dict, prices=Non
         return [{"line": None, "task_id": None, "kind": "bad-assignment", "detail": "assignments must be an object"}]
     if not isinstance(sheet, dict) or not isinstance(sheet.get("cells"), dict):
         return [{"line": None, "task_id": None, "kind": "invalid-sheet", "detail": "sheet cells must be an object"}]
-    if sheet["cells"]:
-        violations = check_integrity(sheet, prices)
-        if violations:
-            return [{"line": None, "task_id": None, "kind": "invalid-sheet", "detail": "; ".join(violations)}]
+    violations = check_integrity(sheet, prices)
+    if violations:
+        return [{"line": None, "task_id": None, "kind": "invalid-sheet", "detail": "; ".join(violations)}]
+    frozen = None
+    bound = "evaluation_plan" in sheet
+    wants_frozen = bound or any(isinstance(value, dict) and "manifest_sha256" in value for value in assignments.values())
+    if wants_frozen:
+        try:
+            frozen = frozen_evaluation_plan()
+        except (ValueError, OSError):
+            return [{"line": None, "task_id": None, "kind": "invalid-plan", "detail": "frozen evaluation pool cannot be validated"}]
+        if (assignments != frozen["assignments"] or any(
+                not _matches_assignment(assignments[task_id], expected)
+                for task_id, expected in frozen["assignments"].items())):
+            return [{"line": None, "task_id": None, "kind": "invalid-plan", "detail": "assignments must match the complete frozen schedule"}]
+        if not bound:
+            if any(not empty_observation(obs) for cell in sheet["cells"].values()
+                   if isinstance(cell, dict) for obs in cell.get("observations", [])):
+                return [{"line": None, "task_id": None, "kind": "invalid-plan", "detail": "legacy recorded sheet cannot silently acquire a new protocol"}]
+            sheet["evaluation_plan"] = {key: frozen[key] for key in ("pool_id", "manifest_sha256", "schedule_sha256")}
     per_task_prev_ts: dict = {}
     empties: dict = {}
     imported = {}
@@ -271,19 +340,58 @@ def import_from_ledger(sheet: dict, entries: list, assignments: dict, prices=Non
             if not empty_observation(obs) and type(obs.get("ledger_line_no")) is int:
                 imported[obs["ledger_line_no"]] = (cell_id, obs)
     from pilot_report import effective_entries, ledger_problems
-    for idx, errors in ledger_problems(entries).items():
+    invalid_rows = ledger_problems(entries)
+    for idx, errors in invalid_rows.items():
         e = entries[idx - 1]
         findings.append({"line": idx, "task_id": e.get("task_id") if isinstance(e, dict) else None,
                          "kind": "invalid-ledger-entry", "detail": "; ".join(errors)})
+    if frozen is not None:
+        started_trials = []
+        excluded = {"verification-complete", "dispatch-cancelled", "task-abandoned",
+                    "blocked-verified", "blocked-abandoned", "blocked-uncertain"}
+        for line, event in enumerate(entries, 1):
+            if (line in invalid_rows or event.get("purpose", "work") != "work"
+                    or event.get("decision") in excluded):
+                continue
+            trial = event["task_id"]
+            if trial not in started_trials:
+                started_trials.append(trial)
+        expected_order = [trial["task_id"] for trial in frozen["trials"]]
+        if started_trials != expected_order[:len(started_trials)]:
+            findings.append({"line": None, "task_id": None, "kind": "schedule-drift",
+                             "detail": "execution order is not a prefix of the frozen schedule"})
+            return findings
     effective = list(effective_entries(entries))
+    # Reconciliation is accounting evidence recorded later; it is not a new
+    # execution timestamp. Retain the original reservation/send observations.
+    original = {}
+    for origin_line, row in enumerate(entries, 1):
+        if origin_line in invalid_rows or not isinstance(row, dict) or not isinstance(row.get("reservation_id"), str):
+            continue
+        if row.get("decision") in ("dispatch-reserved", "dispatch-error", "dispatched"):
+            prior = original.get(row["reservation_id"])
+            if prior is None or row.get("decision") != "dispatch-reserved":
+                original[row["reservation_id"]] = row
+    sampling_entries = []
+    for line, event in effective:
+        row = dict(event)
+        origin = original.get(row.get("reservation_id"), row) if row["decision"] == "dispatch-reconciled" else row
+        for field in ("transport_started_at", "transport_finished_at"):
+            if row.get(field) is None:
+                row[field] = origin.get(field)
+        row["purpose"] = row.get("purpose", "work")
+        row["observation_ts"] = origin.get("transport_finished_at") or origin["ts"]
+        sampling_entries.append((line, row))
     current_lines = {idx for idx, _ in effective}
     for idx, (_, obs) in imported.items():
         if idx not in current_lines:
             findings.append({"line": idx, "task_id": obs["task_id"], "kind": "missing-source-evidence",
                              "detail": "recorded source is absent or superseded in current ledger; original observation preserved"})
-    for idx, e in effective:
+    for idx, e in sampling_entries:
         tid = e.get("task_id")
-        if e.get("decision") in ("verification-complete", "dispatch-cancelled"):
+        if (e.get("purpose", "work") != "work" or e.get("decision") in (
+                "verification-complete", "dispatch-cancelled", "task-abandoned",
+                "blocked-verified", "blocked-abandoned", "blocked-uncertain")):
             continue  # acceptance evidence is not an additional model trial
         if any(e.get(field) is None for field in ("input_tokens", "output_tokens", "cost_usd")):
             _finding("unknown-usage", "unsettled dispatch is not a completed measured observation")
@@ -291,9 +399,11 @@ def import_from_ledger(sheet: dict, entries: list, assignments: dict, prices=Non
         digest = source_fingerprint(e, idx)
         if idx in imported:
             old_cell, old = imported[idx]
-            if old.get("source_fingerprint") != digest or assignments.get(tid) != {"arm": sheet["cells"][old_cell]["arm"], "cell": sheet["cells"][old_cell]["task_id"]}:
+            expected_assignment = ({key: old.get(key) for key in frozen["assignments"][tid]} if frozen else
+                                   {"arm": sheet["cells"][old_cell]["arm"], "cell": sheet["cells"][old_cell]["task_id"]})
+            if old.get("source_fingerprint") != digest or assignments.get(tid) != expected_assignment:
                 _finding("changed-evidence", "recorded source or assignment changed; original observation preserved")
-            per_task_prev_ts[tid] = e["ts"]
+            per_task_prev_ts[tid] = e["observation_ts"]
             continue
         a = assignments.get(tid)
         if a is None:
@@ -313,14 +423,21 @@ def import_from_ledger(sheet: dict, entries: list, assignments: dict, prices=Non
             _finding("over-capacity", f"cell {cell_id!r} has no empty slot — line not imported (over-capacity task/repeat beyond plan)")
             continue
         obs = dict(empty[0])
-        ts = e.get("ts")
+        ts = e["observation_ts"]
         in_toks = e["input_tokens"]
         out_toks = e["output_tokens"]
         prev = per_task_prev_ts.get(tid)
-        latency = (ts - prev) if (prev is not None and isinstance(ts, (int, float))) else "not_computable_first_dispatch"
+        interval = ts - prev if prev is not None else None
+        started, finished = e.get("transport_started_at"), e.get("transport_finished_at")
+        latency = finished - started if started is not None and finished is not None else UNKNOWN_LATENCY
         obs.update({
             "task_id": tid,
             "ts": ts,
+            "source_event_ts": e["ts"],
+            "purpose": e.get("purpose", "work"),
+            "transport_started_at": started,
+            "transport_finished_at": finished,
+            "inter_observation_interval_s": interval,
             "profile_dispatched": e.get("profile_id"),
             "input_tokens": in_toks,
             "output_tokens": out_toks,
@@ -333,6 +450,8 @@ def import_from_ledger(sheet: dict, entries: list, assignments: dict, prices=Non
             "source_fingerprint": digest,
             "reservation_id": e.get("reservation_id"),
         })
+        if frozen is not None:
+            obs.update(a)
         if (arm in ("A", "B", "C") and obs["outcome"] in ("dispatched", "dispatch-error", "dispatch-reconciled")
                 and obs["profile_dispatched"] != cell["planned_profile"]):
             _finding("wrong-arm-profile", "observation profile does not match its fixed arm")
@@ -341,18 +460,25 @@ def import_from_ledger(sheet: dict, entries: list, assignments: dict, prices=Non
         if errors:
             _finding("invalid-observation", "; ".join(errors))
             continue
-        recorded_for_task = sum(1 for recorded in cell["observations"] if recorded.get("task_id") == tid)
+        fixture_id = a.get("fixture_id", tid) if frozen is not None else tid
+        recorded_for_task = sum(1 for recorded in cell["observations"]
+                                if (recorded.get("fixture_id", recorded.get("task_id")) if frozen is not None
+                                    else recorded.get("task_id")) == fixture_id)
+        if frozen is not None and any(recorded.get("task_id") == tid for recorded in cell["observations"]):
+            _finding("duplicate-trial-work", "repairs of one execution are not independent repeats")
+            continue
         if recorded_for_task >= cell["planned_repeats_per_task"]:
             _finding("over-repeat-limit", "task already has its planned repeat count")
             continue
-        assigned_tasks = list(dict.fromkeys(o["task_id"] for o in cell["observations"] if not empty_observation(o)))
-        if tid not in assigned_tasks and len(assigned_tasks) >= cell["planned_tasks"]:
+        assigned_tasks = list(dict.fromkeys(o.get("fixture_id", o["task_id"]) if frozen is not None else o["task_id"]
+                                            for o in cell["observations"] if not empty_observation(o)))
+        if fixture_id not in assigned_tasks and len(assigned_tasks) >= cell["planned_tasks"]:
             _finding("over-task-capacity", "cell already contains its planned assigned tasks")
             continue
-        if tid not in assigned_tasks:
-            assigned_tasks.append(tid)
-        obs["repeat"] = recorded_for_task + 1
-        obs["assignment_slot"] = assigned_tasks.index(tid) + 1
+        if fixture_id not in assigned_tasks:
+            assigned_tasks.append(fixture_id)
+        obs["repeat"] = a["repeat"] if frozen is not None else recorded_for_task + 1
+        obs["assignment_slot"] = assigned_tasks.index(fixture_id) + 1
         per_task_prev_ts[tid] = ts
         empty.pop(0).update(obs)
         imported[idx] = (cell_id, obs)

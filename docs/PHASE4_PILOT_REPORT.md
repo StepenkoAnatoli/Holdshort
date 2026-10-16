@@ -115,21 +115,23 @@ SIGNED) and the runbook's go-live preflight pass. It is preregistered *shape*, n
 per-arm sample size and repetitions are the preregistration's ratified rules (20 assigned
 evaluated observations per arm; 2 repeats per task, cold cache; 50/50 tuning/holdout).
 
-**Current readiness caveat (2026-10-15):** the ratified Phase 3 catalogue contains
-five concrete tasks. At two repeats each, that pool supplies only **10 observations
-per arm**, below the required minimum of 20. The version 2 sheet now provides
-**80 structural slots, 20 per arm**, using two distinct task positions in each of
-five category columns and two repeats per task. Those positions do not qualify
-additional tasks or amend the frozen protocol. A representative prospective task
-pool, including its tuning/holdout assignment and acceptance checks, must be
-qualified and recorded before a live trial. A reliable strict live billing bound
-also remains unqualified. This update reports tooling changes, not live results.
+**Readiness update (2026-10-15):** the historical five-task catalogue supplied
+only 10 observations per arm. Phase 3 §13 now records a prospective ten-fixture
+pool with executable acceptance checks and a pinned 80-trial schedule: two
+repeats for each fixture in every arm, with five tuning and five holdout fixtures.
+Every baseline fails its checks and every reference fix passes. This establishes
+local task contracts and 20 total observations per arm, including ten holdout
+observations; it does not establish live model performance. Each execution has
+its own budget task ID and a fresh workspace. The original ratified records are
+preserved. The checked-in billing qualification remains unqualified, and the
+default real adapter refuses before egress. This update reports tooling and
+prospective configuration, not live results or a final provider-bill guarantee.
 
 | Element | Contract |
 | --- | --- |
 | Mapping task↔cell | The live pilot's task pool (preregistration §3 categories: typo/mechanical/text per §10) maps onto the five matrix columns. Each live task lands in cell `(arm, task)` by its assigned arm; D-arm cells additionally record the gate-runner's route decision (profile, rejects). |
-| Fill cadence | 20 observations fill each of the 4 arm rows; with 2 ratified repeats each task contributes 2 observations → 10 tasks minimum per arm. Order interleaves arms (A→B→C→D per task pair) so spend/time drift hits arms symmetrically. |
-| What a measured cell records | Per observation: profile actually dispatched, `(input_tokens, output_tokens)` from usage evidence, cost checked against `tools/prices-2.json`, and decision metadata from `tools/pilot_ledger.jsonl`. The importer's `latency_s` is the interval between ledger timestamps for the same task; the first dispatch is explicitly unavailable. It is not a measured send-to-response duration. The host must collect the trial's required latency and acceptance evidence separately. |
+| Fill cadence | Ten fixtures with two repeats supply 20 observations per arm. `python tools/eval_pool.py plan` emits the pinned schedule and full assignment map. Arms interleave within each fixture/repeat block in its frozen order. Fixture identity, execution task ID, repeat, and tuning/holdout split are recorded separately. |
+| What a measured cell records | Per observation: dispatched profile, measured token usage, cost checked against configured rates, and source identity. Transport start/finish evidence determines `latency_s`; absent timing is explicitly unknown. Inter-observation intervals are separate. Later reconciliation preserves original execution timing. Verification calls and repairs are not independent repeats. Host acceptance evidence remains required for quality conclusions. |
 | Caps enforced during fill | $1.00/task, $20.00/pilot, 4 attempts + 1 same-profile repair, 300 s/task wall clock. The persistent dispatch authority preserves attempts and reservations across restarts; `--task-store` adds optional task mirrors. Every block (cap or gate) is retained as a ledger observation rather than silently dropped. These local controls do not establish a reliable provider billing ceiling. |
 | Drift / deviation handling | §7 drift rule (preregistration §6): provider-side change discovered mid-filling ⇒ affected arm's observations discarded, cause recorded before restart; no retrospective cell edits. |
 | Cell completion rule | A cell is *filled* when all four positions contain validated measured observations: two distinct assigned tasks with two repeats each. `tools/gen_live_fill_sheet.py` generates the version 2 **20-cell/80-slot** sheet (`tools/live_fill_sheet.json`/.csv, gitignored). `tools/live_fill_tally.py` checks required values, repeat limits, fixed-arm profiles, source identities, and cost recomputed from the configured rates. Missing or invalid evidence cannot count as filled. A ledger block is retained as an observation without being counted as a successful dispatch. |
