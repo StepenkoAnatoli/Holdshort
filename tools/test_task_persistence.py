@@ -39,6 +39,16 @@ def fresh_dispatcher(tmp: Path, now_fn) -> ld.LiveDispatcher:
                              task_store=tmp / "task_state")
 
 
+def _fs_folds_case(directory: Path) -> bool:
+    """True when the filesystem treats different-cased names as one file."""
+    probe = directory / "case-probe.TMP"
+    probe.write_text("x", encoding="utf-8")
+    try:
+        return (directory / "case-probe.tmp").exists()
+    finally:
+        probe.unlink()
+
+
 class TaskPersistence(unittest.TestCase):
 
     def test_counters_survive_restart(self):
@@ -199,6 +209,69 @@ class TaskPersistence(unittest.TestCase):
             store = tp.TaskStateStore(Path(td) / "task_state")
             p = store.path_for("../../etc/passwd")
             self.assertFalse(str(p).replace("\\", "/").count(".."), "path traversal sanitized")
+
+    def test_lossy_sanitizer_collision_is_a_distinct_refusal(self):
+        # "a/b" and "a_b" both sanitize to a_b.json. The second id must be
+        # refused as a collision (detected from the STORED identity), and the
+        # winner's file preserved - never renamed out of the way.
+        with tempfile.TemporaryDirectory() as td:
+            store = tp.TaskStateStore(Path(td) / "task_state")
+            store.save({"task_id": "a/b", "attempts": 2, "spent": 0.5,
+                        "started": 0.0, "repairs": 0, "last_profile": "cloud-C"})
+            p = store.path_for("a/b")
+            self.assertEqual(p.name, "a_b.json")
+            self.assertIsInstance(tp.TaskIdCollision("x"), tp.CorruptState)
+            with self.assertRaises(tp.TaskIdCollision):
+                store.load("a_b")
+            doc = json.loads(p.read_text(encoding="utf-8"))
+            self.assertEqual(doc["task_id"], "a/b", "the winner's file is preserved")
+            self.assertEqual(doc["attempts"], 2)
+
+    def test_case_insensitive_collision_is_refused(self):
+        # On Windows, Task-A.json and task-a.json are one file; identity-based
+        # detection catches it, "sanitize(id) == id" would not.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            if not _fs_folds_case(tmp):
+                self.skipTest("filesystem is case-sensitive here")
+            store = tp.TaskStateStore(tmp / "task_state")
+            store.save({"task_id": "Task-A", "attempts": 1, "spent": 0.1,
+                        "started": 0.0, "repairs": 0, "last_profile": "cloud-C"})
+            with self.assertRaises(tp.TaskIdCollision):
+                store.load("task-a")
+            doc = json.loads(store.path_for("Task-A").read_text(encoding="utf-8"))
+            self.assertEqual(doc["task_id"], "Task-A")
+
+    def test_save_refuses_to_overwrite_a_foreign_identity(self):
+        with tempfile.TemporaryDirectory() as td:
+            store = tp.TaskStateStore(Path(td) / "task_state")
+            store.save({"task_id": "a/b", "attempts": 2, "spent": 0.5,
+                        "started": 0.0, "repairs": 0, "last_profile": "cloud-C"})
+            p = store.path_for("a_b")
+            with self.assertRaises(tp.TaskIdCollision):
+                store.save({"task_id": "a_b", "attempts": 0, "spent": 0.0,
+                            "started": 0.0, "repairs": 0, "last_profile": ""})
+            self.assertEqual(json.loads(p.read_text(encoding="utf-8"))["task_id"], "a/b",
+                             "the foreign file must not be overwritten")
+            # the same identity still updates normally
+            store.save({"task_id": "a/b", "attempts": 3, "spent": 0.6,
+                        "started": 0.0, "repairs": 0, "last_profile": "cloud-C"})
+            self.assertEqual(json.loads(p.read_text(encoding="utf-8"))["attempts"], 3)
+
+    def test_dispatcher_refuses_a_colliding_task_id(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            d = fresh_dispatcher(tmp, lambda: 1.0)
+            first = d.attempt("a/b", "cloud-C", "req", work_bound=.01,
+                              review_bound=.01, expected_in=1000, expected_out=1000,
+                              review_calls=0)
+            self.assertEqual(first.decision, "dispatched")
+            second = d.attempt("a_b", "cloud-C", "req", work_bound=.01,
+                               review_bound=.01, expected_in=1000, expected_out=1000,
+                               review_calls=0)
+            self.assertEqual(second.decision, "blocked:state-corrupt",
+                             "a colliding id must refuse, not reset the winner")
+            self.assertEqual(d._task("a/b")["attempts"], 1, "the winner survives")
 
 
 if __name__ == "__main__":
