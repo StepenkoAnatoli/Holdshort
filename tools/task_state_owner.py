@@ -153,6 +153,12 @@ class TaskStateOwner:
     def reconcile(self, task_id: str) -> Dict:
         """All three stores side by side, with findings (authority wins).
 
+        Finding shape and kind names come from `task_crosscheck`
+        ({"task_id", "kind", "detail"}), so an authority<->mirror divergence is
+        named once across both modules instead of in two vocabularies
+        (ADR-0001 Appendix B.2). Kinds the crosscheck has no counterpart for
+        (watchdog, mirror-without-authority) stay owner-local.
+
         A finding is a report, not a verdict: callers decide what to do with
         it. A corrupt mirror or an unreadable watchdog file raises instead of
         yielding findings — refusal is not a finding (G5).
@@ -161,24 +167,32 @@ class TaskStateOwner:
         mirror = self.read_mirror(task_id)
         watchdog = self.read_watchdog(task_id)
         findings: List[Dict] = []
-        if mirror is not None and (mirror["attempts"] or mirror["spent"]):
+        if mirror is not None:
             if authority is None:
+                if mirror["attempts"] or mirror["spent"]:
+                    findings.append({
+                        "task_id": task_id,
+                        "kind": "mirror-without-authority",
+                        "detail": "mirror carries counters for a task the authority "
+                                  "does not know; the dispatcher refuses this case",
+                    })
+            elif (mirror["attempts"] != authority["attempts"]
+                    or mirror["spent"] != authority["spent"]):
+                # Same kind, condition and meaning as task_crosscheck's
+                # authority-side finding (any difference — including a lagging
+                # mirror, which the crosscheck also reports).
                 findings.append({
-                    "kind": "mirror-without-authority",
-                    "detail": "mirror carries counters for a task the authority "
-                              "does not know; the dispatcher refuses this case",
-                })
-            elif (mirror["attempts"] > authority["attempts"]
-                    or mirror["spent"] > authority["spent"]):
-                findings.append({
-                    "kind": "mirror-ahead-of-authority",
-                    "detail": (f"mirror attempts/spent {mirror['attempts']}/"
-                               f"{mirror['spent']} exceed the authority's "
-                               f"{authority['attempts']}/{authority['spent']}"),
+                    "task_id": task_id,
+                    "kind": "optional-mirror-stale",
+                    "detail": (f"optional task mirror attempts/spent "
+                               f"{mirror['attempts']}/{mirror['spent']} differ "
+                               f"from the authority's {authority['attempts']}/"
+                               f"{authority['spent']}"),
                 })
         if watchdog is not None:
             if authority is None:
                 findings.append({
+                    "task_id": task_id,
                     "kind": "watchdog-without-authority",
                     "detail": "watchdog state exists for a task the authority "
                               "does not know",
@@ -187,6 +201,7 @@ class TaskStateOwner:
                 for name in ("attempts", "repairs"):
                     if watchdog[name] > authority[name]:
                         findings.append({
+                            "task_id": task_id,
                             "kind": f"watchdog-{name}-ahead",
                             "detail": (f"watchdog {name} {watchdog[name]} exceed "
                                        f"the authority's {authority[name]}; "

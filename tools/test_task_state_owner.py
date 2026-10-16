@@ -41,6 +41,7 @@ db = _load("dispatch_budget")
 hw = _load("host_watchdog")
 ld = _load("live_dispatcher")
 tso = _load("task_state_owner")
+tcx = _load("task_crosscheck")  # shared finding vocabulary (Appendix B.2)
 
 PRICES = json.loads((TOOLS / "prices-2.json").read_text(encoding="utf-8"))
 
@@ -187,10 +188,45 @@ class TestReconcile(OwnerCase):
         doc["repairs"] = 0
         store.save(doc)
         result = self.owner.reconcile("L-1")
-        self.assertIn("mirror-ahead-of-authority",
-                      [f["kind"] for f in result["findings"]])
+        # shared vocabulary: the crosscheck's kind for this divergence
+        finding = next(f for f in result["findings"]
+                       if f["kind"] == "optional-mirror-stale")
+        self.assertEqual(finding["task_id"], "L-1")  # crosscheck finding shape
         # ...but the read itself still reports the authority's number.
         self.assertEqual(result["authority"]["attempts"], 1)
+
+    def test_lagging_mirror_is_a_finding_and_never_lowers_the_read(self):
+        # The crosscheck reports ANY difference, including a lagging mirror;
+        # sharing the vocabulary means the owner does too. It stays a report,
+        # not a verdict: the read still returns the authority's numbers.
+        self.dispatch()
+        self.dispatch()
+        store = tp.TaskStateStore(self.tmp / "task_state")
+        doc = store.load("L-1")
+        doc["attempts"] = 1
+        doc["repairs"] = 0
+        doc["spent"] = 0.0
+        store.save(doc)
+        result = self.owner.reconcile("L-1")
+        self.assertIn("optional-mirror-stale",
+                      [f["kind"] for f in result["findings"]])
+        self.assertEqual(result["authority"]["attempts"], 2)  # authority wins
+        self.assertEqual(result["mirror"]["attempts"], 1)     # mirror shown as-is
+
+    def test_mirror_finding_kind_matches_the_crosscheck(self):
+        # Appendix B.2: one name for one divergence, not two vocabularies.
+        self.dispatch()
+        store = tp.TaskStateStore(self.tmp / "task_state")
+        doc = store.load("L-1")
+        doc["attempts"] = 9
+        doc["repairs"] = 0
+        store.save(doc)
+        owner_kinds = {f["kind"] for f in self.owner.reconcile("L-1")["findings"]}
+        self.assertIn("optional-mirror-stale", owner_kinds)
+        cross = tcx.check(self.tmp / "task_state", PRICES, [],
+                          ledger_path=self.d.ledger_path)
+        cross_kinds = {f["kind"] for f in cross["findings"]}
+        self.assertIn("optional-mirror-stale", cross_kinds)
 
     def test_mirror_without_authority_is_a_finding(self):
         # The drift scenario from issue #81: an authority exists (here for
