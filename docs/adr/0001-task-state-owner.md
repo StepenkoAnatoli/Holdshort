@@ -250,6 +250,11 @@ swaps) available as its own change.
 owner's comparison drifts from the crosscheck's again, or step ③ is scheduled —
 then revisit whether the crosscheck delegates its per-task check to the owner.
 
+> **Status note:** the "held step ③ (crosscheck swaps) available as its own
+> change" left open above was later closed as delivered — see "Step ③ status"
+> below. Its "step ③ is scheduled" reopen trigger can no longer fire; the other
+> two triggers stand.
+
 Formats stay frozen: findings are in-memory reports, never written to task state;
 no path, field name or decision string changes.
 
@@ -260,8 +265,15 @@ emits an `invalid-task-mirror` finding (never a silent skip), the second
 unvalidated fallback and `state_view_file_guess` are gone, and delegating the
 crosscheck to `Owner.reconcile()` stays declined (above). With the vocabulary
 unified in B.2, the staged-migration item ③ ("crosscheck swaps") is closed as
-delivered. `reconcile()`'s production consumer therefore moves to step ④
-(`pilot_report` derives via the owner); `task_state_owner.py`'s stale "step 3
-retires `task_crosscheck`'s raw reader" note is corrected to match.
+delivered, superseding B.2's "held step ③ (crosscheck swaps) available as its own
+change" and retiring its "step ③ is scheduled" reopen trigger.
+
+Migration item ④ (PR #92) also landed, but it wires `pilot_report` to the owner's
+`authority_view` — the single `charged` → `spent` mapping — **not** to
+`reconcile()`. `reconcile()` therefore still has no production consumer: it is
+called only from `test_task_state_owner.py`, so the owner's reconciliation half
+remains unwired in production. That is recorded here as an open item, not claimed
+as delivered. `task_state_owner.py`'s stale "step 3 retires `task_crosscheck`'s raw
+reader" note is corrected to match.
 
 
