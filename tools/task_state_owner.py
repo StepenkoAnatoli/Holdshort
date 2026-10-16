@@ -43,11 +43,11 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 try:
-    from dispatch_budget import BudgetStore, money, read_authority
+    from dispatch_budget import BudgetStore, BudgetStateError, money, read_authority
     from task_persistence import TaskStateStore
     from host_watchdog import load_state
 except ImportError:  # direct import when repo root on path
-    from tools.dispatch_budget import BudgetStore, money, read_authority
+    from tools.dispatch_budget import BudgetStore, BudgetStateError, money, read_authority
     from tools.task_persistence import TaskStateStore
     from tools.host_watchdog import load_state
 
@@ -125,7 +125,19 @@ class TaskStateOwner:
             # simply new and the task is unknown. A read never creates it.
             self.budget._initial()
             return None
-        doc = read_authority(self.budget.ledger)
+        try:
+            doc = read_authority(self.budget.ledger)
+        except BudgetStateError:
+            # The authority exists but is not yet a readable committed snapshot
+            # (e.g. a peer is creating it concurrently). Fall back to the
+            # serialized/creation-path semantics: if a legacy ledger exists,
+            # _initial() raises; otherwise treat as not yet committed and let
+            # the caller materialise it in a serialized transaction.
+            try:
+                self.budget._initial()
+            except BudgetStateError:
+                raise
+            return None
         task = doc["tasks"].get(task_id)
         # The single mapping lives in authority_view (shared with the
         # dispatcher's _remember, step 2).
