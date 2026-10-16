@@ -253,4 +253,15 @@ then revisit whether the crosscheck delegates its per-task check to the owner.
 Formats stay frozen: findings are in-memory reports, never written to task state;
 no path, field name or decision string changes.
 
+### Step ③ status — closed as delivered (2026-10-16)
+
+Decision #3's fail-loud behaviour fix is delivered: `task_crosscheck.state_view()`
+emits an `invalid-task-mirror` finding (never a silent skip), the second
+unvalidated fallback and `state_view_file_guess` are gone, and delegating the
+crosscheck to `Owner.reconcile()` stays declined (above). With the vocabulary
+unified in B.2, the staged-migration item ③ ("crosscheck swaps") is closed as
+delivered. `reconcile()`'s production consumer therefore moves to step ④
+(`pilot_report` derives via the owner); `task_state_owner.py`'s stale "step 3
+retires `task_crosscheck`'s raw reader" note is corrected to match.
+
 
