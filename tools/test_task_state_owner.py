@@ -259,5 +259,92 @@ class TestReconcile(OwnerCase):
             mirror)
 
 
+class TestWiring(OwnerCase):
+    """Step two — the dispatcher's _task/_remember delegate to the owner.
+
+    ADR-0001: the dispatcher's read path is the owner; creation stays in the
+    dispatcher (a write). The corrupt-mirror G5 refusal and the
+    counters-without-authority refusal are preserved exactly.
+    """
+
+    def authority_task(self, task_id: str) -> dict:
+        with self.d.budget.transaction() as doc:
+            return dict(doc["tasks"][task_id])
+
+    def test_remember_uses_the_single_mapping(self):
+        self.dispatch()
+        st = self.d._task("L-1")
+        self.assertEqual(st, tso.authority_view(self.authority_task("L-1")))
+        self.assertEqual(st["spent"], float(db.money(st["charged"])))
+
+    def test_read_matches_the_single_mapping(self):
+        self.dispatch()
+        self.assertEqual(self.owner.read("L-1"),
+                         tso.authority_view(self.authority_task("L-1")))
+
+    def test_task_creates_an_absent_task(self):
+        # Creation stays in the dispatcher (owner v1 is read-only).
+        st = self.d._task("L-NEW")
+        self.assertEqual(st["attempts"], 0)
+        self.assertEqual(st["spent"], 0.0)
+        self.assertIsNotNone(self.owner.read("L-NEW"))
+
+    def test_corrupt_mirror_still_refuses_through_task(self):  # G5
+        self.dispatch()
+        path = self.tmp / "task_state" / "L-1.json"
+        path.write_text("{not json", encoding="utf-8")
+        with self.assertRaises(tp.CorruptState):
+            self.d._task("L-1")
+        self.assertEqual(path.read_text(encoding="utf-8"), "{not json")
+
+    def test_mirror_counters_without_authority_still_refuse(self):
+        self.dispatch()  # authority exists, so this is not a bare legacy ledger
+        tp.TaskStateStore(self.tmp / "task_state").save({
+            "task_id": "L-9", "attempts": 2, "spent": 1.0, "started": 1,
+            "repairs": 0, "last_profile": "cloud-C"})
+        with self.assertRaises(db.BudgetStateError):
+            self.d._task("L-9")
+
+    def test_task_and_remember_keep_the_mirror_current(self):
+        self.dispatch()
+        self.assertEqual(self.read_mirror_doc("L-1")["attempts"],
+                         self.d._task("L-1")["attempts"])
+
+    def test_task_read_does_not_write_the_authority(self):
+        # The delegated read must inherit step-1's read-only guarantee.
+        self.dispatch()
+        path = self.d.budget.path
+        before = os.stat(path).st_mtime_ns
+        self.d._task("L-1")
+        self.assertEqual(os.stat(path).st_mtime_ns, before,
+                         "_task's read must not rewrite the authority row")
+
+    def test_task_creation_never_overwrites_a_concurrently_created_task(self):
+        # Deterministic interleaving of the check-then-create race: our read
+        # (outside the lock) sees the task absent, then a concurrent creator
+        # adds it with counters before our transaction opens. The existence
+        # check must be repeated inside the transaction, or the winner's
+        # attempts and charge are reset to zero.
+        self.dispatch()
+        self.dispatch()  # the concurrent winner: attempts 2, charged 2*COST
+        real_read = self.d.owner.read
+        calls = {"n": 0}
+
+        def stale_read(task_id):
+            calls["n"] += 1
+            return None if calls["n"] == 1 else real_read(task_id)
+
+        self.d.owner.read = stale_read           # our pre-lock read saw nothing
+        self.d.owner.read_mirror = lambda task_id: None
+        try:
+            st = self.d._task("L-1")
+        finally:
+            del self.d.owner.read
+            del self.d.owner.read_mirror
+        self.assertEqual(st["attempts"], 2,
+                         "a concurrent creator's counters must survive")
+        self.assertAlmostEqual(st["spent"], 2 * COST, places=9)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
