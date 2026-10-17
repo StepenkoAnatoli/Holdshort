@@ -4,6 +4,8 @@ Reviewed 2026-10-07 through public repository metadata, READMEs, complete recurs
 
 This is a source-review appendix, not a live ledger-backed evidence corpus. Revalidate blocking facts through the applicable consumer research workflow before adoption. No upstream code/assets are vendored; this plan-only PR delivers no usable skills. Proposed future skills must be independently authored or use material only with suitable permission. Links pin the surveyed commit, not mutable main.
 
+Extended 2026-10-17 for entries 14–23 and the surfaced-candidates list at the end. Same static method: repository metadata, complete recursive trees, and selected source/docs/license files fetched at each pinned revision. No clones into this repository, no installs, no upstream execution, no provider calls. Counts are tree-discovered file and test-path counts, not tests run. Names, stars, licenses and push dates in the surfaced-candidates list are GitHub API metadata for that date and were not code-reviewed.
+
 ## 1. yenanjing/awesome-model-routing
 
 Revision: [`de2d17e41f8031b6f9c41495cd339c02235b657a`](https://github.com/yenanjing/awesome-model-routing/tree/de2d17e41f8031b6f9c41495cd339c02235b657a). Approximately 5 files; no discovered tests.
@@ -143,6 +145,100 @@ Revision: [`034daabaac5038bfc5f0a5c54a30df59baaffb3a`](https://github.com/ginson
 [Route receipt schema](https://github.com/ginsonko/newapi-smart-router/blob/034daabaac5038bfc5f0a5c54a30df59baaffb3a/parts/spec/route-receipt.schema.json) describes versions/attempt/reservation/settlement/reconciliation/operator review. Borrow the conceptual need for a small secret-free receipt, not the gateway or whole schema.
 
 **Use:** independently authored contract-specific verification/replay handling, conservative price/eligibility outcomes, immutable snapshots and accounting/recovery discipline. **Avoid:** heavyweight gateway/cache horizon framework, transplanted thresholds and AGPL source reuse without compatibility review.
+
+## 14. musistudio/claude-code-router
+
+Revision: [`057abaa1f95519ab8faf999e1ccef2b80ccdeb9e`](https://github.com/musistudio/claude-code-router/tree/057abaa1f95519ab8faf999e1ccef2b80ccdeb9e), 2026-10-10. Approximately 863 tree-discovered files; tests are organised per gateway concern under `packages/*/test/` (tool-id fidelity, stream disconnect, virtual models, cache usage, non-stream reasoning). Reviewed MIT: reuse is permitted with notice; no code copied here.
+
+[policy-engine.ts](https://github.com/musistudio/claude-code-router/blob/057abaa1f95519ab8faf999e1ccef2b80ccdeb9e/packages/core/src/routing/policy-engine.ts) is a 24-line first-match chain: `RoutePolicyEngine.evaluate` walks the registered `RoutePolicy` objects in order, treats a falsy `decision` as a decline and continues, returns the first `{decision, policyId}` so the winning rule is identifiable, and returns `undefined` when no policy fires — there is no implicit default. [failure-classifier.ts](https://github.com/musistudio/claude-code-router/blob/057abaa1f95519ab8faf999e1ccef2b80ccdeb9e/packages/core/src/routing/failure-classifier.ts) classifies a status code into `"client" | "rate-limit" | "retryable" | "server"` and derives `shouldFallback` from the configured `RouterFallbackMode` (`"model-chain"`), i.e. fallback is a function of (failure class, mode), not of the prompt.
+
+Neither file establishes replay or side-effect safety for a model chain: a status/mode classifier cannot tell whether the request already had effects.
+
+**Use:** first-match policy chains that name the rule that fired, an explicit no-match outcome instead of a silent default, failure classification kept separate from fallback mode, and integration tests named after concrete wire concerns. **Avoid:** treating a model chain as a safety net without separate proof that ambiguous effects are not replayed.
+
+## 15. decolua/9router
+
+Revision: [`87a74e1bda3677193c6f71a7e2100c90311f0689`](https://github.com/decolua/9router/tree/87a74e1bda3677193c6f71a7e2100c90311f0689), 2026-10-15. Approximately 1,797 tree-discovered files; 403 test-discovered paths; JavaScript; MIT.
+
+[smart-routing.md](https://github.com/decolua/9router/blob/87a74e1bda3677193c6f71a7e2100c90311f0689/gitbook/content/en/features/smart-routing.md) specifies a 3-tier fallback (subscription → cheap → free) whose stated goal is to "never stop coding due to quota limits or rate limiting" — availability, not task fit. [accountFallback.js](https://github.com/decolua/9router/blob/87a74e1bda3677193c6f71a7e2100c90311f0689/open-sse/services/accountFallback.js) computes quota cooldowns as `BACKOFF_CONFIG.base * 2^level` clamped by `BACKOFF_CONFIG.max`, and consults an imported `ERROR_RULES` table to decide whether an error switches accounts, and is documented to return `{shouldFallback, cooldownMs, newBackoffLevel?}` so the backoff level travels with the decision.
+
+Whether the tier walk terminates in a usable provider is a runtime claim, not something these files establish; neither was executed here.
+
+**Use:** bounded exponential cooldown with an explicit maximum, and a per-error rule table as a readable availability policy with the backoff level carried in the decision. **Avoid:** availability-driven tiering as a substitute for eligibility and cost caps, and reading "never stop coding" fallbacks as side-effect safe.
+
+## 16. NVIDIA-NeMo/Switchyard
+
+Revision: [`6f4e7749083a86484a0140078a42d487aed7259e`](https://github.com/NVIDIA-NeMo/Switchyard/tree/6f4e7749083a86484a0140078a42d487aed7259e), 2026-10-16. Approximately 719 tree-discovered files; 92 test-discovered paths; Rust; Apache-2.0.
+
+[escalation_router_routing.md](https://github.com/NVIDIA-NeMo/Switchyard/blob/6f4e7749083a86484a0140078a42d487aed7259e/docs/routing_algorithms/escalation_router_routing.md) describes a weak-model-first strategy: an LLM judge reads how the run is going and latches the session to a stronger model on sustained trouble (repeated errors, loops, drift), with an optional de-escalation policy — a mid-run judgement, unlike classifier routing that predicts difficulty before running. [advisor_gate/budget.rs](https://github.com/NVIDIA-NeMo/Switchyard/blob/6f4e7749083a86484a0140078a42d487aed7259e/crates/libsy/src/algorithms/advisor_gate/budget.rs) keeps the gate's only shared mutable state behind one lock: a per-scope review budget behind a reserve/refund interface, `MAX_FAILED_CONSULTS: u32 = 3` (failures refund the budget, so the cap bounds a *down* advisor), and `MAX_TRACKED_SCOPES: usize = 1_024` bounding tracked budgets and stall keys, plus a per-conversation stall latch. By the file's own description the gate *stops consulting* after those failed consults: an advisor outage degrades toward ungated handling rather than blocking, because the cap bounds a down advisor instead of making it a veto.
+
+**Use:** reserve/refund accounting for a verification budget, explicit bounds on tracked scopes, a stall latch to stop re-consulting a stuck conversation, and mid-run judge-driven escalation. **Avoid:** "stop consulting when the budget is exhausted" as acceptable behaviour under a strict cap — in a fail-closed design an exhausted review budget must block or downgrade explicitly rather than silently proceeding.
+
+## 17. vllm-project/semantic-router
+
+Revision: [`4416f76c1b991fb32d81b4b0fb3d321eae6782c3`](https://github.com/vllm-project/semantic-router/tree/4416f76c1b991fb32d81b4b0fb3d321eae6782c3), 2026-10-17. Approximately 11,613 tree-discovered files; 678 test-discovered paths; Go; Apache-2.0. Classification-driven routing inside a large Kubernetes-oriented tree: 1,526 non-test Go files under `pkg/` match routing/classification/selection naming, and the API layer exposes decision tasks ([route_decision_tasks.go](https://github.com/vllm-project/semantic-router/blob/4416f76c1b991fb32d81b4b0fb3d321eae6782c3/src/semantic-router/pkg/apiserver/route_decision_tasks.go)).
+
+[authz_fail_open.go](https://github.com/vllm-project/semantic-router/blob/4416f76c1b991fb32d81b4b0fb3d321eae6782c3/src/semantic-router/pkg/classification/authz_fail_open.go) implements the deliberate opposite of this project's stance: `applyAuthzFailOpenOnClassifyError` clears the classification error when `authz.fail_open` is true and the user ID is empty, continuing "with no matched roles (anonymous)" and emitting only a warning log. An unauthenticated caller therefore resolves to anonymous roles on the fail-open path.
+
+**Use:** a configurable fail-open/fail-closed switch documented as a switch (so the choice is explicit rather than incidental), and a large routing tree as a reminder that classifier/service code dwarfs policy code. **Avoid:** fail-open authorisation when identity is empty — the unauthenticated caller is exactly the case strict caps must block, and a warning log is not a control.
+
+## 18. BerriAI/litellm
+
+Revision: [`d346d769f02811d5e325a2ac5f45ac54ff5593de`](https://github.com/BerriAI/litellm/tree/d346d769f02811d5e325a2ac5f45ac54ff5593de), 2026-10-17. Approximately 14,259 tree-discovered files; 5,643 test-discovered paths; Python. GitHub reports `NOASSERTION` for licensing — the root `LICENSE` and a separate `enterprise/LICENSE.md` exist, and the terms were **not** assessed in this pass, so terms must be read before any reuse. Included as the reference gateway most comparisons assume, for contrast rather than dependency.
+
+[lowest_cost.py](https://github.com/BerriAI/litellm/blob/d346d769f02811d5e325a2ac5f45ac54ff5593de/litellm/router_strategy/lowest_cost.py) is deployment *selection within a model group*: a `cost_map:{model_group}` accumulator is updated in the success callbacks and `async_get_available_deployments` returns a deployment with the lowest recorded cost. Cost here is a load-balancing strategy across providers of one logical model, not a task-difficulty policy. [fallback_event_handlers.py](https://github.com/BerriAI/litellm/blob/d346d769f02811d5e325a2ac5f45ac54ff5593de/litellm/router_utils/fallback_event_handlers.py) is the more transferable file: `_trigger_cooldown_for_failed_deployment` exists because "in the fallback path the normal failure-callback cooldown is skipped", it deliberately skips cooldown for `is_advisor_orchestration_failure`, restricts cooldown to request-scoped status codes so one request does not cool down a whole chain, and types skipped fallbacks (`FallbackSkipReason`, `SkippedFallbackTarget`) so they are reportable rather than silent.
+
+**Use:** the recognition that a fallback path evades the primary path's accounting, so cooldown/trigger logic must be re-established explicitly there and skips must be recorded; cost as an accumulator keyed by group. **Avoid:** assuming a major gateway's routing is difficulty-aware (it is availability/cost based), and copying from a 14,259-file monorepo whose GitHub licensing reads `NOASSERTION` without reading the terms.
+
+## 19. Portkey-AI/gateway
+
+Revision: [`669825cbe89ee51569918b8f78a9db486fd69dd4`](https://github.com/Portkey-AI/gateway/tree/669825cbe89ee51569918b8f78a9db486fd69dd4), 2026-05-25 — the pinned revision *is* the last push, i.e. stale relative to the rest of this extension. Approximately 766 tree-discovered files; 20 test-discovered paths; TypeScript; MIT.
+
+[conditionalRouter.ts](https://github.com/Portkey-AI/gateway/blob/669825cbe89ee51569918b8f78a9db486fd69dd4/src/services/conditionalRouter.ts) is a compact, readable conditional-route contract: resolution refuses a strategy whose mode is not `CONDITIONAL` and refuses a conditional strategy with no conditions; it then iterates `strategy.conditions` in order and returns the first target whose query holds; if nothing matches it returns the declared `strategy.default`; with no default it throws "Query router did not resolve to any valid target". `evaluateQuery` is a small boolean language over the request context (metadata/params/url) with recursive `Operator.Or`/`Operator.And` and an operator layer (`Equal`, `NotEqual`, …) rather than ad-hoc predicates.
+
+**Use:** as the shape of an explicit conditional contract — ordered conditions, an optional *declared* default, typed refusal when nothing resolves, and boolean composition instead of bespoke matching. **Avoid:** evaluating router conditions against caller-controlled metadata without a trust boundary, and weighing a 20-test surface as assurance for anything security relevant.
+
+## 20. katanemo/plano
+
+Revision: [`a031d31105d0cd9801dc75f37d7507c44b65ab1c`](https://github.com/katanemo/plano/tree/a031d31105d0cd9801dc75f37d7507c44b65ab1c), 2026-10-07. Approximately 734 tree-discovered files; 59 test-discovered paths; Rust; Apache-2.0.
+
+[routing_service.rs](https://github.com/katanemo/plano/blob/a031d31105d0cd9801dc75f37d7507c44b65ab1c/crates/brightstaff/src/handlers/routing_service.rs) returns a `RoutingDecisionResponse` whose `models: Vec<String>` is documented as the "ranked model list — use first, fall back to next on 429/5xx", alongside `route`, `trace_id`, `session_id`, `pinned`, and `switched` ("whether the routing budget allowed a model switch this turn", `plano.switch.decision=allowed`). The handler derives `explicit_session_id` from a model-affinity header and a tenant id from the orchestrator's tenant header, then delegates to `routing_decision_inner` with `EffectivePromptCaching`, `Option<EffectiveRoutingBudget>`, `route_on_user_only` and the configured `ModelAlias` map.
+
+**Use:** ranking the candidate list and letting per-hop 429/5xx cascade be visible to the caller; expressing a routing budget that can *forbid* a switch this turn, not just record cost; and keeping affinity (cache/warmth) as a first-class, overridable input. **Avoid:** reading affinity as a correctness policy — pinning a session to the warm model can hold it on a model that should have been escalated.
+
+## 21. Continuum-AI-Corp/OrcaRouter-Lite
+
+Revision: [`4cacea8538f6dc16c4c9a8364ec867a1c4c80088`](https://github.com/Continuum-AI-Corp/OrcaRouter-Lite/tree/4cacea8538f6dc16c4c9a8364ec867a1c4c80088), 2026-10-08. Approximately 187 tree-discovered files against 72 test-discovered paths (a notably high test-to-code ratio in this survey); Python; MIT.
+
+[auto_routing.py](https://github.com/Continuum-AI-Corp/OrcaRouter-Lite/blob/4cacea8538f6dc16c4c9a8364ec867a1c4c80088/app/auto_routing.py) resolves `model="auto"` as two pure functions — `required_capabilities(body)` → `{tools, vision, json_mode}` and `choose_auto_model(needs, deployable, candidates, strategy, preferred_models)` → model ids ordered best-first and **empty when none qualify**. Capability needs are intersected with the set of *deployable* providers before strategy ordering, so the selection is a filter-then-order pipeline rather than an order-then-hope. It also de-duplicates sibling versions through `canonical_model_base` (so `gemini-2.0-flash-lite-001` does not masquerade as a cross-provider fallback), and documents `_lookup_score`'s dot→hyphen normalisation as a correctness guard: without it every dotted id scores 0, which ranks the *most expensive* model first.
+
+**Use:** pure selection functions separated from the HTTP handler; capability ∩ deployable before ordering; empty-not-last-resort; sibling-version dedupe before claiming a fallback; and treating id normalisation as a correctness bug rather than cosmetics. **Avoid:** letting score tables decide eligibility, and reading the 72 test paths as evidence the selector met real providers — nothing here was executed against a provider.
+
+## 22. bitrouter/bitrouter
+
+Revision: [`54c822a34d4dbfd75d484ca35e108b497048efef`](https://github.com/bitrouter/bitrouter/tree/54c822a34d4dbfd75d484ca35e108b497048efef), 2026-10-16. Approximately 1,157 tree-discovered files; 195 test-discovered paths; Rust; Apache-2.0 (LICENSE read at the pinned revision).
+
+The integration contract is the interesting part: the [README](https://github.com/bitrouter/bitrouter/blob/54c822a34d4dbfd75d484ca35e108b497048efef/README.md) points an existing OpenAI-compatible agent at a local `http://localhost:4356/v1` and asks it to set the model to `bitrouter/auto`, so routing is opted into by *model name* with no other agent change, and the provider credential stays with the router rather than the calling agent. It markets itself as the "minimal interpretable model router that learns & adapts to your agent workflows", and ships a `/bitrouter` skill so the agent can install, configure and migrate itself. The interpretability and learning claims were not evaluated — only the entry contract and repository shape.
+
+**Use:** model-name opt-in as a drop-in contract; a local endpoint so the agent never holds provider credentials; naming the router in the model field rather than in a provider-setting rewrite. **Avoid:** adopting a "learning/adaptive" router on marketing without an evaluation artefact, and asking the agent to self-install router software — that is a supply-chain path, not a routing decision.
+
+## 23. ulab-uiuc/LLMRouter
+
+Revision: [`c65ee0122bc9e84f71d571fcdec4a948481b6e88`](https://github.com/ulab-uiuc/LLMRouter/tree/c65ee0122bc9e84f71d571fcdec4a948481b6e88), 2026-10-08. Approximately 428 tree-discovered files; 61 test-discovered paths; Python; MIT (LICENSE read at the pinned revision). A research library with an accompanying paper and the `xRouteBench` dataset; all benchmark and savings figures are publisher claims.
+
+[custom_routers/fusion_gate/gate.py](https://github.com/ulab-uiuc/LLMRouter/blob/c65ee0122bc9e84f71d571fcdec4a948481b6e88/custom_routers/fusion_gate/gate.py) is the clearest artefact: a `RouteGate` deciding *per query* between a cheap SINGLE model and an expensive fused panel from a difficulty estimate and the gate's own confidence, with `GateDecision` declared additive-only and preset resolution centralised (`resolve_preset`, `TIER_TO_PRESET`) so the router and its evaluation harness cannot diverge on the table. Difficulty estimation follows the `ThresholdRouter` two-mode design: an embedding when one is supplied *and* an estimator is wired in, otherwise a deterministic, documented lexical heuristic — the gate therefore runs end-to-end with no embedding model at all.
+
+**Use:** difficulty/confidence gating as an explicit, unit-testable decision; one table shared by router and eval harness; an additive-only decision schema for a gate consumed by a harness; and a documented no-model fallback path. **Avoid:** importing a published threshold without re-calibration, and treating a fusion panel's benchmark as evidence about cost per *verified* success.
+
+## Surfaced candidates (metadata only — not code-reviewed)
+
+Surfaced while searching for the entries above, recorded so a later pass can pick them up. Figures are GitHub API metadata returned on 2026-10-17 (stars, license, last push); no tree, source, docs or license file from these was inspected, and none was cloned, installed or executed.
+
+- One-endpoint many-provider gateways: `diegosouzapw/OmniRoute` (77.4k★, MIT), `QuantumNous/new-api` (50.1k★, AGPL-3.0), `lidge-jun/opencodex` (17.5k★, MIT), `mnfst/awesome-free-llm-apis` (10.4k★, CC0-1.0 — list, not a router), `maximhq/bifrost` (8.9k★, Apache-2.0), `coaidev/coai` (9.3k★, Apache-2.0), `bestruirui/octopus` (2.7k★, AGPL-3.0).
+- General API/AI gateways where LLM routing is a plugin or extension rather than a policy of their own: `Kong/kong` (44.3k★, Apache-2.0), `apache/apisix` (17.2k★, Apache-2.0), `TykTechnologies/tyk` (10.9k★, NOASSERTION), `higress-group/higress` (9.6k★, Apache-2.0), `agentgateway/agentgateway` (5.4k★, Apache-2.0).
+- Surfaced by the same queries but not routing policies: `farion1231/cc-switch` (145.3k★, MIT) and `earendil-works/pi` (115.8k★, MIT).
+
+Re-verify any blocking fact before adoption; none of these was cloned, installed or executed, and nothing from them is vendored here.
 
 ## Consolidated recommendation
 
