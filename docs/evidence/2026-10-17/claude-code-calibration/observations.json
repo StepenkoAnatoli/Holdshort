@@ -1,0 +1,1208 @@
+{
+ "schema_version": 1,
+ "run_id": "wf_052c5f34-973",
+ "recorded_at": "2026-10-17T20:00:00Z",
+ "source": "per-profile grades (grade.sh output), grader-agent outputs and the workflow run file (tokens, durations); self-reported mistakes verbatim from each agent's structured return",
+ "profiles": {
+  "haiku-low": {
+   "model_alias": "haiku",
+   "effort": "low",
+   "pin": {
+    "grade": {
+     "score": true,
+     "redAtHead": true,
+     "greenWithFix": true,
+     "srcClean": true,
+     "lint": "ok",
+     "tests": {
+      "passed": 0,
+      "failed": 1
+     }
+    },
+    "self_reported_mistakes": [
+     "Left a stray unused `clock_` property in the harness return on the first draft; removed it before the first run, so the observed run is of the cleaned file."
+    ]
+   },
+   "fix": {
+    "grade": {
+     "score": true,
+     "candidateGreen": true,
+     "guardRed": true,
+     "acceptedPinGreen": true,
+     "scopeOk": true,
+     "lint": "ok",
+     "committedWithMap": false,
+     "commits": 0,
+     "srcDiffLines": 2
+    },
+    "self_reported_mistakes": [
+     "The commit was refused by the research gate because src/main/github-signin.ts is under a declared code path and docs/ARCHITECTURE.md was not staged. Nothing was committed. The task says not to touch any other file and not to use --no-verify, so I did not bypass it. Left staged for the lead to decide. Fix: stage docs/ARCHITECTURE.md with a one-line update for the moved reset, then commit.",
+     "The commit report cannot yet state the 968852e regression in the message because that commit did not land. The finding's note about 968852e (U5-R10) is kept in the intended commit message, not in a committed file.",
+     "The finding file's guard-removal note names two pins. Only the new pin was run against the deleted line. The existing pin at refresh test 4 'only consecutive identical answers count' (line 338, now about 356 after the insert) was not separately re-run for the guard proof. It passed in the full-file run with the fix in place."
+    ]
+   },
+   "review": {
+    "candidate": {
+     "verdict": "FIX",
+     "findings": [
+      [
+       "R-1",
+       "S2",
+       "The consecutive-identical-answer rule keys an unknown error code as the literal string 'unknown', not by its value. The wire classifier maps any error string th"
+      ]
+     ],
+     "checked": 16
+    },
+    "grade": {
+     "score": false,
+     "r16Found": false,
+     "r16CauseNamed": false,
+     "r16Severity": "",
+     "r17Found": false,
+     "falseBlocking": 1,
+     "copiedFromHistory": false,
+     "others": [
+      {
+       "id": "R-1",
+       "severity": "S2",
+       "classification": "false",
+       "why": "The scratch test does reproduce (3 tests passed, 1 failed, at :244: three non-conforming codes clear the account on the third read). But the spec defines this behaviour. Spec 3.5 (docs/specification/github-sign-in.md:295) says an `error` code that fails /^[a-z_]{1,64}$/ becomes 'unknown', and the 6.5 pseudo-code (:772, :777) passes that code straight to sameOrFail. HEAD matches the spec line for line, so the claimed violation of the spec does not hold. At most this is a question about the spec, not a defect in the code."
+      }
+     ],
+     "notes": "The review missed R16 even though its 'checked' list looked straight at it. It wrote \"sameError reset on every answer that is not error or unusable (495), matching the spec pseudo-code\", but did not notice that the tokens branch returns at :466 before that reset runs. It also states that adopt() leaves sameError alone, without drawing the conclusion. It missed R17 too: it credits shipped test 15 f"
+    },
+    "self_reported_mistakes": [
+     "nothing to report"
+    ]
+   },
+   "usage": {
+    "pin": {
+     "tokens": 122581,
+     "duration_ms": 73375,
+     "state": "done"
+    },
+    "fix": {
+     "tokens": 109688,
+     "duration_ms": 85373,
+     "state": "done"
+    },
+    "review": {
+     "tokens": 138101,
+     "duration_ms": 115421,
+     "state": "done"
+    }
+   }
+  },
+  "haiku-medium": {
+   "model_alias": "haiku",
+   "effort": "medium",
+   "pin": {
+    "grade": {
+     "score": true,
+     "redAtHead": true,
+     "greenWithFix": true,
+     "srcClean": true,
+     "lint": "ok",
+     "tests": {
+      "passed": 1,
+      "failed": 1
+     }
+    },
+    "self_reported_mistakes": [
+     "Nothing to report on the test itself; the first run was the observation. The defect is in HEAD: a successful refresh does not reset sameError because adopt() returns before the reset at line 474 and adopt() does not clear sameError. Not fixed here, as the task was test-only."
+    ]
+   },
+   "fix": {
+    "grade": {
+     "score": true,
+     "candidateGreen": true,
+     "guardRed": true,
+     "acceptedPinGreen": true,
+     "scopeOk": true,
+     "lint": "ok",
+     "committedWithMap": false,
+     "commits": 0,
+     "srcDiffLines": 2
+    },
+    "self_reported_mistakes": [
+     "Mistake: in the guard-removal step I ran `mv .fixed-copy.tmp /dev/null`, which destroyed the backup copy of the fixed file. Impact: none on the repo, since the fix is a single line and its exact text was printed in the diff before the removal. Cause: a bad cleanup command. Fix: restored the line by re-inserting it before the tokens dispatch, then checked the blob hash (e957e3c) against the earlier diff. Verified: git diff matches the intended change, and both test files are green again.",
+     "Mistake: my first restore assertion was too broad (it required the string 'this.sameError = null' to be absent, but that text also appears at lines 186 and 310), so the restore script aborted with no change. Cause: I checked for a substring, not the specific line. Fix: re-ran the restore with a check on the exact guard line. Verified: the diff shows the guard moved exactly as intended.",
+     "Mistake: the commit was refused by the architecture-map gate (docs/ARCHITECTURE.md not staged with a declared code path). Impact: the commit does not exist; the work is staged, not committed. Cause: the protocol requires the map update in the same commit, and the task's 'touch no other file' rule conflicts with it. Fix: not done. --no-verify is forbidden, so the commit was not forced. Verified: git log shows HEAD still at d87f796 and the two files staged."
+    ]
+   },
+   "review": {
+    "candidate": {
+     "verdict": "FIX",
+     "findings": [
+      [
+       "R-1",
+       "S2",
+       "A successful refresh does not clear sameError. In renew() the tokens answer returns through adopt() at src/main/github-signin.ts:466 before the sameError reset "
+      ],
+      [
+       "R-2",
+       "S3",
+       "The 'consecutive' rule is not applied across an unusable 3xx answer. The spec pseudo-code (docs/specification/github-sign-in.md:764) and the code (src/main/gith"
+      ]
+     ],
+     "checked": 16
+    },
+    "grade": {
+     "score": false,
+     "r16Found": true,
+     "r16CauseNamed": true,
+     "r16Severity": "S2",
+     "r17Found": false,
+     "falseBlocking": 1,
+     "copiedFromHistory": false,
+     "others": [
+      {
+       "id": "R-2",
+       "severity": "S3",
+       "classification": "false",
+       "why": "The code at src/main/github-signin.ts:474 implements spec 6.5's explicit pseudo-code (docs/specification/github-sign-in.md:764, 'if r is not error and not unusable -> sameError = null'). GS-2 treats a 3xx as a captive portal or proxy rather than an answer from GitHub, so not counting it is coherent with 'in a row'. The scratch test fails only because it asserts the candidate's own reading. This is at most an S4 wording note, not an S3 defect."
+      }
+     ],
+     "notes": "R-1 matches U5-R16 exactly: S2, the tokens return at :466 before the reset at :474, adopt() at :494, and the spec 6.5 citation. Its scratch test reproduces red here, and its control passes. R17 (no injected monotonic clock in the device harness) was missed. The only U5-R* tag in the scratch files is U5-R15, copied from HEAD's own test file, so nothing came from history.\nThe 'checked' list is deep "
+    },
+    "self_reported_mistakes": [
+     "nothing to report"
+    ]
+   },
+   "usage": {
+    "pin": {
+     "tokens": 126590,
+     "duration_ms": 69539,
+     "state": "done"
+    },
+    "fix": {
+     "tokens": 115117,
+     "duration_ms": 108073,
+     "state": "done"
+    },
+    "review": {
+     "tokens": 161937,
+     "duration_ms": 185161,
+     "state": "done"
+    }
+   }
+  },
+  "haiku-high": {
+   "model_alias": "haiku",
+   "effort": "high",
+   "pin": {
+    "grade": {
+     "score": true,
+     "redAtHead": true,
+     "greenWithFix": true,
+     "srcClean": true,
+     "lint": "ok",
+     "tests": {
+      "passed": 1,
+      "failed": 1
+     }
+    },
+    "self_reported_mistakes": [
+     "Ran `git log --oneline -1` after committing, which the task forbade (no git log). It printed only my new commit, but it was still a git log call. Not repeated.",
+     "A first attempt to instrument a debug copy of the test used a broken inline python replacement and failed with a parse error. I then made a second, simpler debug copy, ran it and deleted it, so no debug file is committed.",
+     "Created an empty stray file at /tmp/dbg.py by mistake (the instructions say to use the scratchpad). I removed it.",
+     "The pin covers one bad answer kind (an unknown error code). The 'unusable' 4xx variant of the rule is not parametrized in this file."
+    ]
+   },
+   "fix": {
+    "grade": {
+     "score": true,
+     "candidateGreen": true,
+     "guardRed": true,
+     "acceptedPinGreen": true,
+     "scopeOk": true,
+     "lint": "ok",
+     "committedWithMap": false,
+     "commits": 0,
+     "srcDiffLines": 2
+    },
+    "self_reported_mistakes": [
+     "Mistake: the commit was refused by the research gate, which blocks a commit that stages a declared code path (src/main/github-signin.ts) without docs/ARCHITECTURE.md (the architecture-map rule, research/kit.json). Where: the git commit step in /home/user/task5-handoff/wt/cal-fix-haiku-high. Impact: no commit was created; HEAD is still d87f796; the two files are staged, not committed; nothing already delivered is affected. Cause: I did not check the gate's staging rule before committing, and the task said to touch no file other than the two. Fix: none taken. I did not use --no-verify (the task forbids it) and did not edit docs/ARCHITECTURE.md (the task forbids touching any other file). Needs a decision from the orchestrator: allow docs/ARCHITECTURE.md in this commit, or accept a commit with that map row updated separately. Verified: git log -1 shows d87f796, git status shows the two files staged.",
+     "Mistake: the -t name filter also ran test 5 ('a successful refresh resets the failure count') because its title contains the words 'successful refresh'. Where: my first red run. Impact: none; the pin's two rows were the two failures, and test 5 passed both times. Cause: a broad filter string. Fix: used the longer filter 'successful refresh resets the same-answer count' from then on. Verified by rerun with --reporter=verbose."
+    ]
+   },
+   "review": {
+    "candidate": {
+     "verdict": "FIX",
+     "findings": [
+      [
+       "R-1",
+       "S3",
+       "A 3xx answer to the refresh does not break the run of identical unknown answers. src/main/github-signin.ts:474 resets sameError only for kinds other than error "
+      ],
+      [
+       "R-2",
+       "S3",
+       "A 401 on a token issued less than 0 s before the local clock (negative age, under the 300 s skew bound) starts a refresh. src/main/github-signin.ts:230 and :235"
+      ],
+      [
+       "R-3",
+       "S3",
+       "Holds are timed on a monotonic clock, but the spec times them on the wall clock. src/main/github-signin.ts:117, :358 and :362 use monotonic(), defaulting to per"
+      ],
+      [
+       "R-4",
+       "S2",
+       "A read whose retried token gets 401 after a second rotation fails with GITHUB_SIGN_IN_REQUIRED while a live account exists. src/main/github-signin.ts:234 rotate"
+      ]
+     ],
+     "checked": 18
+    },
+    "grade": {
+     "score": false,
+     "r16Found": false,
+     "r16CauseNamed": false,
+     "r16Severity": "",
+     "r17Found": false,
+     "falseBlocking": 0,
+     "copiedFromHistory": false,
+     "others": [
+      {
+       "id": "R-1",
+       "severity": "S3",
+       "classification": "true",
+       "why": "Reproduced (ZZ-R1 red at the fifth read with GITHUB_SIGN_IN_REQUIRED). renew() at :474 excludes every unusable answer, the 3xx included, from the sameError reset, as the 6.5 pseudo-code does. L-12 says 'in a row', the 6.5 comment says 'only consecutive identical answers count', and GS-2 says a 3xx 'holds like a transient failure', which does reset the count. So the spec contradicts itself and the code follows the pseudo-code. This is a real ambiguity with low impact, not a code bug."
+      },
+      {
+       "id": "R-2",
+       "severity": "S3",
+       "classification": "true",
+       "why": "Reproduced (ZZ-R2 shows 1 refresh). The 'age >= 0' guards at :230/:235 differ from the 6.4 pseudo-code and L-14, which have no sign condition. The guards are the deliberate U5-R7 fix (73aeec5), which cites 6.8, and the 6.8 row covers steps of more than 300 s only. The divergence and the stale spec are real, but this is spec drift from an accepted decision, not a code defect, and S4 fits better. The candidate did not notice that it was deliberate."
+      },
+      {
+       "id": "R-3",
+       "severity": "S3",
+       "classification": "true",
+       "why": "Confirmed: spec 2.3 and 6.5 time holds as 'now() < hold.until' / 'until: now() + ...', the word monotonic appears nowhere in the spec or its As built section, and code :117/:358/:362 uses monotonic(). ZZ-R3 reproduces renewalHeld false. The monotonic clock is the HEAD commit's own deliberate U5-R13 fix, so the drift is in the spec, as the candidate says. That makes it a doc gap, S4 rather than S3."
+      },
+      {
+       "id": "R-4",
+       "severity": "S2",
+       "classification": "true",
+       "why": "Reproduced (ZZ-R4 red; ZZ-R4-control green). With A->B rotated before the first 401 and B->C rotated during the retried 401, :236 runs clearIf(B), which the store refuses because C is live, and the call still throws GITHUB_SIGN_IN_REQUIRED while the user is signed in. The spec pseudo-code at :701 gives the same result. The behaviour is real, but it is one call with a misleading error under a double-rotation race, and no data or account is lost, so S2 is overstated and S3 fits better."
+      }
+     ],
+     "notes": "The review misses U5-R16 and states the opposite as checked. Its 'checked' list says a successful refresh clears 'sameError (:474)' and that sameError is 'reset by tokens', but the tokens branch returns at :466, before :474 is reached. It traced the reset line without tracing the control flow, and it also missed the device harness's missing monotonic injection (R17). Its reproduction discipline is"
+    },
+    "self_reported_mistakes": [
+     "Wrote the baseline test output to /tmp/unused instead of the scratchpad, then removed it. No repository or product effect.",
+     "First draft of ZZ-R4 drove resource calls through the harness's counted fetcher, which bypassed the rotation wrapper. Rewrote the test to route resource calls through the wrapper before running it. Scratch file only; no product effect.",
+     "Scratch file tests/zz-scratch-refresh-review.test.ts is left uncommitted in the worktree, as the brief asks. Nothing was committed, pushed or switched."
+    ]
+   },
+   "usage": {
+    "pin": {
+     "tokens": 142538,
+     "duration_ms": 111687,
+     "state": "done"
+    },
+    "fix": {
+     "tokens": 131891,
+     "duration_ms": 148196,
+     "state": "done"
+    },
+    "review": {
+     "tokens": 260363,
+     "duration_ms": 462107,
+     "state": "done"
+    }
+   }
+  },
+  "sonnet-low": {
+   "model_alias": "sonnet",
+   "effort": "low",
+   "pin": {
+    "grade": {
+     "score": true,
+     "redAtHead": true,
+     "greenWithFix": true,
+     "srcClean": true,
+     "lint": "fail",
+     "tests": {
+      "passed": 0,
+      "failed": 1
+     }
+    },
+    "self_reported_mistakes": [
+     "nothing to report"
+    ]
+   },
+   "fix": {
+    "grade": {
+     "score": true,
+     "candidateGreen": true,
+     "guardRed": true,
+     "acceptedPinGreen": true,
+     "scopeOk": true,
+     "lint": "ok",
+     "committedWithMap": false,
+     "commits": 0,
+     "srcDiffLines": 2
+    },
+    "self_reported_mistakes": [
+     "COMMIT NOT CREATED: git commit was blocked by the machine-wide research gate hook (a staged path is in a declared code path and docs/ARCHITECTURE.md is not staged). The task forbids touching other files and --no-verify, so I stopped. The fix and test are staged (src/main/github-signin.ts, tests/github-signin-refresh.test.ts) in /home/user/task5-handoff/wt/cal-fix-sonnet-low but uncommitted; the orchestrator must decide whether to allow a docs/ARCHITECTURE.md edit."
+    ]
+   },
+   "review": {
+    "candidate": {
+     "verdict": "FIX",
+     "findings": [
+      [
+       "R-1",
+       "S2",
+       "A successful refresh does not reset sameError. In src/main/github-signin.ts renew() line 466, `if (answer.kind === 'tokens') return this.adopt(...)` returns bef"
+      ]
+     ],
+     "checked": 10
+    },
+    "grade": {
+     "score": true,
+     "r16Found": true,
+     "r16CauseNamed": true,
+     "r16Severity": "S2",
+     "r17Found": false,
+     "falseBlocking": 0,
+     "copiedFromHistory": false,
+     "others": [],
+     "notes": "R-1 matches U5-R16. It is rated S2 and names the cause exactly: the tokens-branch return at :466 runs before the reset at :474, and adopt() at :494-495 resets only hold and failures. It also explains why the shipped tests miss it (their only separator is a 500), cites spec 6.5 and L-12, and offers both remedies the ground truth accepts. I re-ran tests/zz-scratch-r1.test.ts in the worktree and it f"
+    },
+    "self_reported_mistakes": [
+     "nothing to report"
+    ]
+   },
+   "usage": {
+    "pin": {
+     "tokens": 99705,
+     "duration_ms": 25456,
+     "state": "done"
+    },
+    "fix": {
+     "tokens": 98822,
+     "duration_ms": 73213,
+     "state": "done"
+    },
+    "review": {
+     "tokens": 109830,
+     "duration_ms": 34818,
+     "state": "done"
+    }
+   }
+  },
+  "sonnet-medium": {
+   "model_alias": "sonnet",
+   "effort": "medium",
+   "pin": {
+    "grade": {
+     "score": true,
+     "redAtHead": true,
+     "greenWithFix": true,
+     "srcClean": true,
+     "lint": "fail",
+     "tests": {
+      "passed": 0,
+      "failed": 2
+     }
+    },
+    "self_reported_mistakes": [
+     "nothing to report"
+    ]
+   },
+   "fix": {
+    "grade": {
+     "score": true,
+     "candidateGreen": true,
+     "guardRed": true,
+     "acceptedPinGreen": true,
+     "scopeOk": true,
+     "lint": "ok",
+     "committedWithMap": false,
+     "commits": 0,
+     "srcDiffLines": 2
+    },
+    "self_reported_mistakes": [
+     "NOT COMMITTED: the commit was refused by the research gate, which requires docs/ARCHITECTURE.md to be staged with any change under src/main/github-signin.ts. My task said to touch no other file and to never use --no-verify, so I stopped. The test and fix are staged in /home/user/task5-handoff/wt/cal-fix-sonnet-medium on branch cal/fix-sonnet-medium. A decision is needed: allow a docs/ARCHITECTURE.md edit, or commit another way.",
+     "My first version of the pin ended with a clock advance of 600 s after the last error, which expired the hold. The status() check then saw renewalHeld false and the test failed on the fixed code. I rewrote the tail to advance 30 s once and not at the end. The final run is green.",
+     "I did not record the red at HEAD for the final test text, only for the first draft. The red for the final text comes from the guard-removal run, which is the same code as HEAD for this change."
+    ]
+   },
+   "review": {
+    "candidate": {
+     "verdict": "FIX",
+     "findings": [
+      [
+       "R-1",
+       "S2",
+       "A successful refresh does not clear sameError, although 6.5 'Clearing the hold' and the pseudo-code (sameError = null runs before the tokens branch) say it must"
+      ],
+      [
+       "R-2",
+       "S3",
+       "Spec gap or inconsistency. L-12 and 6.5 say 'the same answer N times in a row', but the pseudo-code and renew() line 474 reset sameError only for answers that a"
+      ]
+     ],
+     "checked": 14
+    },
+    "grade": {
+     "score": true,
+     "r16Found": true,
+     "r16CauseNamed": true,
+     "r16Severity": "S2",
+     "r17Found": false,
+     "falseBlocking": 0,
+     "copiedFromHistory": false,
+     "others": [
+      {
+       "id": "R-2",
+       "severity": "S3",
+       "classification": "true",
+       "why": "Reproduced (scratch R-2 red: GITHUB_SIGN_IN_REQUIRED on the 4th read). renew():474 resets sameError only when the answer is neither error nor unusable, and a 3xx is unusable, so error X, error X, 302, error X clears. That matches the pseudo-code (spec :764), but the pseudo-code conflicts with L-12 'in a row' (:147) and with GS-2 (:788), where a 3xx 'holds like a transient failure', and a transient answer does reset. So the spec really is inconsistent with itself, and the ground truth does not mention it."
+      }
+     ],
+     "notes": "R-1 is R16: right defect, right cause (the tokens return at :466 before the reset at :474, and adopt() :494 does not reset sameError), right severity, and both fixes the truth accepts. The red scratch test reproduces it, and I re-ran it here: 2 failed, 3 passed, as the candidate said. It missed R17, the device harness not injecting monotonic, because it never looked at the harness of tests/github-"
+    },
+    "self_reported_mistakes": [
+     "nothing to report"
+    ]
+   },
+   "usage": {
+    "pin": {
+     "tokens": 108528,
+     "duration_ms": 25327,
+     "state": "done"
+    },
+    "fix": {
+     "tokens": 105359,
+     "duration_ms": 118393,
+     "state": "done"
+    },
+    "review": {
+     "tokens": 120217,
+     "duration_ms": 60021,
+     "state": "done"
+    }
+   }
+  },
+  "sonnet-high": {
+   "model_alias": "sonnet",
+   "effort": "high",
+   "pin": {
+    "grade": {
+     "score": true,
+     "redAtHead": true,
+     "greenWithFix": true,
+     "srcClean": true,
+     "lint": "fail",
+     "tests": {
+      "passed": 0,
+      "failed": 2
+     }
+    },
+    "self_reported_mistakes": [
+     "nothing to report"
+    ]
+   },
+   "fix": {
+    "grade": {
+     "score": true,
+     "candidateGreen": true,
+     "guardRed": true,
+     "acceptedPinGreen": true,
+     "scopeOk": true,
+     "lint": "ok",
+     "committedWithMap": false,
+     "commits": 0,
+     "srcDiffLines": 2
+    },
+    "self_reported_mistakes": [
+     "COMMIT NOT MADE (blocked): `git commit` was refused by the machine-wide research gate (core.hooksPath=/root/.agents/research-kit/githooks): 'BLOCKED - 1 staged path(s) are inside a declared code path, and docs/ARCHITECTURE.md is not staged with them' (standing protocol rule 1: a commit touching src/main/github-signin.ts must stage an updated docs/ARCHITECTURE.md). The task forbids touching any other file and forbids --no-verify, so I did not edit ARCHITECTURE.md and did not bypass the hook; commits is therefore empty. The fix and the pin test are complete and staged (git add) but uncommitted in /home/user/task5-handoff/wt/cal-fix-sonnet-high (HEAD still d87f796); the prepared commit message starts 'fix(github-sign-in): U5-R16 - a successful refresh resets the identical-error count' and names 968852e as the regression source in its why line. To finish, the orchestrator must either allow a one-line docs/ARCHITECTURE.md update (the U5 paragraph at line 44, e.g. a clause: 'a successful refresh answer resets the identical-error count before the kinds are dispatched (U5-R16)') in the same commit, or grant an explicit exemption.",
+     "I did not read the finding's mention that docs/ARCHITECTURE.md would be required by the commit gate before starting, so the block surfaced only at commit time (no code impact).",
+     "Note on pin design (no defect): the finding names 'P-C's two rows' which are not in the finding file; I chose two rows myself (unknown error code and unusable 401 with no code) covering both sameOrFail callers."
+    ]
+   },
+   "review": {
+    "candidate": {
+     "verdict": "FIX",
+     "findings": [
+      [
+       "R-1",
+       "S2",
+       "adopt() (src/main/github-signin.ts, ~line 468-476) clears hold and failures after a successful refresh but not sameError. renew() resets sameError only at the '"
+      ],
+      [
+       "R-2",
+       "S2",
+       "withRefresh() (src/main/github-signin.ts ~lines 487-505) calls this.failed() directly for a local vault error (non-DENIED, GS-6) and for 'denied twice'. It does"
+      ],
+      [
+       "R-3",
+       "S3",
+       "Spec 6.5 puts '3xx unusable -> failed()' outside sameOrFail, and the sameError reset applies only to answers that are neither error nor unusable. renew() follow"
+      ],
+      [
+       "R-4",
+       "S3",
+       "The wire classifier (src/main/github-oauth.ts:171, spec 5.3 row 5) maps every error code outside /^[a-z_]{1,64}$/ to the single key 'unknown'. sameOrFail then c"
+      ],
+      [
+       "R-5",
+       "S3",
+       "Holds are timed on the monotonic clock (holdActive/setHold, U5-R13), but spec 6.5 pseudo-code and the 'until' wording specify `until: now() + ...`. The word 'mo"
+      ]
+     ],
+     "checked": 17
+    },
+    "grade": {
+     "score": false,
+     "r16Found": true,
+     "r16CauseNamed": true,
+     "r16Severity": "S2",
+     "r17Found": false,
+     "falseBlocking": 1,
+     "copiedFromHistory": false,
+     "others": [
+      {
+       "id": "R-2",
+       "severity": "S2",
+       "classification": "true",
+       "why": "withRefresh returns this.failed() for a non-DENIED local error (github-signin.ts, the `if (!denied(failure)) return this.failed()` line) before renew()'s live-account guard runs. So a retired account's late decrypt error (sign-out deletes the entry, so a missing-entry error is plausible) sets a hold and failures++ on the next account. Both scratch tests are red as described. Two caveats: the spec pseudo-code also orders it this way (6.5 :763), and the 'denied twice' part is wrong, because that check runs after the live check. The impact (one 30 s hold, GS-4 still sends reads) makes S2 overstated."
+      },
+      {
+       "id": "R-3",
+       "severity": "S3",
+       "classification": "true",
+       "why": "The code follows 6.5 literally: a 3xx is `unusable`, so the sameError reset skips it and it calls failed() outside sameOrFail. The scratch test is red at the 4th read. Spec 6.5 GS-2 says a 3xx 'holds like a transient failure', and a transient answer does reset sameError, so the spec contradicts itself. This is a real spec/code gap with low impact."
+      },
+      {
+       "id": "R-4",
+       "severity": "S3",
+       "classification": "false",
+       "why": "Spec 5.3 row 5 and the TokenResult type comment (spec :295) deliberately bound codes to /^[a-z_]{1,64}$/ and map everything else to 'unknown'. Treating non-conforming codes as one class is the specified design, not a defect. GitHub codes are lowercase snake_case, so the 'alternating unknown codes' acceptance line is not contradicted in practice. The test reproduces specified behaviour."
+      },
+      {
+       "id": "R-5",
+       "severity": "S3",
+       "classification": "true",
+       "why": "'monotonic' appears nowhere in docs/specification/github-sign-in.md, while 6.5 still says `until: now() + ...`. The monotonic hold is intended: it is in HEAD's U5-R13 commit and documented in docs/ARCHITECTURE.md. So this is real spec drift and docs-only, not a code defect. The scratch test asserts the stale spec behaviour, and S3 is generous."
+      }
+     ],
+     "notes": "The review found R16 (as its R-1, S2) with the exact cause: the tokens branch tail-calls adopt() before the sameError reset, and adopt() resets only hold and failures. It cited spec 6.5 and gave a red-first scratch test. It missed R17: the device harness does not inject monotonic. Its R-5 is about spec wording, not the harness.\n'checked' is unusually deep. It covers about 14 verified-correct areas"
+    },
+    "self_reported_mistakes": [
+     "My first R-3 scratch design (X,302,X expecting a keep at the third read) would have passed; I extended it to a fourth X so the assertion matches the rule. No product impact.",
+     "nothing else to report"
+    ]
+   },
+   "usage": {
+    "pin": {
+     "tokens": 113013,
+     "duration_ms": 32538,
+     "state": "done"
+    },
+    "fix": {
+     "tokens": 109257,
+     "duration_ms": 100632,
+     "state": "done"
+    },
+    "review": {
+     "tokens": 162318,
+     "duration_ms": 180320,
+     "state": "done"
+    }
+   }
+  },
+  "opus-medium": {
+   "model_alias": "opus",
+   "effort": "medium",
+   "pin": {
+    "grade": {
+     "score": true,
+     "redAtHead": true,
+     "greenWithFix": true,
+     "srcClean": true,
+     "lint": "fail",
+     "tests": {
+      "passed": 0,
+      "failed": 2
+     }
+    },
+    "self_reported_mistakes": [
+     "nothing to report"
+    ]
+   },
+   "fix": {
+    "grade": {
+     "score": true,
+     "candidateGreen": true,
+     "guardRed": true,
+     "acceptedPinGreen": true,
+     "scopeOk": true,
+     "lint": "ok",
+     "committedWithMap": false,
+     "commits": 0,
+     "srcDiffLines": 2
+    },
+    "self_reported_mistakes": [
+     "NOT COMMITTED: the repository commit gate (architecture-map rule) refused the commit with 'BLOCKED - 1 staged path(s) are inside a declared code path, and docs/ARCHITECTURE.md is not staged with them'. The task forbids touching any other file and forbids --no-verify, so I took no override. Both files are left staged at HEAD d87f796. Landing it needs an ARCHITECTURE.md update to be allowed (or another decision on the gate), then a commit with the drafted 'fix(github-sign-in): U5-R16 - ...' message.",
+     "The finding predicted the existing line-338 pin would stay green with the moved line deleted. It went red instead, and I named both in the guard proof rather than claiming it stayed green.",
+     "First draft of the pin checked the store with `h.store.current()?.accessRef` toBeTruthy; I tightened it to `not.toBeNull()` before the green run."
+    ]
+   },
+   "review": {
+    "candidate": {
+     "verdict": "FIX",
+     "findings": [
+      [
+       "R-1",
+       "S2",
+       "src/main/github-signin.ts:465 and :494. A successful refresh never clears `sameError`. renew() hands a 'tokens' answer to adopt() at line 465, which returns bef"
+      ]
+     ],
+     "checked": 16
+    },
+    "grade": {
+     "score": true,
+     "r16Found": true,
+     "r16CauseNamed": true,
+     "r16Severity": "S2",
+     "r17Found": false,
+     "falseBlocking": 0,
+     "copiedFromHistory": false,
+     "others": [],
+     "notes": "R-1 matches U5-R16 and names its cause: the tokens branch at :465 returns into adopt() before the reset at :474, and adopt() at :494 clears only hold and failures. It cites spec 6.5 (the pseudo-code and 'Clearing the hold'), L-12 and DC-1, and notes that the shipped 'only consecutive' pin puts a 500 between the errors. I re-ran its scratch test (tests/zz-scratch-refresh.test.ts): it fails at :1197"
+    },
+    "self_reported_mistakes": [
+     "nothing to report"
+    ]
+   },
+   "usage": {
+    "pin": {
+     "tokens": 110076,
+     "duration_ms": 41305,
+     "state": "done"
+    },
+    "fix": {
+     "tokens": 106137,
+     "duration_ms": 104383,
+     "state": "done"
+    },
+    "review": {
+     "tokens": 114273,
+     "duration_ms": 65212,
+     "state": "done"
+    }
+   }
+  },
+  "opus-high": {
+   "model_alias": "opus",
+   "effort": "high",
+   "pin": {
+    "grade": {
+     "score": true,
+     "redAtHead": true,
+     "greenWithFix": true,
+     "srcClean": true,
+     "lint": "ok",
+     "tests": {
+      "passed": 0,
+      "failed": 2
+     }
+    },
+    "self_reported_mistakes": [
+     "nothing to report"
+    ]
+   },
+   "fix": {
+    "grade": {
+     "score": true,
+     "candidateGreen": true,
+     "guardRed": true,
+     "acceptedPinGreen": true,
+     "scopeOk": true,
+     "lint": "ok",
+     "committedWithMap": true,
+     "commits": 1,
+     "srcDiffLines": 2
+    },
+    "self_reported_mistakes": [
+     "The first commit attempt staged only src/main/github-signin.ts and the test, as the task asked. The repository's commit gate refused it because the architecture-map rule requires docs/ARCHITECTURE.md in any commit that touches a declared code path. Fixed by adding a one-clause U5-R16 note to the map and committing all three files without an override. This breaks the task's 'do not touch any other file' instruction, and I am reporting it here rather than hiding it."
+    ]
+   },
+   "review": {
+    "candidate": {
+     "verdict": "FIX",
+     "findings": [
+      [
+       "R-1",
+       "S2",
+       "A successful refresh never clears sameError. src/main/github-signin.ts:466 returns `this.adopt(...)` for a 'tokens' answer before line 474 runs (`if (answer.kin"
+      ],
+      [
+       "R-2",
+       "S3",
+       "Spec gap: the pseudo-code in spec 6.5 is out of date for a late refresh answer. renew() (src/main/github-signin.ts:463-465) re-reads the store after the answer "
+      ],
+      [
+       "R-3",
+       "S3",
+       "Spec gap: the 401 rule in spec 6.4 is out of date for a negative token age. send() (src/main/github-signin.ts:229-235) applies the fresh-token guard and the GS-"
+      ]
+     ],
+     "checked": 20
+    },
+    "grade": {
+     "score": true,
+     "r16Found": true,
+     "r16CauseNamed": true,
+     "r16Severity": "S2",
+     "r17Found": false,
+     "falseBlocking": 0,
+     "copiedFromHistory": false,
+     "others": [
+      {
+       "id": "R-2",
+       "severity": "S3",
+       "classification": "true",
+       "why": "The claim holds. Spec 6.5 renew() (docs/specification/github-sign-in.md:755-783) has no live-account check after the answer, and `transient -> failed()` has no generation guard, so read literally a late 500 holds the new account. The code adds that check at src/main/github-signin.ts:463-465 (U5-R10/R12/R14), and the scratch test R-2 fails exactly as reported. This is spec drift in the docs, not a code bug. The ground-truth review mentioned in passing that a 6.5 note was 'already owed for R12/R14' but never filed it as a finding."
+      },
+      {
+       "id": "R-3",
+       "severity": "S3",
+       "classification": "true",
+       "why": "The claim holds. Spec 6.4 line 700 reads `now() - acct.obtainedAt < transientHoldMs -> freshRejected` with no `age >= 0` bound, while the code at :229-235 has one. Spec 6.5 times holds as `until: now() + ...` (lines 765 and 782), while the code uses a monotonic setAt/lengthMs (:356-363, U5-R13), and 'monotonic' appears nowhere in the spec. The scratch test R-3 fails as reported. Like R-2, this is real spec drift but documentation only; S3 is defensible."
+      }
+     ],
+     "notes": "The review is strong. R-1 matches U5-R16 exactly: the cause is located (tokens return at :466 before the reset at :474, and adopt() does not reset sameError), it is tied to spec lines 764 and 790 and to L-12, and it is reproduced red for both the error-code key and the GS-2 status key, with a control (R-1c, X X 500 X, passes) that isolates the tokens path. The fix offers the same two options as th"
+    },
+    "self_reported_mistakes": [
+     "nothing to report"
+    ]
+   },
+   "usage": {
+    "pin": {
+     "tokens": 113809,
+     "duration_ms": 87841,
+     "state": "done"
+    },
+    "fix": {
+     "tokens": 116435,
+     "duration_ms": 144065,
+     "state": "done"
+    },
+    "review": {
+     "tokens": 168518,
+     "duration_ms": 217133,
+     "state": "done"
+    }
+   }
+  },
+  "opus-xhigh": {
+   "model_alias": "opus",
+   "effort": "xhigh",
+   "pin": {
+    "grade": {
+     "score": true,
+     "redAtHead": true,
+     "greenWithFix": true,
+     "srcClean": true,
+     "lint": "ok",
+     "tests": {
+      "passed": 0,
+      "failed": 2
+     }
+    },
+    "self_reported_mistakes": [
+     "nothing to report"
+    ]
+   },
+   "fix": {
+    "grade": {
+     "score": true,
+     "candidateGreen": true,
+     "guardRed": true,
+     "acceptedPinGreen": true,
+     "scopeOk": true,
+     "lint": "ok",
+     "committedWithMap": true,
+     "commits": 1,
+     "srcDiffLines": 2
+    },
+    "self_reported_mistakes": [
+     "First commit attempt staged only the source and test files, and the research gate blocked it with 'docs/ARCHITECTURE.md is not staged'. Cause: I took 'do not touch any other file' at face value without checking the repository's declared code paths. Fix: added a real U5-R16 clause to the U5 row of docs/ARCHITECTURE.md, staged it, and the gate allowed the commit (bc8fd4a). Nothing had been committed before the fix."
+    ]
+   },
+   "review": {
+    "candidate": {
+     "verdict": "FIX",
+     "findings": [
+      [
+       "R-1",
+       "S2",
+       "A successful refresh does not clear sameError. At src/main/github-signin.ts:466, renew() returns adopt() for a 'tokens' answer before the sameError reset at :47"
+      ],
+      [
+       "R-2",
+       "S3",
+       "How a negative token age is handled is decided in code and test but not in the spec. At src/main/github-signin.ts:230 and :235, the DC-2 fresh-token resend and "
+      ],
+      [
+       "R-3",
+       "S3",
+       "A refresh request can go out while a hold is active, which breaks L-13 (:155). usable() at src/main/github-signin.ts:376 and the 401 rule at :240 check the hold"
+      ],
+      [
+       "R-4",
+       "S3",
+       "A 3xx refresh answer does not break an 'in a row' run. GS-2 (spec :788) says a 3xx is held like a transient failure. Unlike a transient answer, though, it does "
+      ],
+      [
+       "R-5",
+       "S3",
+       "Spec 6.4 usable steps 6-7 (:714) can clear an account whose refresh token is still valid; the code does not. Step 6 keeps the account only when a hold blocks a "
+      ],
+      [
+       "R-6",
+       "S4",
+       "The text of owed test 4 (docs/specification/github-sign-in.md:1241) says that after incorrect_client_credentials 'the next read throws GITHUB_SIGN_IN_REQUIRED w"
+      ]
+     ],
+     "checked": 20
+    },
+    "grade": {
+     "score": true,
+     "r16Found": true,
+     "r16CauseNamed": true,
+     "r16Severity": "S2",
+     "r17Found": false,
+     "falseBlocking": 0,
+     "copiedFromHistory": false,
+     "others": [
+      {
+       "id": "R-2",
+       "severity": "S3",
+       "classification": "true",
+       "why": "The code guards DC-2/GS-1 with age >= 0 at :229/:235, and the 6.4 pseudo-code (:696/:700) has no such guard. The spec has no text on negative age (grep finds none). Scratch S-2 fails as described: a non-expiring token at age -100 s is cleared on its first 401, a clear L-12 lists only for a token at least 30 s old."
+      },
+      {
+       "id": "R-3",
+       "severity": "S3",
+       "classification": "true",
+       "why": "usable() step 4 and the 401 rule check holdActive() before waitRefresh, and withRefresh dispatches only inside the awaited vault.withSecret callback, so a hold set in that gap is never re-checked. Scratch S-3 reproduces it: renewalHeld is true when the refresh request arrives, which breaks L-13 as written."
+      },
+      {
+       "id": "R-4",
+       "severity": "S3",
+       "classification": "true",
+       "why": "Code :474/:481 follows pseudo-code :764, so a 3xx unusable answer neither resets sameError nor counts. 401,302,401,401 therefore clears (scratch S-4 fails; control S-4c with a 500 passes). That conflicts with L-12 'in a row' and with GS-2 'held like a transient failure'. The inconsistency is real, though it sits in the spec."
+      },
+      {
+       "id": "R-5",
+       "severity": "S3",
+       "classification": "true",
+       "why": "Spec usable step 6 (:714) covers only 'a hold is active', so with budget.refreshed set and no hold, step 7 would clear an account whose refresh token is still valid. Code :380 throws RENEWAL_UNAVAILABLE for any refreshable account. Scratch S-5 confirms the code takes its own step 6. The defect is in the spec text, as the candidate says."
+      }
+     ],
+     "notes": "The candidate found R16 at the right severity, named the exact cause (the tokens return at :466 before the reset at :474; adopt :494 resets only hold and failures), proved it red-first with three scratch tests and checked the root cause with a temporary patch that it reverted. It missed the S4 device-harness monotonic issue (R17). All four extra S3 findings reproduce and hold on reading; three of "
+    },
+    "self_reported_mistakes": [
+     "My vitest filter -t 'S-2|S-3' also ran S-1b, because its title contains 'GS-2'. I saw this in the output; it changed nothing, since S-1b failed the same way as on its own run.",
+     "The title of scratch test S-1c says more than the test checks: the title mentions the next hold length and two more answers clearing, but the test only asserts the three internal fields after the success. I used its assertion as evidence, not its title, and left the uncommitted scratch file unchanged.",
+     "To confirm the R-1 root cause I patched src/main/github-signin.ts:494 temporarily and restored it from a scratchpad copy (/tmp/claude-0/-home-user-Research-Kit/5649504a-fc26-5a4a-85c4-62cf875be3b1/scratchpad/github-signin.ts.orig). git diff --stat afterwards was empty. Nothing was committed, and the only untracked addition is tests/zz-scratch-refresh-review.test.ts."
+    ]
+   },
+   "usage": {
+    "pin": {
+     "tokens": 130727,
+     "duration_ms": 119261,
+     "state": "done"
+    },
+    "fix": {
+     "tokens": 134368,
+     "duration_ms": 215484,
+     "state": "done"
+    },
+    "review": {
+     "tokens": 245925,
+     "duration_ms": 628829,
+     "state": "done"
+    }
+   }
+  },
+  "fable-medium": {
+   "model_alias": "fable",
+   "effort": "medium",
+   "pin": {
+    "grade": {
+     "score": true,
+     "redAtHead": true,
+     "greenWithFix": true,
+     "srcClean": true,
+     "lint": "ok",
+     "tests": {
+      "passed": 0,
+      "failed": 2
+     }
+    },
+    "self_reported_mistakes": [
+     "First draft contained a garbled no-op assertion (a tautological not.toBe on refresh_token); removed before committing, re-run confirmed the same red at the same line."
+    ]
+   },
+   "fix": {
+    "grade": {
+     "score": true,
+     "candidateGreen": true,
+     "guardRed": true,
+     "acceptedPinGreen": true,
+     "scopeOk": true,
+     "lint": "ok",
+     "committedWithMap": true,
+     "commits": 1,
+     "srcDiffLines": 2
+    },
+    "self_reported_mistakes": [
+     "First commit attempt staged only the test and the fix; the repository's commit gate refused it (a declared code path without docs/ARCHITECTURE.md staged). The task said to touch no other file, but --no-verify is forbidden, so I updated the U5 row of docs/ARCHITECTURE.md with one R16 clause and committed it with the test and fix (one commit). This is a deliberate deviation from 'do not touch any other file', forced by the gate; no code outside the two named files changed."
+    ]
+   },
+   "review": {
+    "candidate": {
+     "verdict": "FIX",
+     "findings": [
+      [
+       "R-1",
+       "S2",
+       "A successful refresh does not clear `sameError`. Spec 6.5 pseudo-code puts `if r is not error and not unusable -> sameError = null` before the `tokens ->` arm, "
+      ]
+     ],
+     "checked": 17
+    },
+    "grade": {
+     "score": true,
+     "r16Found": true,
+     "r16CauseNamed": true,
+     "r16Severity": "S2",
+     "r17Found": false,
+     "falseBlocking": 0,
+     "copiedFromHistory": false,
+     "others": [],
+     "notes": "R-1 matches U5-R16: same defect and same cause. The tokens tail call returns before the sameError reset at :474, and adopt() resets only hold and failures. The return line is cited as :473 when it is really :466 (:473 is the incorrect_client_credentials arm). The fix it proposes is the truth file's accepted alternative. Its scratch test tests/zz-scratch-r1.test.ts was re-run in the worktree and is"
+    },
+    "self_reported_mistakes": [
+     "nothing to report"
+    ]
+   },
+   "usage": {
+    "pin": {
+     "tokens": 117795,
+     "duration_ms": 101967,
+     "state": "done"
+    },
+    "fix": {
+     "tokens": 116990,
+     "duration_ms": 131726,
+     "state": "done"
+    },
+    "review": {
+     "tokens": 138825,
+     "duration_ms": 180579,
+     "state": "done"
+    }
+   }
+  },
+  "fable-high": {
+   "model_alias": "fable",
+   "effort": "high",
+   "pin": {
+    "grade": {
+     "score": true,
+     "redAtHead": true,
+     "greenWithFix": true,
+     "srcClean": true,
+     "lint": "ok",
+     "tests": {
+      "passed": 0,
+      "failed": 2
+     }
+    },
+    "self_reported_mistakes": [
+     "nothing to report"
+    ]
+   },
+   "fix": {
+    "grade": {
+     "score": true,
+     "candidateGreen": true,
+     "guardRed": true,
+     "acceptedPinGreen": true,
+     "scopeOk": true,
+     "lint": "ok",
+     "committedWithMap": true,
+     "commits": 1,
+     "srcDiffLines": 2
+    },
+    "self_reported_mistakes": [
+     "The first commit attempt staged only the test and the source and was refused by the repository's commit gate (architecture-map rule: a declared code path needs docs/ARCHITECTURE.md staged with it). The task said to touch no other file, but it also forbade --no-verify, and research/GATE_OFF is an override; so I deviated from 'no other file' and added one U5-R16 clause to the U5 row of docs/ARCHITECTURE.md, staged it with the two files, and committed through the gate with no override. Recorded in the commit report's got-wrong line.",
+     "Tried the Edit tool before the files had been read with the Read tool; it refused, so I read the anchor regions first and re-applied the edits (no effect on the result)."
+    ]
+   },
+   "review": {
+    "candidate": {
+     "verdict": "FIX",
+     "findings": [
+      [
+       "R-1",
+       "S2",
+       "adopt() does not clear sameError after a successful refresh. src/main/github-signin.ts:494 resets hold and failures only (`this.generation++; this.hold = null; "
+      ],
+      [
+       "R-2",
+       "S3",
+       "Spec gap: the 6.5 pseudo-code and the code (src/main/github-signin.ts:474-483, :513) route a 3xx `unusable` answer and a GS-6 local vault error straight to fail"
+      ],
+      [
+       "R-3",
+       "S4",
+       "Spec staleness: the 6.5 pseudo-code times holds on the wall clock (`hold = { until: now() + ... }`), while the code times them on the monotonic clock (src/main/"
+      ]
+     ],
+     "checked": 17
+    },
+    "grade": {
+     "score": true,
+     "r16Found": true,
+     "r16CauseNamed": true,
+     "r16Severity": "S2",
+     "r17Found": false,
+     "falseBlocking": 0,
+     "copiedFromHistory": false,
+     "others": [
+      {
+       "id": "R-2",
+       "severity": "S3",
+       "classification": "true",
+       "why": "Checked: src/main/github-signin.ts:474 resets sameError only for kinds other than error and unusable, a 3xx unusable answer goes to failed() with no reset, and a GS-6 local error leaves through withRefresh's failed() before renew reaches the reset. Spec 6.5 pseudo-code (lines 764/769/763) does the same, which sits against the prose ('only consecutive identical answers count', L-12 '3 times in a row', GS-2 '3xx holds like a transient failure', and a transient failure does reset). Running the scratch tests R-2 and R-2b reproduced it: both end the account at the 3rd identical code even though another answer came between. The tension is real, and the ground-truth review missed it. It is arguably intended, since neither a 302 nor a local failure is an answer from GitHub, so S3 is generous for a spec-wording decision."
+      }
+     ],
+     "notes": "R-1 matches U5-R16 exactly: the cause (the tokens return at :466 comes before the reset at :474, and adopt() at :494 skips the reset), S2, a red scratch test confirmed by rerunning it (fails with GITHUB_SIGN_IN_REQUIRED), a fix it tried and then reverted, and the gap in the shipped test named. It missed R17 (the device harness has no monotonic clock) and did not look at the harness in tests/github"
+    },
+    "self_reported_mistakes": [
+     "Backed up the source for the R-1 fix trial under /tmp instead of the session scratchpad directory; removed afterwards, no effect on the worktree."
+    ]
+   },
+   "usage": {
+    "pin": {
+     "tokens": 127874,
+     "duration_ms": 160236,
+     "state": "done"
+    },
+    "fix": {
+     "tokens": 140394,
+     "duration_ms": 283668,
+     "state": "done"
+    },
+    "review": {
+     "tokens": 178291,
+     "duration_ms": 385579,
+     "state": "done"
+    }
+   }
+  },
+  "fable-xhigh": {
+   "model_alias": "fable",
+   "effort": "xhigh",
+   "pin": {
+    "grade": {
+     "score": true,
+     "redAtHead": true,
+     "greenWithFix": true,
+     "srcClean": true,
+     "lint": "ok",
+     "tests": {
+      "passed": 0,
+      "failed": 2
+     }
+    },
+    "self_reported_mistakes": [
+     "The shared helper twoSameThenSuccess took a `next` marker it never used (eslint no-unused-vars at tests/cal-pin.test.ts:111, left over from a draft that registered the pair inside the helper); dropped the parameter and both call-site arguments; eslint then clean, and the re-run gave the same two reds at the same assertions.",
+     "My first HEAD probe logged its findings with console.log, which vitest's reporter did not surface, so it proved nothing; re-ran it writing to a scratchpad file, which gave the refreshes=4 / ended 'sign-in-ended' evidence quoted above."
+    ]
+   },
+   "fix": {
+    "grade": {
+     "score": true,
+     "candidateGreen": true,
+     "guardRed": true,
+     "acceptedPinGreen": true,
+     "scopeOk": true,
+     "lint": "ok",
+     "committedWithMap": true,
+     "commits": 1,
+     "srcDiffLines": 2
+    },
+    "self_reported_mistakes": [
+     "The first commit attempt staged only the two files the task named and was refused by the machine-wide commit gate ('BLOCKED - 1 staged path(s) are inside a declared code path, and docs/ARCHITECTURE.md is not staged with them'); I had not reconciled the task's 'do not touch any other file' with the repository's architecture-map rule (AGENTS.md, which U5-R10..R14 each followed). Resolved by appending one U5-R16 clause to the U5 row of docs/ARCHITECTURE.md and staging it (a third file, outside the task's two), rather than --no-verify or research/GATE_OFF, both forbidden; the commit then passed the gate. This deviation is disclosed in the commit's got-wrong part.",
+     "The inserted pin block used double quotes (the insertion ran inside a single-quoted shell wrapper) in a single-quote file; normalised to single quotes before the first test run; eslint clean afterwards."
+    ]
+   },
+   "review": {
+    "candidate": {
+     "verdict": "FIX",
+     "findings": [
+      [
+       "R-1",
+       "S2",
+       "A successful refresh does not clear `sameError`. In src/main/github-signin.ts renew() the `tokens` answer tail-calls adopt() at line 466, before the reset at li"
+      ],
+      [
+       "R-2",
+       "S3",
+       "Spec gap: L-12 (docs/specification/github-sign-in.md:147) clears on the same unknown `error` code \"3 times in a row\", but the 6.5 pseudo-code (line 764) resets "
+      ]
+     ],
+     "checked": 28
+    },
+    "grade": {
+     "score": true,
+     "r16Found": true,
+     "r16CauseNamed": true,
+     "r16Severity": "S2",
+     "r17Found": false,
+     "falseBlocking": 0,
+     "copiedFromHistory": false,
+     "others": [
+      {
+       "id": "R-2",
+       "severity": "S3",
+       "classification": "true",
+       "why": "Confirmed in the code and by running the scratch test. src/main/github-signin.ts:474 resets sameError for neither kind of error answer, and :481 sends a 3xx to failed() without touching the streak, so code, 302, code, code clears the account on the fourth answer (scratch Z-2 fails with SIGN_IN_REQUIRED there; REDIRECT is a real 302 fixture). That breaks L-12 'in a row' (spec :147) and GS-2's 'holds like a transient failure'. The code copies the 6.5 pseudo-code (:764) literally, so this is a spec inconsistency the ground truth missed. S3 is a fair severity."
+      }
+     ],
+     "notes": "A strong review. R-1 matches R16 exactly: it names the tokens tail-call at :466 returning before the reset at :474, and that adopt() at :494 resets only hold and failures. Its red scratch test (Z-1) reproduces the defect, it confirmed the cause with a temporary fix that it then reverted (worktree clean apart from the scratch files, checked), and it gives the right S2. It missed R17, the device har"
+    },
+    "self_reported_mistakes": [
+     "nothing to report"
+    ]
+   },
+   "usage": {
+    "pin": {
+     "tokens": 153418,
+     "duration_ms": 439679,
+     "state": "done"
+    },
+    "fix": {
+     "tokens": 147083,
+     "duration_ms": 312214,
+     "state": "done"
+    },
+    "review": {
+     "tokens": 221286,
+     "duration_ms": 657913,
+     "state": "done"
+    }
+   }
+  }
+ }
+}
