@@ -1,0 +1,18 @@
+{
+ "task-id": "gsi-u5-rereview4",
+ "outcome": "accepted",
+ "owner-profile": "cc-fable-high",
+ "original-brief-fingerprint": "none: the hand-walked decision trace/decisions/hand-gsi-u5-rereview4.json carries no Brief fingerprint (ledger gsi-u5-rereview4 seq 1 brief-fingerprint null)",
+ "evidence": {
+  "checks": [
+   {
+    "command": "re-review",
+    "exit-code": 0,
+    "output-ref": "reports/wave2-u5-fix4.json"
+   }
+  ],
+  "actual-spend": null,
+  "files-touched": [],
+  "notes": "verdict ACCEPT with one S4 deferred (U5-R18); tokens: 173604 (harness count, not a bill)"
+ }
+}

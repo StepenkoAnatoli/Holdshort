@@ -1,0 +1,90 @@
+{
+ "request": {
+  "taskId": "sr-host-review",
+  "objective": "Refute-first review of the SmartRouter host adapter against gates.md and spec-v2",
+  "category": "review",
+  "unit": "smartrouter-host-adapter",
+  "permittedEffects": [],
+  "sources": [
+   "docs/orchestration/smartrouter/briefs/router-reviewer.md"
+  ],
+  "nonGoals": [
+   "no change to the worktree",
+   "no commit",
+   "no push"
+  ],
+  "acceptanceChecks": [
+   {
+    "command": "proofs re-run in a scratch copy",
+    "expect": "findings carry reproductions; proofs re-run"
+   }
+  ],
+  "needsVision": false,
+  "dataClasses": [
+   "repo-code",
+   "run-docs"
+  ],
+  "projectStop": {
+   "redSuite": false,
+   "gateOff": false,
+   "researchGateFailing": false
+  },
+  "previousResult": null,
+  "deadline": "2026-10-18T06:00:00Z",
+  "now": "2026-10-17T18:40:00Z",
+  "allowDirect": true
+ },
+ "decision": {
+  "route": "delegate",
+  "profile": "cc-opus-high",
+  "isolation": "worktree+branch",
+  "owner": "worker",
+  "human-gate": "none",
+  "nested-allowed": false,
+  "max-nesting-depth": 0,
+  "estimated-tokens": 209000,
+  "all-in-bound-usd": 5.18,
+  "candidates": {
+   "cc-fable-xhigh": {
+    "eligible": false,
+    "first-failing-gate": 5,
+    "reason": "direct unsuitable: 209000 tokens > direct-max-tokens 15000"
+   },
+   "cc-fable-high": {
+    "eligible": true,
+    "kind": "delegate",
+    "all-in-bound-usd": 11.45,
+    "work-bound-usd": 10.45,
+    "review-bound-usd": 0.0
+   },
+   "cc-opus-high": {
+    "eligible": true,
+    "kind": "delegate",
+    "all-in-bound-usd": 5.18,
+    "work-bound-usd": 4.18,
+    "review-bound-usd": 0.0
+   },
+   "cc-sonnet-high": {
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "missing or stale capability fingerprint"
+   },
+   "cc-haiku-low": {
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "cc-haiku-low not qualified for review"
+   }
+  },
+  "eligible-ordered": [
+   "cc-opus-high",
+   "cc-fable-high"
+  ],
+  "uncertainty": [
+   "cash: estimate only, no host accounting (subscription); not a strict cap"
+  ],
+  "advisory": "recommendation only \u2014 no dispatch performed or claimed"
+ },
+ "note": "hand-walked by the lead before the adapter existed; dispatched as decided (cc-opus-high)",
+ "walked-by": "lead, by hand, from host-policy.json and gates.md",
+ "walked-at": "2026-10-17T18:40:00Z"
+}

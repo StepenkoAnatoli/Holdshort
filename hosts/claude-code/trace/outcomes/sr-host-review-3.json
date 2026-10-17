@@ -1,0 +1,18 @@
+{
+ "task-id": "sr-host-review",
+ "outcome": "accepted",
+ "owner-profile": "cc-opus-high",
+ "original-brief-fingerprint": "none: the hand-walked decision trace/decisions/hand-sr-host-review.json carries no Brief fingerprint (ledger sr-host-review seq 1 brief-fingerprint null)",
+ "evidence": {
+  "checks": [
+   {
+    "command": "refute-first review",
+    "exit-code": 0,
+    "output-ref": "wf_e4d05eb8-beb review"
+   }
+  ],
+  "actual-spend": null,
+  "files-touched": [],
+  "notes": "review delivered F1-F9 with reproductions, all confirmed by the fixes landing (scratch only); tokens: 201576 (harness count, not a bill)"
+ }
+}

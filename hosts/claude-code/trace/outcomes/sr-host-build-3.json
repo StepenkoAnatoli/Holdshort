@@ -1,0 +1,27 @@
+{
+ "task-id": "sr-host-build",
+ "outcome": "verification-failed",
+ "owner-profile": "cc-opus-high",
+ "original-brief-fingerprint": "none: the hand-walked decision trace/decisions/hand-sr-host-build.json carries no Brief fingerprint (ledger sr-host-build seq 1 brief-fingerprint null)",
+ "evidence": {
+  "checks": [
+   {
+    "command": "node --test docs/orchestration/smartrouter/route.test.mjs",
+    "exit-code": 0,
+    "output-ref": "wf_e4d05eb8-beb build report"
+   },
+   {
+    "command": "refute-first review",
+    "exit-code": 1,
+    "output-ref": "wf_e4d05eb8-beb review F1-F9"
+   }
+  ],
+  "actual-spend": null,
+  "files-touched": [
+   "docs/orchestration/smartrouter/route.mjs",
+   "docs/orchestration/smartrouter/route.test.mjs",
+   "docs/orchestration/smartrouter/README.md"
+  ],
+  "notes": "refute-first review returned FIX: one S1 (F1), two S2 (F2, F3), five S3 (F4-F8), one S4 (F9); suite 26 pass; tokens: 320047 (harness count, not a bill)"
+ }
+}

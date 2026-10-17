@@ -1,0 +1,27 @@
+{
+ "task-id": "sr-host-fix2",
+ "outcome": "verification-failed",
+ "owner-profile": "cc-opus-high",
+ "original-brief-fingerprint": "4ab65a6ebc748e8f192ab89c6753c2b8444fcf480c4f2adacb36e77ab31ed03e",
+ "evidence": {
+  "checks": [
+   {
+    "command": "node --test docs/orchestration/smartrouter/route.test.mjs",
+    "exit-code": 0,
+    "output-ref": "wf_493d68b6-031 fix2 report: 45 pass, commits fa2117d..dab6acf"
+   },
+   {
+    "command": "fresh re-review",
+    "exit-code": 1,
+    "output-ref": "wf_493d68b6-031 rereview2 R3-1"
+   }
+  ],
+  "actual-spend": null,
+  "files-touched": [
+   "docs/orchestration/smartrouter/route.mjs",
+   "docs/orchestration/smartrouter/route.test.mjs",
+   "docs/orchestration/smartrouter/README.md"
+  ],
+  "notes": "re-review 2 found one S3 (R3-1) after commits fa2117d..dab6acf (45 pass); tokens: 255186 (harness count, not a bill)"
+ }
+}

@@ -1,0 +1,54 @@
+{
+  "_comment": "derived by route.mjs rate from ledger.jsonl and the decision files; regenerated on every run, never hand-edited",
+  "ledger-sha256": "347f804b3f303b444885e8a55760df948b02a62d99a3a306d1611ccaade42423",
+  "outcome-records": 9,
+  "outcomes-counted": 7,
+  "policy-revision": "host-policy-1",
+  "proposals": [],
+  "stats": {
+    "cc-fable-high": {
+      "review": {
+        "accepted": 1,
+        "blocked": 0,
+        "cancelled": 0,
+        "cost-overrun": 0,
+        "deviations": 1,
+        "escalated": 0,
+        "partial": 0,
+        "verification-failed": 0
+      }
+    },
+    "cc-opus-high": {
+      "build-ui": {
+        "accepted": 0,
+        "blocked": 0,
+        "cancelled": 0,
+        "cost-overrun": 0,
+        "deviations": 0,
+        "escalated": 0,
+        "partial": 0,
+        "verification-failed": 1
+      },
+      "fix": {
+        "accepted": 2,
+        "blocked": 0,
+        "cancelled": 0,
+        "cost-overrun": 0,
+        "deviations": 0,
+        "escalated": 0,
+        "partial": 0,
+        "verification-failed": 0
+      },
+      "review": {
+        "accepted": 3,
+        "blocked": 0,
+        "cancelled": 0,
+        "cost-overrun": 0,
+        "deviations": 0,
+        "escalated": 0,
+        "partial": 0,
+        "verification-failed": 0
+      }
+    }
+  }
+}

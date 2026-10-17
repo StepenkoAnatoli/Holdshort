@@ -1,0 +1,27 @@
+{
+ "task-id": "sr-host-fix1",
+ "outcome": "accepted",
+ "owner-profile": "cc-opus-high",
+ "original-brief-fingerprint": "16a914fe1c149ecf3de677b038e459aa232844bf39ec0c062c5849eec6c4b536",
+ "evidence": {
+  "checks": [
+   {
+    "command": "node --test docs/orchestration/smartrouter/route.test.mjs",
+    "exit-code": 0,
+    "output-ref": "wf_e4d05eb8-beb fix report: 45 pass after the eight fix commits b543603..2220066"
+   },
+   {
+    "command": "fresh re-review: each earlier finding re-proved closed",
+    "exit-code": 0,
+    "output-ref": "wf_e4d05eb8-beb rereview N1-N6"
+   }
+  ],
+  "actual-spend": null,
+  "files-touched": [
+   "docs/orchestration/smartrouter/route.mjs",
+   "docs/orchestration/smartrouter/route.test.mjs",
+   "docs/orchestration/smartrouter/README.md"
+  ],
+  "notes": "superseding outcome (spec-v2 s10.5): the earlier verification-failed was the lead's mistake - this round's acceptance was its own findings F1-F8 (b543603..2220066) fixed red-first and confirmed closed by the fresh re-review; the re-review's NEW findings (N1-N6) belong to the unit, not to this round, and were recorded as their own tasks; tokens: 267313 (harness count, not a bill)"
+ }
+}

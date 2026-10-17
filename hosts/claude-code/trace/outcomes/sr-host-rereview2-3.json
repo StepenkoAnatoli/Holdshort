@@ -1,0 +1,18 @@
+{
+ "task-id": "sr-host-rereview2",
+ "outcome": "accepted",
+ "owner-profile": "cc-opus-high",
+ "original-brief-fingerprint": "81f7cbfdfd1e9486090667fe15712668aaf940dbdb62068f30557343c5ecd19d",
+ "evidence": {
+  "checks": [
+   {
+    "command": "refute-first re-review",
+    "exit-code": 0,
+    "output-ref": "wf_493d68b6-031 rereview2 R3-1"
+   }
+  ],
+  "actual-spend": null,
+  "files-touched": [],
+  "notes": "R3-1 held and was fixed by the lead inline (84a339f on the unit branch, 363488e as integrated) (scratch only); tokens: 197355 (harness count, not a bill)"
+ }
+}

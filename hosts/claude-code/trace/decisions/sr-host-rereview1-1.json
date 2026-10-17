@@ -1,0 +1,298 @@
+{
+ "request": {
+  "taskId": "sr-host-rereview1",
+  "objective": "Fresh refute-first re-review of the SmartRouter host adapter after fix round 1: re-run the F1-F9 proofs and look for new defects",
+  "category": "review",
+  "unit": "sr-host",
+  "permittedEffects": [
+   "docs/orchestration/smartrouter/route.mjs",
+   "docs/orchestration/smartrouter/route.test.mjs",
+   "docs/orchestration/smartrouter/README.md"
+  ],
+  "sources": [
+   "docs/orchestration/smartrouter/briefs/router-builder.md"
+  ],
+  "nonGoals": [
+   "no push",
+   "no edit of trace/ by hand"
+  ],
+  "acceptanceChecks": [
+   {
+    "command": "proofs re-run in a scratch copy",
+    "expect": "findings carry reproductions; proofs re-run"
+   }
+  ],
+  "estimatedTokens": 226635,
+  "needsVision": false,
+  "dataClasses": [
+   "repo-code",
+   "run-docs"
+  ],
+  "projectStop": {
+   "redSuite": false,
+   "gateOff": false,
+   "researchGateFailing": false
+  },
+  "previousResult": null,
+  "deadline": "2026-10-18T07:21:14.204Z",
+  "now": "2026-10-17T19:20:14.204Z"
+ },
+ "inputs-sha256": "ea1316af7ccd22d0b0dae1d20fdd8fe17fc48b29c4b2d860bb05d5d63a71f4e9",
+ "bindings": {
+  "policy-revision": "host-policy-1",
+  "policy-sha256": "0ae2145a1eee483171c269b05246c74abf0dc0568c29a8ba7cf684051046a2bd",
+  "smartrouter": {
+   "repo": "https://github.com/StepenkoAnatoli/SmartRouter",
+   "revision": "fbe7bca",
+   "skill-version": "3.0.0",
+   "prices-revision": "prices-2"
+  },
+  "harness": "claude-code-workflow-subagent@2.1.286"
+ },
+ "ledger-before": {
+  "last-seq": 0,
+  "calls-used": 0,
+  "calls-limit": 6,
+  "cash-spent": null,
+  "cash-cap": null,
+  "repairs-used": 0,
+  "repairs-allowed": 1
+ },
+ "decision": {
+  "route": "delegate",
+  "profile": "cc-opus-high",
+  "profile-tuple": "(cc-opus-high, claude-code-workflow-subagent, anthropic, claude-opus-5-5, high, workflow-subagent/structured-output@1)",
+  "isolation": "worktree+branch",
+  "isolation-reason": "Gate 1: concurrent workers in this host never share a tree; Gate 5: the delegated unit owns its worktree+branch (host capability worktree+branch)",
+  "owner": "worker",
+  "human-gate": "none",
+  "nested-allowed": false,
+  "max-nesting-depth": 0,
+  "difficulty": "high-or-ambiguous",
+  "estimated-tokens": 226635,
+  "all-in-bound-usd": 5.5327,
+  "candidates": {
+   "cc-fable-xhigh": {
+    "kind": "direct",
+    "eligible": false,
+    "first-failing-gate": 5,
+    "reason": "direct unsuitable: 226635 tokens > direct-max-tokens 15000",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "pass"
+     },
+     {
+      "gate": 3,
+      "result": "pass"
+     },
+     {
+      "gate": 4,
+      "result": "pass",
+      "note": "cash estimate $11.33: estimate only, never a strict cap in this host"
+     },
+     {
+      "gate": 5,
+      "result": "fail",
+      "reason": "direct unsuitable: 226635 tokens > direct-max-tokens 15000"
+     }
+    ]
+   },
+   "cc-fable-high": {
+    "kind": "delegate",
+    "eligible": true,
+    "all-in-bound-usd": 12.3318,
+    "work-bound-usd": 11.3318,
+    "review-bound-usd": 0,
+    "overhead-bound-usd": 1,
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "pass"
+     },
+     {
+      "gate": 3,
+      "result": "pass"
+     },
+     {
+      "gate": 4,
+      "result": "pass",
+      "note": "cash estimate $12.33: estimate only, never a strict cap in this host"
+     },
+     {
+      "gate": 5,
+      "result": "pass"
+     }
+    ]
+   },
+   "cc-opus-high": {
+    "kind": "delegate",
+    "eligible": true,
+    "all-in-bound-usd": 5.5327,
+    "work-bound-usd": 4.5327,
+    "review-bound-usd": 0,
+    "overhead-bound-usd": 1,
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "pass"
+     },
+     {
+      "gate": 3,
+      "result": "pass"
+     },
+     {
+      "gate": 4,
+      "result": "pass",
+      "note": "cash estimate $5.53: estimate only, never a strict cap in this host"
+     },
+     {
+      "gate": 5,
+      "result": "pass"
+     }
+    ]
+   },
+   "cc-sonnet-high": {
+    "kind": "delegate",
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "missing or stale capability fingerprint (qualified-at null); cc-sonnet-high not qualified for review; context headroom untested on cc-sonnet-high",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "fail",
+      "reason": "missing or stale capability fingerprint (qualified-at null); cc-sonnet-high not qualified for review; context headroom untested on cc-sonnet-high"
+     },
+     {
+      "gate": 3,
+      "result": "not-reached"
+     },
+     {
+      "gate": 4,
+      "result": "not-reached"
+     },
+     {
+      "gate": 5,
+      "result": "not-reached"
+     }
+    ]
+   },
+   "cc-haiku-low": {
+    "kind": "delegate",
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "cc-haiku-low not qualified for review; context: 226635 tokens not below headroom-tested 92000 on cc-haiku-low",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "fail",
+      "reason": "cc-haiku-low not qualified for review; context: 226635 tokens not below headroom-tested 92000 on cc-haiku-low"
+     },
+     {
+      "gate": 3,
+      "result": "not-reached"
+     },
+     {
+      "gate": 4,
+      "result": "not-reached"
+     },
+     {
+      "gate": 5,
+      "result": "not-reached"
+     }
+    ]
+   }
+  },
+  "eligible-ordered": [
+   "cc-opus-high",
+   "cc-fable-high"
+  ],
+  "eligible-outside-candidates": [],
+  "speculative-set": null,
+  "uncertainty": [
+   "cash: estimate only, no host accounting (subscription); not a strict cap"
+  ],
+  "advisory": "recommendation only — no dispatch performed or claimed",
+  "pending-proposals": [],
+  "deadline": "2026-10-18T07:20:14.204Z",
+  "deadline-capped": true,
+  "review-profile": null,
+  "review-candidates": {}
+ },
+ "estimates": {
+  "basis": "estimate-only",
+  "cost-bound-rule": "tokens x output_rate_per_mtok / 1e6 (conservative: output rate >= input rate)",
+  "all-in-bound-usd": 5.5327
+ },
+ "accounting": {
+  "mode": "estimate-only",
+  "cash-spent": null,
+  "cash-cap": null,
+  "note": "no per-call USD accounting in this host; spend is unknown, never zero"
+ },
+ "brief": {
+  "objective": "Fresh refute-first re-review of the SmartRouter host adapter after fix round 1: re-run the F1-F9 proofs and look for new defects",
+  "acceptance": {
+   "checks": [
+    {
+     "command": "proofs re-run in a scratch copy",
+     "expect": "findings carry reproductions; proofs re-run"
+    }
+   ]
+  },
+  "sources": [
+   "docs/orchestration/smartrouter/briefs/router-builder.md"
+  ],
+  "permitted-effects": [
+   "docs/orchestration/smartrouter/route.mjs",
+   "docs/orchestration/smartrouter/route.test.mjs",
+   "docs/orchestration/smartrouter/README.md"
+  ],
+  "non-goals": [
+   "no push",
+   "no edit of trace/ by hand",
+   "no recursive delegation (nested-allowed: false)"
+  ],
+  "isolation": "worktree+branch",
+  "branch-hint": "build/sr-host",
+  "allowance": {
+   "cash": 5.5327,
+   "calls": 6,
+   "deadline": "2026-10-18T07:20:14.204Z",
+   "cash-basis": "estimate-only"
+  },
+  "attempts": 1,
+  "stop-triggers": [
+   "verification failure -> outcome record, then a fresh decision; at most 1 same-profile repair per task",
+   "repairs exhausted -> fresh SmartRouter decision (no ownership transfer without it)",
+   "call slots exhausted (6 per task) -> blocked",
+   "deadline 2026-10-18T07:20:14.204Z reached -> blocked",
+   "project stop rule -> blocked"
+  ],
+  "ownership": "worker",
+  "nested-allowed": false,
+  "max-nesting-depth": 1
+ },
+ "brief-fingerprint": "e2b46f97b082a3b08f33a38263b3c5cbfa44f4cbedac154d4702a6e6c0599f1b",
+ "ledger-seq": 1
+}
