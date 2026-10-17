@@ -1,8 +1,9 @@
 # Claude Code calibration run 2 — preregistered protocol
 
 Status: **preregistered; launched after this file was committed.** This
-folder holds the protocol frozen before the run was launched; the run id is
-added here once the host assigns it. Results are added later as
+folder holds the protocol frozen before the run was launched. The host
+assigned run id `wf_fe91e1d6-d78`, launched 2026-10-17T23:26Z from the
+script whose hash the protocol records, after the protocol commit `9cf7079`. Results are added later as
 `observations.json`, `scores.json` and `results-table.md`; nothing here is a
 result, and no number in this folder describes a model's performance.
 
