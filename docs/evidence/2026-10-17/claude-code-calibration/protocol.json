@@ -20,18 +20,66 @@
   },
   "model_identity_note": "Requested values are the host's model aliases; resolved immutable model revisions are not exposed to the coordinator and will be recorded as null unless observed",
   "profiles": [
-    {"key": "haiku-low", "model": "haiku", "effort": "low"},
-    {"key": "haiku-medium", "model": "haiku", "effort": "medium"},
-    {"key": "haiku-high", "model": "haiku", "effort": "high"},
-    {"key": "sonnet-low", "model": "sonnet", "effort": "low"},
-    {"key": "sonnet-medium", "model": "sonnet", "effort": "medium"},
-    {"key": "sonnet-high", "model": "sonnet", "effort": "high"},
-    {"key": "opus-medium", "model": "opus", "effort": "medium"},
-    {"key": "opus-high", "model": "opus", "effort": "high"},
-    {"key": "opus-xhigh", "model": "opus", "effort": "xhigh"},
-    {"key": "fable-medium", "model": "fable", "effort": "medium"},
-    {"key": "fable-high", "model": "fable", "effort": "high"},
-    {"key": "fable-xhigh", "model": "fable", "effort": "xhigh"}
+    {
+      "key": "haiku-low",
+      "model": "haiku",
+      "effort": "low"
+    },
+    {
+      "key": "haiku-medium",
+      "model": "haiku",
+      "effort": "medium"
+    },
+    {
+      "key": "haiku-high",
+      "model": "haiku",
+      "effort": "high"
+    },
+    {
+      "key": "sonnet-low",
+      "model": "sonnet",
+      "effort": "low"
+    },
+    {
+      "key": "sonnet-medium",
+      "model": "sonnet",
+      "effort": "medium"
+    },
+    {
+      "key": "sonnet-high",
+      "model": "sonnet",
+      "effort": "high"
+    },
+    {
+      "key": "opus-medium",
+      "model": "opus",
+      "effort": "medium"
+    },
+    {
+      "key": "opus-high",
+      "model": "opus",
+      "effort": "high"
+    },
+    {
+      "key": "opus-xhigh",
+      "model": "opus",
+      "effort": "xhigh"
+    },
+    {
+      "key": "fable-medium",
+      "model": "fable",
+      "effort": "medium"
+    },
+    {
+      "key": "fable-high",
+      "model": "fable",
+      "effort": "high"
+    },
+    {
+      "key": "fable-xhigh",
+      "model": "fable",
+      "effort": "xhigh"
+    }
   ],
   "runs_per_profile_per_task": 1,
   "retry_limit": 0,
@@ -49,7 +97,10 @@
       "accepted_fix": "4151a25"
     },
     "other_ground_truth": [
-      {"id": "U5-R17", "severity": "S4"}
+      {
+        "id": "U5-R17",
+        "severity": "S4"
+      }
     ]
   },
   "sources": {
@@ -99,8 +150,9 @@
         "copiedFromHistory",
         "notes"
       ],
-      "pass_rule": null,
-      "pass_rule_note": "no composite pass was frozen for review; it is reported field by field"
+      "pass_rule": "r16Found is true AND falseBlocking is 0 AND copiedFromHistory is false (the grader's fields); r16CauseNamed and r17Found are reported, not scored",
+      "pass_rule_note": "set after the freeze but before any review agent started: the run's journal listed no review or grade agent at 2026-10-17T19:23:57Z (pins and fixes only)",
+      "pass_rule_set_at": "2026-10-17T19:24:00Z"
     }
   ],
   "metrics": [
@@ -122,5 +174,20 @@
     "tokens are the harness's reported counts, not a provider bill",
     "model labels are requested aliases, not verified immutable deployments",
     "no overall model ranking, routing threshold or savings claim follows from this run alone"
+  ],
+  "amendments": [
+    {
+      "at": "2026-10-17T19:23:00Z",
+      "case": "fix",
+      "change": "docs/ARCHITECTURE.md added to the allowed files; candidates graded on the working tree (committed, staged or unstaged) with a committedWithMap column",
+      "reason": "the fix prompt forbade touching other files while the subject repository's commit gate refuses a declared-code-path commit without docs/ARCHITECTURE.md staged; seven candidates stopped at the gate with the work staged, three committed with a one-clause map update. A prompt defect of the lead, not a model failure; both behaviours are recorded, neither is scored down",
+      "grade_sh_sha256_after": "29f4696c339b89cf5075b23f4e33722df3b52fb69897f4f50c911a6800f39f6e"
+    },
+    {
+      "at": "2026-10-17T19:24:00Z",
+      "case": "review",
+      "change": "pass_rule set (see cases[2])",
+      "reason": "the frozen protocol left it null; it is fixed before any review result exists"
+    }
   ]
 }

@@ -7,7 +7,7 @@ W=/home/user/task5-handoff/wt/cal-$T-$P; OUT=$S/cal-grades; mkdir -p $OUT; R=$OU
 export PATH=/versions/node/v24.21.0/bin:$PATH
 cd $W || { echo '{"error":"no worktree"}' > $R; exit 0; }
 head=$(git rev-parse --short HEAD); commits=$(git rev-list --count d87f796..HEAD)
-changed=$(git diff --name-only d87f796..HEAD | tr '\n' ' '); untracked=$(git status --porcelain | grep '^??' | grep -v 'node_modules\|\.build' | awk '{print $2}' | tr '\n' ' ')
+changed=$( (git diff --name-only d87f796..HEAD; git diff --cached --name-only; git diff --name-only) | sort -u | tr '\n' ' '); staged=$(git diff --cached --name-only | tr '\n' ' '); untracked=$(git status --porcelain | grep '^??' | grep -v 'node_modules\|\.build' | awk '{print $2}' | tr '\n' ' ')
 src_touched=$(git diff --name-only d87f796..HEAD -- src | tr '\n' ' ')
 newtests=$(git diff --name-only --diff-filter=A d87f796..HEAD -- tests | tr '\n' ' ')
 run() { # run vitest on files, print "passed failed" (numbers) from the json reporter
@@ -39,14 +39,14 @@ else
   git -C /home/user/moonaliza show 4151a25:tests/github-signin-refresh.test.ts > tests/zz-accepted-pin.test.ts
   accepted=$(run tests/zz-accepted-pin.test.ts); restore  # the accepted pin green against the candidate's source
   lint=$(npx eslint src/main/github-signin.ts tests/github-signin-refresh.test.ts $newtests >/dev/null 2>&1 && echo ok || echo fail)
-  srcdiff=$(git diff d87f796..HEAD -- src/main/github-signin.ts | grep -c '^[+-][^+-]')
+  srcdiff=$(git diff d87f796 -- src/main/github-signin.ts | grep -c '^[+-][^+-]')
   python3 -I - <<PY
 import json
 ac="$at_cand".split(); g="$guard".split(); a="$accepted".split()
 cand_green = int(ac[1])==0 and int(ac[0])>0; guard_red = int(g[1])>0; acc_green = int(a[1])==0 and int(a[0])>0
-allowed = set(["src/main/github-signin.ts","tests/github-signin-refresh.test.ts"]) | set("$newtests".split())
+allowed = set(["src/main/github-signin.ts","tests/github-signin-refresh.test.ts","docs/ARCHITECTURE.md"]) | set("$newtests".split())
 scope_ok = set("$changed".split()) <= allowed
-json.dump(dict(task="$T",profile="$P",head="$head",commits=int("$commits"),changed="$changed".split(),untracked="$untracked".split(),srcDiffLines=int("$srcdiff"),
+json.dump(dict(task="$T",profile="$P",head="$head",commits=int("$commits"),staged="$staged".split(),committedWithMap=("docs/ARCHITECTURE.md" in "$changed".split() and int("$commits")>0),changed="$changed".split(),untracked="$untracked".split(),srcDiffLines=int("$srcdiff"),
   candidateTests=dict(passed=int(ac[0]),failed=int(ac[1])), guardRemoved=dict(passed=int(g[0]),failed=int(g[1])), acceptedPin=dict(passed=int(a[0]),failed=int(a[1])), lint="$lint",
   candidateGreen=cand_green, guardRed=guard_red, acceptedPinGreen=acc_green, scopeOk=scope_ok, PASS=(cand_green and guard_red and acc_green and scope_ok and "$lint"=="ok")), open("$R","w"), indent=1)
 PY
