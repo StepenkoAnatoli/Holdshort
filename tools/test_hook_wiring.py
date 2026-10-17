@@ -103,7 +103,9 @@ class HookWiring(unittest.TestCase):
         env_file.write_text("[core]\n\thooksPath = .githooks\n", encoding="utf-8")
         env = dict(os.environ)
         env["GIT_CONFIG_GLOBAL"] = str(env_file)
-        env["GIT_CONFIG_SYSTEM"] = os.devnull
+        empty = self.root.parent / "empty-gitconfig"   # an empty file, as the other tests isolate
+        empty.write_text("", encoding="utf-8")
+        env["GIT_CONFIG_SYSTEM"] = str(empty)
         # sanity: git really sees the global value here
         seen = subprocess.run(["git", "config", "--global", "--get", "core.hooksPath"],
                               cwd=self.root, env=env, capture_output=True, text=True, check=True)
