@@ -9,12 +9,14 @@ itself. Every output it prints carries `Advisory: recommendation only — no dis
 
 | File | What it is |
 |---|---|
-| `host-policy.json` | The host's declared inputs: harness, authorization, accounting mode, prices, categories, profiles with qualification evidence, economics constants, opt-ins. Edited only by the lead. |
+| `host-policy.json` | The host's declared inputs: harness, authorization, accounting mode, prices, categories, profiles with qualification evidence, economics constants, opt-ins. Edited only by the lead. Current revision: `host-policy-2`. |
 | `route.mjs` | The adapter: CLI plus named exports. Node built-ins only. |
-| `route.test.mjs` | `node --test` suite, one test per SmartRouter fixture it mirrors, plus the three golden hand-walked decisions. |
+| `route.test.mjs` | `node --test` suite, one test per SmartRouter fixture it mirrors, plus the three golden hand-walked decisions. The base tests and the goldens run on `host-policy-1` (the fixture below), the live policy on its own tests. |
 | `trace/ledger.jsonl` | The Outcome Ledger: spec-v2 §10.5 records, append-only, never rewritten. |
 | `trace/decisions/<task>-<seq>.json` | One file per decision: the request, input and policy digests, the per-candidate gate walkthrough with reasons, the chosen profile, estimates vs accounting, the Brief. `hand-*.json` are the lead's hand-walked decisions from before the adapter existed. |
+| `trace/policies/host-policy-1.json` | The policy before revision 2, byte-identical to the one the hand-walked decisions and `sr-policy-2-1` were decided under. A test fixture, never edited: the goldens decide against it with `--policy`. It lives apart from `trace/decisions/`, whose `<task>-<seq>.json` names belong to decisions (a fixture there would block a task named `host-policy` at seq 1). `sr-policy-2-1`'s Brief names the fixture's first path, `trace/decisions/host-policy-1.json`; the decision file is a record and is not rewritten. |
 | `trace/outcomes/<task>-<seq>.json` | The §10.3 Outcome objects that outcome records point at. |
+| `trace/calibration-<n>/` | A graded calibration run: `observations.json` (per profile: the pin, fix and review grades and the tokens used), `results-table.md`, the lead's notes. Evidence for the qualification rules, read by `rate`, never written to the ledger. |
 | `trace/usage.jsonl` | The usage readings (the subscription's five-hour and seven-day windows) pasted by the lead with `route.mjs usage`. Append-only, never rewritten, separate from the ledger. |
 | `trace/qualification-stats.json` | Derived by `rate`. Regenerated on every run, never hand-edited. |
 
@@ -112,41 +114,93 @@ it, and the fix is to add the missing newline, which changes no record.
 
 ## Qualification table
 
-Status of every row: **host-declared from run history, reviewer: lead, expires 2027-01-15**. This is not an
-independent review. Qualification is declared by the host, never inferred from price or label (gates.md,
-'Qualification, freshness and pre-dispatch binding').
+Status of every row: **host-declared, reviewer: lead, expires 2027-01-15**. Rows qualified from calibration-1 alone
+carry the reviewer `host-declared (lead) from calibration-1 grades`; the others keep `host-declared (lead), not
+independent`. None of this is an independent review. Qualification is declared by the host, never inferred from price
+or label (gates.md, 'Qualification, freshness and pre-dispatch binding').
 
-| Profile | Model, effort | Qualified for | Headroom tested | Evidence |
-|---|---|---|---|---|
-| `cc-fable-xhigh` | lead model, xhigh | build-core, build-ui, build-tests, review, fix, docs-mechanical, research-collect | 460k | the lead's own direct fixes and integration units this session. **Direct only**, up to 15k tokens. |
-| `cc-fable-high` | lead model, high | review, fix | 352k | workflow runs `wf_1fcbe585-d1e` (U5 review 3, fix 3, re-review 3) and `wf_7f80ebc5-5a8` (U5 fix 4) |
-| `cc-opus-high` | worker model, high | build-core, build-ui, build-tests, review, fix, research-collect | 514k | 302 completed dispatches (28 builds, 130 reviews, 39 fix rounds, 26 research runs); every unit reached ACCEPT within three fix rounds |
-| `cc-sonnet-high` | high | none | untested | no evidence in this host; Gate 2 rejects it as a missing capability fingerprint |
-| `cc-haiku-low` | low, no vision | docs-mechanical | 92k | one mechanical extraction dispatch (91k tokens) |
+### Qualification rules (the lead's, from host-policy-2)
 
-The exact model ids live in `host-policy.json`. The `Profile:` line prints the full identity tuple
+1. A profile is qualified for a category only on evidence from a task representative of that category: a calibration
+   cell whose task matches the category, or a recorded production outcome in it.
+2. High-risk categories (`build-core`, `review`, `fix`) need two independent passes (two calibration runs, or one plus
+   an accepted production outcome). Normal-risk categories need one.
+3. A calibration fail in a category is recorded as such and blocks qualification for that category until two later
+   passes. The learning loop's demotion rule stays as it is.
+4. The pin task (a bounded red-first pin, no source change) represents the normal-risk category `pin-tests` (median
+   120000 tokens; verification: lint, the new tests green, guard-removal proof, the lead reads the diff), not
+   `build-tests`: units of that size are 250000-token engine journeys the pin does not represent.
+
+So calibration run 1 (`trace/calibration-1/`, workflow run `wf_052c5f34-973`: twelve profiles, three graded tasks)
+qualifies every pin PASS for `pin-tests`, and nothing else: one `fix` or `review` PASS is one pass of a high-risk
+category, recorded and not qualifying. Each calibrated profile carries the run id and one grade entry per task in its
+`evidence`, in the form `calibration-<n>: <category> PASS|FAIL (n=<k>)` (the adapter refuses another form, or a
+category the policy does not have). The four review FAILs (`cc-haiku-low`, `cc-haiku-medium`, `cc-haiku-high`,
+`cc-sonnet-high`) are recorded as fails, and under rule 3 they need two later review passes before any review
+qualification. `cc-opus-high` and `cc-fable-high` keep their production qualifications and gain the calibration
+entries. `headroom-tested` of a profile qualified from calibration-1 is its largest completed calibration run, rounded
+up to the next thousand (the host-policy-1 basis: a 91k run gave 92000), and is never lowered. The rules are applied by
+the lead when editing the policy. The adapter checks only the form of the entries; it does not count passes.
+
+### The table (host-policy-2, generated from `host-policy.json`)
+
+| Profile | Effort | Qualified for | Headroom tested | calibration-1 pin / fix / review | Basis |
+|---|---|---|---|---|---|
+| `cc-fable-xhigh` | xhigh, **direct only** (the lead), up to 15k tokens | build-core, build-ui, build-tests, review, fix, docs-mechanical, research-collect, pin-tests | 460k | PASS / PASS / PASS | session runs (host-policy-1) + calibration-1 |
+| `cc-fable-high` | high | review, fix, pin-tests | 352k | PASS / PASS / PASS | session runs (host-policy-1) + calibration-1 |
+| `cc-fable-medium` | medium | pin-tests | 139k | PASS / PASS / PASS | calibration-1 only |
+| `cc-opus-high` | high | build-core, build-ui, build-tests, review, fix, research-collect, pin-tests | 514k | PASS / PASS / PASS | session runs (host-policy-1) + calibration-1 |
+| `cc-opus-medium` | medium | pin-tests | 115k | PASS / PASS / PASS | calibration-1 only |
+| `cc-sonnet-high` | high | pin-tests | 163k | PASS / PASS / FAIL | calibration-1 only |
+| `cc-sonnet-medium` | medium | pin-tests | 121k | PASS / PASS / PASS | calibration-1 only |
+| `cc-sonnet-low` | low | pin-tests | 110k | PASS / PASS / PASS | calibration-1 only |
+| `cc-haiku-high` | high, no vision | pin-tests | 261k | PASS / PASS / FAIL | calibration-1 only |
+| `cc-haiku-medium` | medium, no vision | pin-tests | 162k | PASS / PASS / FAIL | calibration-1 only |
+| `cc-haiku-low` | low, no vision | docs-mechanical, pin-tests | 139k | PASS / PASS / FAIL | session runs (host-policy-1) + calibration-1 |
+
+The session runs behind the host-policy-1 rows: `cc-fable-xhigh`, the lead's own direct fixes and integration units;
+`cc-fable-high`, workflow runs `wf_1fcbe585-d1e` (U5 review 3, fix 3, re-review 3) and `wf_7f80ebc5-5a8` (U5 fix 4);
+`cc-opus-high`, 302 completed dispatches (28 builds, 130 reviews, 39 fix rounds, 26 research runs), every unit at
+ACCEPT within three fix rounds; `cc-haiku-low`, one mechanical extraction dispatch (91k tokens). The calibrated
+profile at xhigh effort on the worker model is not in the policy: the revision adds only the eight profiles the lead
+listed. The exact model ids live in `host-policy.json`. The `Profile:` line prints the full identity tuple
 `(id, harness, provider, model, effort, config)`.
 
 With the current prices the adapter routes `build-core`, `build-ui`, `build-tests`, `fix`, `review` and
-`research-collect` to `cc-opus-high`, and small (under 92k tokens) `docs-mechanical` work to `cc-haiku-low`. Work of
-at most 15k tokens goes direct to the lead. See the policy findings below for the `docs-mechanical` edge.
+`research-collect` to `cc-opus-high` (no profile qualified from calibration-1 is qualified for any of them), and
+`docs-mechanical` to `cc-haiku-low`. Work of at most 15k tokens goes direct to the lead.
+
+**`pin-tests` routes to the cheapest qualified profile, `cc-haiku-low`.** A default pin (120000 tokens) has an
+output-rate bound of $0.06 there (120000 x the output rate / 1e6), plus $1.00 of brief overhead at the lead's rate:
+$1.06 all-in. No reviewer is added, because `pin-tests` names no review: every pin is verified mechanically (red before
+the fix, green with it, the guard-removal proof, lint) and the lead reads the diff. The three profiles of that model
+share the $1.06 bound, so Gate 5 ranks equal bounds by the lower output rate, then the **lower effort**, then the id:
+calibration-1 measured fewer tokens at the lower effort for every model on every task (12 model-task pairs).
+`cc-sonnet-low` (110k) and `cc-opus-medium` (115k) are qualified, but their headroom is below a default pin, so a pin
+that size fails them at Gate 2.
 
 ### How to add evidence
 
 1. A qualification run cannot go through `dispatch`: a profile not qualified for the category fails Gate 2, and
    `dispatch` refuses it even with `--deviation`. Running an unqualified profile on real work is a host policy
-   that SmartRouter does not sanction (spec-v2 §12: "No dispatch on unknown ... capability"). Whether this host
-   runs such qualification runs at all, and how they are recorded, is **the lead's decision and is not yet made**
-   (friction item 14). Evidence from runs outside SmartRouter routing, such as a calibration matrix, can still
-   support a qualification.
-2. Run `rate`. Three `accepted` outcomes for an unqualified (profile, category) produce a **qualification
-   proposal**. With step 1 undecided, such outcomes appear only if the lead records out-of-band runs in the ledger
-   by hand, as dispatch records marked `deviation: true`.
-3. The lead ratifies by editing `host-policy.json`: add the category to `qualified-for`, append the run ids to
-   `evidence`, set `qualified-at` to the ratification date, and set `expires` (at most three months out). Bump
+   that SmartRouter does not sanction (spec-v2 §12: "No dispatch on unknown ... capability"). The path this host
+   uses is a **calibration run** outside SmartRouter routing: the same graded tasks for every profile, on past work
+   with a known answer (calibration-1: the R16 finding), graded by the lead (friction item 14). Its grades go in
+   `trace/calibration-<n>/observations.json`, never in the ledger.
+2. Run `rate`. It prints one `CALIBRATION` line per profile and category with the pass and fail counts across every
+   calibration run, e.g. `CALIBRATION cc-haiku-low review: 0 pass, 1 fail (calibration-1)`, and writes them under
+   `calibration` in `trace/qualification-stats.json`, apart from the outcome stats. Calibration counts never make a
+   proposal. Separately, three `accepted` outcomes for an unqualified (profile, category) produce a **qualification
+   proposal**; such outcomes appear only if the lead records out-of-band runs in the ledger by hand, as dispatch
+   records marked `deviation: true`.
+3. The lead applies the qualification rules above and ratifies by editing `host-policy.json`: add the category to
+   `qualified-for`, append the run ids and the `calibration-<n>: <category> PASS|FAIL (n=<k>)` entries to `evidence`,
+   set `qualified-at` to the ratification date, and set `expires` (at most three months out). Bump
    `policy-revision`. The decision files bind every decision to the policy digest, so old decisions stay readable.
    A decision not yet dispatched is rechecked against the edited policy at `dispatch`, so a demotion or a
-   revocation takes effect on pending decisions too.
+   revocation takes effect on pending decisions too. When a revision changes what the goldens or the base tests
+   assume, freeze the previous policy as `trace/policies/host-policy-<n>.json` and keep them on it (never in
+   `trace/decisions/`, whose file names belong to decisions).
 4. A profile with `qualified-at: null` or a past `expires` fails Gate 2 until this is done.
 
 ## The learning loop
@@ -166,6 +220,10 @@ writes the policy.
   `dispatch` refuses such runs, so these outcomes can only come from runs the lead recorded by hand (see 'How to
   add evidence').
 - It **flags** a profile whose `expires` falls within 14 days.
+- It prints the **calibration evidence** next to the outcome stats, one `CALIBRATION` line per profile and category,
+  read from every `trace/calibration-<n>/observations.json` (see 'How to add evidence'). These lines feed the lead's
+  qualification rules, never a proposal: proposals stay outcome-based. An unreadable observations file stops `rate`
+  with exit 4.
 - Proposals are printed, never applied. Until the lead edits the policy, `decide` routes by the policy as it
   stands, and its Uncertainty line names every pending proposal for the chosen profile, e.g.
   `pending proposal (not applied): demote cc-opus-high from fix: 2 consecutive verification-failed (f-1, f-2)`.
@@ -264,7 +322,7 @@ requires, in this order:
 
 A candidate that fails step 3 is ineligible, and Gate 5 ranks the remaining candidates. Every single delegate
 projects the same tokens, so among single candidates only direct and delegate can differ here. In host-policy-1,
-direct is the cheaper of the two whenever it is eligible. `blocked` and every other route come out of the existing
+direct is the cheaper of the two whenever it is eligible (host-policy-2 too). `blocked` and every other route come out of the existing
 flow unchanged.
 
 A speculative set is the exception: both members are dispatched and run at once, so the set projects the **sum** of
@@ -338,11 +396,36 @@ older history (re-review finding SW-5). Ratify by editing the coefficient and `r
 of readings with a unit in flight at either reading are skipped as `spanning` (SW-8): a unit's tokens are
 recorded whole at its outcome, so such a pair cannot say what they cost.
 
+## Policy findings (host-policy-2)
+
+Found while building revision 2 (unit sr-policy-2). The lead decides.
+
+1. **Equal bounds at one model.** Rule 4 and the table qualify the three profiles of the cheapest model for
+   `pin-tests`, and the bound prices them on the same tokens, so they tie at $1.06. The rule the adapter had
+   (lower output rate, then alphabetical id) picked `cc-haiku-high`, the costliest of the three in tokens. Gate 5 now
+   ranks the lower effort before the id (commit "Gate 5 ranks equal all-in bounds by lower effort"), on the
+   calibration-1 token counts. That commit stands alone so the lead can ratify or revert it. The reviewer choice for
+   the categories that need one still ranks by rate, then id: no two review-qualified profiles tie in host-policy-2.
+2. **`headroom-tested` of `cc-haiku-low` rose from 92000 to 139000** on its calibration-1 runs (largest completed:
+   138101 tokens, a review graded FAIL on its findings, not on its context). That resolves host-policy-1 finding 1
+   below: a default `docs-mechanical` request now routes to `cc-haiku-low`. A pin needs it too: 120000 tokens are
+   not below 92000.
+3. **Two qualified profiles cannot take a default pin.** `cc-sonnet-low` (110k) and `cc-opus-medium` (115k) ran
+   every calibration task below 120000 tokens, so their tested headroom is below the `pin-tests` median. They are
+   more expensive than the `cc-haiku-*` profiles anyway; a later run with a larger pin would raise them.
+4. **The adapter checks the form of the evidence, not the rules.** `validatePolicy` refuses a `qualified-for` or a
+   `calibration-<n>:` entry naming an unknown category and a malformed grade entry. It does not count passes for
+   rule 2 or rule 3: production passes live in the ledger and in the session's run journal, not in the policy, so a
+   check over the policy alone would refuse a qualification the rules allow.
+5. **The base tests moved to the fixture with the goldens.** Three base tests asserted host-policy-1 facts that
+   revision 2 changes (`cc-sonnet-high` without a fingerprint, `cc-haiku-low` at 92000). They run on the
+   host-policy-1 fixture, unchanged, and the live policy has its own tests.
+
 ## Policy findings (host-policy-1)
 
-These were found while building the adapter. The policy file is unchanged; the lead decides.
+These were found while building the adapter. The lead decides.
 
-1. **A default `docs-mechanical` request is blocked.** `cc-haiku-low` has `headroom-tested` 92000, which equals the
+1. **A default `docs-mechanical` request is blocked** (resolved in host-policy-2, finding 2 above). `cc-haiku-low` has `headroom-tested` 92000, which equals the
    category's `median-tokens` 92000. Gate 2 requires the estimate to be strictly below headroom, so a request
    without `estimatedTokens` fails on the only delegate qualified for that category, and the lead's direct path
    stops at 15k tokens. Reproduction: `decide` on a `docs-mechanical` request with no `estimatedTokens` prints

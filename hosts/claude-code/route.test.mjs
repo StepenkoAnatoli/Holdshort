@@ -4,7 +4,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, readdirSync, existsSync, appendFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, readdirSync, existsSync, appendFileSync, cpSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,11 +17,14 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROUTE = join(HERE, 'route.mjs');
 // the committed policy carries the usage-windows block (fail-closed: no reading, no route); the base tests run against
-// a feature-off fixture, the committed policy with that block deleted, written to a tmp file (lead's ruling R1(a))
+// a feature-off fixture with that block deleted, written to a tmp file (lead's ruling R1(a)). Its source is host-policy-1,
+// the policy the base tests were written under, frozen in trace/policies/host-policy-1.json (unit sr-policy-2), so a
+// policy revision never moves them; the live policy has its own tests (section 'host-policy-2')
 const COMMITTED_POLICY_PATH = join(HERE, 'host-policy.json');
 const COMMITTED_POLICY = JSON.parse(readFileSync(COMMITTED_POLICY_PATH, 'utf8'));
+const BASE_POLICY = JSON.parse(readFileSync(join(HERE, 'trace', 'policies', 'host-policy-1.json'), 'utf8'));
 const POLICY_PATH = join(mkdtempSync(join(tmpdir(), 'sr-host-fixture-')), 'host-policy.json');
-writeFileSync(POLICY_PATH, `${JSON.stringify(Object.fromEntries(Object.entries(COMMITTED_POLICY).filter(([k]) => k !== 'usage-windows')), null, 2)}\n`);
+writeFileSync(POLICY_PATH, `${JSON.stringify(Object.fromEntries(Object.entries(BASE_POLICY).filter(([k]) => k !== 'usage-windows')), null, 2)}\n`);
 const POLICY_TEXT = readFileSync(POLICY_PATH, 'utf8');
 const POLICY = JSON.parse(POLICY_TEXT);
 const NOW = '2026-10-17T19:00:00Z';
@@ -544,10 +548,29 @@ test('learning: cost-overrun demotes, three accepted hand-recorded qualification
 // Golden: the lead's hand-walked decisions
 // ---------------------------------------------------------------------------------------------
 const goldenDir = join(HERE, 'trace', 'decisions');
-for (const file of readdirSync(goldenDir).filter((f) => f.startsWith('hand-')).sort()) {
-  test(`golden: ${file} is reproduced exactly`, () => {
+// the hand-walked decisions were walked under host-policy-1, frozen as a fixture (trace/policies/host-policy-1.json,
+// never edited; unit sr-policy-2): each golden is decided through the CLI with --policy on that fixture's feature-off
+// derivative (R1(a)), so a policy revision never moves a golden
+const FIXTURE_POLICY_PATH = join(HERE, 'trace', 'policies', 'host-policy-1.json');
+const featureOff = (p) => `${JSON.stringify(Object.fromEntries(Object.entries(p).filter(([k]) => k !== 'usage-windows')), null, 2)}\n`;
+function fixtureOffPath() {
+  const path = join(tmp(), 'host-policy-1-off.json');
+  writeFileSync(path, featureOff(JSON.parse(readFileSync(FIXTURE_POLICY_PATH, 'utf8'))));
+  return path;
+}
+function cliDecide(request, policyPath) {
+  const trace = tmp();
+  const r = cli(['decide', writeJson(request), '--trace', trace, '--policy', policyPath]);
+  assert.equal(r.code, 0, r.stderr);
+  return JSON.parse(readFileSync(join(trace, 'decisions', `${request.taskId}-1.json`), 'utf8'));
+}
+const HAND = readdirSync(goldenDir).filter((f) => f.startsWith('hand-')).sort();
+for (const file of HAND) {
+  test(`golden: ${file} is reproduced exactly under its fixture host-policy-1 (--policy)`, () => {
     const golden = JSON.parse(readFileSync(join(goldenDir, file), 'utf8'));
-    const got = run(golden.request, { traceDir: tmp() }).decision;
+    const decided = cliDecide(golden.request, fixtureOffPath());
+    assert.equal(decided.bindings['policy-revision'], 'host-policy-1');
+    const got = decided.decision;
     const want = golden.decision;
     for (const k of ['route', 'profile', 'isolation', 'owner', 'human-gate', 'nested-allowed', 'max-nesting-depth', 'estimated-tokens', 'all-in-bound-usd', 'eligible-ordered', 'advisory']) {
       assert.deepEqual(got[k], want[k], k);
@@ -556,6 +579,7 @@ for (const file of readdirSync(goldenDir).filter((f) => f.startsWith('hand-')).s
     // dropping every 'usage windows:' line (lead's ruling R1(b)); everything else stays an exact comparison
     const dropUsage = (lines) => lines.filter((l) => !l.startsWith('usage windows:'));
     assert.deepEqual(dropUsage(got.uncertainty), dropUsage(want.uncertainty), 'uncertainty');
+    assert.deepEqual(Object.keys(got.candidates), Object.keys(want.candidates), 'the five host-policy-1 profiles, in order');
     for (const [id, c] of Object.entries(want.candidates)) {
       assert.equal(got.candidates[id].eligible, c.eligible, id);
       if (c.eligible) {
@@ -1046,6 +1070,16 @@ function rateLimitInfo(at, { five = 0.2, seven = 0.05, fiveResetMs = 4 * HOUR, s
 }
 const usageCli = (trace, reading, now, policy = COMMITTED_POLICY_PATH) => cli(['usage', writeJson(reading), '--trace', trace, '--now', now, '--policy', policy]);
 const decideOn = (r, trace, policyPath = COMMITTED_POLICY_PATH) => decide(r, { traceDir: trace, policyPath });
+test('P2-4: the gate walk keeps a space between every profile id and its route kind, whatever the longest id is (cc-sonnet-medium is 16 characters)', () => {
+  const trace = tmp();
+  usageCli(trace, rateLimitInfo(NOW), NOW);
+  const d = decideOn(req({ taskId: 'gw-1' }), trace);
+  const walk = d.text.split('\n').filter((l) => /^ {2}cc-/.test(l));
+  assert.equal(walk.length, COMMITTED_POLICY.profiles.length, `walk lines: ${walk.length}`);   // one line per policy profile
+  for (const line of walk) assert.match(line, /^ {2}(\S+) +(direct|delegate) +\S/, line);
+  assert.match(d.text, /^ {2}cc-sonnet-medium +delegate +gate 2: /m);
+});
+
 // the committed block in a feature-off copy, mutated
 const usagePolicy = (mutate = () => {}) => policyWith((p) => { p['usage-windows'] = structuredClone(COMMITTED_POLICY['usage-windows']); mutate(p['usage-windows'], p); });
 
@@ -1736,4 +1770,276 @@ test('SW-7: a unit dispatched before the reading and still running counts at its
   const u = decideOn(req({ taskId: 'unk-b', now: at(3) }), t3);
   assert.equal(u.route, 'blocked');
   assert.equal(u.decision.candidates['cc-opus-high'].reason, 'usage reading 2026-10-17T19:02:00Z does not hold dispatch seq 2 of unk-a (in flight since 2026-10-17T19:01:00Z, no outcome before the reading), whose usage-tokens are unknown; record its outcome, then refresh with route.mjs usage');
+});
+
+// ---------------------------------------------------------------------------------------------
+// host-policy-2 (unit sr-policy-2): calibration-1 evidence under the lead's qualification rules
+// (briefs/policy2-builder.md); the live policy is decided on its feature-off derivative (R1(a))
+// ---------------------------------------------------------------------------------------------
+const LIVE_OFF_PATH = join(tmp(), 'host-policy-live-off.json');
+writeFileSync(LIVE_OFF_PATH, featureOff(COMMITTED_POLICY));
+const livePolicyWith = (mutate) => {
+  const p = JSON.parse(readFileSync(LIVE_OFF_PATH, 'utf8'));
+  mutate(p);
+  const path = join(tmp(), 'host-policy.json');
+  writeFileSync(path, JSON.stringify(p, null, 2));
+  return path;
+};
+const CAL1 = JSON.parse(readFileSync(join(HERE, 'trace', 'calibration-1', 'observations.json'), 'utf8'));
+// the calibration tasks and the categories they represent (rule 4: the pin task is pin-tests, not build-tests)
+const CAL_TASKS = [['pin-tests', 'pin', (o) => o.pin.score], ['fix', 'fix', (o) => o.fix.score], ['review', 'review', (o) => o['review-grade'].score]];
+// an observation's profile is the policy profile with its model and effort (the observation key ends in the effort)
+const calProfile = (policy, o) => policy.profiles.find((x) => x.model === o.usage.pin.model && x.effort === o.profile.split('-').pop()) ?? null;
+const NEW_PROFILES = ['cc-sonnet-low', 'cc-sonnet-medium', 'cc-sonnet-high', 'cc-opus-medium', 'cc-haiku-low', 'cc-haiku-medium', 'cc-haiku-high', 'cc-fable-medium'];
+
+test('fixture: trace/policies/host-policy-1.json is the pre-revision policy, byte-identical to the policy the sr-policy-2 decision was bound to', () => {
+  assert.ok(existsSync(FIXTURE_POLICY_PATH), 'the host-policy-1 fixture exists');
+  const bound = JSON.parse(readFileSync(join(goldenDir, 'sr-policy-2-1.json'), 'utf8')).bindings;
+  assert.equal(bound['policy-revision'], 'host-policy-1');
+  assert.equal(createHash('sha256').update(readFileSync(FIXTURE_POLICY_PATH)).digest('hex'), bound['policy-sha256']);
+  assert.equal(loadPolicy(FIXTURE_POLICY_PATH)['policy-revision'], 'host-policy-1');
+  // the goldens' categories map never mistakes the fixture for a decision file
+  assert.equal(JSON.parse(readFileSync(FIXTURE_POLICY_PATH, 'utf8')).request, undefined);
+});
+
+// a policy fixture is not a decision: in trace/decisions/ it would sit in the <task>-<seq>.json namespace, and a task
+// with id host-policy could never be decided at seq 1 (P2-3)
+test('fixture: no policy fixture sits among the decisions; every trace/decisions file is a decision, and a task host-policy decides at seq 1', () => {
+  for (const f of readdirSync(goldenDir).filter((x) => x.endsWith('.json'))) {
+    const j = JSON.parse(readFileSync(join(goldenDir, f), 'utf8'));
+    assert.ok(typeof j.request?.taskId === 'string', `${f} is not a decision file`);
+  }
+  const trace = tmp();
+  cpSync(join(HERE, 'trace'), trace, { recursive: true });
+  const before = readFileSync(join(trace, 'ledger.jsonl'), 'utf8');
+  const r = cli(['decide', writeJson(req({ taskId: 'host-policy' })), '--trace', trace, '--policy', LIVE_OFF_PATH]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(JSON.parse(readFileSync(join(trace, 'decisions', 'host-policy-1.json'), 'utf8')).request.taskId, 'host-policy');
+  assert.ok(readFileSync(join(trace, 'ledger.jsonl'), 'utf8').startsWith(before), 'appended, never rewritten');
+});
+
+test('host-policy-2: the pin-tests category and qualified-for per the lead\'s rules from calibration-1; evidence entries record every grade, fails included', () => {
+  const live = loadPolicy(COMMITTED_POLICY_PATH);
+  const fixture = loadPolicy(FIXTURE_POLICY_PATH);
+  assert.equal(live['policy-revision'], 'host-policy-2');
+  const pin = live.categories['pin-tests'];
+  assert.equal(pin.risk, 'normal');
+  assert.equal(pin['median-tokens'], 120000);
+  assert.deepEqual(pin.verification, ['lint', 'the new tests green', 'guard-removal proof', 'the lead reads the diff']);
+  assert.ok(!pin.verification.some((v) => /review/i.test(v)), 'a pin needs no reviewer: verified mechanically plus the lead\'s diff read');
+  assert.equal(live.economics['lead-direct-profile'], 'cc-fable-xhigh');
+  for (const id of [...fixture.profiles.map((x) => x.id), ...NEW_PROFILES]) assert.ok(live.profiles.some((x) => x.id === id), id);
+  const fails = [];
+  for (const o of Object.values(CAL1)) {
+    const pr = calProfile(live, o);
+    if (!pr) continue; // a calibrated profile the revision does not add
+    for (const [cat, , score] of CAL_TASKS) {
+      const entry = `calibration-1: ${cat} ${score(o) ? 'PASS' : 'FAIL'} (n=1)`;
+      assert.ok(pr.evidence.includes(entry), `${pr.id} lacks "${entry}"`);
+      if (!score(o)) fails.push(`${pr.id} ${cat}`);
+    }
+    // rule 4 and the table: every pin PASS qualifies for pin-tests
+    assert.equal(pr['qualified-for'].includes('pin-tests'), CAL_TASKS[0][2](o), pr.id);
+    const before = fixture.profiles.find((x) => x.id === pr.id);
+    // rule 2: one calibration pass never qualifies a high-risk category; the existing (production) ones are kept
+    const highRisk = (ids) => ids.filter((c) => live.categories[c]?.risk === 'high').sort();
+    assert.deepEqual(highRisk(pr['qualified-for']), highRisk(before ? before['qualified-for'] : []), pr.id);
+    if (before) assert.deepEqual([...pr['qualified-for']].sort(), [...before['qualified-for'], 'pin-tests'].sort(), pr.id);
+    if (!before || !before['qualified-at']) {
+      assert.deepEqual([pr['qualified-for'], pr['qualified-at'], pr.expires, pr.reviewer], [['pin-tests'], '2026-10-17', '2027-01-15', 'host-declared (lead) from calibration-1 grades'], pr.id);
+    }
+  }
+  assert.deepEqual(fails.sort(), ['cc-haiku-high review', 'cc-haiku-low review', 'cc-haiku-medium review', 'cc-sonnet-high review']);
+  // headroom is the largest completed calibration run, rounded up to the next thousand (the host-policy-1 basis:
+  // a 91k run gave 92000), and never lowered
+  for (const o of Object.values(CAL1)) {
+    const pr = calProfile(live, o);
+    if (!pr) continue;
+    const max = Math.max(...Object.values(o.usage).filter((u) => u.state === 'done').map((u) => u.tokens));
+    const before = fixture.profiles.find((x) => x.id === pr.id)?.['headroom-tested'] ?? 0;
+    assert.equal(pr['headroom-tested'], Math.max(before, Math.ceil(max / 1000) * 1000), pr.id);
+  }
+});
+
+test('host-policy-2 validation: qualified-for and calibration evidence entries must name policy categories and be well formed (exit 2)', () => {
+  const bad = [
+    [(p) => { p.profiles.find((x) => x.id === 'cc-haiku-low')['qualified-for'].push('pin-test'); }, /profile cc-haiku-low qualified-for names unknown category 'pin-test'/],
+    [(p) => { p.profiles.find((x) => x.id === 'cc-haiku-low').evidence = 'calibration-1'; }, /profile cc-haiku-low evidence must be an array of strings/],
+    [(p) => { p.profiles.find((x) => x.id === 'cc-haiku-low').evidence.push('calibration-1: pin-tests pass'); }, /profile cc-haiku-low evidence 'calibration-1: pin-tests pass' is not 'calibration-<n>: <category> PASS\|FAIL \(n=<k>\)'/],
+    [(p) => { p.profiles.find((x) => x.id === 'cc-haiku-low').evidence.push('calibration-1: pin PASS (n=1)'); }, /profile cc-haiku-low evidence 'calibration-1: pin PASS \(n=1\)' names unknown category 'pin'/]
+  ];
+  for (const [mutate, message] of bad) {
+    const path = livePolicyWith(mutate);
+    assert.throws(() => loadPolicy(path), (e) => e instanceof RouterError && e.code === 2 && message.test(e.message), String(message));
+    const r = cli(['rate', '--trace', tmp(), '--policy', path]);
+    assert.equal(r.code, 2, r.stdout);
+    assert.match(r.stderr, message);
+  }
+  assert.equal(loadPolicy(COMMITTED_POLICY_PATH)['policy-revision'], 'host-policy-2');
+  assert.equal(loadPolicy(FIXTURE_POLICY_PATH)['policy-revision'], 'host-policy-1');
+});
+
+test('host-policy-2 golden-style: the three hand-walked requests still route to the same profiles; the new profiles are ineligible at Gate 2', () => {
+  const live = JSON.parse(readFileSync(LIVE_OFF_PATH, 'utf8'));
+  for (const file of HAND) {
+    const golden = JSON.parse(readFileSync(join(goldenDir, file), 'utf8'));
+    const decided = cliDecide(golden.request, LIVE_OFF_PATH);
+    assert.equal(decided.bindings['policy-revision'], 'host-policy-2', file);
+    const got = decided.decision;
+    const want = golden.decision;
+    for (const k of ['route', 'profile', 'all-in-bound-usd', 'eligible-ordered']) assert.deepEqual(got[k], want[k], `${file} ${k}`);
+    assert.deepEqual(Object.keys(got.candidates), live.profiles.map((x) => x.id), `${file}: every host-policy-2 profile is walked`);
+    for (const [id, c] of Object.entries(want.candidates)) {
+      if (!c.eligible) assert.equal(got.candidates[id]['first-failing-gate'], c['first-failing-gate'], `${file} ${id}`);
+    }
+    for (const id of NEW_PROFILES.filter((x) => !(x in want.candidates))) {
+      const c = got.candidates[id];
+      assert.equal(c.eligible, false, `${file} ${id}`);
+      assert.equal(c['first-failing-gate'], 2, `${file} ${id}`);
+      assert.match(c.reason, new RegExp(`${id} not qualified for ${golden.request.category}`), `${file} ${id}`);
+    }
+  }
+});
+
+test('host-policy-2 routing: review and fix still route to cc-opus-high, with the same reviewer for the work categories', () => {
+  const live = loadPolicy(LIVE_OFF_PATH);
+  for (const category of ['review', 'fix', 'build-core']) {
+    const d = computeDecision(req({ category }), live, []);
+    assert.equal(d.route, 'delegate', category);
+    assert.equal(d.profile, 'cc-opus-high', category);
+    for (const id of NEW_PROFILES) assert.equal(d.candidates[id]['first-failing-gate'], 2, `${category} ${id}`);
+  }
+  assert.equal(computeDecision(req({ category: 'build-core' }), live, [])['review-profile'], 'cc-opus-high');
+  assert.equal(computeDecision(req({ category: 'review' }), live, [])['all-in-bound-usd'], computeDecision(req({ category: 'review' }), loadPolicy(POLICY_PATH), [])['all-in-bound-usd']);
+});
+
+test('host-policy-2 routing: a pin-tests request routes to cc-haiku-low at the output-rate bound $0.06 (no reviewer); equal bounds rank the lower effort first', () => {
+  const live = loadPolicy(LIVE_OFF_PATH);
+  // req() draws its checks from the base fixture, which has no pin-tests: the live category's checks are named here
+  const pinReq = () => ({ ...req(), category: 'pin-tests', acceptanceChecks: live.categories['pin-tests'].verification.map((name) => ({ command: `run ${name}`, expect: 'pass' })) });
+  const d = computeDecision(pinReq(), live, []);
+  assert.equal(d.route, 'delegate');
+  assert.equal(d.profile, 'cc-haiku-low');
+  const c = d.candidates['cc-haiku-low'];
+  assert.deepEqual([c['work-bound-usd'], c['review-bound-usd'], c['overhead-bound-usd'], c['all-in-bound-usd']], [0.06, 0, 1, 1.06]);
+  assert.equal(d['review-profile'], null);
+  // the three same-model profiles share the bound; calibration-1 spent fewer tokens at the lower effort on every task
+  assert.deepEqual(d['eligible-ordered'].slice(0, 3), ['cc-haiku-low', 'cc-haiku-medium', 'cc-haiku-high']);
+  for (const id of ['cc-haiku-medium', 'cc-haiku-high']) assert.equal(d.candidates[id]['all-in-bound-usd'], 1.06, id);
+  // headroom is per profile: a 120000-token pin does not fit the smallest calibrated runs
+  assert.match(d.candidates['cc-sonnet-low'].reason, /context: 120000 tokens not below headroom-tested 110000 on cc-sonnet-low/);
+  assert.match(d.candidates['cc-opus-medium'].reason, /context: 120000 tokens not below headroom-tested 115000 on cc-opus-medium/);
+  assert.equal(d.candidates['cc-fable-xhigh'].reason, 'direct unsuitable: 120000 tokens > direct-max-tokens 15000');
+  assert.match(d.text, /^Profile: {11}\(cc-haiku-low, /m);
+  // the id still breaks a tie of rate and effort (S02/D01 twin)
+  const twin = loadPolicy(livePolicyWith((p) => { p.profiles.push({ ...p.profiles.find((x) => x.id === 'cc-haiku-low'), id: 'cc-aaa-haiku' }); }));
+  assert.equal(computeDecision(pinReq(), twin, []).profile, 'cc-aaa-haiku');
+});
+
+// the README's qualification table is generated from host-policy.json: every row is the policy verbatim, in policy order (P2-2)
+test('README: the host-policy-2 qualification table matches host-policy.json row for row, qualified-for in policy order', () => {
+  const readme = readFileSync(join(HERE, 'README.md'), 'utf8');
+  const section = readme.slice(readme.indexOf('### The table (host-policy-2'));
+  const rows = section.split('\n').filter((l) => /^\| `cc-/.test(l)).map((l) => l.split('|').slice(1, -1).map((c) => c.trim()));
+  assert.deepEqual(rows.map((r) => r[0]), COMMITTED_POLICY.profiles.map((p) => `\`${p.id}\``), 'one row per profile, in policy order');
+  for (const p of COMMITTED_POLICY.profiles) {
+    const [, , qual, headroom, grades] = rows.find((r) => r[0] === `\`${p.id}\``);
+    assert.equal(qual, p['qualified-for'].join(', '), `${p.id} qualified-for`);
+    assert.equal(headroom, `${p['headroom-tested'] / 1000}k`, `${p.id} headroom-tested`);
+    const grade = (cat) => (p.evidence.find((e) => e.startsWith(`calibration-1: ${cat} `)) ?? '').split(' ')[2] ?? '';
+    assert.equal(grades, ['pin-tests', 'fix', 'review'].map(grade).join(' / '), `${p.id} calibration-1 grades`);
+  }
+});
+
+// calibration evidence in rate: counted apart from the outcomes, printed as CALIBRATION lines, never a proposal
+function calibrationTrace(runs) {
+  const trace = tmp();
+  runs.forEach((obs, i) => {
+    mkdirSync(join(trace, `calibration-${i + 1}`));
+    writeFileSync(join(trace, `calibration-${i + 1}`, 'observations.json'), typeof obs === 'string' ? obs : JSON.stringify(obs, null, 1));
+  });
+  return trace;
+}
+
+test('rate: a CALIBRATION line per profile and category from trace/calibration-1/observations.json, counted apart from the outcomes', () => {
+  const live = loadPolicy(LIVE_OFF_PATH);
+  const trace = calibrationTrace([CAL1]);
+  const r = rate({ traceDir: trace, policyPath: LIVE_OFF_PATH, now: NOW });
+  const lines = r.text.split('\n').filter((l) => l.startsWith('CALIBRATION '));
+  assert.equal(lines.length, Object.keys(CAL1).length * CAL_TASKS.length, r.text);
+  for (const o of Object.values(CAL1)) {
+    const label = calProfile(live, o)?.id ?? `${o.profile} (no policy profile)`;
+    for (const [cat, , score] of CAL_TASKS) {
+      assert.ok(lines.includes(`CALIBRATION ${label} ${cat}: ${score(o) ? '1 pass, 0 fail' : '0 pass, 1 fail'} (calibration-1)`), `${label} ${cat}`);
+    }
+  }
+  assert.equal(Object.values(CAL1).filter((o) => !calProfile(live, o)).length, 1, 'one calibrated profile is not in host-policy-2');
+  assert.ok(r.text.indexOf('CALIBRATION ') > r.text.indexOf('regenerated'), 'next to the outcome stats');
+  // the derived stats keep calibration apart: no outcome counted, no outcome stats, the observations pinned by digest
+  const doc = JSON.parse(readFileSync(join(trace, 'qualification-stats.json'), 'utf8'));
+  assert.equal(doc['outcomes-counted'], 0);
+  assert.deepEqual(doc.stats, {});
+  assert.deepEqual(doc.calibration.profiles['cc-haiku-low'], { fix: { fail: 0, pass: 1, ungraded: 0 }, 'pin-tests': { fail: 0, pass: 1, ungraded: 0 }, review: { fail: 1, pass: 0, ungraded: 0 } });
+  assert.deepEqual(doc.calibration.runs, [{ run: 'calibration-1', 'observations-sha256': createHash('sha256').update(readFileSync(join(trace, 'calibration-1', 'observations.json'))).digest('hex') }]);
+  assert.deepEqual(r.proposals, []);
+  // regenerated identically, and the CLI prints the same lines
+  const cliRate = cli(['rate', '--trace', trace, '--now', NOW, '--policy', LIVE_OFF_PATH]);
+  assert.equal(cliRate.code, 0, cliRate.stderr);
+  assert.deepEqual(cliRate.stdout.split('\n').filter((l) => l.startsWith('CALIBRATION ')), lines);
+  assert.equal(readFileSync(join(trace, 'qualification-stats.json'), 'utf8'), `${JSON.stringify(doc, null, 2)}\n`);
+  // no calibration directory: no lines and no calibration block (the stats are what they were)
+  const none = rate({ traceDir: tmp(), policyPath: LIVE_OFF_PATH, now: NOW });
+  assert.ok(!none.text.includes('CALIBRATION'), none.text);
+  assert.equal('calibration' in none.stats, false);
+});
+
+test('rate: calibration passes and fails never make a proposal; proposals stay outcome-based; an unreadable observations file is exit 4', () => {
+  const live = loadPolicy(LIVE_OFF_PATH);
+  const of = (id) => structuredClone(Object.values(CAL1).find((o) => calProfile(live, o)?.id === id));
+  // three review passes for a profile not qualified for review (the outcome rule would propose qualification), and
+  // three fix fails for a profile qualified for fix (the outcome rule would propose demotion)
+  const oneRun = () => {
+    const passer = of('cc-sonnet-high');
+    passer['review-grade'].score = true;
+    const failer = of('cc-opus-high');
+    failer.fix.score = false;
+    return { a: passer, b: failer };
+  };
+  const third = oneRun();
+  third.b.fix.score = null; // not graded
+  const trace = calibrationTrace([oneRun(), oneRun(), third]);
+  const r = rate({ traceDir: trace, policyPath: LIVE_OFF_PATH, now: NOW });
+  assert.match(r.text, /^CALIBRATION cc-sonnet-high review: 3 pass, 0 fail \(calibration-1, calibration-2, calibration-3\)$/m);
+  assert.match(r.text, /^CALIBRATION cc-opus-high fix: 0 pass, 2 fail, 1 ungraded \(calibration-1, calibration-2, calibration-3\)$/m);
+  assert.deepEqual(r.proposals, []);
+  assert.ok(!/PROPOSAL/.test(r.text), r.text);
+  assert.match(r.text, /^no proposals$/m);
+  // the outcome loop is untouched next to them: two failed fixes still propose the demotion
+  const both = calibrationTrace([oneRun()]);
+  failedFix(both, 'f-1');
+  failedFix(both, 'f-2');
+  const r2 = rate({ traceDir: both, policyPath: POLICY_PATH, now: NOW });
+  assert.deepEqual(r2.proposals.map((p) => `${p.kind} ${p.profile} ${p.category}`), ['demote cc-opus-high fix']);
+  assert.match(r2.text, /^CALIBRATION cc-opus-high fix: 0 pass, 1 fail \(calibration-1\)$/m);
+  // an unreadable observations file refuses the run, as an unreadable decision file does
+  const bad = cli(['rate', '--trace', calibrationTrace(['{ not json']), '--now', NOW, '--policy', LIVE_OFF_PATH]);
+  assert.equal(bad.code, 4, bad.stdout);
+  assert.match(bad.stderr, /calibration-1\/observations\.json is unparseable/);
+  // parseable, but an observation that is not a plain object (null, a string, an array) is refused too, not a crash (P2-1)
+  for (const obs of ['{"haiku-low": null}', '{"haiku-low": "PASS"}', '{"haiku-low": []}']) {
+    const t = calibrationTrace([obs]);
+    const nul = cli(['rate', '--trace', t, '--now', NOW, '--policy', LIVE_OFF_PATH]);
+    assert.equal(nul.code, 4, `${obs}: ${nul.stderr}`);
+    assert.match(nul.stderr, /calibration-1\/observations\.json: observation "haiku-low" is not an object/, obs);
+    assert.ok(!/TypeError| {4}at /.test(nul.stderr), nul.stderr);
+    assert.equal(existsSync(join(t, 'qualification-stats.json')), false, obs);
+  }
+  // an observations.json that cannot be read (here a directory) is exit 4, not an EISDIR stack trace (P2-1)
+  const td = tmp();
+  mkdirSync(join(td, 'calibration-1', 'observations.json'), { recursive: true });
+  const dir = cli(['rate', '--trace', td, '--now', NOW, '--policy', LIVE_OFF_PATH]);
+  assert.equal(dir.code, 4, dir.stderr);
+  assert.match(dir.stderr, /calibration-1\/observations\.json is unreadable/);
+  assert.ok(!/ {4}at /.test(dir.stderr), dir.stderr);
+  assert.equal(existsSync(join(td, 'qualification-stats.json')), false);
 });

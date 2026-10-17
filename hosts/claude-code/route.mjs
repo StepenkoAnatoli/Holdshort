@@ -33,6 +33,8 @@ const TASK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const FINGERPRINT = /^[0-9a-f]{64}$/;
 const TUPLE = /^\([^,()]+(, [^,()]+){5}\)$/;
 const EXPIRY_WARN_DAYS = 14;
+// a calibration grade in a profile's evidence: 'calibration-<run>: <category> PASS|FAIL (n=<count>)'
+const CALIBRATION_ENTRY = /^calibration-([1-9]\d*): (\S+) (PASS|FAIL) \(n=([1-9]\d*)\)$/;
 
 export class RouterError extends Error {
   constructor(code, message) {
@@ -116,6 +118,16 @@ function validatePolicy(p) {
     if (!isStr(pr.id) || !isStr(pr.model) || !isStr(pr.effort) || !isStr(pr.config) || !isStrArray(pr['qualified-for'])) fail(`profile ${pr.id} incomplete`);
     if (ids.has(pr.id)) fail(`duplicate profile ${pr.id}`);
     ids.add(pr.id);
+    // a qualification names a category the policy has: a misspelt one would silently never qualify
+    for (const c of pr['qualified-for']) if (!Object.hasOwn(p.categories, c)) fail(`profile ${pr.id} qualified-for names unknown category '${c}'`);
+    if (pr.evidence !== undefined && !isStrArray(pr.evidence)) fail(`profile ${pr.id} evidence must be an array of strings`);
+    // a calibration grade entry (host-policy-2) is counted by the lead's qualification rules, so its form is fixed
+    for (const e of pr.evidence ?? []) {
+      if (!e.startsWith('calibration-')) continue;
+      const m = CALIBRATION_ENTRY.exec(e);
+      if (!m) fail(`profile ${pr.id} evidence '${e}' is not 'calibration-<n>: <category> PASS|FAIL (n=<k>)'`);
+      if (!Object.hasOwn(p.categories, m[2])) fail(`profile ${pr.id} evidence '${e}' names unknown category '${m[2]}'`);
+    }
   }
   const e = p.economics;
   if (!e || !ids.has(e['lead-direct-profile']) || !isInt(e['direct-max-tokens']) || !isInt(e['delegate-overhead-tokens'])) fail('economics incomplete');
@@ -763,11 +775,20 @@ function evaluate(ctx, id, kind) {
   const b = out.bounds;
   return {
     id, kind, eligible: true, 'all-in-bound-usd': round4(b.allIn), 'work-bound-usd': round4(b.work),
-    'review-bound-usd': round4(b.review), 'overhead-bound-usd': round4(b.overhead), walkthrough, _allIn: b.allIn, _rate: b.rate, _usage: out.usage ?? null
+    'review-bound-usd': round4(b.review), 'overhead-bound-usd': round4(b.overhead), walkthrough, _allIn: b.allIn, _rate: b.rate,
+    _effort: effortRank(pr.effort), _usage: out.usage ?? null
   };
 }
 
-const byEconomics = (a, b) => a._allIn - b._allIn || a._rate - b._rate || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+// ties of the all-in bound go to the lower output rate, then the lower effort, then the alphabetical id. The bound
+// prices every profile on the same token estimate, but at one model a lower effort spends fewer tokens: calibration-1
+// measured it for every model on every task (12 model-task pairs, 36 runs; trace/calibration-1/tokens-and-estimates.md). An unknown effort ranks last
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+function effortRank(effort) {
+  const i = EFFORTS.indexOf(effort);
+  return i === -1 ? EFFORTS.length : i;
+}
+const byEconomics = (a, b) => a._allIn - b._allIn || a._rate - b._rate || a._effort - b._effort || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 // gates.md: the gates apply to every profile under consideration, the reviewer included. The required reviewer is
 // drawn from the request's candidates (never the lead-direct profile) and walked through Gate 1 and Gate 2 for the
@@ -941,7 +962,8 @@ export function computeDecision(req, policy, records = [], catMap = {}, { probe 
     ['MaxNestingDepth', String(maxDepth)], ['Reservations', reservations],
     ['Calls', `${st.callsUsed} / ${st.callsLimit}`], ['Deadline', deadlineLine], ['Uncertainty', uncertainty.join('; ')]
   ].map(([k, v]) => `${`${k}:`.padEnd(19)}${v}`);
-  const walk = results.map((r) => `  ${r.id.padEnd(16)}${r.kind.padEnd(10)}${r.eligible ? `eligible, all-in ${usd(r._allIn)}` : `gate ${r['first-failing-gate']}: ${r.reason}`}`);
+  const idWidth = Math.max(16, ...results.map((r) => r.id.length + 1));   // a space after the longest id (P2-4)
+  const walk = results.map((r) => `  ${r.id.padEnd(idWidth)}${r.kind.padEnd(10)}${r.eligible ? `eligible, all-in ${usd(r._allIn)}` : `gate ${r['first-failing-gate']}: ${r.reason}`}`);
   let text = `${lines.join('\n')}\n${ADVISORY}\nGate walk (${route === 'blocked' ? 'first failing gate and reason per candidate' : 'per candidate'}):\n${walk.join('\n')}\n`;
   if (specSet) text += `SpeculativeSet:\n${JSON.stringify(specSet, null, 2)}\n`;
   if (brief) text += `Brief:\n${JSON.stringify(brief, null, 2)}\n`;
@@ -1242,6 +1264,57 @@ function usageLearning(cfg, readings, records) {
   return { usage, proposals };
 }
 
+// calibration evidence (host-policy-2): graded calibration runs in <trace>/calibration-<n>/observations.json, counted per
+// (profile, category) apart from the outcomes. They never enter the ledger and never make a proposal: proposals stay
+// outcome-based, and qualification from calibration is the lead's, under the qualification rules (README).
+// The tasks and the categories they represent: the pin task is pin-tests (rule 4), the fix task fix, the review task review
+const CALIBRATION_TASKS = [['pin-tests', (o) => o?.pin?.score], ['fix', (o) => o?.fix?.score], ['review', (o) => o?.['review-grade']?.score]];
+
+function calibrationEvidence(policy, traceDir) {
+  if (!existsSync(traceDir)) return null;
+  const dirs = readdirSync(traceDir).map((d) => [d, /^calibration-([1-9]\d*)$/.exec(d)]).filter(([d, m]) => m && existsSync(join(traceDir, d, 'observations.json')))
+    .sort((a, b) => Number(a[1][1]) - Number(b[1][1])).map(([d]) => d);
+  if (!dirs.length) return null;
+  const runs = [];
+  const profiles = {};
+  const seen = {};
+  for (const run of dirs) {
+    const path = join(traceDir, run, 'observations.json');
+    // a read error (a directory, no permission) refuses the run like an unparseable file: exit 4, never a stack trace (P2-1)
+    let bytes;
+    try { bytes = readFileSync(path); } catch (e) { throw new RouterError(4, `${run}/observations.json is unreadable (${e.code ?? e.message}); refusing to rate (${path})`); }
+    let obs;
+    try { obs = JSON.parse(bytes); } catch { throw new RouterError(4, `${run}/observations.json is unparseable; refusing to rate (${path})`); }
+    if (!obs || typeof obs !== 'object' || Array.isArray(obs)) throw new RouterError(4, `${run}/observations.json is not an object of observations (${path})`);
+    for (const [key, o] of Object.entries(obs)) {
+      if (!o || typeof o !== 'object' || Array.isArray(o)) throw new RouterError(4, `${run}/observations.json: observation ${JSON.stringify(key)} is not an object; refusing to rate (${path})`);
+    }
+    runs.push({ run, 'observations-sha256': sha256(bytes) });
+    for (const [key, o] of Object.entries(obs)) {
+      // an observation is a profile's model (any task's usage) at the effort its name ends in
+      const model = Object.values(o?.usage ?? {}).find((u) => isStr(u?.model))?.model;
+      const name = isStr(o?.profile) ? o.profile : key;
+      const pr = policy.profiles.find((p) => p.model === model && p.effort === name.split('-').pop());
+      const label = pr ? pr.id : `${name} (no policy profile)`;
+      for (const [cat, score] of CALIBRATION_TASKS) {
+        const c = ((profiles[label] ??= {})[cat] ??= { pass: 0, fail: 0, ungraded: 0 });
+        const s = score(o);
+        if (s === true) c.pass += 1; else if (s === false) c.fail += 1; else c.ungraded += 1;
+        const r = ((seen[label] ??= {})[cat] ??= []);
+        if (!r.includes(run)) r.push(run);
+      }
+    }
+  }
+  const lines = [];
+  for (const label of Object.keys(profiles).sort()) {
+    for (const [cat] of CALIBRATION_TASKS) {
+      const c = profiles[label][cat];
+      lines.push(`CALIBRATION ${label} ${cat}: ${c.pass} pass, ${c.fail} fail${c.ungraded ? `, ${c.ungraded} ungraded` : ''} (${seen[label][cat].join(', ')})`);
+    }
+  }
+  return { doc: { runs, profiles }, lines };
+}
+
 export function rate({ policyPath = DEFAULT_POLICY, traceDir = DEFAULT_TRACE, now = new Date().toISOString() } = {}) {
   if (isoMs(now) === null) throw invalid('--now must be ISO-8601');
   const policy = loadPolicy(policyPath);
@@ -1249,6 +1322,7 @@ export function rate({ policyPath = DEFAULT_POLICY, traceDir = DEFAULT_TRACE, no
   const { stats, proposals } = learn(policy, records, categoryMap(traceDir));
   const learned = policy['usage-windows'] ? usageLearning(policy['usage-windows'], readUsage(traceDir), records) : null;
   const usageProposals = learned ? learned.proposals : [];
+  const calibration = calibrationEvidence(policy, traceDir);
   const path = ledgerPath(traceDir);
   const doc = {
     _comment: 'derived by route.mjs rate from ledger.jsonl and the decision files; regenerated on every run, never hand-edited',
@@ -1258,13 +1332,15 @@ export function rate({ policyPath = DEFAULT_POLICY, traceDir = DEFAULT_TRACE, no
     'outcome-records': records.filter((r) => r.kind === 'outcome').length,
     stats,
     proposals,
-    ...(learned ? { usage: learned.usage, 'usage-proposals': usageProposals, 'usage-sha256': existsSync(usagePath(traceDir)) ? sha256(readFileSync(usagePath(traceDir))) : null } : {})
+    ...(learned ? { usage: learned.usage, 'usage-proposals': usageProposals, 'usage-sha256': existsSync(usagePath(traceDir)) ? sha256(readFileSync(usagePath(traceDir))) : null } : {}),
+    ...(calibration ? { calibration: calibration.doc } : {})
   };
   mkdirSync(traceDir, { recursive: true });
   const statsPath = join(traceDir, 'qualification-stats.json');
   writeFileSync(statsPath, `${JSON.stringify(sortKeys(doc), null, 2)}\n`);
   const flags = expiryFlags(policy, isoMs(now));
   const lines = [`${statsPath} regenerated (${doc['outcomes-counted']} outcomes)`];
+  if (calibration) lines.push(...calibration.lines);
   for (const p of proposals) lines.push(`PROPOSAL ${proposalText(p)}; not applied — the lead ratifies by editing host-policy.json`);
   for (const p of usageProposals) lines.push(`PROPOSAL usage-windows.windows.${p.window}.utilization-per-mtok: ${p.from} -> ${p.to} (${p.reason}); not applied — the lead ratifies by editing host-policy.json`);
   for (const f of flags) lines.push(`FLAG ${f.profile}: ${f.reason}`);
