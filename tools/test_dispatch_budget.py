@@ -19,6 +19,16 @@ import pilot_close
 import live_fill_tally
 
 
+# Multiprocess fixtures below spawn fresh interpreters that re-import this whole
+# module, so a child's first useful step can lag its parent by seconds on a cold
+# or loaded runner. These bounds are safety valves against a genuine hang, not
+# assertions about performance: a correct run rendezvouses in ~1s. They are far
+# larger than any expected latency and never bound the behaviour under test, so
+# a slow machine cannot turn them into a spurious failure.
+MP_WAIT = 120.0  # rendezvous / queue waits: a child reaching a known point
+MP_REAP = 30.0   # reaping after terminate(): prove a fixture actually died
+
+
 def prices():
     return {"revision": "synthetic", "profiles": {"p": {"input_rate_per_mtok": 1,
             "output_rate_per_mtok": 0}}, "pilot_caps": {"max_attempts_per_task": 8,
@@ -46,12 +56,12 @@ def transport(tokens=750_000):
 def concurrent_writer(folder, task, barrier, entered, release, results):
     send, _ = transport()
     def count(*args):
-        barrier.wait(timeout=15)
+        barrier.wait(timeout=MP_WAIT)
         return 0
     def physical_send(*args):
         (Path(folder) / (task + ".marker")).write_text("transport entered")
         entered.put(task)
-        if not release.wait(15):
+        if not release.wait(MP_WAIT):
             raise TimeoutError("test transport was not released")
         return 750_000, 0
     physical_send.max_tokens = 1
@@ -75,7 +85,7 @@ def live_owner_writer(folder, task, entered, release, results):
     config["pilot_caps"].update(max_cost_per_task_usd=2, max_cost_per_pilot_usd=2)
     def send(*args):
         entered.put(task)
-        if not release.wait(20):
+        if not release.wait(MP_WAIT):
             raise TimeoutError("synthetic owner not released")
         return 500_000, 0
     send.max_tokens = 1
@@ -222,16 +232,16 @@ class DispatchBudget(unittest.TestCase):
             try:
                 for child in children:
                     child.start()
-                entered.get(timeout=20)
-                self.assertEqual(results.get(timeout=20), "blocked-pilot-cap")
+                entered.get(timeout=MP_WAIT)
+                self.assertEqual(results.get(timeout=MP_WAIT), "blocked-pilot-cap")
                 self.assertEqual(len(list(Path(folder).glob("*.marker"))), 1)
                 observer = dispatcher(folder)
                 self.assertEqual(observer.pilot_spent, 0)
                 self.assertEqual(observer.pilot_reserved, .75)
                 release.set()
-                self.assertEqual(results.get(timeout=20), "dispatched")
+                self.assertEqual(results.get(timeout=MP_WAIT), "dispatched")
                 for child in children:
-                    child.join(timeout=10)
+                    child.join(timeout=MP_WAIT)
                     self.assertEqual(child.exitcode, 0)
                 self.assertEqual(observer.pilot_spent, .75)
                 self.assertEqual(observer.pilot_reserved, 0)
@@ -240,17 +250,17 @@ class DispatchBudget(unittest.TestCase):
                 for child in children:
                     if child.is_alive():
                         child.terminate()
-                    child.join(timeout=5)
+                    child.join(timeout=MP_REAP)
 
     def test_process_crash_retains_attempt_cash_and_review_until_receipt(self):
         context = mp.get_context("spawn")
         with tempfile.TemporaryDirectory() as folder:
             child = context.Process(target=crash_writer, args=(folder,))
             child.start()
-            child.join(timeout=15)
+            child.join(timeout=MP_WAIT)
             if child.is_alive():
                 child.terminate()
-                child.join()
+                child.join(timeout=MP_REAP)
                 self.fail("crash fixture hung")
             self.assertEqual(child.exitcode, 17)
             send, calls = transport(200_000)
@@ -475,20 +485,20 @@ class DispatchBudget(unittest.TestCase):
             try:
                 for child in children:
                     child.start()
-                self.assertEqual({entered.get(timeout=20), entered.get(timeout=20)}, {"A", "B"})
+                self.assertEqual({entered.get(timeout=MP_WAIT), entered.get(timeout=MP_WAIT)}, {"A", "B"})
                 snapshot = read_authority(Path(folder) / "ledger.jsonl")
                 self.assertFalse(snapshot.get("halted", False))
                 self.assertTrue(all(task["pending"]["status"] == "pending" for task in snapshot["tasks"].values()))
             finally:
                 release.set()
                 for child in children:
-                    child.join(timeout=20)
+                    child.join(timeout=MP_WAIT)
                     if child.is_alive():
                         child.terminate()
-                        child.join()
+                        child.join(timeout=MP_REAP)
                 entered.close()
             self.assertEqual([child.exitcode for child in children], [0, 0])
-            self.assertEqual([results.get(timeout=5) for _ in children], ["dispatched", "dispatched"])
+            self.assertEqual([results.get(timeout=MP_WAIT) for _ in children], ["dispatched", "dispatched"])
             results.close()
 
     def test_another_caller_can_replay_receipt_before_original_settlement(self):

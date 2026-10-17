@@ -65,7 +65,13 @@ def main() -> int:
               "this repo now overrides it with .githooks (repo-local wins).")
 
     # 3) Hook must be bash-parseable and bash must exist.
-    probe = subprocess.run(["bash", "-n", str(HOOK)], capture_output=True, text=True)
+    try:
+        probe = subprocess.run(["bash", "-n", str(HOOK)], capture_output=True, text=True)
+    except FileNotFoundError:
+        print("install_hooks: `bash` not found on PATH — the tracked pre-commit gate is a "
+              "bash script, so it cannot be verified or run here; install bash (e.g. Git for "
+              "Windows) and re-run from a shell where `bash` resolves.", file=sys.stderr)
+        return 1
     if probe.returncode != 0:
         print(f"install_hooks: hook script syntax check failed:\n{probe.stderr}", file=sys.stderr)
         return 1

@@ -154,6 +154,19 @@ class Crosscheck(unittest.TestCase):
             r = tc.check(sd, PRICES, entries)
             self.assertTrue(r["consistent"], r["findings"])
 
+    def test_corrupt_mirror_without_a_ledger_task_is_still_flagged(self):
+        # state_view scans every *.json, not only tasks the ledger knows: a
+        # state-only, corrupt mirror must still surface (invalid-task-mirror),
+        # so an unreconciled file can never hide behind "no ledger task".
+        with tempfile.TemporaryDirectory() as td:
+            sd = Path(td) / "state"
+            sd.mkdir()
+            (sd / "orphan.json").write_text("{not json", encoding="utf-8")
+            r = tc.check(sd, PRICES, [])
+            self.assertFalse(r["consistent"])
+            self.assertIn("invalid-task-mirror", {f["kind"] for f in r["findings"]})
+            self.assertEqual((sd / "orphan.json").read_text(encoding="utf-8"), "{not json")
+
     def test_main_exit_codes(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)

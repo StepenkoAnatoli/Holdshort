@@ -55,6 +55,22 @@ class CorruptState(RuntimeError):
     """
 
 
+class TaskIdCollision(CorruptState):
+    """The state file at a task's path belongs to a DIFFERENT task id.
+
+    Two distinct ids can share one path: the sanitizer is lossy (`a/b` and
+    `a_b` both map to `a_b.json`), and a case-insensitive filesystem merges
+    `Task-A.json` with `task-a.json`. That is a collision, not corruption, but
+    it is still fail-closed: the existing file is preserved and the dispatch
+    is refused. Detection compares the file's STORED task_id, so it catches the
+    case-insensitive collision too — an `_sanitize(id) == id` check does not.
+
+    Subclassing CorruptState keeps the frozen `blocked:state-corrupt` outcome
+    (ADR-0001: no decision strings change) while naming the real cause in the
+    exception and logs. The file is never renamed to make room.
+    """
+
+
 def _sanitize(task_id: str) -> str:
     s = "".join(c if c.isalnum() or c in "-_." else "_" for c in task_id)
     while ".." in s:  # path-traversal sequences can never survive sanitization
@@ -94,6 +110,12 @@ class TaskStateStore:
             raise CorruptState("task state unreadable; original state preserved") from e
         if not isinstance(doc, dict) or not all(k in doc for k in STATE_FIELDS):
             raise CorruptState("task state missing required fields; original state preserved")
+        if isinstance(doc["task_id"], str) and doc["task_id"] != task_id:
+            # Identity mismatch: the path is shared with another task id (a
+            # lossy-sanitizer or case-insensitive-filesystem collision). Fail
+            # closed and preserve the file; never rename it out of the way.
+            raise TaskIdCollision(
+                f"task state at {p.name} belongs to a different task id; original state preserved")
         counters_ok = all(type(doc[k]) is int and doc[k] >= 0
                           for k in ("attempts", "repairs"))
         try:
@@ -105,7 +127,7 @@ class TaskStateStore:
                               and math.isfinite(value) and value >= doc["started"])
         except (OverflowError, TypeError):
             numbers_ok = False
-        if (not counters_ok or not numbers_ok or doc["task_id"] != task_id
+        if (not counters_ok or not numbers_ok or not isinstance(doc["task_id"], str)
                 or not isinstance(doc["last_profile"], str)
                 or doc["repairs"] > doc["attempts"]
                 or ("clock_stopped" in doc and type(doc["clock_stopped"]) is not bool)
@@ -123,7 +145,21 @@ class TaskStateStore:
             if k in st:
                 doc[k] = st[k]
         doc["updated_at"] = self.now_fn()
-        _atomic_write(self.path_for(st["task_id"]), doc)
+        p = self.path_for(st["task_id"])
+        if p.exists():
+            # Refuse to overwrite a file that belongs to a different task id.
+            # This closes the last window of the collision: two workers that
+            # both created a task before either mirrored it would otherwise
+            # write the same path, and the second would erase the first.
+            try:
+                existing = json.loads(p.read_text(encoding="utf-8"))
+            except (ValueError, UnicodeError, OSError):
+                existing = None  # unreadable file: leave G5 (load) to refuse it
+            owner = existing.get("task_id") if isinstance(existing, dict) else None
+            if isinstance(owner, str) and owner != st["task_id"]:
+                raise TaskIdCollision(
+                    f"refusing to overwrite {p.name}: it belongs to another task id; preserved")
+        _atomic_write(p, doc)
 
 
 class ResumableTasks:

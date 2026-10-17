@@ -43,12 +43,16 @@ try:
 except ImportError:
     from tools.dispatch_budget import BudgetStore, BudgetStateError, money, totals
 
+try:
+    from task_state_owner import TaskStateOwner, authority_view
+except ImportError:
+    from tools.task_state_owner import TaskStateOwner, authority_view
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PRICES_PATH = REPO_ROOT / "tools" / "prices-2.json"
 LEDGER_DEFAULT = REPO_ROOT / "tools" / "pilot_ledger.jsonl"
 TASK_STATE_DEFAULT = REPO_ROOT / "tools" / "task_state"
 
-REASON_MAX = 512  # bounded ledger lines, per the pilot observation rules
 # The token-counting endpoint documents its count as an estimate that can differ
 # from the billed input "by a small amount"; reserve this much above it.
 TOKEN_COUNT_MARGIN = 0.05
@@ -147,6 +151,12 @@ class LiveDispatcher:
                          if task_store is not None else None)
         self.budget = BudgetStore(ledger_path, asdict(self.caps), task_store)
         self.budget.apply_receipt = self._settle_receipt
+        # Sole read path (ADR-0001). The dispatcher never read the host
+        # watchdog's state, and v1 of the owner does not change that: no
+        # watchdog path is wired here.
+        self.owner = TaskStateOwner(
+            self.budget,
+            mirror=self._resumer.store if self._resumer is not None else None)
 
     @property
     def pilot_spent(self):
@@ -159,8 +169,7 @@ class LiveDispatcher:
             return float(totals(doc)[1])
 
     def _remember(self, task):
-        st = deepcopy(task)
-        st["spent"] = float(money(task["charged"]))
+        st = authority_view(task)
         self._tasks[st["task_id"]] = st
         if self._resumer is not None:
             self._resumer.persist(st)
@@ -169,23 +178,32 @@ class LiveDispatcher:
     def _task(self, task_id):
         if not isinstance(task_id, str) or not task_id.strip():
             raise ValueError("task ID must be a nonempty string")
-        # A corrupt optional mirror still refuses and is preserved. A valid but
-        # stale mirror is repaired from the authority, never used to lower it.
-        legacy = self._resumer.store.load(task_id) if self._resumer else None
-        with self.budget.transaction() as doc:
-            if task_id not in doc["tasks"]:
-                if legacy and (legacy["attempts"] or legacy["spent"]):
-                    raise BudgetStateError("task counters have no authoritative reservation history")
-                now = self.now_fn()
-                task = dict(legacy or {"task_id": task_id, "attempts": 0, "started": now,
-                                      "repairs": 0, "last_profile": ""})
-                task.pop("spent", None)
-                task.update(charged="0", review_reserved="0", review_calls_reserved=0, pending=None,
-                            verified=False, abandoned=False)
-                task.setdefault("last_observed", task["started"])
-                task.setdefault("clock_stopped", False)
-                doc["tasks"][task_id] = task
-            return self._remember(doc["tasks"][task_id])
+        # Sole read path (ADR-0001): a corrupt optional mirror still refuses
+        # and is preserved; a valid but stale mirror is repaired from the
+        # authority, never used to lower it.
+        task = self.owner.read(task_id)
+        if task is None:
+            legacy = self.owner.read_mirror(task_id)
+            if legacy and (legacy["attempts"] or legacy["spent"]):
+                raise BudgetStateError("task counters have no authoritative reservation history")
+            # Creation is a write and stays here (owner v1 is read-only). The
+            # existence check is repeated INSIDE the transaction on purpose: the
+            # read above ran outside any lock, so a concurrent creator may have
+            # added the task in between. Overwriting it here would erase its
+            # attempts and charge (a check-then-create race).
+            with self.budget.transaction() as doc:
+                if task_id not in doc["tasks"]:
+                    now = self.now_fn()
+                    created = dict(legacy or {"task_id": task_id, "attempts": 0, "started": now,
+                                              "repairs": 0, "last_profile": ""})
+                    created.pop("spent", None)
+                    created.update(charged="0", review_reserved="0", review_calls_reserved=0,
+                                   pending=None, verified=False, abandoned=False)
+                    created.setdefault("last_observed", created["started"])
+                    created.setdefault("clock_stopped", False)
+                    doc["tasks"][task_id] = created
+                task = doc["tasks"][task_id]
+        return self._remember(task)
 
     def _record(self, doc, task, profile, decision, reason, **kwargs):
         kwargs.setdefault("review_reserved_usd", float(money(task["review_reserved"])))

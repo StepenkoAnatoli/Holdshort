@@ -69,6 +69,22 @@ class PilotReport(unittest.TestCase):
             self.assertTrue(report["source_evidence"]["mirror_complete"])
             self.assertEqual(before, (ledger.read_bytes(), authority.read_bytes()))
 
+    def test_authority_charges_are_mapped_through_the_owner(self):
+        # ADR-0001 step 4: the charged -> spent mapping lives once, in the owner.
+        # A pure mapping refactor is invisible to output tests, so pin the call
+        # directly: pilot_report must route authority charges via authority_view.
+        calls = []
+        real = pr.authority_view
+        pr.authority_view = lambda task: (calls.append(task), real(task))[1]
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                ledger = self._authority_fixture(directory)
+                status, report = self._report_cli(ledger)
+        finally:
+            pr.authority_view = real
+        self.assertEqual(status, 0, report["problems"])
+        self.assertTrue(calls, "pilot_report must map authority charges via the owner's authority_view")
+
     def test_cli_lagging_settlement_mirror_uses_committed_cost_and_preserves_bytes(self):
         with tempfile.TemporaryDirectory() as directory:
             ledger = self._authority_fixture(directory)

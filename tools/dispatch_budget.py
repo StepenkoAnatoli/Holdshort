@@ -114,22 +114,31 @@ def validate(doc):
 
 def read_authority(ledger_path):
     """Read a consistent authority snapshot without creating, recovering or mirroring it."""
+    import time
     ledger = Path(ledger_path).resolve()
     path = ledger.with_name(ledger.name + ".budget.sqlite3")
-    connection = None
-    try:
-        connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=10)
-        row = connection.execute("SELECT payload FROM authority WHERE id=1").fetchone()
-        if row is None:
-            raise BudgetStateError("budget authority has no committed snapshot")
-        doc = decode(row[0])
-        validate(doc)
-        return doc
-    except (sqlite3.Error, OSError, ValueError, TypeError, KeyError, OverflowError) as exc:
-        raise BudgetStateError("budget snapshot unavailable or inconsistent; preserved") from exc
-    finally:
-        if connection is not None:
-            connection.close()
+    last_exc = None
+    for attempt in range(8):
+        connection = None
+        try:
+            connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=10)
+            row = connection.execute("SELECT payload FROM authority WHERE id=1").fetchone()
+            if row is None:
+                raise BudgetStateError("budget authority has no committed snapshot")
+            doc = decode(row[0])
+            validate(doc)
+            return doc
+        except BudgetStateError:
+            raise
+        except (sqlite3.Error, OSError, ValueError, TypeError, KeyError, OverflowError) as exc:
+            last_exc = exc
+            if attempt < 7:
+                time.sleep(0.05 * (2 ** attempt))
+            continue
+        finally:
+            if connection is not None:
+                connection.close()
+    raise BudgetStateError("budget snapshot unavailable or inconsistent; preserved") from last_exc
 
 
 def _lock(handle):
