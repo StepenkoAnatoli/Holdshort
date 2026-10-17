@@ -21,7 +21,7 @@ are fixed without weakening production checks.
 New-reviewer guide to **enforcement hardening**, told chronologically: each
 protection layer was added because of a real observed failure, and each
 entry below names the commit that shipped it. See
-[README.md](README.md#enforcing-by-default-the-four-protection-layers)
+[README.md](README.md#3-enable-contributor-checks)
 for the current state of all four layers and
 [docs/GO_LIVE_RUNBOOK.md](docs/GO_LIVE_RUNBOOK.md) for the operational use.
 
