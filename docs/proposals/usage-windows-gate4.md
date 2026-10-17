@@ -136,6 +136,33 @@ Usage outside the router (the coordinator, other sessions on the same account)
 moves the windows without appearing in `T`; it biases observations upward,
 which the asymmetric rule accepts rather than corrects.
 
+## Item 4 — `null` cash on an estimate-only host
+
+**Observed.** A subscription host has no per-call cash. Its honest value for `counters.cash-spent`,
+`counters.cash-cap` (§10.5) and `evidence.actual-spend` (§10.3) is *unknown*. `tools/conform_spec.py`
+refuses that today: every one of the 25 LedgerRecords the Claude Code adapter wrote fails with
+`LedgerRecord counters.cash-cap must be a finite non-negative number` or
+`... cash-spent must be a finite non-negative number` (`check_record`, line 271), and its Outcomes fail with
+`Outcome breaks §10.3 (evidence actual-spend must be a finite non-negative number)` (`check_outcome`, line 191);
+the same adapter's Briefs are `CONFORMANT`. Run on 2026-10-17 against `fbe7bca`.
+
+**The contradiction.** `docs/USAGE_TELEMETRY.md` line 56 says a missing counter "stays `null`. It never
+becomes zero", and `docs/DEVELOPMENT_PLAN.md` line 11 says the units are never converted. A host that
+obeys those two sentences cannot write a §10.5 record, and a host that writes `0.0` to pass the checker
+invents a bill of nothing — the exact thing the telemetry rule forbids.
+
+**Proposal.** The three cash fields admit `null` when, and only when, the record declares why: the
+LedgerRecord `counters` carry `"cash-basis": "estimate-only"` and the Outcome `evidence` carries
+`"actual-spend-basis": "estimate-only"` (both additive, §13). `conform_spec.py` then accepts `null` for
+those fields on such records and keeps refusing it everywhere else, so an unmarked `null` is still a
+violation. `gate4-affordability.md` already says a strict cap needs reliable accounting; this makes the
+absence of accounting representable instead of forcing a lie. The checked-in `host_dry_run.py` keeps
+writing `0.0` only because its dry run spends nothing; a live subscription host would set the marker.
+
+**Evidence.** The adapter's ledger and decision files are under
+`hosts/claude-code/trace/` in this branch once the adapter lands; until then the checker output above is
+reproducible on any record whose cash fields are `null`.
+
 ## Non-goals
 
 - **No cash conversion.** Utilization is never converted to dollars, and a
