@@ -4,9 +4,9 @@ Reviewed 2026-10-07 through public repository metadata, READMEs, complete recurs
 
 This is a source-review appendix, not a live ledger-backed evidence corpus. Revalidate blocking facts through the applicable consumer research workflow before adoption. No upstream code/assets are vendored; this plan-only PR delivers no usable skills. Proposed future skills must be independently authored or use material only with suitable permission. Links pin the surveyed commit, not mutable main.
 
-Extended 2026-10-17 for entries 14–23 and the surfaced-candidates list at the end. Same static method: repository metadata, complete recursive trees, and selected source/docs/license files fetched at each pinned revision. No clones into this repository, no installs, no upstream execution, no provider calls. Counts are tree-discovered file and test-path counts, not tests run. Names, stars, licenses and push dates in the surfaced-candidates list are GitHub API metadata for that date and were not code-reviewed.
+Extended 2026-10-17 for entries 14–29 and the reviewed-candidates sections at the end. Same static method: repository metadata, complete recursive trees (blobless clones pinned at the revision each entry names), and selected source/docs/license files. No upstream code is installed or executed, no provider calls, nothing vendored into this repository. Counts are tree-discovered file and test-path counts, not tests run; stars, licenses and push dates are GitHub API metadata for 2026-10-17.
 
-Counting rule used for the entries added 2026-10-17: "test-discovered paths" means tracked paths under a directory named `test`, `tests`, `spec`, `specs` or `__tests__`, plus files named `test_*.py`. Language-native test files that do not sit in such a directory (Go `_test.go`, JS/TS `*.test.*` and `*.spec.*`) are **excluded**, so a Go or JS/TS repository's real test-file count can be much larger than the figure given; semantic-router's entry names its Go figure separately.
+Counting rule used for the entries added 2026-10-17: "test-discovered paths" means tracked paths under a directory named `test`, `tests`, `spec`, `specs` or `__tests__`, plus files named `test_*.py`. Language-native test files that do not sit in such a directory (Go `_test.go`, JS/TS `*.test.*` and `*.spec.*`) are **excluded**, so a Go or JS/TS repository's real test-file count can be much larger than the figure given; semantic-router's entry names its Go figure separately and apisix's names its Perl suite. The same rule applies to entries 24–29 and to the reviewed candidates below.
 
 ## 1. yenanjing/awesome-model-routing
 
@@ -186,11 +186,11 @@ Revision: [`4416f76c1b991fb32d81b4b0fb3d321eae6782c3`](https://github.com/vllm-p
 
 ## 18. BerriAI/litellm
 
-Revision: [`d346d769f02811d5e325a2ac5f45ac54ff5593de`](https://github.com/BerriAI/litellm/tree/d346d769f02811d5e325a2ac5f45ac54ff5593de), 2026-10-17. Approximately 14,259 tree-discovered files; 5,643 test-discovered paths; Python. GitHub reports `NOASSERTION` for licensing — the root `LICENSE` and a separate `enterprise/LICENSE.md` exist, and the terms were **not** assessed in this pass, so terms must be read before any reuse. Included for contrast, not as a dependency.
+Revision: [`d346d769f02811d5e325a2ac5f45ac54ff5593de`](https://github.com/BerriAI/litellm/tree/d346d769f02811d5e325a2ac5f45ac54ff5593de), 2026-10-17. Approximately 14,259 tree-discovered files; 5,643 test-discovered paths; Python. Licensing is split, which is why GitHub reports `NOASSERTION`, and it was read at this revision: the root [LICENSE](https://github.com/BerriAI/litellm/blob/d346d769f02811d5e325a2ac5f45ac54ff5593de/LICENSE) grants MIT for everything outside `enterprise/` ("Content outside of the above mentioned directories or restrictions above is available under the MIT license as defined below", Copyright (c) 2023 Berri AI), while [`enterprise/LICENSE.md`](https://github.com/BerriAI/litellm/blob/d346d769f02811d5e325a2ac5f45ac54ff5593de/enterprise/LICENSE.md) is the BerriAI Enterprise License: that code "may only be used in production" with a valid enterprise licence for the correct number of seats, copying and modifying it for development and testing is permitted without a subscription, and it is "forbidden to copy, merge, publish, distribute, sublicense, and/or sell" otherwise. The non-`enterprise/` code is therefore reusable with notice; the `enterprise/` tree is not open source. Included for contrast, not as a dependency.
 
 [lowest_cost.py](https://github.com/BerriAI/litellm/blob/d346d769f02811d5e325a2ac5f45ac54ff5593de/litellm/router_strategy/lowest_cost.py) is deployment *selection within a model group*: a `cost_map:{model_group}` accumulator is updated in the success callbacks and `async_get_available_deployments` returns a deployment with the lowest recorded cost. Cost here is a load-balancing strategy across providers of one logical model, not a task-difficulty policy. [fallback_event_handlers.py](https://github.com/BerriAI/litellm/blob/d346d769f02811d5e325a2ac5f45ac54ff5593de/litellm/router_utils/fallback_event_handlers.py) is the more transferable file: `_trigger_cooldown_for_failed_deployment` exists because "in the fallback path the normal failure-callback cooldown is skipped", it deliberately skips cooldown for `is_advisor_orchestration_failure`, restricts cooldown to request-scoped status codes so one request does not cool down a whole chain, and types skipped fallbacks (`FallbackSkipReason`, `SkippedFallbackTarget`) so they are reportable rather than silent.
 
-**Use:** the recognition that a fallback path evades the primary path's accounting, so cooldown/trigger logic must be re-established explicitly there and skips must be recorded; cost as an accumulator keyed by group. **Avoid:** assuming a major gateway's routing is difficulty-aware (it is availability/cost based), and copying from a 14,259-file monorepo whose GitHub licensing reads `NOASSERTION` without reading the terms.
+**Use:** the recognition that a fallback path evades the primary path's accounting, so cooldown/trigger logic must be re-established explicitly there and skips must be recorded; cost as an accumulator keyed by group. **Avoid:** assuming a major gateway's routing is difficulty-aware (it is availability/cost based), and copying from a 14,259-file monorepo whose split licensing makes part of it (`enterprise/`) non-open-source whatever the `NOASSERTION` reading suggests.
 
 ## 19. Portkey-AI/gateway
 
@@ -232,15 +232,97 @@ Revision: [`c65ee0122bc9e84f71d571fcdec4a948481b6e88`](https://github.com/ulab-u
 
 **Use:** difficulty/confidence gating as an explicit, unit-testable decision; one table shared by router and eval harness; an additive-only decision schema for a gate consumed by a harness; and a documented no-model fallback path. **Avoid:** importing a published threshold without re-calibration, and treating a fusion panel's benchmark as evidence about cost per *verified* success.
 
-## Surfaced candidates (metadata only — not code-reviewed)
+## 24. diegosouzapw/OmniRoute
 
-Surfaced while searching for the entries above, recorded so a later pass can pick them up. Figures are GitHub API metadata returned on 2026-10-17 (stars, license, last push); no tree, source, docs or license file from these was inspected, and none was cloned, installed or executed.
+Revision: [`3c3edb9ef32f7273c0de848af261f2cc7926f9fb`](https://github.com/diegosouzapw/OmniRoute/tree/3c3edb9ef32f7273c0de848af261f2cc7926f9fb), 2026-10-17. Approximately 26,512 tree-discovered files; 7,950 test-discovered paths; TypeScript; MIT.
 
-- One-endpoint many-provider gateways: `diegosouzapw/OmniRoute` (77.4k★, MIT), `QuantumNous/new-api` (50.1k★, AGPL-3.0), `lidge-jun/opencodex` (17.5k★, MIT), `mnfst/awesome-free-llm-apis` (10.4k★, CC0-1.0 — list, not a router), `maximhq/bifrost` (8.9k★, Apache-2.0), `coaidev/coai` (9.3k★, Apache-2.0), `bestruirui/octopus` (2.7k★, AGPL-3.0).
-- General API/AI gateways where LLM routing is a plugin or extension rather than a policy of their own: `Kong/kong` (44.3k★, Apache-2.0), `apache/apisix` (17.2k★, Apache-2.0), `TykTechnologies/tyk` (10.9k★, NOASSERTION), `higress-group/higress` (9.6k★, Apache-2.0), `agentgateway/agentgateway` (5.4k★, Apache-2.0).
-- Surfaced by the same queries but not routing policies: `farion1231/cc-switch` (145.3k★, MIT) and `earendil-works/pi` (115.8k★, MIT).
+[routingStrategies.ts](https://github.com/diegosouzapw/OmniRoute/blob/3c3edb9ef32f7273c0de848af261f2cc7926f9fb/open-sse/services/routingStrategies.ts) writes its precedence down where it enforces it: hard filters first (blacklist, then whitelist, then cooldown, each removal recording an `explain` line), then a pinned provider (header or model prefix) which becomes the first candidate — and if a hard filter rejected that pin the call returns `pinBlocked` so the caller must raise an explicit error instead of quietly routing elsewhere — then ordering, which follows an explicit `fallbackChain` if configured and otherwise cost ascending by `costPer1MInput`, with a missing cost treated as Infinity, then recent latency ascending.
 
-Re-verify any blocking fact before adoption; none of these was cloned, installed or executed, and nothing from them is vendored here.
+**Use:** precedence stated where it is enforced; every exclusion recording a reason; a blocked pin surfaced as an error rather than absorbed; and missing price data ranked worst instead of cheapest. **Avoid:** reading availability/cost ordering as difficulty routing, and treating a provider count or a "19 routing strategies" badge as evidence of fitness — nothing here was executed.
+
+## 25. QuantumNous/new-api
+
+Revision: [`3e2ce2c8856e32ca7054d673f8cd059ae466e80c`](https://github.com/QuantumNous/new-api/tree/3e2ce2c8856e32ca7054d673f8cd059ae466e80c), 2026-10-17. Approximately 2,628 tree-discovered files; 180 test-discovered paths; Go; AGPL-3.0 (copyleft — reuse in a proprietary path needs a licence decision first).
+
+[channel_cache.go](https://github.com/QuantumNous/new-api/blob/3e2ce2c8856e32ca7054d673f8cd059ae466e80c/model/channel_cache.go) turns the retry attempt into an escalation: for a (group, model) the `retry` index selects the priority tier, clamped to the last tier when it runs past the distinct priorities, and inside the tier a weighted random draw picks the channel using `GetWeight()*smoothingFactor + smoothingAdjustment`. An all-zero weight pool is given a defined behaviour rather than a division by zero — `sumWeight = len*100` with `smoothingAdjustment = 100`, so each channel behaves as weight 100 — and `smoothingFactor = 100` when the average weight is under 10. Refusals are named: `no channel found, group: %s, model: %s, priority: %d` for an empty tier, and `channel not found` when the draw lands outside every channel.
+
+**Use:** retry index mapped onto ordered priority tiers rather than random escalation; zero-weight pools given defined semantics; and errors that name group, model and priority. **Avoid:** weighted random as a proxy for capability, and AGPL-3.0 code in a proprietary path without a licence decision.
+
+## 26. lidge-jun/opencodex
+
+Revision: [`6936d9885d8a9bda9301737affcbaf1a4ff00e17`](https://github.com/lidge-jun/opencodex/tree/6936d9885d8a9bda9301737affcbaf1a4ff00e17), 2026-10-16. Approximately 12,581 tree-discovered files; 3,019 test-discovered paths; TypeScript; MIT.
+
+[selection.ts](https://github.com/lidge-jun/opencodex/blob/6936d9885d8a9bda9301737affcbaf1a4ff00e17/src/codex/routing/selection.ts) selects among pooled Codex accounts by a named strategy resolved in one place: `round-robin`, bounded by `stickyLimitForConfig(config)`; `fill-first`; `reset-first`; and a lowest-usage default (`pickLowestUsageCodexAccount`) when no strategy matches. Eligibility is computed once by `getEligiblePoolAccounts` and passed into the strategy rather than filtered off its result — which, the file explains, is what lets a tier walk descend when the excluded account is the only healthy member of the top tier.
+
+**Use:** one resolution point that names the strategy; a stickiness bound expressed as configuration; and exclusions pushed into eligibility so a walk can still descend. **Avoid:** reading account rotation as model selection — it is credential and quota availability.
+
+## 27. maximhq/bifrost
+
+Revision: [`a522470555c22930c44b06230f00b888e6df207b`](https://github.com/maximhq/bifrost/tree/a522470555c22930c44b06230f00b888e6df207b), 2026-10-17. Approximately 5,824 tree-discovered files; 487 test-discovered paths; Go; Apache-2.0.
+
+[weightedrandom.go](https://github.com/maximhq/bifrost/blob/a522470555c22930c44b06230f00b888e6df207b/core/keyselectors/weightedrandom.go) is weighted random over provider *keys* (credentials): weights are summed as floats, an all-zero pool falls back to uniform `rand.Intn(len(keys))`, `usableWeight` treats negative, NaN and infinite weights as 0, and a sum that reaches +Inf is divided by the largest weight (`math.IsInf` check) before drawing — without that rescale the draw never lands and every request falls through to the first key whatever its weight. Provider-level routing lives elsewhere, in `framework/routing/routing.go`.
+
+**Use:** a weighted draw that defines its behaviour at the numeric extremes; zero, negative and non-finite weights normalised away instead of panicking the RNG; and credentials selected separately from providers. **Avoid:** leaving "fall through to the first key" as an unexamined default, and treating a key selector as a routing policy.
+
+## 28. coaidev/coai
+
+Revision: [`3048a493eedcfe75de4d59afd5139847ad3195ed`](https://github.com/coaidev/coai/tree/3048a493eedcfe75de4d59afd5139847ad3195ed), 2026-03-12 — the last push, i.e. stale relative to the rest of this extension. Approximately 591 tree-discovered files; no test-discovered paths and no `_test.go` files in this tree; Go; Apache-2.0.
+
+[channel/ticker.go](https://github.com/coaidev/coai/blob/3048a493eedcfe75de4d59afd5139847ad3195ed/channel/ticker.go) serves priority tiers in order: `GetChannelByPriority` gathers every channel sharing the current priority, draws a cursor with `Intn(sum(weights))` and subtracts each `GetWeight()` until it goes negative (`GetWeight()` returns 1 when the stored weight is <= 0, so a zero-weight channel stays reachable); `Next()` serves that tier and `SkipPriority` advances the cursor, returning nil once `Cursor >= len(t.Sequence)`.
+
+**Use:** an explicit tier walk with nil as the documented out-of-sequence outcome, and a floor weight that keeps a zero-weight channel selectable. **Avoid:** depending on a project whose pinned tree contains no tests at all for anything cost- or security-critical.
+
+## 29. bestruirui/octopus
+
+Revision: [`3d1ff135ec56f13417ffdb8b344bde56a1531202`](https://github.com/bestruirui/octopus/tree/3d1ff135ec56f13417ffdb8b344bde56a1531202), 2026-10-14. Approximately 220 tree-discovered files; no test-discovered paths and no `_test.go` files in this tree; Go; AGPL-3.0.
+
+[route.go](https://github.com/bestruirui/octopus/blob/3d1ff135ec56f13417ffdb8b344bde56a1531202/internal/relay/route.go) `pickGroupItem` walks a group's items in priority order and returns the first that is not cooling; an item whose cooldown has just expired is released to exactly one probe request, so a recovering member is not hit by the whole wave at once, and if the walk reaches the current member, that member is reused. `MemberCooldownSeconds`, `MemberMaxAttempts` and `MemberAffinitySeconds` are per-group configuration rather than constants, and the empty case returns a zero value instead of a guess.
+
+**Use:** one probe request to release a cooling member; affinity expressed as an explicit, bounded window; and an empty group returning zero rather than the last-used target. **Avoid:** affinity as a correctness policy — it deliberately holds traffic on the last good member — and shipping on a tree with no tests.
+
+## Reviewed gateways (routing via plugin, extension or core)
+
+These five were surfaced by the same searches and are inspected here at the revision named. Their own policy is generic proxying; routing across models or providers is supplied by a plugin, a WASM extension or — in agentgateway's case — the core, so that extension point is what was read rather than the whole gateway. Counts use the header's rule.
+
+### Kong/kong
+
+Revision: [`6605dd81630d5f239514cf0dcdf77b51b878bd24`](https://github.com/Kong/kong/tree/6605dd81630d5f239514cf0dcdf77b51b878bd24), 2026-10-14. Approximately 2,529 tree-discovered files; 1,014 test-discovered paths; Apache-2.0. LLM handling is the `ai-proxy` plugin: [kong/llm/schemas/init.lua](https://github.com/Kong/kong/blob/6605dd81630d5f239514cf0dcdf77b51b878bd24/kong/llm/schemas/init.lua) requires a `model` record whose `provider` is a fixed `one_of` (openai, azure, anthropic, cohere, mistral, llama2, gemini, bedrock), and the route type is a fixed `one_of` (`llm/v1/chat`, `llm/v1/completions`, `preserve`). One plugin instance therefore pins one provider — this plugin translates and normalises, it does not choose between providers at request time. No `ai-proxy-advanced` path exists in this tree (the name appears only in references), and a balancing/weight search inside the plugin directory matches a single line, `schema.lua:34`.
+
+**Use:** a provider fixed by configuration rather than by the request, as a deliberate contract. **Avoid:** assuming the open-source gateway routes across providers because the product family has a more advanced tier — here it does not.
+
+### apache/apisix
+
+Revision: [`e14c6e9371edc084cc51321d4bee78646fa8367d`](https://github.com/apache/apisix/tree/e14c6e9371edc084cc51321d4bee78646fa8367d), 2026-10-16. Approximately 2,104 tree-discovered files; 4 test paths by the header's rule — the real suite is 731 Perl `.t` files under `t/`, which that rule excludes; Apache-2.0. Routing lives in [ai-proxy-multi.lua](https://github.com/apache/apisix/blob/e14c6e9371edc084cc51321d4bee78646fa8367d/apisix/plugins/ai-proxy-multi.lua): `create_server_picker` groups instances by priority (`_priority_index`), health-checks them, and wraps a configurable balancer (`conf.balancer.algorithm`, e.g. `chash`, `roundrobin`, `least_conn`) in `apisix.balancer.priority` when more than one priority level exists. Instances carry `name`/`priority`/`weight`; `fallback_strategy` can add health- or rate-limit-based fallback, and `apisix/plugins/ai-proxy/semantic.lua` adds embedding-similarity routing with a declared fallback instance.
+
+**Use:** a general gateway's existing priority, health and weight machinery reused for providers, with semantic similarity offered as an explicitly optional strategy. **Avoid:** reading the rule-based test count as this project's test surface.
+
+### TykTechnologies/tyk
+
+Revision: [`82ba3fefb07961acb96687a411838545ded80e99`](https://github.com/TykTechnologies/tyk/tree/82ba3fefb07961acb96687a411838545ded80e99), 2026-10-15. Approximately 1,608 tree-discovered files; 238 test paths. Licensing is split, which is why GitHub reports `NOASSERTION`: the root and subdirectories are MPL-2.0 except `ee/` (45 tracked paths), which is under a separate commercial licence. A case-insensitive path-name search for `llm|openai|anthropic|ai-proxy|ai_proxy` matches **nothing**, and a content search finds only README prose (the single `openai` hit is `README.md:152`), a `go.sum` hash and one comment: this repository contains no LLM routing implementation, and its AI Gateway capability is not in this repo.
+
+**Use:** the cautionary case that a vendor's AI-routing feature may live outside its open-source gateway. **Avoid:** listing this repository as an LLM router, and assuming the whole tree is MPL-2.0.
+
+### higress-group/higress
+
+Revision: [`c27f771c515040fb742d814399a11c563bea56e9`](https://github.com/higress-group/higress/tree/c27f771c515040fb742d814399a11c563bea56e9), 2026-10-17. Approximately 2,665 tree-discovered files; 227 test paths; Apache-2.0. LLM routing is WASM extensions: [ai-load-balancer/main.go](https://github.com/higress-group/higress/blob/c27f771c515040fb742d814399a11c563bea56e9/plugins/wasm-go/extensions/ai-load-balancer/main.go) declares selectable policies `cluster_metrics`, `cluster_hash`, `endpoint_metrics`, `global_least_request` and `prefix_cache`, and rejects an unknown `lb_type` or `lb_policy` with an error rather than defaulting silently; `model-router`/`model-mapper` map a requested model to a route, and ai-proxy provider failover (`plugins/wasm-go/extensions/ai-proxy/provider/failover.go`) defaults `failoverOnStatus` to `{"4.*","5.*"}`.
+
+**Use:** an enumerable set of balancing policies with explicit rejection of unknown values; a cache-affinity policy offered as a first-class routing choice; and status-driven provider failover. **Avoid:** prefix-cache affinity as a neutral default — it trades even load for cache warmth.
+
+### agentgateway/agentgateway
+
+Revision: [`955d56fae09b45f3cb8e85e797dbb1eb06134f77`](https://github.com/agentgateway/agentgateway/tree/955d56fae09b45f3cb8e85e797dbb1eb06134f77), 2026-10-16. Approximately 2,819 tree-discovered files; 954 test-discovered paths; Apache-2.0. Unlike the four above, routing is in the core: [model_router.rs](https://github.com/agentgateway/agentgateway/blob/955d56fae09b45f3cb8e85e797dbb1eb06134f77/crates/agentgateway/src/llm/model_router.rs) resolves a virtual model by matching a `VirtualModelRouting`, drawing weighted targets with `choose_weighted`, and a target it cannot resolve becomes an explicit `llm_error_response` with `StatusCode::NOT_FOUND` rather than an empty route.
+
+**Use:** routing modelled as a first-class core type instead of a plugin, and an unresolvable target rendered as a named error response. **Avoid:** treating a weighted draw over models as a capability or difficulty policy.
+
+## Reviewed and excluded (inspected, not entries)
+
+Three further names were surfaced by the same queries. Each was cloned at the revision named and read; none is a routing policy of its own, so none is an entry.
+
+- `mnfst/awesome-free-llm-apis` — [`cf97c32fec1b2e96e9936746e2731a81bd5ea33f`](https://github.com/mnfst/awesome-free-llm-apis/tree/cf97c32fec1b2e96e9936746e2731a81bd5ea33f), 21 tracked files, CC0-1.0. A curated list of providers with free tiers ("LLM APIs with permanent free tiers for text inference"); the tree is data, a generator script and a skill file. It is a directory of endpoints, not a router.
+- `farion1231/cc-switch` — [`eb09fbb1b7d204095bedf0a8f7241cf69a441f43`](https://github.com/farion1231/cc-switch/tree/eb09fbb1b7d204095bedf0a8f7241cf69a441f43), 1,611 tracked files, 266 test paths, MIT. A desktop provider switcher for coding agents that ships an embedded local reverse proxy (`src-tauri/src/proxy/provider_router.rs`, `failover_switch.rs`, `circuit_breaker.rs`, `model_mapper.rs`). It does route, but the policy is per-provider availability failover for one client, not a policy over models.
+- `earendil-works/pi` — [`8efd314fa3d3232ce197d8d7a6a5660530b9d83e`](https://github.com/earendil-works/pi/tree/8efd314fa3d3232ce197d8d7a6a5660530b9d83e), 1,931 tracked files, 782 test paths, MIT. An extensible agent harness whose bundled example `packages/coding-agent/examples/extensions/jev-router.ts` registers a virtual model `jev/auto` that plans on a strong model and implements on a cheap one. Routing is a user extension here, though that example is the closest of the three to a difficulty router.
+
+Nothing in these sections was installed, executed or benchmarked, and no upstream code is vendored. Re-verify any blocking fact before adoption.
 
 ## Consolidated recommendation
 
