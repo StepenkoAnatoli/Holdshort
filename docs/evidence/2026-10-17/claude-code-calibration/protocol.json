@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "status": "preregistered; run in progress on the host; no result recorded in this file",
+  "run_id": "wf_052c5f34-973",
+  "frozen_at": "2026-10-17T19:05:00Z",
+  "revision": "fbe7bcaa1c382068191d420175770f39d1efee8e",
+  "revision_note": "SmartRouter main at freeze; tools/prices-2.json is identical at this revision and at the branch head that commits this file",
+  "host": "Claude Code (subscription); sub-agents launched by a workflow script, two at a time",
+  "requested_models": [
+    "haiku",
+    "sonnet",
+    "opus",
+    "fable"
+  ],
+  "model_labels": {
+    "haiku": "Claude Haiku 5.5",
+    "sonnet": "Claude Sonnet 5.5",
+    "opus": "Claude Opus 5.5",
+    "fable": "Claude Fable 5.1"
+  },
+  "model_identity_note": "Requested values are the host's model aliases; resolved immutable model revisions are not exposed to the coordinator and will be recorded as null unless observed",
+  "profiles": [
+    {"key": "haiku-low", "model": "haiku", "effort": "low"},
+    {"key": "haiku-medium", "model": "haiku", "effort": "medium"},
+    {"key": "haiku-high", "model": "haiku", "effort": "high"},
+    {"key": "sonnet-low", "model": "sonnet", "effort": "low"},
+    {"key": "sonnet-medium", "model": "sonnet", "effort": "medium"},
+    {"key": "sonnet-high", "model": "sonnet", "effort": "high"},
+    {"key": "opus-medium", "model": "opus", "effort": "medium"},
+    {"key": "opus-high", "model": "opus", "effort": "high"},
+    {"key": "opus-xhigh", "model": "opus", "effort": "xhigh"},
+    {"key": "fable-medium", "model": "fable", "effort": "medium"},
+    {"key": "fable-high", "model": "fable", "effort": "high"},
+    {"key": "fable-xhigh", "model": "fable", "effort": "xhigh"}
+  ],
+  "runs_per_profile_per_task": 1,
+  "retry_limit": 0,
+  "item_count": 36,
+  "subject": {
+    "repository": "MoonAliza",
+    "unit": "U5 GitHub sign-in",
+    "base_revision": "d87f796a2eac787385f7f660b90a19c01c2cfc18",
+    "accepted_fix_revision": "4151a25d091abb7260c03dd8f649fbb903622061",
+    "isolation": "one git worktree and branch per task and profile, created at the base revision",
+    "known_defect": {
+      "id": "U5-R16",
+      "severity": "S2",
+      "summary": "a successful token refresh does not reset the consecutive-identical-answer count, because the tokens branch returns before the reset",
+      "accepted_fix": "4151a25"
+    },
+    "other_ground_truth": [
+      {"id": "U5-R17", "severity": "S4"}
+    ]
+  },
+  "sources": {
+    "/tmp/claude-0/-home-user-Research-Kit/5649504a-fc26-5a4a-85c4-62cf875be3b1/scratchpad/cal-truth.json": "e849b0deaa22d6960aa80b73515a1c2b96e1bea42dad252c42b3ceb494e23119",
+    "/root/.claude/projects/-home-user-Research-Kit/5649504a-fc26-5a4a-85c4-62cf875be3b1/workflows/scripts/sr-calibration-1-wf_052c5f34-973.js": "1ededc4069a167cebfb99c17c4191e181998d4b191fc17021eaa9d05b5b10efe",
+    "/tmp/claude-0/-home-user-Research-Kit/5649504a-fc26-5a4a-85c4-62cf875be3b1/scratchpad/cal-grade.sh": "cd3be7619b2f5ed3c35133cf5eaaba7fd524d5030386b45ae87d0463b3f50618",
+    "/tmp/claude-0/-home-user-Research-Kit/5649504a-fc26-5a4a-85c4-62cf875be3b1/scratchpad/cal-fix-finding.md": "52215400583e56411f78c651a1dfb95e28b05fe6949c3c03698413ba1d8e6bf2",
+    "tools/prices-2.json": "8373519c39e6075bd9d223648c058785c302e9fffa728e153e58bd10ad2e96c4"
+  },
+  "source_roles": {
+    "cal-truth.json": "review ground truth (U5-R16, U5-R17); hash only, text not copied into this repository",
+    "sr-calibration-1-wf_052c5f34-973.js": "workflow script holding the task and grader prompts; hash only",
+    "cal-grade.sh": "mechanical grader for pin and fix; copied here as grade.sh (byte-identical)",
+    "cal-fix-finding.md": "the finding text the fix task was given; hash only",
+    "tools/prices-2.json": "price rows for the estimate-only cash column (revision prices-2)"
+  },
+  "source_hash_convention": "SHA-256 of UTF-8 text with CRLF/CR normalized to LF",
+  "cases": [
+    {
+      "id": "pin",
+      "category": "build-tests",
+      "task": "write a red-first pin test for the consecutive-identical-answer rule in a new test file; no source change",
+      "grading": "mechanical (grade.sh pin)",
+      "pass_rule": "the candidate's new test fails at the base revision AND passes with src/main/github-signin.ts from 4151a25 AND no file under src/ is changed",
+      "reported_separately": "eslint on the candidate's test files; not part of pass_rule because the task instructions did not state a lint criterion (grade.sh's own PASS field includes lint and is therefore not the scored pass)"
+    },
+    {
+      "id": "fix",
+      "category": "fix",
+      "task": "fix U5-R16 from its accepted finding text, red-first, lint, commit",
+      "grading": "mechanical (grade.sh fix)",
+      "pass_rule": "the candidate's tests (tests/github-signin-refresh.test.ts, tests/github-signin.test.ts and any new test files) are green at its head AND its refresh/new tests are red again with src/main/github-signin.ts restored to the base revision AND the accepted pin test from 4151a25 is green against the candidate's source AND every changed file is src/main/github-signin.ts, tests/github-signin-refresh.test.ts or a newly added test file AND eslint is clean on those files",
+      "pass_field": "grade.sh PASS"
+    },
+    {
+      "id": "review",
+      "category": "review",
+      "task": "refute-first review of the refresh path of src/main/github-signin.ts at the base revision",
+      "grading": "grader agent (model opus, effort high) against cal-truth.json; read-only access to the candidate's worktree",
+      "grader_fields": [
+        "r16Found",
+        "r16CauseNamed",
+        "r16Severity",
+        "r17Found",
+        "others (each other S1-S3 finding classified true, false or unverifiable)",
+        "falseBlocking (count of false among S1-S3)",
+        "copiedFromHistory",
+        "notes"
+      ],
+      "pass_rule": null,
+      "pass_rule_note": "no composite pass was frozen for review; it is reported field by field"
+    }
+  ],
+  "metrics": [
+    "pass per task (pin, fix) and the grader fields (review)",
+    "lint_clean per task",
+    "tokens per item, as reported by the workflow journal",
+    "wall_seconds per item, as reported by the workflow journal",
+    "self_reported_mistakes per item, recorded verbatim",
+    "estimated_cash_usd per item, estimate-only"
+  ],
+  "accounting": "subscription host: no per-call billing or price applies. estimated_cash_usd applies the tools/prices-2.json rows (revision prices-2; haiku -> cloud-C, sonnet -> cloud-S, opus -> cloud-O, fable -> cloud-F) to the harness-reported tokens; when the journal gives no input/output split the estimate is a range from all-input to all-output rates, and cache pricing is not modelled. It is not a bill and supports no savings claim. Unknown tokens are null, never zero.",
+  "timing": "host-observed wall time per sub-agent from the workflow journal, including scheduling; two items ran concurrently, so wall time is not pure model latency",
+  "privacy": "the subject repository's own code and test harness only; the ground truth, prompts and finding text are recorded by hash; no credentials or account data",
+  "limits": [
+    "one ground-truth defect (U5-R16): a profile can find or fix it by luck, and one run per profile cannot separate luck from capability",
+    "the accepted answer exists in the subject repository's git history; candidates were told not to read history beyond the base revision, and the review grader checks copiedFromHistory; pin and fix have no copy check beyond the mechanical criteria",
+    "the host box has 4 CPUs, so agents ran two at a time; wall time includes contention",
+    "the pin task's instructions did not state a lint criterion, so a lint failure on pin is a hygiene signal, not a task failure",
+    "tokens are the harness's reported counts, not a provider bill",
+    "model labels are requested aliases, not verified immutable deployments",
+    "no overall model ranking, routing threshold or savings claim follows from this run alone"
+  ]
+}
