@@ -1,0 +1,2 @@
+# Lineage: keeps the shared pack's bytes as committed on every host, so make-repo.sh builds the commit ids manifest.json carries (a CRLF checkout would change them).
+* -text

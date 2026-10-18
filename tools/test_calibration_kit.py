@@ -219,6 +219,60 @@ def results_folder(root: Path, run: Path | None = None) -> Path:
     return out
 
 
+# The shared synthetic subject pack (tools/calibration/subject-pack/shared/): its trees, the script that builds its
+# repository, its manifest. The trees are the subject a candidate reads, so they carry no lineage header and are listed
+# by the pack's own README rather than the kit's.
+PACK = KIT / "subject-pack" / "shared"
+TREES = ("review", "base", "accepted")
+
+
+def pack_files(root: Path) -> list[str]:
+    """Every file of a pack directory, relative and with '/', leaving out bytecode caches and a built `repo`."""
+    out = []
+    for f in sorted(root.rglob("*")):
+        rel = f.relative_to(root)
+        if f.is_file() and "__pycache__" not in rel.parts and rel.parts[0] != "repo":
+            out.append(rel.as_posix())
+    return out
+
+
+def in_shared_trees(f: Path) -> bool:
+    return (PACK / "trees") in f.parents
+
+
+def in_shared_pack(f: Path) -> bool:
+    """A pack file other than its README: the pack's README lists it, not the kit's."""
+    return PACK in f.parents and f != PACK / "README.md"
+
+
+def build_shared(dest: Path, env: dict, target: Path | None = None) -> tuple[subprocess.CompletedProcess, dict]:
+    """A copy of the shared pack at dest with its repository built by make-repo.sh (default: `repo` beside the manifest)."""
+    if not dest.exists():
+        shutil.copytree(PACK, dest, ignore=shutil.ignore_patterns("__pycache__", "repo"))
+    target = target or dest / "repo"
+    p = subprocess.run(["bash", str(dest / "make-repo.sh"), str(target)], env=env, capture_output=True, text=True, timeout=120)
+    ids = {}
+    for line in p.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0] in {f"{t}0" for t in TREES}:
+            ids[parts[0]] = parts[1]
+    return p, ids
+
+
+def tree_files(commit_dir_or_repo: Path, env: dict, rev: str | None = None) -> dict[str, bytes]:
+    """The files of a trees/<name> directory, or of commit rev in a repository, as {path: bytes}."""
+    if rev is None:
+        return {f: (commit_dir_or_repo / f).read_bytes() for f in pack_files(commit_dir_or_repo)}
+    names = sh(["git", "ls-tree", "-r", "-z", "--name-only", rev], commit_dir_or_repo, env).stdout.split("\0")
+    return {n: subprocess.run(["git", "-C", str(commit_dir_or_repo), "show", f"{rev}:{n}"], capture_output=True, check=True, env=env).stdout
+            for n in names if n}
+
+
+def run_pack_tests(cand: Path, env: dict, *files: str) -> subprocess.CompletedProcess:
+    """The pack's own test command (manifest commands.test): python3 tests/run.py FILE..."""
+    return subprocess.run(["python3", "tests/run.py", *files], cwd=cand, env=env, capture_output=True, text=True, timeout=120)
+
+
 class Observations(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -980,20 +1034,126 @@ class Request(unittest.TestCase):
         self.assertIn("scores.json", p.stderr)
 
 
+class SharedPack(unittest.TestCase):
+    """P5: the shared synthetic subject pack builds, behaves and grades as its manifest says."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls.tmp.name)
+        cls.env = git_env(cls.root)
+        cls.pack = cls.root / "pack"
+        cls.built, cls.ids = build_shared(cls.pack, cls.env)
+        cls.repo = cls.pack / "repo"
+        cls.n = 0
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def setUp(self):
+        self.assertEqual(self.built.returncode, 0, self.built.stdout + self.built.stderr)
+
+    def at(self, name: str) -> Path:
+        """A fresh history-less checkout of the pack commit <name>0, outside the pack."""
+        type(self).n += 1
+        target = self.root / "checkouts" / f"{name}-{self.n}"
+        p = checkout(self.repo, self.ids[f"{name}0"], target, self.env, "--pack", str(self.pack))
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        return target
+
+    def test_make_repo_builds_three_commits_holding_the_trees(self):
+        self.assertEqual(sorted(self.ids), ["accepted0", "base0", "review0"], self.built.stdout)
+        g = lambda *a: sh(["git", *a], self.repo, self.env).stdout.strip()
+        self.assertEqual(g("rev-list", "--reverse", "main").split(), [self.ids["review0"], self.ids["base0"], self.ids["accepted0"]])
+        self.assertEqual(g("rev-list", "--max-parents=0", "main"), self.ids["review0"])
+        for name in TREES:
+            rev = self.ids[f"{name}0"]
+            self.assertEqual(g("rev-parse", f"{name}0"), rev, f"the tag {name}0")
+            self.assertEqual(tree_files(self.repo, self.env, rev), tree_files(PACK / "trees" / name, self.env), name)
+            self.assertEqual(g("ls-tree", "-r", "--format=%(objectmode)", rev).split(), ["100644"] * len(tree_files(PACK / "trees" / name, self.env)))
+        self.assertIn("D-1", g("log", "-1", "--format=%B", self.ids["base0"]))
+        self.assertIn("D-2", g("log", "-1", "--format=%B", self.ids["accepted0"]))
+        self.assertEqual(g("status", "--porcelain"), "")
+
+    def test_make_repo_ids_do_not_depend_on_the_host(self):
+        # a hostile host: its own identity and dates in the environment, a clean filter on every file, CRLF conversion,
+        # signing on, a legacy commit encoding and another default branch; the ids are the same as on a clean one
+        home = self.root / "hostile"
+        home.mkdir()
+        (home / "attributes").write_text("* filter=hostile text eol=crlf\n")
+        (home / "gitconfig").write_text(
+            "[user]\n\tname = h\n\temail = h@localhost\n[init]\n\tdefaultBranch = trunk\n[core]\n\tautocrlf = true\n"
+            f"\tattributesFile = {home / 'attributes'}\n[filter \"hostile\"]\n\tclean = sed s/a/b/\n\tsmudge = cat\n"
+            "[i18n]\n\tcommitEncoding = ISO-8859-1\n[commit]\n\tgpgSign = true\n[gpg]\n\tprogram = false\n")
+        env = git_env(home)
+        env.update(GIT_AUTHOR_NAME="x", GIT_AUTHOR_EMAIL="x@x", GIT_AUTHOR_DATE="2001-02-03T04:05:06Z",
+                   GIT_COMMITTER_NAME="y", GIT_COMMITTER_EMAIL="y@y", GIT_COMMITTER_DATE="2001-02-03T04:05:06Z", TZ="Asia/Kolkata")
+        p, ids = build_shared(self.root / "hostile-pack", env)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(ids, self.ids)
+        p, again = build_shared(self.root / "hostile-pack", self.env, self.root / "elsewhere" / "repo")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(again, self.ids, "a second build elsewhere gives the same ids")
+
+    def test_make_repo_refuses_an_existing_target_and_a_bad_call(self):
+        (self.root / "taken").mkdir(exist_ok=True)
+        for args in ([str(self.root / "taken")], [], ["a", "b"]):
+            p = subprocess.run(["bash", str(self.pack / "make-repo.sh"), *args], env=self.env, capture_output=True, text=True, timeout=60)
+            self.assertEqual(p.returncode, 2, f"{args}: {p.stdout}{p.stderr}")
+        self.assertEqual(list((self.root / "taken").iterdir()), [])
+
+    def test_the_shipped_harness_is_green_on_every_tree(self):
+        for name in TREES:
+            p = run_pack_tests(self.at(name), self.env, "tests/test_bounded.py")
+            self.assertEqual(p.returncode, 0, f"{name}: {p.stdout}{p.stderr}")
+            self.assertRegex(p.stderr, r"Ran (?:[89]|1[0-9]) tests", name)
+
+    def test_the_runner_reads_red_on_a_failure_a_broken_file_or_no_test(self):
+        cand = self.at("accepted")
+        (cand / "tests" / "zz_red.py").write_text("import unittest\n\n\nclass R(unittest.TestCase):\n    def test_r(self):\n        self.fail('red')\n")
+        (cand / "tests" / "zz_broken.py").write_text("import nothing_by_this_name\n")
+        (cand / "tests" / "zz_empty.py").write_text("X = 1\n")
+        for f in ("tests/zz_red.py", "tests/zz_broken.py", "tests/zz_empty.py"):
+            self.assertEqual(run_pack_tests(cand, self.env, f).returncode, 1, f)
+        self.assertEqual(run_pack_tests(cand, self.env).returncode, 2)
+        self.assertEqual(run_pack_tests(cand, self.env, "tests/test_bounded.py", "tests/zz_red.py").returncode, 1)
+
+    def test_d2_the_accepted_pin_is_red_at_base_and_review_and_green_at_accepted(self):
+        pin = (PACK / "trees" / "accepted" / "tests" / "test_pin.py").read_bytes()
+        for name, code in (("review", 1), ("base", 1), ("accepted", 0)):
+            cand = self.at(name)
+            (cand / "tests" / "zz_accepted_pin.py").write_bytes(pin)
+            p = run_pack_tests(cand, self.env, "tests/zz_accepted_pin.py")
+            self.assertEqual(p.returncode, code, f"{name}: {p.stdout}{p.stderr}")
+            if code:
+                self.assertIn("AssertionError", p.stderr, name)  # red by the rule, not by a crash
+
+    def test_d1_a_memoryview_chunk_raises_at_review_only(self):
+        probe = ("import sys; sys.path.insert(0, '.')\nfrom src.bounded import read_bounded\n"
+                 "try:\n    print('returned', read_bounded([memoryview(b'abc'), b'def'], 4))\n"
+                 "except Exception as e:\n    print('raised', type(e).__name__)\n")
+        seen = {}
+        for name in TREES:
+            p = subprocess.run(["python3", "-c", probe], cwd=self.at(name), env=self.env, capture_output=True, text=True, timeout=60)
+            seen[name] = p.stdout.strip()
+        self.assertEqual(seen, {"review": "raised TypeError", "base": "returned b'abcd'", "accepted": "returned b'abcd'"})
+
+
 class Docs(unittest.TestCase):
     def readme(self) -> str:
         return (KIT / "README.md").read_text()
 
     def test_every_kit_file_has_a_lineage_header(self):
         for f in sorted(KIT.rglob("*")):
-            if f.is_file() and "__pycache__" not in f.parts:
+            if f.is_file() and "__pycache__" not in f.parts and not in_shared_trees(f):  # the subject a candidate reads
                 head = "\n".join(f.read_text().splitlines()[:3])
                 self.assertIn("lineage", head.lower(), f.relative_to(KIT))  # protocol.template.json carries it as its _lineage key
 
     def test_readme_lists_every_kit_file(self):
         text = self.readme()
         for f in sorted(KIT.rglob("*")):
-            if f.is_file() and "__pycache__" not in f.parts and f != KIT / "README.md":
+            if f.is_file() and "__pycache__" not in f.parts and f != KIT / "README.md" and not in_shared_pack(f):
                 self.assertIn(f"`{f.relative_to(KIT).as_posix()}`", text)
 
     def test_readme_documents_the_observation_keys_the_adapter_reads(self):
@@ -1036,12 +1196,10 @@ class Docs(unittest.TestCase):
             self.assertIn(f"`{k}`", text, k)
         self.assertIn("Isolation", text)
 
-    def test_shared_pack_is_a_stub_naming_the_unit_that_builds_it(self):
-        shared = KIT / "subject-pack" / "shared"
-        self.assertEqual(sorted(f.name for f in shared.iterdir()), ["README.md"])
-        text = (shared / "README.md").read_text()
-        self.assertIn("shared synthetic subject pack", text)
-        self.assertIn("not built here", text)
+    def test_shared_pack_holds_its_trees_and_the_script_that_builds_its_repository(self):
+        self.assertTrue({"README.md", "make-repo.sh", "trees"} <= {f.name for f in PACK.iterdir()})
+        self.assertEqual(sorted(f.name for f in (PACK / "trees").iterdir()), sorted(TREES))
+        self.assertIn("shared synthetic subject pack", (PACK / "README.md").read_text())
 
     def test_changelog_and_readme_name_the_kit(self):
         changelog = (ROOT / "CHANGELOG.md").read_text()
