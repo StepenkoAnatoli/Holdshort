@@ -53,8 +53,8 @@ BRANCH=$4
 SRC_ABS=$(cd -- "$SRC" 2>/dev/null && pwd -P) || refuse "no source repository: $SRC"
 TREE=$(git -C "$SRC_ABS" rev-parse --verify --quiet "$COMMIT^{tree}") || refuse "not a commit in $SRC: $COMMIT"
 git check-ref-format --branch "$BRANCH" >/dev/null 2>&1 || refuse "not a branch name: $BRANCH"
-# within A B: A is B or lies under it (both physical paths)
-within() { case "$1/" in "$2"/*) return 0 ;; esac; return 1; }
+# within A B: A is B or lies under it (both physical paths; pwd -P ends in '/' only for the root, which holds everything)
+within() { [ "$2" = / ] && return 0; case "$1/" in "$2"/*) return 0 ;; esac; return 1; }
 
 PACK_ABS=""
 if [ -n "$PACK" ]; then

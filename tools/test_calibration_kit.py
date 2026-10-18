@@ -430,6 +430,8 @@ class Scripts(unittest.TestCase):
             (shares, "--link", f"node_modules={c['repo'] / 'node_modules'}"),  # inside SOURCE_REPO, with no --pack
             (shares, "--pack", str(pack), "--link", f"node_modules={outside / 'via'}"),  # a symlink resolving into the pack
             (shares, "--pack", str(pack), "--link", f"up={self.root}"),  # a directory holding the pack
+            (shares, "--pack", str(pack), "--link", "node_modules=/"),  # N2: the root holds everything, the pack too
+            (shares, "--link", "node_modules=/"),  # N2: and SOURCE_REPO, with no --pack
             (bare, "--pack", str(pack), "--link", "node_modules"),  # no directory: the old form linked into SOURCE_REPO
         ]
         for i, (reason, *flags) in enumerate(cases):
@@ -448,6 +450,10 @@ class Scripts(unittest.TestCase):
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertIn("pack", p.stderr)
         self.assertFalse((pack / "cand").exists())
+        p = checkout(c["repo"], c["base"], self.root / "under-root", self.env, "--pack", "/")  # N2: every target is inside /
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn("is inside the pack /", p.stderr)
+        self.assertFalse((self.root / "under-root").exists())
         p = checkout(c["repo"], c["base"], self.root / "ok", self.env, "--pack", str(pack))
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
 
