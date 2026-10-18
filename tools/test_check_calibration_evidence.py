@@ -644,6 +644,130 @@ class LegacyRuns(unittest.TestCase):
                          {"prongs-declared", "fewer-prong-pass-flagged", "pin-category-mapping", "judging-profile-named", "relayed-chat-statement"})
 
 
+SAMPLE_PROFILES = {"alpha-low", "beta-max", "haiku-medium"}  # the shapes once each; the rest repeat them
+
+
+def nodes(v, at=()):
+    """Every path in a JSON document; under a profile map, only the sampled profiles' subtrees."""
+    yield at
+    if isinstance(v, dict):
+        items = v.items()
+        if at and at[-1] == "profiles" or (not at and all(isinstance(x, dict) and ("pin" in x or "review-grade" in x) for x in v.values()) and v):
+            items = [(k, x) for k, x in items if k in SAMPLE_PROFILES]
+        for k, x in items:
+            yield from nodes(x, at + (k,))
+    elif isinstance(v, list):
+        for i, x in enumerate(v[:2]):
+            yield from nodes(x, at + (i,))
+
+
+def wrong_shapes(v) -> list:
+    if isinstance(v, dict):
+        return ["x", ["x"]]
+    if isinstance(v, list):
+        return ["x", {"x": 1}]
+    return [{"x": 1}]
+
+
+def replaced(doc, path, value):
+    doc = copy.deepcopy(doc)
+    if not path:
+        return value
+    node = doc
+    for k in path[:-1]:
+        node = node[k]
+    node[path[-1]] = value
+    return doc
+
+
+class Shapes(unittest.TestCase):
+    """C2: a malformed value is a FAIL line under the rule that reads it, never a traceback."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_the_reviewed_shapes_fail_their_rule_without_a_traceback(self):
+        pass_ = FIXTURES / "pass" / FOLDER
+        cases = [
+            # the review's five shapes
+            (pass_, "scores.json", lambda s: s["profiles"]["beta-max"].update(review="PASS"), "scores-derivable",
+             "review:beta-max in scores.json is not an object"),
+            (pass_, "scores.json", lambda s: s["profiles"]["alpha-low"].update(pin="PASS"), "scores-derivable",
+             "pin:alpha-low in scores.json is not an object"),
+            (pass_, "observations.json", lambda o: o["beta-max"]["review-grade"].update(others=["x"]), "scores-derivable",
+             "review:beta-max: observations.json review-grade.others[0] is not an object"),
+            (pass_, "protocol.json", lambda p: p.update(classification=["holds"]), "prongs-declared",
+             "classification is not an object (list); its prongs cannot be read"),
+            (ROOT / RUN3, "scores.json", lambda s: s["profiles"]["opus-high"].update(review="PASS"), "scores-derivable",
+             "review:opus-high in scores.json is not an object"),
+            # two a node-for-node replacement does not reach
+            (pass_, "observations.json", lambda o: o["beta-max"]["review-grade"].update(others="R-3"), "scores-derivable",
+             "review:beta-max: observations.json review-grade.others is not a list"),
+            (ROOT / RUN3, "scores.json", lambda s: s["adjudication_schema"].update(missing_prong=[{"prong": "forbidden"}]), "prongs-declared",
+             "legacy run: adjudication_schema.missing_prong [{'prong': 'forbidden'}] is not a prong name or a list of them"),
+        ]
+        for i, (src, name, fn, rule, needle) in enumerate(cases):
+            with self.subTest(i=i, rule=rule):
+                folder = self.root / str(i) / src.name
+                shutil.copytree(src, folder)
+                edit_json(folder, name, fn)
+                p = run_check(folder)
+                self.assertNotIn("Traceback", p.stderr, p.stderr)
+                self.assertEqual(p.returncode, 1, p.stdout)
+                fails = [ln for ln in lines(p.stdout, "FAIL") if rule_of(ln) == rule]
+                self.assertTrue(any(ln.endswith(f"{rule}: {needle}") for ln in fails), p.stdout)
+
+    def test_a_shape_no_guard_foresaw_fails_the_rule_that_read_it(self):
+        # the net under every rule: an exception a rule raises on an unforeseen shape is that rule's FAIL
+        check = load_check()
+
+        def unforeseen(r):
+            return r.protocol["no such key"]
+        check.kit_judging = unforeseen
+        check.legacy_relayed = unforeseen
+        for src, rule in ((FIXTURES / "pass" / FOLDER, "judging-profile-named"), (ROOT / RUN1, "relayed-chat-statement")):
+            with self.subTest(rule):
+                r = check.check_folder(src)
+                self.assertIn((rule, "a value has the wrong shape for this rule (KeyError: 'no such key')"), r.failures)
+
+    def test_no_value_of_the_wrong_shape_raises(self):
+        # every node of every JSON file (one profile of each shape) replaced by a value of another type: the check
+        # reports it through a named guard, and a folder it still accepts is one the table can render
+        check = load_check()
+        spec = importlib.util.spec_from_file_location("qualification_table", ROOT / "tools" / "qualification_table.py")
+        table = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(table)
+        crashes = []
+        for src in (FIXTURES / "pass" / FOLDER, ROOT / RUN1, ROOT / RUN3):
+            folder = self.root / src.name
+            shutil.copytree(src, folder)
+            for f in sorted(folder.glob("*.json")):
+                original = f.read_bytes()
+                doc = json.loads(original)
+                for path in list(nodes(doc)):
+                    node = doc
+                    for k in path:
+                        node = node[k]
+                    for bad in wrong_shapes(node):
+                        write(f, replaced(doc, path, bad))
+                        at = f"{src.name}/{f.name} {'.'.join(map(str, path)) or '<root>'} = {bad!r}"
+                        try:
+                            r = check.check_folder(folder)
+                            if r.ok:
+                                table.generate(reports=[r])
+                        except Exception as e:  # noqa: BLE001 - any exception is the defect under test
+                            crashes.append(f"{at}: {e.__class__.__name__}: {e}")
+                            continue
+                        # every shape here is a foreseen one: a guard names it; the net under the rules stays for the rest
+                        crashes += [f"{at}: the net caught it: {rule}: {text}" for rule, text in r.failures if "wrong shape for this rule" in text]
+                f.write_bytes(original)
+        self.assertEqual(crashes, [], f"{len(crashes)} crash(es):\n" + "\n".join(crashes[:40]))
+
+
 class Gate(unittest.TestCase):
     def test_registered_in_the_regression_gate_after_the_kit(self):
         spec = importlib.util.spec_from_file_location("run_regression", ROOT / "tools" / "run_regression.py")

@@ -60,7 +60,9 @@ def host_of(folder: Path, protocol: dict) -> str:
 
 
 def profile_entries(protocol: dict) -> list[dict]:
-    return [p for p in (protocol.get("profiles") or []) + (protocol.get("review_only_profiles") or []) if isinstance(p, dict)]
+    """The protocol's profile entries that name a key; the check does not read them, so a malformed one is left out."""
+    lists = [protocol.get(k) for k in ("profiles", "review_only_profiles")]
+    return [p for v in lists if isinstance(v, list) for p in v if isinstance(p, dict) and isinstance(p.get("key"), str)]
 
 
 def grade_of(case: str, sc: dict) -> str:

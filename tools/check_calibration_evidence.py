@@ -89,6 +89,47 @@ class Report:
         return not self.failures
 
 
+class Malformed(Exception):
+    """A value in a folder's JSON of the wrong shape: reported as a FAIL under the rule that reads it, never raised out."""
+
+
+def is_id(v) -> bool:
+    return isinstance(v, (str, int)) and not isinstance(v, bool)
+
+
+def profiles_of(r: "Report") -> dict:
+    """scores.json profiles, or {} when it is not an object (scores-derivable reports that once)."""
+    v = r.scores.get("profiles")
+    return v if isinstance(v, dict) else {}
+
+
+def others_of(rg: dict, where: str) -> list:
+    """A review grade's other findings: a list of objects, each cluster an id or null."""
+    others = rg.get("others")
+    if others is None:
+        return []
+    if not isinstance(others, list):
+        raise Malformed(f"{where}.others is not a list")
+    for i, x in enumerate(others):
+        if not isinstance(x, dict):
+            raise Malformed(f"{where}.others[{i}] is not an object")
+        if x.get("cluster") is not None and not is_id(x["cluster"]):
+            raise Malformed(f"{where}.others[{i}].cluster is not a cluster id")
+    return others
+
+
+def guarded(r: "Report", rule: str, fn, *args, default=None):
+    """Run one rule; a value of a shape no guard foresaw fails that rule instead of raising (C2: a FAIL line, never a
+    traceback)."""
+    try:
+        return fn(*args)
+    except Malformed as e:
+        r.fail(rule, str(e))
+    except (AttributeError, TypeError, KeyError, ValueError, IndexError) as e:
+        r.fail(rule, f"a value has the wrong shape for this rule ({e.__class__.__name__}: {e})")
+    return default
+
+
 def label(folder: Path) -> str:
     try:
         return folder.resolve().relative_to(ROOT).as_posix()
@@ -146,12 +187,16 @@ def kit_keys(protocol: dict) -> list[str]:
 def lens_records(adjudication: dict) -> dict:
     """cluster id -> its lens records, from the kit's form (clusters[].lenses) or run 3's (adjudications[].lenses)."""
     out = {}
-    for c in adjudication.get("clusters") or []:
-        if isinstance(c, dict) and c.get("lenses"):
-            out[c.get("id")] = [x for x in c["lenses"] if isinstance(x, dict)]
-    for a in adjudication.get("adjudications") or []:
-        if isinstance(a, dict) and a.get("lenses"):
-            out.setdefault((a.get("cluster") or {}).get("id"), [x for x in a["lenses"] if isinstance(x, dict)])
+    # a cluster with no id, or lenses that are not a list, holds nothing a finding can name: its findings then fail
+    # scores-derivable as naming a cluster adjudication.json does not hold
+    clusters, adjudications = adjudication.get("clusters"), adjudication.get("adjudications")
+    for c in clusters if isinstance(clusters, list) else []:
+        if isinstance(c, dict) and is_id(c.get("id")) and isinstance(c.get("lenses"), list) and c["lenses"]:
+            out[c["id"]] = [x for x in c["lenses"] if isinstance(x, dict)]
+    for a in adjudications if isinstance(adjudications, list) else []:
+        cid = a.get("cluster").get("id") if isinstance(a, dict) and isinstance(a.get("cluster"), dict) else None
+        if is_id(cid) and isinstance(a.get("lenses"), list) and a["lenses"]:
+            out.setdefault(cid, [x for x in a["lenses"] if isinstance(x, dict)])
     return out
 
 
@@ -167,7 +212,7 @@ def review_grade_under(rg: dict, lenses: dict, prongs) -> str | None:
     if not isinstance(rg, dict) or "ungraded" in rg or rg.get("result") is None:
         return None
     blocking = 0
-    for x in rg.get("others") or []:
+    for x in others_of(rg, "observations.json review-grade"):
         if not OBS.BLOCKING.search(str(x.get("severity", ""))):
             continue
         if x.get("cluster") is not None:
@@ -178,6 +223,8 @@ def review_grade_under(rg: dict, lenses: dict, prongs) -> str | None:
             real = x.get("classification") == "true"
         blocking += 0 if real else 1
     truth = rg.get("truth") or {}
+    if not isinstance(truth, dict) or not all(v is None or isinstance(v, dict) for v in truth.values()):
+        raise Malformed("observations.json review-grade.truth is not an object of findings")
     grade = {"truth": [{"id": k, **(v or {})} for k, v in truth.items()], "copiedFromHistory": rg.get("copiedFromHistory")}
     return OBS.review_result(grade, blocking, list(truth))
 
@@ -189,7 +236,12 @@ def check_stated_count(r: Report, n_pass: int, flagged: list[str]) -> None:
     """(d), second half: a pass count the folder states either excludes the flagged PASSes, or states the count that does."""
     if not flagged:
         return
-    text = ((r.scores.get("totals") or {}).get("cells") or {}).get("review")
+    totals = r.scores.get("totals")
+    cells = totals.get("cells") if isinstance(totals, dict) else None
+    if (totals is not None and not isinstance(totals, dict)) or (cells is not None and not isinstance(cells, dict)):
+        r.fail("fewer-prong-pass-flagged", "scores.json totals.cells is not an object, so whether it counts the flagged PASSes cannot be read")
+        return
+    text = (cells or {}).get("review")
     if text is None:
         return
     m = STATED.match(str(text))
@@ -229,7 +281,11 @@ def kit_protocol_frozen(r: Report) -> None:
 
 def kit_prongs(r: Report, adjudication: dict, lenses: dict) -> list[str] | None:
     rule = "prongs-declared"
-    declared = (r.protocol.get("classification") or {}).get("prongs")
+    cls = r.protocol.get("classification")
+    if not isinstance(cls, dict):
+        r.fail(rule, f"classification is not an object ({type(cls).__name__}); its prongs cannot be read")
+        return None
+    declared = cls.get("prongs")
     if not (isinstance(declared, list) and declared and all(p in PRONGS for p in declared)):
         r.fail(rule, f"classification.prongs {declared!r} is not a list of the classification's prongs")
         return None
@@ -252,7 +308,9 @@ def kit_prongs(r: Report, adjudication: dict, lenses: dict) -> list[str] | None:
 def kit_scores(r: Report, obs: dict, lenses: dict, declared) -> dict:
     """(c): every scored value against the observations under the declared prongs; returns profile -> three-prong result."""
     rule = "scores-derivable"
-    profiles = r.scores.get("profiles") if isinstance(r.scores.get("profiles"), dict) else {}
+    if "profiles" in r.scores and not isinstance(r.scores["profiles"], dict):
+        r.fail(rule, "scores.json profiles is not an object")
+    profiles = profiles_of(r)
     if not isinstance(obs, dict) or not all(isinstance(o, dict) for o in obs.values()):
         r.fail(rule, "observations.json is not the flat profile map the kit writes")
         return {}
@@ -260,7 +318,10 @@ def kit_scores(r: Report, obs: dict, lenses: dict, declared) -> dict:
         r.fail(rule, f"profile {p} is in {'observations.json' if p in obs else 'scores.json'} only")
     three = {}
     for p in [p for p in obs if p in profiles]:
-        o, s = obs[p], profiles[p] if isinstance(profiles[p], dict) else {}
+        o, s = obs[p], profiles[p]
+        if not isinstance(s, dict):
+            r.fail(rule, f"profile {p} in scores.json is not an object")
+            continue
         for case in ("pin", "fix"):
             t = o.get(case)
             if t is None and s.get(case) is None:
@@ -268,20 +329,31 @@ def kit_scores(r: Report, obs: dict, lenses: dict, declared) -> dict:
             if t is None or s.get(case) is None:
                 r.fail(rule, f"{case}:{p} is in {'scores.json' if t is None else 'observations.json'} only")
                 continue
-            if (s[case] or {}).get("pass") is not (t.get("score") is True):
-                r.fail(rule, f"{case}:{p} scores pass {(s[case] or {}).get('pass')!r}; observations.json gives {t.get('score') is True}")
+            bad = [f for f, v in (("scores.json", s[case]), ("observations.json", t)) if not isinstance(v, dict)]
+            if bad:
+                r.fail(rule, f"{case}:{p} in {' and '.join(bad)} is not an object")
+                continue
+            if s[case].get("pass") is not (t.get("score") is True):
+                r.fail(rule, f"{case}:{p} scores pass {s[case].get('pass')!r}; observations.json gives {t.get('score') is True}")
         rg = o.get("review-grade")
         if rg is None and s.get("review") is None:
             continue
         if rg is None or s.get("review") is None:
             r.fail(rule, f"review:{p} is in {'scores.json' if rg is None else 'observations.json'} only")
             continue
-        sr = s["review"] or {}
+        bad = [f for f, v in (("scores.json", s["review"]), ("observations.json", rg)) if not isinstance(v, dict)]
+        if bad:
+            r.fail(rule, f"review:{p} in {' and '.join(bad)} is not an object")
+            continue
+        sr = s["review"]
         try:
             want = review_grade_under(rg, lenses, declared) if declared else None
             three[p] = review_grade_under(rg, lenses, PRONGS)
         except KeyError as e:
             r.fail(rule, f"review:{p} names cluster {e.args[0]!r}, which adjudication.json does not hold")
+            continue
+        except Malformed as e:
+            r.fail(rule, f"review:{p}: {e}")
             continue
         if declared and (sr.get("result") != want or sr.get("pass") is not (want == "PASS")):
             r.fail(rule, f"review:{p} scores {sr.get('result')!r} (pass {sr.get('pass')!r}); observations.json under the declared prongs ({', '.join(declared)}) gives {want!r}")
@@ -290,7 +362,7 @@ def kit_scores(r: Report, obs: dict, lenses: dict, declared) -> dict:
 
 def kit_fewer_prong(r: Report, three: dict, declared) -> None:
     rule = "fewer-prong-pass-flagged"
-    profiles = r.scores.get("profiles") or {}
+    profiles = profiles_of(r)
     # a PASS can hold only because a prong is missing when the declared prongs miss one; with none missing, a PASS the
     # full definition does not give is a scores-derivable failure, not a flag to carry
     missing = [p for p in PRONGS if p not in (declared or [])]
@@ -317,7 +389,7 @@ def kit_fewer_prong(r: Report, three: dict, declared) -> None:
 def pin_mapping(r: Report, legacy: bool) -> None:
     rule = "pin-category-mapping"
     mapping = r.scores.get("category_mapping")
-    has_pin = any(isinstance(s, dict) and s.get("pin") is not None for s in (r.scores.get("profiles") or {}).values())
+    has_pin = any(isinstance(s, dict) and s.get("pin") is not None for s in profiles_of(r).values())
     if not isinstance(mapping, dict) or "pin" not in mapping:
         if not has_pin:
             return
@@ -388,15 +460,15 @@ def no_secrets_or_bodies(r: Report) -> None:
 
 def check_kit(r: Report, obs, adjudication) -> None:
     lenses = lens_records(adjudication or {})
-    kit_protocol_frozen(r)
-    declared = kit_prongs(r, adjudication or {}, lenses) if adjudication is not None else None
-    three = kit_scores(r, obs, lenses, declared) if obs is not None and r.scores else {}
+    guarded(r, "protocol-frozen", kit_protocol_frozen, r)
+    declared = guarded(r, "prongs-declared", kit_prongs, r, adjudication or {}, lenses) if adjudication is not None else None
+    three = (guarded(r, "scores-derivable", kit_scores, r, obs, lenses, declared, default={}) if obs is not None and r.scores else {}) or {}
     r.review_prongs = declared
     if r.scores:
-        kit_fewer_prong(r, three, declared)
-        pin_mapping(r, legacy=False)
-    kit_judging(r)
-    kit_relayed(r)
+        guarded(r, "fewer-prong-pass-flagged", kit_fewer_prong, r, three, declared)
+        guarded(r, "pin-category-mapping", pin_mapping, r, False)
+    guarded(r, "judging-profile-named", kit_judging, r)
+    guarded(r, "relayed-chat-statement", kit_relayed, r)
 
 
 # ---- rules over a legacy run (calibration runs 1-3: no kit keys) -----------------------------------------------------
@@ -427,7 +499,7 @@ def _adjudicated_false_blocking(g, ctx):
     """Run 3's rule: an S1-S3 other counts as false blocking when its cluster is not real by the preregistered lens rule
     (the prongs its lens schema carried, two votes of three), an unclustered one by the grader's classification."""
     n = 0
-    for x in g.get("others") or []:
+    for x in others_of(g, "observations.json review grade"):
         if not OBS.BLOCKING.search(str(x.get("severity", ""))):
             continue
         if x.get("cluster") is not None:
@@ -491,10 +563,14 @@ def legacy_prongs(r: Report, adjudication, lenses: dict):
             r.limit(rule, "legacy run: no adjudication record (scores.json has no adjudication_schema, the folder no adjudication.json); no prongs declared")
         return None
     lens, cls, missing = schema.get("prongs_in_lens_schema"), schema.get("prongs_in_classification"), as_list(schema.get("missing_prong"))
-    if not (isinstance(lens, list) and isinstance(cls, list) and lens and cls):
+    names = lambda v: isinstance(v, list) and all(isinstance(x, str) for x in v)  # noqa: E731
+    if not (names(lens) and names(cls) and lens and cls):
         r.fail(rule, "legacy run: scores.json adjudication_schema does not declare both prong sets")
         return None
     bad = False
+    if not names(missing):
+        r.fail(rule, f"legacy run: adjudication_schema.missing_prong {schema.get('missing_prong')!r} is not a prong name or a list of them")
+        return None
     if set(missing) != set(cls) - set(lens):
         r.fail(rule, f"legacy run: adjudication_schema.missing_prong {missing!r} is not the classification's {cls!r} less the lens schema's {lens!r}")
         bad = True
@@ -522,7 +598,9 @@ def legacy_prongs(r: Report, adjudication, lenses: dict):
 def legacy_scores(r: Report, obs, lenses: dict, prongs) -> None:
     rule = "scores-derivable"
     cells = legacy_cells(obs)
-    profiles = r.scores.get("profiles") if isinstance(r.scores.get("profiles"), dict) else {}
+    if "profiles" in r.scores and not isinstance(r.scores["profiles"], dict):
+        r.fail(rule, "scores.json profiles is not an object")
+    profiles = profiles_of(r)
     if cells is None:
         r.fail(rule, "legacy run: observations.json is neither the nested profile map of runs 1-2 nor the flat map of run 3")
         return
@@ -552,13 +630,20 @@ def legacy_scores(r: Report, obs, lenses: dict, prongs) -> None:
                      "this check encodes, and a new run is a kit run")
     ctx = {"lenses": lenses, "prongs": prongs or []}
     for p in [p for p in cells if p in profiles]:
-        s = profiles[p] if isinstance(profiles[p], dict) else {}
+        s = profiles[p]
+        if not isinstance(s, dict):
+            r.fail(rule, f"profile {p} in scores.json is not an object")
+            continue
         for case in CASES:
             g = cells[p].get(case)
             if g is None and s.get(case) is None:  # a null score is a case not run (run 2's review-only profiles)
                 continue
             if g is None or s.get(case) is None:
                 r.fail(rule, f"{case}:{p} is in {'scores.json' if g is None else 'observations.json'} only")
+                continue
+            bad = [f for f, v in (("scores.json", s[case]), ("observations.json", g)) if not isinstance(v, dict)]
+            if bad:
+                r.fail(rule, f"{case}:{p} in {' and '.join(bad)} is not an object")
                 continue
             if case not in rules:
                 continue
@@ -567,7 +652,10 @@ def legacy_scores(r: Report, obs, lenses: dict, prongs) -> None:
             except KeyError as e:
                 r.fail(rule, f"{case}:{p} names cluster {e.args[0]!r}, which adjudication.json does not hold")
                 continue
-            sc = s[case] or {}
+            except Malformed as e:
+                r.fail(rule, f"{case}:{p}: {e}")
+                continue
+            sc = s[case]
             if sc.get("pass") is not (want == "PASS") or ("result" in sc and sc.get("result") != want):
                 stated = sc.get("result", "PASS" if sc.get("pass") else "FAIL") if "result" in sc else ("PASS" if sc.get("pass") is True else "FAIL")
                 r.fail(rule, f"{case}:{p} scores {stated} (pass {sc.get('pass')!r}); the folder's {case} pass rule over observations.json gives {want}")
@@ -575,7 +663,7 @@ def legacy_scores(r: Report, obs, lenses: dict, prongs) -> None:
 
 def legacy_fewer_prong(r: Report, prongs, lenses: dict) -> None:
     rule = "fewer-prong-pass-flagged"
-    profiles = r.scores.get("profiles") or {}
+    profiles = profiles_of(r)
     reviews = {p: s["review"] for p, s in profiles.items() if isinstance(s, dict) and isinstance(s.get("review"), dict)}
     passes = [p for p, rv in reviews.items() if rv.get("result", "PASS" if rv.get("pass") is True else None) == "PASS"]
     if prongs is None:
@@ -599,7 +687,8 @@ def legacy_fewer_prong(r: Report, prongs, lenses: dict) -> None:
         flagged.append(p)
     obs_others = r.legacy_others
     for p in flagged:
-        real_blocking = [x for x in obs_others.get(p, []) if OBS.BLOCKING.search(str(x.get("severity", ""))) and x.get("cluster") in lenses
+        real_blocking = [x for x in obs_others.get(p, []) if isinstance(x, dict) and OBS.BLOCKING.search(str(x.get("severity", "")))
+                         and is_id(x.get("cluster")) and x.get("cluster") in lenses
                          and OBS.votes(lenses[x["cluster"]], prongs) >= 2]
         if not real_blocking:
             r.fail(rule, f"review:{p} is flagged would-fail, yet none of its S1-S3 other findings sits in a cluster real by the lens rule, so no missing prong could fail it")
@@ -646,17 +735,21 @@ def check_legacy(r: Report, obs, adjudication) -> None:
     elif r.scores and r.scores.get("run_id") != r.protocol.get("run_id"):
         r.fail(rule, f"legacy run: scores.json run_id {r.scores.get('run_id')!r} is not the protocol's {r.protocol.get('run_id')!r}")
     lenses = lens_records(adjudication or {})
-    prongs = legacy_prongs(r, adjudication, lenses) if r.scores else None
+    prongs = guarded(r, "prongs-declared", legacy_prongs, r, adjudication, lenses) if r.scores else None
     r.review_prongs = prongs
     cells = legacy_cells(obs) if obs is not None else None
-    r.legacy_others = {p: list((c.get("review") or {}).get("others") or []) for p, c in (cells or {}).items()}
+    r.legacy_others = {}
+    for p, c in (cells or {}).items():
+        rg = c.get("review")
+        others = rg.get("others") if isinstance(rg, dict) else None
+        r.legacy_others[p] = list(others) if isinstance(others, list) else []  # a malformed list fails scores-derivable
     if r.scores and obs is not None:
-        legacy_scores(r, obs, lenses, prongs)
+        guarded(r, "scores-derivable", legacy_scores, r, obs, lenses, prongs)
     if r.scores:
-        legacy_fewer_prong(r, prongs, lenses)
-        pin_mapping(r, legacy=True)
-    legacy_judging(r)
-    legacy_relayed(r)
+        guarded(r, "fewer-prong-pass-flagged", legacy_fewer_prong, r, prongs, lenses)
+        guarded(r, "pin-category-mapping", pin_mapping, r, True)
+    guarded(r, "judging-profile-named", legacy_judging, r)
+    guarded(r, "relayed-chat-statement", legacy_relayed, r)
 
 
 def check_folder(folder: Path) -> Report:

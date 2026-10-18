@@ -19,7 +19,9 @@ python3 tools/check_calibration_evidence.py docs/evidence/<date>/<host>-calibrat
 
 It prints one line per failure, `FAIL <folder> <rule>: <text>`, one per limitation, `LIMIT <folder> <rule>: <text>`,
 and a summary line. It exits 1 when any folder fails. A folder with limitations and no failures passes: a limitation
-says what the folder cannot answer, and it is never counted as a pass of that rule.
+says what the folder cannot answer, and it is never counted as a pass of that rule. A value of the wrong shape (a
+string where a cell object belongs, a list where the classification belongs) is a `FAIL` under the rule that reads
+it, never a traceback.
 
 **Two kinds of run.** A *kit run* is a folder whose `protocol.json` carries the calibration kit's keys
 (`classification.prongs`, `judging_profile`, `relayed_operator_text`) at the kit template's `schema_version` or later.
