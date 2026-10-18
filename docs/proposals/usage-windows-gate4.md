@@ -1,7 +1,8 @@
 # Proposal: Gate 4 affordability for subscription hosts — rolling usage windows
 
-Status: **draft proposal, not normative.** Nothing in `skills/` is amended by
-this document. If accepted after independent review (plan §15), the items
+Status: **draft proposal, not normative**, except Item 4, accepted on
+2026-10-18 (see the review record). Nothing else in `skills/` is amended by
+this document. If accepted after independent review (plan §15), Items 1-3
 below would become an optional host-policy block, one additional Gate 4 rule
 and additive §10 fields under the §13 "strictly additive" rule; until then
 hosts MUST NOT emit or require them.
@@ -176,7 +177,7 @@ reproducible on any record whose cash fields are `null`.
   texts; no default coefficient; no fabricated readings (a host that cannot
   read its windows leaves the block absent and reports Gate 4 as before).
 
-## Review record (pending)
+## Review record (Item 4 decided; Items 1-3 pending)
 
 - Author: SmartRouter working thread, 2026-10-17, revision at PR time. A
   Claude Code host adapter outside this repository is specified to implement
@@ -186,3 +187,16 @@ reproducible on any record whose cash fields are `null`.
   this proposal (or any part of it) amends normative files.
 - Disposition: *pending*. Substantive edits re-date the proposal; approval of
   an earlier revision does not carry forward (P02).
+- Decision, 2026-10-18: the maintainer accepted **Item 4 as proposed**. It is
+  implemented in the same change as this record: `tools/conform_spec.py`
+  admits a `null` `counters.cash-spent` / `counters.cash-cap` only beside
+  `counters.cash-basis: "estimate-only"`, and a `null` `evidence.actual-spend`
+  only beside `evidence.actual-spend-basis: "estimate-only"`; spec-v2.md §10.3
+  and §10.5 name both fields. **Items 1-3 remain proposals** under the
+  disposition above. No independent non-author verdict is recorded here.
+- Known limit of the Item 4 change: the reference §10.3 store,
+  `tools/outcome_ledger.py`, is not amended. Its `validate` and `record`
+  still refuse an Outcome whose `evidence.actual-spend` is `null`, marked or
+  not, and `read_all` fails closed on a ledger holding such a line, so an
+  Outcome that `conform_spec.py --outcome` accepts cannot yet be recorded
+  there. Bringing the store in line is a follow-up.

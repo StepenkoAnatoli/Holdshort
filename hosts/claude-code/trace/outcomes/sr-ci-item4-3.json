@@ -1,0 +1,40 @@
+{
+ "task-id": "sr-ci-item4",
+ "outcome": "accepted",
+ "owner-profile": "cc-opus-high",
+ "original-brief-fingerprint": "dccfb9a54a257eae53b2b2fb53878570ac85a0719ed5f0732171e74dbcf7870b",
+ "evidence": {
+  "checks": [
+   {
+    "command": "python3 tools/run_regression.py",
+    "exit-code": 0,
+    "output-ref": "REGRESSION GATE: all checks PASS at 5520b39 (the hook on every commit)"
+   },
+   {
+    "command": "node --test hosts/claude-code/route.test.mjs",
+    "exit-code": 0,
+    "output-ref": "91 pass at the base copy"
+   },
+   {
+    "command": "refute-first review",
+    "exit-code": 0,
+    "output-ref": "wf_7de31948-94f: review ACCEPT (R1 S3 lead decision, R2 S3 docs, R3 S4) ; fix round 1 took R2, R3; re-review ACCEPT twice with R1 open to the lead"
+   }
+  ],
+  "actual-spend": null,
+  "actual-tokens": 778281,
+  "files-touched": [
+   ".github/workflows/regression-gate.yml",
+   "tools/conform_spec.py",
+   "tools/test_conform_spec.py",
+   "tools/test_claude_code_host_artifacts.py",
+   "docs/USAGE_TELEMETRY.md",
+   "docs/proposals/usage-windows-gate4.md",
+   "skills/smart-router/references/spec-v2.md",
+   "CHANGELOG.md",
+   "hosts/claude-code/README.md"
+  ],
+  "notes": "SmartRouter branch ci/node-adapter-and-item4 at 5520b39 (six commits); review ACCEPT with R1 (S3) left to the lead: the §10.3/§10.5 definitions live in skills/smart-router/references/spec-v2.md, not under docs/ as the brief said, and the builder amended them; the lead ratifies that amendment as the implementation of the maintainer's Item 4 decision (the PR says so); R2 recorded (outcome_ledger.py still refuses a marked null spend: follow-up); the unit's six workflow agents used the recorded harness tokens",
+  "actual-spend-basis": "estimate-only"
+ }
+}

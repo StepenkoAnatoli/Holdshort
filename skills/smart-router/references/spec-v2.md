@@ -267,6 +267,7 @@ Advisory: recommendation only — no dispatch performed or claimed
       }
     ],
     "actual-spend": 0.0,
+    "actual-spend-basis": "estimate-only (optional, additive §13; only this value; the one case where actual-spend may be null)",
     "files-touched": ["string"],
     "notes": "string"
   },
@@ -335,7 +336,8 @@ escalation — the Outcome Ledger record format behind Host duty §11.8)
     "cash-spent": 0.0,
     "cash-cap": 0.0,
     "repairs-used": 0,
-    "repairs-allowed": 1
+    "repairs-allowed": 1,
+    "cash-basis": "estimate-only (optional, additive §13; only this value; the one case where cash-spent and cash-cap may be null)"
   },
   "deadline": "ISO-8601 datetime or null",
   "brief-fingerprint": "string or null",

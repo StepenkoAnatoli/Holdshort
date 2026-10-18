@@ -17,6 +17,10 @@ the time anything runs. This checker proves the objects BEFORE dispatch:
     depth + 1 within max, nested-allowed false at max depth, ownership parent-worker
   * LedgerRecord (§10.5): kind enum; counters non-negative with
     repairs-used <= repairs-allowed; ISO datetimes parse where given
+  * Estimate-only cash (Item 4, docs/proposals/usage-windows-gate4.md): counters.cash-spent,
+    counters.cash-cap and Outcome evidence.actual-spend may be null only beside the marker
+    counters.cash-basis / evidence.actual-spend-basis == "estimate-only"; an unmarked null is
+    still a violation, a marker with any other value is one, a marker beside a number is allowed
   * Route/object agreement (§12): `delegate` without a Brief, `speculative` without a
     SpeculativeSet, acceptance with zero checks, or isolation weaker than
     --recommended-isolation are VIOLATIONS, not warnings
@@ -51,6 +55,7 @@ ol = _load("oll_conform", TOOLS / "outcome_ledger.py")
 ISOLATION = ["none", "directory", "worktree+branch", "ephemeral-container"]
 CANCEL = ("first-success", "budget-exhausted", "all-fail")
 KINDS = ("decision", "dispatch", "outcome", "spend", "escalation")
+ESTIMATE_ONLY = "estimate-only"  # Item 4: the only marker value that admits a null cash field
 
 
 class FailClosed(RuntimeError):
@@ -189,8 +194,17 @@ def check_speculative(doc: dict) -> None:
 
 
 def check_outcome(doc: dict) -> None:
+    probe = doc
+    ev = doc.get("evidence") if isinstance(doc, dict) else None
+    if isinstance(ev, dict) and "actual-spend-basis" in ev:
+        if ev["actual-spend-basis"] != ESTIMATE_ONLY:
+            raise Violation('Outcome evidence.actual-spend-basis must be "estimate-only" when present')
+        if "actual-spend" in ev and ev["actual-spend"] is None:
+            # Item 4: a marked null is honest; every other field still goes through the canonical
+            # schema, so validate a copy with a placeholder spend (the document itself is untouched).
+            probe = dict(doc, evidence=dict(ev, **{"actual-spend": 0}))
     try:
-        ol.validate(doc)
+        ol.validate(probe)
     except ol.FailClosed as e:
         raise Violation(f"Outcome breaks §10.3 ({e})") from e
 
@@ -288,7 +302,12 @@ def check_record(doc: dict) -> None:
     for key in ("calls-used", "calls-limit", "repairs-used", "repairs-allowed"):
         if key not in c or type(c[key]) is not int or c[key] < 0:
             raise Violation(f"LedgerRecord counters.{key} must be a non-negative integer")
+    if "cash-basis" in c and c["cash-basis"] != ESTIMATE_ONLY:
+        raise Violation('LedgerRecord counters.cash-basis must be "estimate-only" when present')
+    estimate_only = c.get("cash-basis") == ESTIMATE_ONLY
     for key in ("cash-spent", "cash-cap"):
+        if estimate_only and key in c and c[key] is None:
+            continue  # Item 4: unknown cash on an estimate-only host stays null, never 0.0
         if key not in c or not _is_num(c[key]) or c[key] < 0:
             raise Violation(f"LedgerRecord counters.{key} must be a finite non-negative number")
     if c["repairs-used"] > c["repairs-allowed"]:

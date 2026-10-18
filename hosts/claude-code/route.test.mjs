@@ -445,7 +445,8 @@ test('ledger: seq is monotonic per task, counters are task totals, fingerprints 
   assert.equal(out.seq, 4);
   assert.equal(out['outcome-ref'], 'l-1');
   assert.equal(out['dispatch-seq'], 3);
-  assert.deepEqual(out.counters, { 'calls-used': 1, 'calls-limit': 6, 'cash-spent': null, 'cash-cap': null, 'repairs-used': 0, 'repairs-allowed': 1 });
+  // the record carries the Item 4 marker beside its null cash (estimate-only host)
+  assert.deepEqual(out.counters, { 'calls-used': 1, 'calls-limit': 6, 'cash-spent': null, 'cash-cap': null, 'repairs-used': 0, 'repairs-allowed': 1, 'cash-basis': 'estimate-only' });
   const ledger = readLedger(trace);
   assert.deepEqual(ledger.filter((r) => r['task-id'] === 'l-1').map((r) => [r.seq, r.kind]), [[1, 'decision'], [2, 'decision'], [3, 'dispatch'], [4, 'outcome']]);
   assert.equal(ledger.find((r) => r['task-id'] === 'l-2').seq, 1);
@@ -1430,8 +1431,8 @@ test('outcome: evidence.actual-tokens is recorded as the additive field tokens (
   const absent = cycleWith('ot-4', undefined).rec();
   assert.ok(Object.hasOwn(absent, 'tokens'));
   assert.equal(absent.tokens, null);
-  // §10.5 counters stay as they are; the outcome file keeps the Outcome as given
-  assert.deepEqual(absent.counters, { 'calls-used': 1, 'calls-limit': 6, 'cash-spent': null, 'cash-cap': null, 'repairs-used': 0, 'repairs-allowed': 1 });
+  // §10.5 counters stay as they are (plus the Item 4 marker every record of this host carries)
+  assert.deepEqual(absent.counters, { 'calls-used': 1, 'calls-limit': 6, 'cash-spent': null, 'cash-cap': null, 'repairs-used': 0, 'repairs-allowed': 1, 'cash-basis': 'estimate-only' });
   const { d } = cycleWith('ot-5', undefined);
   for (const bad of [-1, 1.5, '1000', true, {}]) {
     const out = cli(['outcome', writeJson(withTokens({ 'task-id': 'ot-5', outcome: 'accepted', 'original-brief-fingerprint': d.briefFingerprint }, bad)), '--trace', trace, '--now', NOW]);
@@ -2470,4 +2471,113 @@ test('usage (host-policy-3): with no file it prints the headroom from the ratifi
     '  seven_day: utilization 0.38, resets 2026-10-24T18:00:00Z, headroom 27.171 Mtok ((0.9 - 0.1 - 0.38) / 0.015 - 0.829 dispatched and not in the reading)',
     ''
   ].join('\n'));
+});
+
+// ---------------------------------------------------------------------------------------------
+// SmartRouter Item 4 (accepted upstream 2026-10-18): a null cash counter or spend carries its estimate-only marker
+// ---------------------------------------------------------------------------------------------
+const ledgerLines = (trace) => readFileSync(join(trace, 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+
+test('Item 4: every record a decision, dispatch and outcome cycle appends carries counters.cash-basis "estimate-only" (accounting.mode); the decision file does not, and old unmarked lines are still read', () => {
+  assert.equal(POLICY.accounting.mode, 'estimate-only');
+  assert.equal(COMMITTED_POLICY.accounting.mode, 'estimate-only');
+  const trace = tmp();
+  const d = run(req({ taskId: 'cb-1' }), { traceDir: trace });
+  const disp = dispatch('cb-1', 'cc-opus-high', { projectStop: CLEAR, traceDir: trace, policyPath: POLICY_PATH, now: NOW });
+  const out = recordOutcome(outcome({ 'task-id': 'cb-1', outcome: 'accepted', 'original-brief-fingerprint': d.briefFingerprint }), { traceDir: trace, policyPath: POLICY_PATH, now: NOW });
+  const marked = { 'calls-limit': 6, 'cash-spent': null, 'cash-cap': null, 'repairs-used': 0, 'repairs-allowed': 1, 'cash-basis': 'estimate-only' };
+  assert.deepEqual(d.record.counters, { ...marked, 'calls-used': 0 });
+  assert.deepEqual(disp.counters, { ...marked, 'calls-used': 1 });
+  assert.deepEqual(out.counters, { ...marked, 'calls-used': 1 });
+  // on disk: the three lines as appended, each marked
+  assert.deepEqual(ledgerLines(trace).map((r) => [r.kind, r.counters['cash-basis']]), [['decision', 'estimate-only'], ['dispatch', 'estimate-only'], ['outcome', 'estimate-only']]);
+  // the marker is additive to records, not to decisions: the decision file's counters stay §10.5's six
+  const file = JSON.parse(readFileSync(d.decisionPath, 'utf8'));
+  assert.equal(Object.hasOwn(file['ledger-before'], 'cash-basis'), false);
+  assert.equal(Object.hasOwn(d.decision.counters, 'cash-basis'), false);
+  // a CLI cycle writes the same marker
+  const cliTrace = tmp();
+  assert.equal(cli(['decide', writeJson(req({ taskId: 'cb-2' })), '--trace', cliTrace]).code, 0);
+  assert.equal(cli(['dispatch', 'cb-2', 'cc-opus-high', '--project-stop', CLEAR_JSON, '--trace', cliTrace, '--now', NOW]).code, 0);
+  assert.ok(ledgerLines(cliTrace).every((r) => r.counters['cash-basis'] === 'estimate-only'));
+  // a host whose accounting is not estimate-only gets no marker (the marker states why the counters are null)
+  const metered = policyWith((p) => { p.accounting.mode = 'metered'; });
+  const mTrace = tmp();
+  const md = decide(req({ taskId: 'cb-3' }), { policyPath: metered, traceDir: mTrace });
+  assert.equal(Object.hasOwn(md.record.counters, 'cash-basis'), false);
+  assert.equal(Object.hasOwn(dispatch('cb-3', 'cc-opus-high', { projectStop: CLEAR, traceDir: mTrace, policyPath: metered, now: NOW }).counters, 'cash-basis'), false);
+  // the committed ledger is append-only: its lines written before Item 4 stay unmarked and are still read
+  const committed = readLedger(join(HERE, 'trace'));
+  assert.ok(committed.length > 0);
+  assert.ok(committed.some((r) => !Object.hasOwn(r.counters, 'cash-basis')));
+});
+
+test('Item 4: an outcome with evidence.actual-spend null and no actual-spend-basis (absent or null) is stored and recorded with actual-spend-basis "estimate-only"; a supplied "estimate-only" is kept; any other basis is exit 2; a non-null spend gets none', () => {
+  const trace = tmp();
+  const cycle = (taskId, evidence, policyPath = POLICY_PATH, dir = trace) => {
+    const d = decide(req({ taskId }), { policyPath, traceDir: dir });
+    dispatch(taskId, 'cc-opus-high', { projectStop: CLEAR, traceDir: dir, policyPath, now: NOW });
+    const o = outcome({ 'task-id': taskId, outcome: 'accepted', 'original-brief-fingerprint': d.briefFingerprint });
+    o.evidence = { ...o.evidence, ...evidence };
+    const given = JSON.parse(JSON.stringify(o));
+    const rec = recordOutcome(o, { traceDir: dir, policyPath, now: NOW });
+    assert.deepEqual(o, given, 'the caller\'s Outcome is not mutated');
+    const stored = JSON.parse(readFileSync(join(dir, 'outcomes', `${taskId}-${rec.seq}.json`), 'utf8'));
+    return { rec, stored, given };
+  };
+  // null spend, no basis: the stored copy and the record carry the marker; nothing else in the Outcome moves
+  const unmarked = cycle('sb-1', {});
+  assert.equal(unmarked.given.evidence['actual-spend'], null);
+  assert.equal(unmarked.stored.evidence['actual-spend-basis'], 'estimate-only');
+  assert.equal(unmarked.stored.evidence['actual-spend'], null);
+  assert.deepEqual({ ...unmarked.stored, evidence: { ...unmarked.stored.evidence, 'actual-spend-basis': undefined } }, { ...unmarked.given, evidence: { ...unmarked.given.evidence, 'actual-spend-basis': undefined } });
+  assert.equal(unmarked.rec['actual-spend-basis'], 'estimate-only');
+  assert.equal(ledgerLines(trace).find((r) => r['task-id'] === 'sb-1' && r.kind === 'outcome')['actual-spend-basis'], 'estimate-only');
+  // a supplied basis is kept as given, on the stored copy and the record
+  const supplied = cycle('sb-2', { 'actual-spend-basis': 'estimate-only' });
+  assert.equal(supplied.stored.evidence['actual-spend-basis'], 'estimate-only');
+  assert.deepEqual(supplied.stored, supplied.given);
+  assert.equal(supplied.rec['actual-spend-basis'], 'estimate-only');
+  // R1: a null basis is no basis - it is defaulted like an absent one, never stored or recorded as null
+  const nullBasis = cycle('sb-3', { 'actual-spend-basis': null });
+  assert.equal(nullBasis.stored.evidence['actual-spend-basis'], 'estimate-only');
+  assert.equal(nullBasis.rec['actual-spend-basis'], 'estimate-only');
+  const knownNull = cycle('sb-7', { 'actual-spend': 0.42, 'actual-spend-basis': null });
+  assert.equal(Object.hasOwn(knownNull.stored.evidence, 'actual-spend-basis'), false);
+  assert.equal(Object.hasOwn(knownNull.rec, 'actual-spend-basis'), false);
+  // R1: upstream conform_spec.py refuses any other basis (sr-ci-item4 B), so the adapter refuses it (exit 2) and
+  // stores and appends nothing
+  for (const [i, bad] of ['lead estimate', 'metered', 42, true, {}].entries()) {
+    const taskId = `sb-8${i}`;
+    const d = decide(req({ taskId }), { policyPath: POLICY_PATH, traceDir: trace });
+    dispatch(taskId, 'cc-opus-high', { projectStop: CLEAR, traceDir: trace, policyPath: POLICY_PATH, now: NOW });
+    const o = outcome({ 'task-id': taskId, outcome: 'accepted', 'original-brief-fingerprint': d.briefFingerprint });
+    o.evidence = { ...o.evidence, 'actual-spend-basis': bad };
+    assert.throws(() => recordOutcome(o, { traceDir: trace, policyPath: POLICY_PATH, now: NOW }), (e) => e instanceof RouterError && e.code === 2 && /invalid Outcome \(spec-v2 §10\.3\): evidence\.actual-spend-basis must be "estimate-only" when present \(SmartRouter Item 4\)/.test(e.message), JSON.stringify(bad));
+    const out = cli(['outcome', writeJson(o), '--trace', trace, '--now', NOW]);
+    assert.equal(out.code, 2, `${JSON.stringify(bad)}: ${out.stdout}`);
+    assert.match(out.stderr, /evidence\.actual-spend-basis must be "estimate-only" when present/);
+    assert.equal(readLedger(trace).filter((r) => r['task-id'] === taskId && r.kind === 'outcome').length, 0);
+    assert.equal(existsSync(join(trace, 'outcomes', `${taskId}-3.json`)), false);
+  }
+  // a known spend needs no marker
+  const known = cycle('sb-4', { 'actual-spend': 0.42 });
+  assert.deepEqual(known.stored, known.given);
+  assert.equal(Object.hasOwn(known.stored.evidence, 'actual-spend-basis'), false);
+  assert.equal(Object.hasOwn(known.rec, 'actual-spend-basis'), false);
+  // the CLI stores the same marker
+  const cliTrace = tmp();
+  const cd = run(req({ taskId: 'sb-5' }), { traceDir: cliTrace });
+  dispatch('sb-5', 'cc-opus-high', { projectStop: CLEAR, traceDir: cliTrace, policyPath: POLICY_PATH, now: NOW });
+  const r = cli(['outcome', writeJson(outcome({ 'task-id': 'sb-5', outcome: 'accepted', 'original-brief-fingerprint': cd.briefFingerprint })), '--trace', cliTrace, '--now', NOW]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(JSON.parse(readFileSync(join(cliTrace, 'outcomes', 'sb-5-3.json'), 'utf8')).evidence['actual-spend-basis'], 'estimate-only');
+  // a host whose accounting is not estimate-only does not claim the basis
+  const metered = cycle('sb-6', {}, policyWith((p) => { p.accounting.mode = 'metered'; }), tmp());
+  assert.equal(Object.hasOwn(metered.stored.evidence, 'actual-spend-basis'), false);
+  assert.equal(Object.hasOwn(metered.rec, 'actual-spend-basis'), false);
+  // R1: nor does it keep a null basis there
+  const meteredNull = cycle('sb-9', { 'actual-spend-basis': null }, policyWith((p) => { p.accounting.mode = 'metered'; }), tmp());
+  assert.equal(Object.hasOwn(meteredNull.stored.evidence, 'actual-spend-basis'), false);
+  assert.equal(Object.hasOwn(meteredNull.rec, 'actual-spend-basis'), false);
 });

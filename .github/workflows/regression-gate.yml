@@ -39,6 +39,12 @@ name: regression-gate
 # dispatch and schedule, so requiring it would block every pull request that
 # could never produce it.
 #
+# adapter-tests (display name claude-code-adapter-tests) runs the Claude Code host
+# adapter's Node suite (node --test hosts/claude-code/route.test.mjs) on every
+# trigger the gate job runs on, because the Python regression gate has no Node
+# step. It is not a required status context: branch protection is the
+# maintainer's setting.
+#
 # Exit codes from the canary: 0 proved, 1 the probe ran and did not pass (including
 # a merge that was wrongly accepted), 2 no token, 3 the environment refuses a step
 # the probe needs — for instance a repository that forbids Actions-created pull
@@ -84,6 +90,19 @@ jobs:
           python-version: "3.12"
       - name: Watcher --once against a synthetic store (dirty alerts, clean silent)
         run: python tools/ci_watcher_once_proof.py
+
+  adapter-tests:
+    name: claude-code-adapter-tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0, resolved 2026-09-26
+        with:
+          node-version: '24'
+      - name: Claude Code host adapter suite (node --test)
+        run: node --test hosts/claude-code/route.test.mjs
 
   setup-prove:
     name: onboarding-proof

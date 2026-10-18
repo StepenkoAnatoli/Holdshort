@@ -1,0 +1,659 @@
+{
+ "request": {
+  "taskId": "sr-item4-host",
+  "objective": "Host adapter: write the Item 4 markers - cash-basis estimate-only in every appended ledger record's counters, actual-spend-basis estimate-only on outcomes whose actual-spend is null - with red-first tests and a README note (briefs/sr-item4-host.md). The adapter is plain Node: typecheck is node --check.",
+  "category": "build-ui",
+  "unit": "sr-item4-host",
+  "estimatedTokens": 200000,
+  "permittedEffects": [
+   "docs/orchestration/smartrouter/route.mjs",
+   "docs/orchestration/smartrouter/route.test.mjs",
+   "docs/orchestration/smartrouter/README.md"
+  ],
+  "sources": [
+   "docs/orchestration/smartrouter/briefs/sr-item4-host.md",
+   "docs/orchestration/smartrouter/README.md",
+   "docs/orchestration/smartrouter/host-policy.json"
+  ],
+  "nonGoals": [
+   "no push",
+   "no rewrite of committed trace lines",
+   "no change to gates, routes or reason texts"
+  ],
+  "acceptanceChecks": [
+   {
+    "command": "node --check docs/orchestration/smartrouter/route.mjs",
+    "expect": "typecheck: syntax check exit 0"
+   },
+   {
+    "command": "npx eslint docs/orchestration/smartrouter/route.mjs docs/orchestration/smartrouter/route.test.mjs",
+    "expect": "lint exit 0"
+   },
+   {
+    "command": "node --test docs/orchestration/smartrouter/route.test.mjs",
+    "expect": "unit tests red-first then green, guard-removal proofs"
+   },
+   {
+    "command": "node --test docs/orchestration/smartrouter/route.test.mjs (whole file)",
+    "expect": "full-suite comparison vs baseline: the 91 base tests stay green, goldens exact"
+   },
+   {
+    "command": "refute-first review",
+    "expect": "ACCEPT after at most two fix rounds (refute-first review)"
+   }
+  ],
+  "needsVision": false,
+  "dataClasses": [
+   "repo-code",
+   "run-docs"
+  ],
+  "projectStop": {
+   "redSuite": false,
+   "gateOff": false,
+   "researchGateFailing": false
+  },
+  "previousResult": null,
+  "deadline": "2026-10-18T16:00:00Z",
+  "now": "2026-10-18T04:33:30Z"
+ },
+ "inputs-sha256": "3c5ee0bb6ba6f570e7f4cb487915a76d9560c83f77a93e2db5d6d3c5eca75c1f",
+ "bindings": {
+  "policy-revision": "host-policy-3",
+  "policy-sha256": "ed888a35b73260272af80943e37b8e61171f62732fa131c43344e8def16e924d",
+  "smartrouter": {
+   "repo": "https://github.com/StepenkoAnatoli/SmartRouter",
+   "revision": "fbe7bca",
+   "skill-version": "3.0.0",
+   "prices-revision": "prices-2"
+  },
+  "harness": "claude-code-workflow-subagent@2.1.286"
+ },
+ "ledger-before": {
+  "last-seq": 0,
+  "calls-used": 0,
+  "calls-limit": 6,
+  "cash-spent": null,
+  "cash-cap": null,
+  "repairs-used": 0,
+  "repairs-allowed": 1
+ },
+ "decision": {
+  "route": "delegate",
+  "profile": "cc-opus-high",
+  "profile-tuple": "(cc-opus-high, claude-code-workflow-subagent, anthropic, claude-opus-5-5, high, workflow-subagent/structured-output@1)",
+  "isolation": "worktree+branch",
+  "isolation-reason": "Gate 1: concurrent workers in this host never share a tree; Gate 5: the delegated unit owns its worktree+branch (host capability worktree+branch)",
+  "owner": "worker",
+  "human-gate": "none",
+  "nested-allowed": false,
+  "max-nesting-depth": 0,
+  "difficulty": "moderate",
+  "estimated-tokens": 200000,
+  "all-in-bound-usd": 9.18,
+  "candidates": {
+   "cc-fable-xhigh": {
+    "kind": "direct",
+    "eligible": false,
+    "first-failing-gate": 5,
+    "reason": "direct unsuitable: 200000 tokens > direct-max-tokens 15000",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "pass"
+     },
+     {
+      "gate": 3,
+      "result": "pass"
+     },
+     {
+      "gate": 4,
+      "result": "pass",
+      "note": "cash estimate $10.00: estimate only, never a strict cap in this host; usage window seven_day binds: projected 0.4513 <= 0.8"
+     },
+     {
+      "gate": 5,
+      "result": "fail",
+      "reason": "direct unsuitable: 200000 tokens > direct-max-tokens 15000"
+     }
+    ]
+   },
+   "cc-fable-max": {
+    "kind": "delegate",
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "cc-fable-max not qualified for build-ui",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "fail",
+      "reason": "cc-fable-max not qualified for build-ui"
+     },
+     {
+      "gate": 3,
+      "result": "not-reached"
+     },
+     {
+      "gate": 4,
+      "result": "not-reached"
+     },
+     {
+      "gate": 5,
+      "result": "not-reached"
+     }
+    ]
+   },
+   "cc-fable-high": {
+    "kind": "delegate",
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "cc-fable-high not qualified for build-ui",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "fail",
+      "reason": "cc-fable-high not qualified for build-ui"
+     },
+     {
+      "gate": 3,
+      "result": "not-reached"
+     },
+     {
+      "gate": 4,
+      "result": "not-reached"
+     },
+     {
+      "gate": 5,
+      "result": "not-reached"
+     }
+    ]
+   },
+   "cc-fable-medium": {
+    "kind": "delegate",
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "cc-fable-medium not qualified for build-ui; context: 200000 tokens not below headroom-tested 172000 on cc-fable-medium",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "fail",
+      "reason": "cc-fable-medium not qualified for build-ui; context: 200000 tokens not below headroom-tested 172000 on cc-fable-medium"
+     },
+     {
+      "gate": 3,
+      "result": "not-reached"
+     },
+     {
+      "gate": 4,
+      "result": "not-reached"
+     },
+     {
+      "gate": 5,
+      "result": "not-reached"
+     }
+    ]
+   },
+   "cc-opus-max": {
+    "kind": "delegate",
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "cc-opus-max not qualified for build-ui",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "fail",
+      "reason": "cc-opus-max not qualified for build-ui"
+     },
+     {
+      "gate": 3,
+      "result": "not-reached"
+     },
+     {
+      "gate": 4,
+      "result": "not-reached"
+     },
+     {
+      "gate": 5,
+      "result": "not-reached"
+     }
+    ]
+   },
+   "cc-opus-xhigh": {
+    "kind": "delegate",
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "cc-opus-xhigh not qualified for build-ui",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "fail",
+      "reason": "cc-opus-xhigh not qualified for build-ui"
+     },
+     {
+      "gate": 3,
+      "result": "not-reached"
+     },
+     {
+      "gate": 4,
+      "result": "not-reached"
+     },
+     {
+      "gate": 5,
+      "result": "not-reached"
+     }
+    ]
+   },
+   "cc-opus-high": {
+    "kind": "delegate",
+    "eligible": true,
+    "all-in-bound-usd": 9.18,
+    "work-bound-usd": 4,
+    "review-bound-usd": 4.18,
+    "overhead-bound-usd": 1,
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "pass"
+     },
+     {
+      "gate": 3,
+      "result": "pass"
+     },
+     {
+      "gate": 4,
+      "result": "pass",
+      "note": "cash estimate $9.18: estimate only, never a strict cap in this host; usage window seven_day binds: projected 0.4547 <= 0.8"
+     },
+     {
+      "gate": 5,
+      "result": "pass"
+     }
+    ]
+   },
+   "cc-opus-medium": {
+    "kind": "delegate",
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "cc-opus-medium not qualified for build-ui; context: 200000 tokens not below headroom-tested 154000 on cc-opus-medium",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "fail",
+      "reason": "cc-opus-medium not qualified for build-ui; context: 200000 tokens not below headroom-tested 154000 on cc-opus-medium"
+     },
+     {
+      "gate": 3,
+      "result": "not-reached"
+     },
+     {
+      "gate": 4,
+      "result": "not-reached"
+     },
+     {
+      "gate": 5,
+      "result": "not-reached"
+     }
+    ]
+   },
+   "cc-sonnet-xhigh": {
+    "kind": "delegate",
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "cc-sonnet-xhigh not qualified for build-ui",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "fail",
+      "reason": "cc-sonnet-xhigh not qualified for build-ui"
+     },
+     {
+      "gate": 3,
+      "result": "not-reached"
+     },
+     {
+      "gate": 4,
+      "result": "not-reached"
+     },
+     {
+      "gate": 5,
+      "result": "not-reached"
+     }
+    ]
+   },
+   "cc-sonnet-high": {
+    "kind": "delegate",
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "cc-sonnet-high not qualified for build-ui; context: 200000 tokens not below headroom-tested 183000 on cc-sonnet-high",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "fail",
+      "reason": "cc-sonnet-high not qualified for build-ui; context: 200000 tokens not below headroom-tested 183000 on cc-sonnet-high"
+     },
+     {
+      "gate": 3,
+      "result": "not-reached"
+     },
+     {
+      "gate": 4,
+      "result": "not-reached"
+     },
+     {
+      "gate": 5,
+      "result": "not-reached"
+     }
+    ]
+   },
+   "cc-sonnet-medium": {
+    "kind": "delegate",
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "cc-sonnet-medium not qualified for build-ui; context: 200000 tokens not below headroom-tested 128000 on cc-sonnet-medium",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "fail",
+      "reason": "cc-sonnet-medium not qualified for build-ui; context: 200000 tokens not below headroom-tested 128000 on cc-sonnet-medium"
+     },
+     {
+      "gate": 3,
+      "result": "not-reached"
+     },
+     {
+      "gate": 4,
+      "result": "not-reached"
+     },
+     {
+      "gate": 5,
+      "result": "not-reached"
+     }
+    ]
+   },
+   "cc-sonnet-low": {
+    "kind": "delegate",
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "cc-sonnet-low not qualified for build-ui; context: 200000 tokens not below headroom-tested 114000 on cc-sonnet-low",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "fail",
+      "reason": "cc-sonnet-low not qualified for build-ui; context: 200000 tokens not below headroom-tested 114000 on cc-sonnet-low"
+     },
+     {
+      "gate": 3,
+      "result": "not-reached"
+     },
+     {
+      "gate": 4,
+      "result": "not-reached"
+     },
+     {
+      "gate": 5,
+      "result": "not-reached"
+     }
+    ]
+   },
+   "cc-haiku-high": {
+    "kind": "delegate",
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "cc-haiku-high not qualified for build-ui",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "fail",
+      "reason": "cc-haiku-high not qualified for build-ui"
+     },
+     {
+      "gate": 3,
+      "result": "not-reached"
+     },
+     {
+      "gate": 4,
+      "result": "not-reached"
+     },
+     {
+      "gate": 5,
+      "result": "not-reached"
+     }
+    ]
+   },
+   "cc-haiku-medium": {
+    "kind": "delegate",
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "cc-haiku-medium not qualified for build-ui; context: 200000 tokens not below headroom-tested 183000 on cc-haiku-medium",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "fail",
+      "reason": "cc-haiku-medium not qualified for build-ui; context: 200000 tokens not below headroom-tested 183000 on cc-haiku-medium"
+     },
+     {
+      "gate": 3,
+      "result": "not-reached"
+     },
+     {
+      "gate": 4,
+      "result": "not-reached"
+     },
+     {
+      "gate": 5,
+      "result": "not-reached"
+     }
+    ]
+   },
+   "cc-haiku-low": {
+    "kind": "delegate",
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "cc-haiku-low not qualified for build-ui; context: 200000 tokens not below headroom-tested 175000 on cc-haiku-low",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "fail",
+      "reason": "cc-haiku-low not qualified for build-ui; context: 200000 tokens not below headroom-tested 175000 on cc-haiku-low"
+     },
+     {
+      "gate": 3,
+      "result": "not-reached"
+     },
+     {
+      "gate": 4,
+      "result": "not-reached"
+     },
+     {
+      "gate": 5,
+      "result": "not-reached"
+     }
+    ]
+   }
+  },
+  "eligible-ordered": [
+   "cc-opus-high"
+  ],
+  "eligible-outside-candidates": [],
+  "speculative-set": null,
+  "uncertainty": [
+   "cash: estimate only, no host accounting (subscription); not a strict cap",
+   "usage windows: coefficients host-declared (ratified 2026-10-18T01:23:32Z (host-policy-3) from calibration run 2 (wf_fe91e1d6-d78): readings 2026-10-17T23:22:51Z (five_hour 0.12, seven_day 0.28) and 2026-10-18T01:23:32Z (five_hour 0.39, seven_day 0.36), nothing in flight at either, the lead idle but for one check-in, 7872276 reported sub-agent tokens between them: measured 0.0343 (five_hour) and 0.0102 (seven_day) per Mtok, declared about 1.5x higher and rounded up, 0.05 and 0.015 (the conservative direction). Lead-only work 2026-10-17T23:07:08Z to 23:22:51Z (no sub-agent running) moved five_hour 0.02 -> 0.12, about 0.40 per hour of active lead work, so lead-reserve is five_hour 0.25 (about 40 minutes of it) and seven_day 0.10. rate could not learn this: the run was not dispatched through the adapter, so every pair of readings during it had no recorded outcome tokens (README Usage windows, friction item 17))"
+  ],
+  "advisory": "recommendation only — no dispatch performed or claimed",
+  "pending-proposals": [],
+  "deadline": "2026-10-18T16:00:00Z",
+  "deadline-capped": false,
+  "review-profile": "cc-opus-high",
+  "review-candidates": {
+   "cc-fable-max": "gate 2: cc-fable-max not qualified for review",
+   "cc-fable-high": null,
+   "cc-fable-medium": "gate 2: context: 209000 tokens not below headroom-tested 172000 on cc-fable-medium",
+   "cc-opus-max": "gate 2: cc-opus-max not qualified for review",
+   "cc-opus-xhigh": null,
+   "cc-opus-high": null,
+   "cc-opus-medium": "gate 2: cc-opus-medium not qualified for review; context: 209000 tokens not below headroom-tested 154000 on cc-opus-medium",
+   "cc-sonnet-xhigh": "gate 2: cc-sonnet-xhigh not qualified for review",
+   "cc-sonnet-high": "gate 2: cc-sonnet-high not qualified for review; context: 209000 tokens not below headroom-tested 183000 on cc-sonnet-high",
+   "cc-sonnet-medium": "gate 2: cc-sonnet-medium not qualified for review; context: 209000 tokens not below headroom-tested 128000 on cc-sonnet-medium",
+   "cc-sonnet-low": "gate 2: cc-sonnet-low not qualified for review; context: 209000 tokens not below headroom-tested 114000 on cc-sonnet-low",
+   "cc-haiku-high": "gate 2: cc-haiku-high not qualified for review",
+   "cc-haiku-medium": "gate 2: cc-haiku-medium not qualified for review; context: 209000 tokens not below headroom-tested 183000 on cc-haiku-medium",
+   "cc-haiku-low": "gate 2: cc-haiku-low not qualified for review; context: 209000 tokens not below headroom-tested 175000 on cc-haiku-low"
+  },
+  "usage": {
+   "reading-ts": "2026-10-18T04:09:26Z",
+   "reading-age-minutes": 24.07,
+   "dispatched-not-in-reading-tokens": 1217000,
+   "windows": {
+    "five_hour": {
+     "utilization": 0.05,
+     "resets-at": "2026-10-18T09:00:00Z",
+     "projected": 0.1323,
+     "headroom-mtok": 10.783
+    },
+    "seven_day": {
+     "utilization": 0.43,
+     "resets-at": "2026-10-24T18:00:00Z",
+     "projected": 0.4547,
+     "headroom-mtok": 23.4497
+    }
+   }
+  },
+  "usage-tokens": 429000
+ },
+ "estimates": {
+  "basis": "estimate-only",
+  "cost-bound-rule": "tokens x output_rate_per_mtok / 1e6 (conservative: output rate >= input rate)",
+  "all-in-bound-usd": 9.18
+ },
+ "accounting": {
+  "mode": "estimate-only",
+  "cash-spent": null,
+  "cash-cap": null,
+  "note": "no per-call USD accounting in this host; spend is unknown, never zero"
+ },
+ "brief": {
+  "objective": "Host adapter: write the Item 4 markers - cash-basis estimate-only in every appended ledger record's counters, actual-spend-basis estimate-only on outcomes whose actual-spend is null - with red-first tests and a README note (briefs/sr-item4-host.md). The adapter is plain Node: typecheck is node --check.",
+  "acceptance": {
+   "checks": [
+    {
+     "command": "node --check docs/orchestration/smartrouter/route.mjs",
+     "expect": "typecheck: syntax check exit 0"
+    },
+    {
+     "command": "npx eslint docs/orchestration/smartrouter/route.mjs docs/orchestration/smartrouter/route.test.mjs",
+     "expect": "lint exit 0"
+    },
+    {
+     "command": "node --test docs/orchestration/smartrouter/route.test.mjs",
+     "expect": "unit tests red-first then green, guard-removal proofs"
+    },
+    {
+     "command": "node --test docs/orchestration/smartrouter/route.test.mjs (whole file)",
+     "expect": "full-suite comparison vs baseline: the 91 base tests stay green, goldens exact"
+    },
+    {
+     "command": "refute-first review",
+     "expect": "ACCEPT after at most two fix rounds (refute-first review)"
+    }
+   ]
+  },
+  "sources": [
+   "docs/orchestration/smartrouter/briefs/sr-item4-host.md",
+   "docs/orchestration/smartrouter/README.md",
+   "docs/orchestration/smartrouter/host-policy.json"
+  ],
+  "permitted-effects": [
+   "docs/orchestration/smartrouter/route.mjs",
+   "docs/orchestration/smartrouter/route.test.mjs",
+   "docs/orchestration/smartrouter/README.md"
+  ],
+  "non-goals": [
+   "no push",
+   "no rewrite of committed trace lines",
+   "no change to gates, routes or reason texts",
+   "no recursive delegation (nested-allowed: false)"
+  ],
+  "isolation": "worktree+branch",
+  "branch-hint": "build/sr-item4-host",
+  "allowance": {
+   "cash": 9.18,
+   "calls": 6,
+   "deadline": "2026-10-18T16:00:00Z",
+   "cash-basis": "estimate-only"
+  },
+  "attempts": 1,
+  "stop-triggers": [
+   "verification failure -> outcome record, then a fresh decision; at most 1 same-profile repair per task",
+   "repairs exhausted -> fresh SmartRouter decision (no ownership transfer without it)",
+   "call slots exhausted (6 per task) -> blocked",
+   "deadline 2026-10-18T16:00:00Z reached -> blocked",
+   "project stop rule -> blocked"
+  ],
+  "ownership": "worker",
+  "nested-allowed": false,
+  "max-nesting-depth": 1
+ },
+ "brief-fingerprint": "a29f7a563f58bdf76b0f20bf6a64134082bb18de1094e516186a63cf37ca0370",
+ "ledger-seq": 1
+}

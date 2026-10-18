@@ -278,18 +278,10 @@
       }
     ]
   },
-  "headroom-proposals": [
-    {
-      "from": 771000,
-      "profile": "cc-opus-high",
-      "task": "sr-policy-3",
-      "to": 848000,
-      "tokens": 847844
-    }
-  ],
-  "ledger-sha256": "993058bdf82261bfc4f54aea0fa4946527c91a683d953a00e9026c415d9bfc7d",
-  "outcome-records": 11,
-  "outcomes-counted": 9,
+  "headroom-proposals": [],
+  "ledger-sha256": "17738a7a1776c4a430b9b47397d4ed2baef41c104e94221c031470fb448f42b0",
+  "outcome-records": 13,
+  "outcomes-counted": 11,
   "policy-revision": "host-policy-3",
   "proposals": [],
   "stats": {
@@ -307,7 +299,7 @@
     },
     "cc-opus-high": {
       "build-ui": {
-        "accepted": 2,
+        "accepted": 4,
         "blocked": 0,
         "cancelled": 0,
         "cost-overrun": 0,
@@ -347,8 +339,8 @@
       "ratified-at": "2026-10-18T01:23:32Z",
       "skipped": {
         "negative-delta": 0,
-        "reset": 1,
-        "spanning": 3,
+        "reset": 2,
+        "spanning": 5,
         "unknown-tokens": 0,
         "zero-tokens": 5
       }
@@ -362,12 +354,12 @@
       "skipped": {
         "negative-delta": 0,
         "reset": 0,
-        "spanning": 3,
+        "spanning": 6,
         "unknown-tokens": 0,
         "zero-tokens": 6
       }
     }
   },
   "usage-proposals": [],
-  "usage-sha256": "073325c463ae216b1b92aa2e4c2e1ddf2268af2860f1fc76d09b43ca423d63f6"
+  "usage-sha256": "e59bd07b3be4ea22617c98984c5a2c16a2913abb282d6099e104f50a848936ab"
 }
