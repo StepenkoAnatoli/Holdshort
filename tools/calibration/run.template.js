@@ -78,9 +78,10 @@ if (unfilled(JUDGE.qualification) && (unfilled(JUDGE.limitation) || !JUDGE.limit
 // every {{placeholder}} is filled before the freeze (README step 2); the relayed text is verbatim operator text, not scanned
 const placeholderAt = (v, at) => {
   if (typeof v === 'string') return v.includes('{{') ? at : null
-  const entries = Array.isArray(v) ? v.map((x, i) => [`${at}[${i}]`, x]) : v && typeof v === 'object' ? Object.entries(v).map(([k, x]) => [`${at}.${k}`, x]) : []
-  for (const [path, x] of entries) {
+  const entries = Array.isArray(v) ? v.map((x, i) => [`${at}[${i}]`, x, '']) : v && typeof v === 'object' ? Object.entries(v).map(([k, x]) => [`${at}.${k}`, x, k]) : []
+  for (const [path, x, key] of entries) {
     if (path === 'protocol.relayed_operator_text.text') continue
+    if (key.includes('{{')) return path // a key can be a placeholder too (accounting.rates_per_mtok ships one)
     const found = placeholderAt(x, path)
     if (found) return found
   }

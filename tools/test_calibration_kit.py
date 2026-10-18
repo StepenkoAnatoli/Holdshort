@@ -857,6 +857,16 @@ class RunTemplate(unittest.TestCase):
         out = self.launch(lambda p: p["accounting"].update(statement="{{how tokens are read}}"))
         self.assertIn("unfilled placeholder at protocol.accounting", out["error"] or "")
         self.assertEqual(out["calls"], [])
+        # N1: a placeholder can be a key - the template ships rates_per_mtok keyed by '{{model alias}}'
+        def rekey(p):
+            rates = p["accounting"]["rates_per_mtok"]
+            rates["{{model alias}}"] = rates.pop("alpha")
+        out = self.launch(rekey)
+        self.assertIn("unfilled placeholder at protocol.accounting.rates_per_mtok.{{model alias}}", out["error"] or "")
+        self.assertEqual(out["calls"], [])
+        out = self.launch(lambda p: p.update({"{{extra}}": 1}))
+        self.assertIn("unfilled placeholder at protocol.{{extra}}", out["error"] or "")
+        self.assertEqual(out["calls"], [])
         # the relayed text is the operator's words verbatim: a '{{' in it is data, not a placeholder
         out = self.launch(lambda p: p.update(relayed_operator_text={"text": "keep {{this}} as typed", "statement": "the harness relays this operator text"}))
         self.assertIsNone(out["error"])
