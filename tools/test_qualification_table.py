@@ -199,6 +199,25 @@ class Gate(unittest.TestCase):
         self.assertEqual((run_column(review, 1), review["passes"], review["tier"]), ("PASS", "1 of 1", "T1"))
         self.assertEqual(review["adjudication"], "run 1: schema 1, holds+reachable+forbidden")
 
+    def test_each_run_is_labelled_by_its_folders_run_number_not_its_position(self):
+        # F6: runs 1 and 3 alone are runs 1 and 3, not runs 1 and 2; a kit run in a -calibration-4 folder is run 4
+        run3_id = json.loads((ROOT / RUNS[2] / "scores.json").read_text())["run_id"]
+        text = load_tool().generate([ROOT / RUNS[0], ROOT / RUNS[2]])
+        row = rows(text)[("claude-code", "haiku-medium", "review")]
+        self.assertEqual([k for k in row if k.startswith("run ")], [f"run 1 ({json.loads((ROOT / RUNS[0] / 'scores.json').read_text())['run_id']})", f"run 3 ({run3_id})"])
+        self.assertEqual(run_column(row, 3), "PASS (2-prong, would fail)")
+        self.assertTrue(row["adjudication"].startswith("run 1: none; run 3: schema"), row["adjudication"])
+        self.assertIn("run 3: 2-prong, would fail", row["caveats"])
+        self.assertIn(f"| 3 | `{RUNS[2]}` | {run3_id} |", text)
+        self.assertNotIn("run 2", text.split("## Host: claude-code", 1)[1])
+        folder = self.root / "k" / "fixture-host-calibration-4"
+        shutil.copytree(FIXTURES / "pass" / "fixture-host-calibration-1", folder)
+        review = rows(load_tool().generate([folder]))[("fixture-host", "beta-max", "review")]
+        self.assertEqual(run_column(review, 4), "PASS")
+        self.assertEqual(review["adjudication"], "run 4: schema 1, holds+reachable+forbidden")
+        tool = load_tool()  # a folder with no -<n> suffix is run 1 wherever it sorts; a name of another form keeps its position
+        self.assertEqual([tool.run_number(Path(n), 5) for n in ("claude-code-calibration", "claude-code-calibration-7", "results")], [1, 7, 5])
+
     def test_a_bootstrap_judge_caveats_the_kit_runs_review_cells(self):
         folder = self.root / "b" / "fixture-host-calibration-1"
         shutil.copytree(FIXTURES / "pass" / "fixture-host-calibration-1", folder)

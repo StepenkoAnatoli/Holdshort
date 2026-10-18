@@ -59,7 +59,8 @@ accepts. The tool runs the check first, and writes nothing when the check fails.
 A results pull request therefore regenerates the table and commits it in the same change.
 
 For each host, the table has one row per profile and category. Each row gives the profile's model, effort and config
-as the run's protocol names them, the grade per run in run order, the adjudication schema and prongs each run's
+as the run's protocol names them, the grade per run in run order (each run headed by its folder's run number,
+`<host>-calibration-<n>`), the adjudication schema and prongs each run's
 review grade rests on, and the caveats. A caveated PASS is shown and not counted:
 
 - `PASS (2-prong, would fail)`: a review PASS that holds only because the lens schema lacked a prong (run 3's

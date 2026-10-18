@@ -59,6 +59,13 @@ def host_of(folder: Path, protocol: dict) -> str:
     return m.group("host") if m else str(protocol.get("host") or folder.name)
 
 
+def run_number(folder: Path, position: int) -> int:
+    """The run's number from its folder name (<host>-calibration-<n>; no suffix is run 1), as the folders number their
+    runs; a folder named otherwise keeps its position among the host's runs."""
+    m = CHECK.FOLDER_NAME.match(folder.name)
+    return int(m.group("n") or 1) if m else position
+
+
 def profile_entries(protocol: dict) -> list[dict]:
     """The protocol's profile entries that name a key; the check does not read them, so a malformed one is left out."""
     lists = [protocol.get(k) for k in ("profiles", "review_only_profiles")]
@@ -191,7 +198,7 @@ def generate(folders: list[Path] | None = None, reports=None) -> str:
     limits = [f"- `LIMIT {CHECK.label(r.folder)} {rule}: {text}`" for r in sorted(reports, key=lambda r: CHECK.run_key(r.folder)) for rule, text in r.limits]
     out += limits or ["- none"]
     for host, rs in hosts.items():
-        out += [""] + host_section(host, [Run(n, r) for n, r in enumerate(rs, 1)])
+        out += [""] + host_section(host, [Run(run_number(r.folder, i), r) for i, r in enumerate(rs, 1)])
     return "\n".join(out) + "\n"
 
 
