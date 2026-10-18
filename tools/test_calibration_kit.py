@@ -1301,8 +1301,8 @@ class SharedPack(unittest.TestCase):
         self.assertEqual((d["redAtHead"], d["srcClean"], d["srcTouched"]), (False, False, ["src/bounded.py"]), d)
         self.assertIs(d["PASS"], False)
 
-    def fix_like_the_accepted_one(self, cand: Path):
-        (cand / "src" / "bounded.py").write_bytes(self.accepted("src/bounded.py"))
+    def fix_like_the_accepted_one(self, cand: Path, source: bytes | None = None):
+        (cand / "src" / "bounded.py").write_bytes(source if source is not None else self.accepted("src/bounded.py"))
         with (cand / "tests" / "test_bounded.py").open("a", encoding="utf-8") as f:
             f.write("\n\nclass TextCountsAgainstTheLimit(unittest.TestCase):\n    def test_rows(self):\n"
                     "        self.assertEqual(read_bounded([\"abc\", \"def\"], 4), b\"abcd\")\n"
@@ -1323,6 +1323,39 @@ class SharedPack(unittest.TestCase):
         self.assertEqual((d["candidateGreen"], d["guardRed"], d["acceptedPinGreen"]), (True, True, True), d)
         self.assertEqual((d["scopeOk"], d["outOfScope"]), (False, ["SPEC.md"]), d)
         self.assertIs(d["PASS"], False)
+
+    def wrong_fix(self, name: str) -> bytes:
+        """base0's source with a fix of D-2 that passes a pin cutting str chunks at an ASCII character and never testing
+        the stop, yet still breaks the promise (R-1 of the sr-pack review)."""
+        src = (PACK / "trees" / "base" / "src" / "bounded.py").read_text(encoding="utf-8")
+        text = '            parts.append(chunk.encode("utf-8", "replace"))\n            continue\n'
+        self.assertEqual(src.count(text), 1)
+        if name == "chars":  # counts a str chunk by its characters, not its UTF-8 bytes
+            src = src.replace(text, '            piece = chunk[:limit - taken]\n            parts.append(piece.encode("utf-8", "replace"))\n'
+                                    '            taken += len(piece)\n            if taken >= limit:\n                break\n            continue\n')
+        else:  # "trunc": cuts the joined result at the end, so str chunks are still neither counted nor stopped at
+            self.assertEqual(src.count("    return join_parts(parts)\n"), 1)
+            src = src.replace("    return join_parts(parts)\n", "    return join_parts(parts)[:limit]\n")
+        return src.encode("utf-8")
+
+    def test_grade_fix_wrong_fixes_of_d2_fail_on_the_accepted_pin(self):
+        # the pin case's rule names both halves the accepted pin tests: the UTF-8 bytes count, and the stop
+        rule = {f["id"]: f for f in self.manifest()["findings"]}["D-2"]["required_behaviour"]
+        self.assertIn("UTF-8 bytes count against limit", rule)
+        self.assertIn("reads no further chunk", rule)
+        # each passes its own test and is red with base0's source, so only the accepted pin can tell it from the fix
+        probes = {"chars": "print(len(read_bounded(['\\u00e9' * 4], 4)))",  # a non-ASCII text chunk crosses the bound
+                  "trunc": "print(read_bounded(['ab', 'cd', 3], 4))"}  # reads past limit bytes, into a chunk it rejects
+        for name, probe in probes.items():
+            with self.subTest(fix=name):
+                cand = []
+                d = self.grade_cell("fix", lambda c: (cand.append(c), self.fix_like_the_accepted_one(c, self.wrong_fix(name))))
+                self.assertEqual((d["candidateGreen"], d["guardRed"], d["scopeOk"], d["lint"]), (True, True, True, "ok"), d)
+                self.assertIs(d["acceptedPinGreen"], False, d)
+                self.assertIs(d["PASS"], False, d)
+                p = subprocess.run(["python3", "-c", "import sys; sys.path.insert(0, '.')\nfrom src.bounded import read_bounded\n" + probe],
+                                   cwd=cand[0], env=self.env, capture_output=True, text=True, timeout=60)
+                self.assertTrue(p.stdout.strip() == "8" if name == "chars" else "TypeError" in p.stderr, p.stdout + p.stderr)
 
     # ---- the workflow template filled with this pack (P5) ------------------------------------------------------------
     def shared_run_config(self, **host) -> dict:
