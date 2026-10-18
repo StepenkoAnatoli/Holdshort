@@ -1172,13 +1172,18 @@ class SharedPack(unittest.TestCase):
             spec = (PACK / "trees" / name / "SPEC.md").read_text()
             self.assertIn("released", spec, name)
             self.assertIn("with a limit of 0", spec, name)
+            none = re.search(r"(?ms)^- \*\*none\*\*:.*?(?=^\S|^- )", spec).group(0)  # R-3: Python calls these bytes-like too
+            for kind in ("`array.array`", "`mmap`"):
+                self.assertIn(kind, none, name)
         probe = ("import sys; sys.path.insert(0, '.')\nfrom src.bounded import read_bounded\n"
                  "v = memoryview(b'abc'); v.release()\n"
                  "try:\n    read_bounded([v], 4)\nexcept ValueError:\n    print('released: ValueError')\n"
                  "pulled = []\ndef gen():\n    for c in (b'a', b'b'):\n        pulled.append(c)\n        yield c\n"
-                 "print('limit 0:', read_bounded(gen(), 0), len(pulled))\n")
+                 "print('limit 0:', read_bounded(gen(), 0), len(pulled))\n"
+                 "import array, mmap\nfor c in (array.array('b', [65, 66]), mmap.mmap(-1, 2)):\n"
+                 "    try:\n        read_bounded([c], 4)\n    except TypeError:\n        print(type(c).__name__ + ': TypeError')\n")
         p = subprocess.run(["python3", "-c", probe], cwd=self.at("accepted"), env=self.env, capture_output=True, text=True, timeout=60)
-        self.assertEqual(p.stdout.split("\n")[:2], ["released: ValueError", "limit 0: b'' 1"], p.stdout + p.stderr)
+        self.assertEqual(p.stdout.split("\n")[:4], ["released: ValueError", "limit 0: b'' 1", "array: TypeError", "mmap: TypeError"], p.stdout + p.stderr)
 
     # ---- the manifest (P3, P4) and grade.sh on this pack (P5) --------------------------------------------------------
     def manifest(self) -> dict:

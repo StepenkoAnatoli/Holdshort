@@ -16,7 +16,9 @@ negative limit reads as 0. The result is the chunks' bytes in order, cut at `lim
   been released holds no bytes to read and is outside the promise.
 - **text**: a `str` chunk; it is encoded as UTF-8, and a character UTF-8 cannot encode (a lone surrogate) becomes `?`.
 - **none**: anything else (an int, `None`, a list). Such a chunk is outside the promise: `read_bounded` raises
-  `TypeError` on it. A `bytes` object passed as `chunks` itself iterates as ints, so it is not an iterable of chunks.
+  `TypeError` on it. So is any other object Python also calls bytes-like (one with the buffer protocol, such as an
+  `array.array` or an `mmap`): the promise's bytes-like kinds are the three named above, no more. A `bytes` object
+  passed as `chunks` itself iterates as ints, so it is not an iterable of chunks.
 
 `join_parts(parts)` joins the pieces taken from the chunks, in order.
 
