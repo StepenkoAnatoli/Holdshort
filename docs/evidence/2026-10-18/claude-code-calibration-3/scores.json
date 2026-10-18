@@ -1,0 +1,541 @@
+{
+ "schema_version": 1,
+ "run_id": "wf_4e9ef48d-066",
+ "supplementary_run_id": "wf_dbe29a64-3b2",
+ "scored_at": "2026-10-18T06:55:00Z",
+ "pass_rules": {
+  "pin": "protocol cases[pin].pass_rule (grade.sh PASS)",
+  "fix": "protocol cases[fix].pass_rule (grade.sh PASS)",
+  "review": "protocol cases[review].pass_rule: PASS when r8Found and r11Found and adjudicated falseBlocking 0 and no copying; PARTIAL when exactly one of r8Found, r11Found with adjudicated falseBlocking 0; FAIL otherwise"
+ },
+ "accounting_note": "estimate-only: tools/prices-2.json rows applied to harness-reported tokens as an all-input..all-output range; not a bill",
+ "profiles": {
+  "haiku-low": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 118993,
+     "usd_all_input": 0.0119,
+     "usd_all_output": 0.0595
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 116605,
+     "usd_all_input": 0.0117,
+     "usd_all_output": 0.0583
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 1,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 130440,
+     "usd_all_input": 0.013,
+     "usd_all_output": 0.0652
+    },
+    "supplementary_run": "wf_dbe29a64-3b2"
+   }
+  },
+  "haiku-medium": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 114463,
+     "usd_all_input": 0.0114,
+     "usd_all_output": 0.0572
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 142018,
+     "usd_all_input": 0.0142,
+     "usd_all_output": 0.071
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 2,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 2,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 138791,
+     "usd_all_input": 0.0139,
+     "usd_all_output": 0.0694
+    }
+   }
+  },
+  "haiku-high": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 119515,
+     "usd_all_input": 0.012,
+     "usd_all_output": 0.0598
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 142418,
+     "usd_all_input": 0.0142,
+     "usd_all_output": 0.0712
+    },
+    "supplementary_run": "wf_dbe29a64-3b2"
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 1,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 1,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 174287,
+     "usd_all_input": 0.0174,
+     "usd_all_output": 0.0871
+    }
+   }
+  },
+  "sonnet-low": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 99291,
+     "usd_all_input": 0.1986,
+     "usd_all_output": 0.9929
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 104911,
+     "usd_all_input": 0.2098,
+     "usd_all_output": 1.0491
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 0,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 1,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 109426,
+     "usd_all_input": 0.2189,
+     "usd_all_output": 1.0943
+    }
+   }
+  },
+  "sonnet-medium": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 101399,
+     "usd_all_input": 0.2028,
+     "usd_all_output": 1.014
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 107145,
+     "usd_all_input": 0.2143,
+     "usd_all_output": 1.0715
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 0,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 2,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 125630,
+     "usd_all_input": 0.2513,
+     "usd_all_output": 1.2563
+    }
+   }
+  },
+  "sonnet-high": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 113314,
+     "usd_all_input": 0.2266,
+     "usd_all_output": 1.1331
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 121541,
+     "usd_all_input": 0.2431,
+     "usd_all_output": 1.2154
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 0,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 159276,
+     "usd_all_input": 0.3186,
+     "usd_all_output": 1.5928
+    }
+   }
+  },
+  "sonnet-xhigh": {
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 0,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 1,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 227264,
+     "usd_all_input": 0.4545,
+     "usd_all_output": 2.2726
+    }
+   }
+  },
+  "opus-medium": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 103643,
+     "usd_all_input": 0.4146,
+     "usd_all_output": 2.0729
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 107815,
+     "usd_all_input": 0.4313,
+     "usd_all_output": 2.1563
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 1,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 127281,
+     "usd_all_input": 0.5091,
+     "usd_all_output": 2.5456
+    }
+   }
+  },
+  "opus-high": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 108414,
+     "usd_all_input": 0.4337,
+     "usd_all_output": 2.1683
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 119586,
+     "usd_all_input": 0.4783,
+     "usd_all_output": 2.3917
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 1,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 141662,
+     "usd_all_input": 0.5666,
+     "usd_all_output": 2.8332
+    }
+   }
+  },
+  "opus-xhigh": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 137110,
+     "usd_all_input": 0.5484,
+     "usd_all_output": 2.7422
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 154590,
+     "usd_all_input": 0.6184,
+     "usd_all_output": 3.0918
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 0,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 2,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 182333,
+     "usd_all_input": 0.7293,
+     "usd_all_output": 3.6467
+    }
+   }
+  },
+  "opus-max": {
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 0,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 2,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 266339,
+     "usd_all_input": 1.0654,
+     "usd_all_output": 5.3268
+    }
+   }
+  },
+  "fable-medium": {
+   "pin": {
+    "pass": false,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 108498,
+     "usd_all_input": 1.085,
+     "usd_all_output": 5.4249
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 116496,
+     "usd_all_input": 1.165,
+     "usd_all_output": 5.8248
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 0,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 148926,
+     "usd_all_input": 1.4893,
+     "usd_all_output": 7.4463
+    }
+   }
+  },
+  "fable-high": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 120400,
+     "usd_all_input": 1.204,
+     "usd_all_output": 6.02
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 141930,
+     "usd_all_input": 1.4193,
+     "usd_all_output": 7.0965
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 0,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 147254,
+     "usd_all_input": 1.4725,
+     "usd_all_output": 7.3627
+    }
+   }
+  },
+  "fable-xhigh": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 140242,
+     "usd_all_input": 1.4024,
+     "usd_all_output": 7.0121
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 166060,
+     "usd_all_input": 1.6606,
+     "usd_all_output": 8.303
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 0,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 1,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 186589,
+     "usd_all_input": 1.8659,
+     "usd_all_output": 9.3294
+    }
+   }
+  },
+  "fable-max": {
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 0,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 189364,
+     "usd_all_input": 1.8936,
+     "usd_all_output": 9.4682
+    }
+   }
+  }
+ },
+ "void_cells": {
+  "fix:haiku-high": {
+   "status": "VOID (A-1)",
+   "main_run_tokens": 91080
+  },
+  "review:haiku-low": {
+   "status": "VOID (A-1)",
+   "main_run_tokens": {
+    "review": 75186,
+    "grade": 88760
+   }
+  }
+ },
+ "adjudication_note": "all five clusters adjudicated REAL by the preregistered majority rule (holds and reachable not no), so every grader false on an S1-S3 other cleared; G-2 (lead-notes): the lens schema carries no forbidden-by-spec prong and for C-4 and C-5 the lenses prose says the specification permits the behaviour; the preregistered rule stands for the scores and changes no qualification",
+ "totals": {
+  "pin": 11,
+  "fix": 12,
+  "review_pass": 15,
+  "review_partial": 0,
+  "review_fail": 0,
+  "non_pass": [
+   "pin:fable-medium"
+  ]
+ }
+}
