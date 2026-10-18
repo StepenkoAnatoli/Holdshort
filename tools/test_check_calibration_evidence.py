@@ -726,6 +726,15 @@ class Shapes(unittest.TestCase):
              "review:beta-max: observations.json review-grade.others is not a list"),
             (ROOT / RUN3, "scores.json", lambda s: s["adjudication_schema"].update(missing_prong=[{"prong": "forbidden"}]), "prongs-declared",
              "legacy run: adjudication_schema.missing_prong [{'prong': 'forbidden'}] is not a prong name or a list of them"),
+            # lines a sibling failure under the same rule would otherwise mask
+            (pass_, "scores.json", lambda s: s.update(profiles=["alpha-low", "beta-max"]), "scores-derivable", "scores.json profiles is not an object"),
+            (ROOT / RUN1, "scores.json", lambda s: s.update(profiles="haiku-low"), "scores-derivable", "scores.json profiles is not an object"),
+            (pass_, "scores.json", lambda s: s["profiles"].update({"alpha-low": "PASS"}), "scores-derivable", "profile alpha-low in scores.json is not an object"),
+            (ROOT / RUN1, "scores.json", lambda s: s["profiles"].update({"haiku-low": "PASS"}), "scores-derivable", "profile haiku-low in scores.json is not an object"),
+            (ROOT / RUN3, "scores.json", lambda s: s.update(totals="13 of 15"), "fewer-prong-pass-flagged",
+             "scores.json totals.cells is not an object, so whether it counts the flagged PASSes cannot be read"),
+            (ROOT / RUN3, "observations.json", lambda o: o["haiku-medium"]["review-grade"].update(others="C-1"), "scores-derivable",
+             "review:haiku-medium: observations.json review grade.others is not a list"),
         ]
         for i, (src, name, fn, rule, needle) in enumerate(cases):
             with self.subTest(i=i, rule=rule):
@@ -744,12 +753,18 @@ class Shapes(unittest.TestCase):
 
         def unforeseen(r):
             return r.protocol["no such key"]
+
+        def named(r):
+            raise check.Malformed("protocol.json something is not an object")
         check.kit_judging = unforeseen
         check.legacy_relayed = unforeseen
-        for src, rule in ((FIXTURES / "pass" / FOLDER, "judging-profile-named"), (ROOT / RUN1, "relayed-chat-statement")):
-            with self.subTest(rule):
+        check.kit_relayed = named
+        for src, rule, text in ((FIXTURES / "pass" / FOLDER, "judging-profile-named", "a value has the wrong shape for this rule (KeyError: 'no such key')"),
+                                (ROOT / RUN1, "relayed-chat-statement", "a value has the wrong shape for this rule (KeyError: 'no such key')"),
+                                (FIXTURES / "pass" / FOLDER, "relayed-chat-statement", "protocol.json something is not an object")):
+            with self.subTest(rule=rule, text=text):
                 r = check.check_folder(src)
-                self.assertIn((rule, "a value has the wrong shape for this rule (KeyError: 'no such key')"), r.failures)
+                self.assertIn((rule, text), r.failures)
 
     def test_no_value_of_the_wrong_shape_raises(self):
         # every node of every JSON file (one profile of each shape) replaced by a value of another type: the check
