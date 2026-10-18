@@ -273,6 +273,29 @@ def run_pack_tests(cand: Path, env: dict, *files: str) -> subprocess.CompletedPr
     return subprocess.run(["python3", "tests/run.py", *files], cwd=cand, env=env, capture_output=True, text=True, timeout=120)
 
 
+PROMISE = ("read_bounded accepts any iterable whose items are bytes-like (bytes, bytearray, memoryview) or str (encoded as UTF-8), "
+           "never raises on such input, and never returns more than limit bytes")
+
+
+def text_hash(path: Path) -> str:
+    """The protocol's source hash convention (README step 2): SHA-256 of the UTF-8 text with CRLF and CR read as LF."""
+    import hashlib
+    return hashlib.sha256(path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n").encode()).hexdigest()
+
+
+def strings(v):
+    """Every string in a JSON value, keys included."""
+    if isinstance(v, str):
+        yield v
+    elif isinstance(v, dict):
+        for k, x in v.items():
+            yield k
+            yield from strings(x)
+    elif isinstance(v, list):
+        for x in v:
+            yield from strings(x)
+
+
 class Observations(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -1139,6 +1162,150 @@ class SharedPack(unittest.TestCase):
             seen[name] = p.stdout.strip()
         self.assertEqual(seen, {"review": "raised TypeError", "base": "returned b'abcd'", "accepted": "returned b'abcd'"})
 
+
+    # ---- the manifest (P3, P4) and grade.sh on this pack (P5) --------------------------------------------------------
+    def manifest(self) -> dict:
+        return json.loads((PACK / "manifest.json").read_text(encoding="utf-8"))
+
+    def test_the_manifest_carries_the_built_ids(self):
+        m, ids = self.manifest(), self.ids
+        self.assertEqual(m["repository"], "repo")
+        self.assertEqual((m["cases"]["review"]["base"], m["cases"]["pin"]["base"], m["cases"]["fix"]["base"], m["accepted_fix"]),
+                         (ids["review0"], ids["base0"], ids["base0"], ids["accepted0"]))
+        truth = {f["id"]: f for f in m["findings"]}
+        self.assertEqual(sorted(truth), ["D-1", "D-2"])
+        self.assertEqual((truth["D-1"]["present_at"], truth["D-1"]["accepted_fix"]), ([ids["review0"]], ids["base0"]))
+        self.assertEqual((truth["D-2"]["present_at"], truth["D-2"]["accepted_fix"]), ([ids["review0"], ids["base0"]], ids["accepted0"]))
+        self.assertIn("make-repo: the ids equal manifest.json's", self.built.stderr)
+
+    def test_make_repo_fails_when_the_ids_differ_from_the_manifest(self):
+        dest = self.root / "changed-pack"
+        shutil.copytree(PACK, dest, ignore=shutil.ignore_patterns("__pycache__", "repo"))
+        with (dest / "trees" / "base" / "SPEC.md").open("a", encoding="utf-8") as f:
+            f.write("\nchanged\n")
+        p, ids = build_shared(dest, self.env)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("differ from manifest.json", p.stderr)
+        self.assertIn("cases.pin.base", p.stderr)
+        self.assertNotIn("cases.review.base", p.stderr)  # review0 is built from trees/review, which did not change
+
+    def test_the_manifest_carries_every_field_of_the_format(self):
+        m, fixture = self.manifest(), json.loads((FIX / "manifest.json").read_text())
+        # every field the format documents (subject-pack/README.md), optional ones included, is present
+        section = md_section((KIT / "subject-pack" / "README.md").read_text(), "manifest.json")
+        fields = set(re.findall(r"^\s*- `([a-z_.\[\]]+)`", section, re.M))
+        for line in re.findall(r"^\s*- (`cases\.pin\.[a-z_]+`.*?):", section, re.M):  # "`cases.pin.x`, `cases.fix.x`: ..."
+            fields |= set(re.findall(r"`([a-z_.]+)`", line))
+        self.assertGreater(len(fields), 40, fields)
+        for field in sorted(fields):
+            node = m
+            for part in field.replace("[]", "").split("."):
+                node = node[0] if isinstance(node, list) else node
+                self.assertIn(part, node, field)
+                node = node[part]
+        keys = lambda d: {k for k in d if not k.startswith("_")}
+        self.assertEqual(keys(m), keys(fixture))
+        for f in m["findings"]:
+            self.assertEqual(keys(f), keys(fixture["findings"][0]), f["id"])
+            self.assertEqual(f["severity"], "S3", f["id"])
+        for case in ("pin", "fix", "review"):
+            self.assertTrue(keys(fixture["cases"][case]) <= keys(m["cases"][case]), case)
+            self.assertEqual(m["cases"][case]["tier"], "T1", case)
+            self.assertEqual(m["cases"][case]["pass_rule"], fixture["cases"][case]["pass_rule"], case)  # the kit's rule shapes
+            self.assertEqual(m["cases"][case]["category"], fixture["cases"][case]["category"], case)
+        self.assertEqual((m["kind"], m["pack_version"]), ("shared", "1"))
+        self.assertEqual((m["cases"]["pin"]["finding"], m["cases"]["fix"]["finding"], m["cases"]["review"]["findings"]), ("D-2", "D-2", ["D-1", "D-2"]))
+        self.assertIn("two-row", m["cases"]["pin"]["instructions"])
+        self.assertTrue(m["cases"]["fix"]["commit_prefix"].startswith("fix(bounded): D-2"))
+        for name in ("read_bounded", "chunk_kind", "join_parts"):
+            self.assertIn(name, m["cases"]["review"]["scope"])
+        paths = m["paths"]
+        self.assertEqual((paths["source"], paths["source_dir"], paths["test_file"], paths["new_test_pattern"], paths["accepted_test"], paths["scratch_test"]),
+                         (["src/bounded.py"], "src", "tests/test_bounded.py", "^tests/test_pin.*\\.py$",
+                          {"from": "tests/test_pin.py", "to": "tests/zz_accepted_pin.py"}, "tests/scratch_{name}.py"))
+        self.assertRegex(m["cases"]["pin"]["test_file"], paths["new_test_pattern"])
+        self.assertNotRegex(paths["accepted_test"]["to"], paths["new_test_pattern"])
+        self.assertEqual(m["commands"], {"test": "python3 tests/run.py {files}", "test_report": "exit-code", "run_one": "python3 tests/run.py {file}",
+                                         "lint": "python3 -m py_compile {files}", "timeout_seconds": 120})
+        self.assertEqual(m["checkout"], {"links": []})
+        self.assertEqual(m["subject"]["module"], "src/bounded.py")
+        self.assertEqual(m["subject"]["promise"], PROMISE)
+        for name in TREES:  # the module states the promise the manifest names
+            doc = " ".join((PACK / "trees" / name / "src" / "bounded.py").read_text().split('"""')[1].split())
+            self.assertIn(PROMISE, doc, name)
+        self.assertIn("history-less", m["isolation"])
+
+    def test_no_manifest_text_states_an_accepted_fix(self):
+        m = self.manifest()
+        text = "\n".join(strings({k: v for k, v in m.items() if k != "source_hashes"}))
+        g = lambda *a: sh(["git", *a], self.repo, self.env).stdout
+        for a, b in (("review0", "base0"), ("base0", "accepted0")):
+            added = [ln[1:].strip() for ln in g("diff", a, b, "--", "src/bounded.py").splitlines() if ln.startswith("+") and not ln.startswith("+++")]
+            self.assertTrue(added, (a, b))
+            for line in added:
+                self.assertNotIn(line, text, f"the manifest states the fix line {line!r}")
+
+    def test_source_hashes_cover_every_pack_file(self):
+        hashes = self.manifest()["source_hashes"]
+        self.assertEqual(sorted(hashes), [f for f in pack_files(PACK) if f != "manifest.json"])
+        for f, h in hashes.items():
+            self.assertEqual(h, text_hash(PACK / f), f)
+
+    def grade_cell(self, task: str, prepare) -> dict:
+        cand = self.at("base")
+        prepare(cand)
+        commit_all(cand, self.env, f"fix(bounded): D-2 - {task} cell" if task == "fix" else "test(bounded): pin")
+        code, d, out = grade(self.pack / "manifest.json", task, cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertIs(d["restored"], True, out)
+        self.assertFalse((cand / "tests" / "zz_accepted_pin.py").exists())
+        return d
+
+    def accepted(self, path: str) -> bytes:
+        return (PACK / "trees" / "accepted" / path).read_bytes()
+
+    def test_grade_pin_the_accepted_pin_passes(self):
+        d = self.grade_cell("pin", lambda c: (c / "tests" / "test_pin.py").write_bytes(self.accepted("tests/test_pin.py")))
+        self.assertEqual(d["testFiles"], ["tests/test_pin.py"])
+        self.assertEqual((d["redAtHead"], d["greenWithFix"], d["srcClean"], d["lint"], d["committed"]), (True, True, True, "ok", True), d)
+        self.assertIs(d["PASS"], True)
+
+    def test_grade_pin_a_wrong_pin_fails(self):
+        weak = ("import unittest\nfrom src.bounded import read_bounded\n\n\nclass P(unittest.TestCase):\n    def test_text(self):\n"
+                "        self.assertEqual(read_bounded([\"ab\"], 4), b\"ab\")\n")
+        d = self.grade_cell("pin", lambda c: (c / "tests" / "test_pin.py").write_text(weak))  # green at the base: not the rule
+        self.assertEqual((d["redAtHead"], d["greenWithFix"]), (False, True), d)
+        self.assertIs(d["PASS"], False)
+
+        def pin_and_fix(c):  # the rule, but the source fixed too: a pin cell changes nothing under src/
+            (c / "tests" / "test_pin.py").write_bytes(self.accepted("tests/test_pin.py"))
+            (c / "src" / "bounded.py").write_bytes(self.accepted("src/bounded.py"))
+        d = self.grade_cell("pin", pin_and_fix)
+        self.assertEqual((d["redAtHead"], d["srcClean"], d["srcTouched"]), (False, False, ["src/bounded.py"]), d)
+        self.assertIs(d["PASS"], False)
+
+    def fix_like_the_accepted_one(self, cand: Path):
+        (cand / "src" / "bounded.py").write_bytes(self.accepted("src/bounded.py"))
+        with (cand / "tests" / "test_bounded.py").open("a", encoding="utf-8") as f:
+            f.write("\n\nclass TextCountsAgainstTheLimit(unittest.TestCase):\n    def test_rows(self):\n"
+                    "        self.assertEqual(read_bounded([\"abc\", \"def\"], 4), b\"abcd\")\n"
+                    "        self.assertEqual(read_bounded([b\"ab\", \"cd\\u00e9\", b\"f\"], 4), b\"abcd\")\n")
+
+    def test_grade_fix_the_accepted_source_with_a_pin_passes(self):
+        d = self.grade_cell("fix", self.fix_like_the_accepted_one)
+        self.assertEqual((d["candidateGreen"], d["guardRed"], d["acceptedPinGreen"], d["scopeOk"], d["lint"]), (True, True, True, True, "ok"), d)
+        self.assertEqual((d["srcDiffLines"], d["committedWithMap"], d["outOfScope"]), (3, None, []), d)
+        self.assertIs(d["PASS"], True)
+
+    def test_grade_fix_a_scope_breaking_fix_fails(self):
+        def and_the_spec(c):
+            self.fix_like_the_accepted_one(c)
+            with (c / "SPEC.md").open("a", encoding="utf-8") as f:
+                f.write("\nA str chunk counts too.\n")
+        d = self.grade_cell("fix", and_the_spec)
+        self.assertEqual((d["candidateGreen"], d["guardRed"], d["acceptedPinGreen"]), (True, True, True), d)
+        self.assertEqual((d["scopeOk"], d["outOfScope"]), (False, ["SPEC.md"]), d)
+        self.assertIs(d["PASS"], False)
 
 class Docs(unittest.TestCase):
     def readme(self) -> str:
