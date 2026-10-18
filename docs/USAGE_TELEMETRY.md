@@ -54,6 +54,9 @@ The synthetic example produces these cumulative values:
 
 For this fixture, `100 + 20 = 120`; adding the cached and reasoning subsets again
 would double-count them. A missing counter stays `null`. It never becomes zero.
+A spec-v2 §10.5 LedgerRecord or §10.3 Outcome whose cash is unknown keeps it `null` the same way and
+carries the marker `"cash-basis": "estimate-only"` in its `counters` (`"actual-spend-basis": "estimate-only"`
+in its `evidence`); `tools/conform_spec.py` refuses an unmarked `null`.
 If the latest token event has no cumulative usage, `cumulative_usage` is `null`
 and `usage_status` is `"unknown"`, even if an earlier event had numbers. A partial
 object can have `usage_status: "observed"` while individual fields remain `null`.
