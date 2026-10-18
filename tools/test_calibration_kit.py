@@ -1331,7 +1331,7 @@ class SharedPack(unittest.TestCase):
 
     def wrong_fix(self, name: str) -> bytes:
         """base0's source with a fix of D-2 that passes a pin which never cuts inside a character or never tests the stop,
-        yet still breaks the promise or SPEC.md's result (R-1 of the sr-pack review, N-1 of its re-review)."""
+        yet still breaks the promise or SPEC.md's result (R-1 of the sr-pack review, N-1 and N-2 of its re-review)."""
         src = (PACK / "trees" / "base" / "src" / "bounded.py").read_text(encoding="utf-8")
         text = '            parts.append(chunk.encode("utf-8", "replace"))\n            continue\n'
         self.assertEqual(src.count(text), 1)
@@ -1346,6 +1346,13 @@ class SharedPack(unittest.TestCase):
                                     '                    whole = False\n                    break\n'
                                     '                fits += b\n            parts.append(fits)\n            taken += len(fits)\n'
                                     '            if not whole or taken >= limit:\n                break\n            continue\n')
+        elif name == "topcheck":  # counts a str chunk's bytes, but tests the bound at the top of the loop, so it pulls
+            # one chunk past limit bytes and drops it, where SPEC.md says no further chunk is read
+            src = src.replace(text, '            chunk = chunk.encode("utf-8", "replace")\n')
+            for a, b in (("    for chunk in chunks:\n", "    for chunk in chunks:\n        if taken >= limit:\n            break\n"),
+                         ("        taken += len(piece)\n        if taken >= limit:\n            break\n", "        taken += len(piece)\n")):
+                self.assertEqual(src.count(a), 1, a)
+                src = src.replace(a, b)
         else:  # "trunc": cuts the joined result at the end, so str chunks are still neither counted nor stopped at
             self.assertEqual(src.count("    return join_parts(parts)\n"), 1)
             src = src.replace("    return join_parts(parts)\n", "    return join_parts(parts)[:limit]\n")
@@ -1359,7 +1366,9 @@ class SharedPack(unittest.TestCase):
         # each passes its own test and is red with base0's source, so only the accepted pin can tell it from the fix
         probes = {"chars": "print(len(read_bounded(['\\u00e9' * 4], 4)))",  # a non-ASCII text chunk crosses the bound
                   "trunc": "print(read_bounded(['ab', 'cd', 3], 4))",  # reads past limit bytes, into a chunk it rejects
-                  "boundary": "print(read_bounded(['\\u00e9\\u00e9', b'x'], 3))"}  # 2 bytes, not the 3 SPEC.md cuts at
+                  "boundary": "print(read_bounded(['\\u00e9\\u00e9', b'x'], 3))",  # 2 bytes, not the 3 SPEC.md cuts at
+                  "topcheck": "pulls = []\ndef g():\n    for c in ('ab', 'cd', 'ef'):\n        pulls.append(c)\n        yield c\n"
+                              "print(read_bounded(g(), 4), len(pulls))"}  # pulls 'ef' though 'cd' reached the limit
         for name, probe in probes.items():
             with self.subTest(fix=name):
                 cand = []
@@ -1370,7 +1379,7 @@ class SharedPack(unittest.TestCase):
                 p = subprocess.run(["python3", "-c", "import sys; sys.path.insert(0, '.')\nfrom src.bounded import read_bounded\n" + probe],
                                    cwd=cand[0], env=self.env, capture_output=True, text=True, timeout=60)
                 want = {"chars": p.stdout.strip() == "8", "trunc": "TypeError" in p.stderr,
-                        "boundary": p.stdout.strip() == "b'\\xc3\\xa9'"}
+                        "boundary": p.stdout.strip() == "b'\\xc3\\xa9'", "topcheck": p.stdout.strip() == "b'abcd' 3"}
                 self.assertTrue(want[name], p.stdout + p.stderr)
 
     # ---- the workflow template filled with this pack (P5) ------------------------------------------------------------

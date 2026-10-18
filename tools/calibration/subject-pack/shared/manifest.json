@@ -11,7 +11,7 @@
   "reference": "SPEC.md (the promise, the chunk kinds, the bound), the docstrings of src/bounded.py, and tests/test_bounded.py with its runner tests/run.py (the shipped harness)"
  },
  "commit_rule": null,
- "accepted_fix": "0af40d53350e6bded92128d31b48bab175804236",
+ "accepted_fix": "3517210bbece5e49d527e6d27d6fe18da8e5920c",
  "findings": [
   {
    "id": "D-1",
@@ -38,7 +38,7 @@
    "required_behaviour": "a str chunk's UTF-8 bytes count against limit like any other chunk's, so the result never exceeds limit bytes whatever mix of str and bytes-like chunks the iterable yields, and once limit bytes are taken read_bounded reads no further chunk",
    "found_rule": "a finding says str chunks are not counted against limit, so the result can exceed limit bytes",
    "cause_rule": "it locates the cause in read_bounded's handling of str chunks, which bypasses the bound",
-   "accepted_fix": "0af40d53350e6bded92128d31b48bab175804236"
+   "accepted_fix": "3517210bbece5e49d527e6d27d6fe18da8e5920c"
   }
  ],
  "cases": {
@@ -107,7 +107,7 @@
   "trees/accepted/src/bounded.py": "a1927f4b1bbd0492c3f711f9295fa0e349bd137758d8df90d1f6ee4849c0073b",
   "trees/accepted/tests/run.py": "fe8d8485c8b636871287b8a80aaa465e343690ad4966c6d1def9eda7d8afc47d",
   "trees/accepted/tests/test_bounded.py": "01a784c4f065211ae7663fe6fbb1edae2208a9eec3b49010aa55408c876c657e",
-  "trees/accepted/tests/test_pin.py": "a010c7737cb31aa88cc90663b9707963befb529b62e9840c14f4a0a70cb1b9ad",
+  "trees/accepted/tests/test_pin.py": "d85dea27e0555e43faabbaa3bf296970211b76f4f952a10388648c552f05c9b1",
   "trees/base/.gitignore": "32dae3052f331ee34d628ef535709b301259a45df7c7522c4d35dcf49873f00b",
   "trees/base/SPEC.md": "9f036ca37a1979b5a9dd8cd37ef29784ad6f47c4ae449b07950385f3d451b9bd",
   "trees/base/src/__init__.py": "630f27c1aa4227584b29f5b14457a36c75ab48976f41073b52c5a0192187f011",
