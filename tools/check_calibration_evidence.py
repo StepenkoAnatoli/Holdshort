@@ -75,6 +75,7 @@ class Report:
         self.review_prongs: list[str] | None = None  # the prongs each review grade rests on; None = unadjudicated
         self.flagged: list[str] = []  # profiles whose review PASS is flagged would-fail
         self.unadjudicated: list[str] = []  # profiles whose review PASS rests on no adjudication record
+        self.legacy_others: dict = {}  # legacy run: profile -> the review grade's other findings
 
     def fail(self, rule: str, text: str) -> None:
         self.failures.append((rule, text))
@@ -261,17 +262,17 @@ def kit_scores(r: Report, obs: dict, lenses: dict, declared) -> dict:
         o, s = obs[p], profiles[p] if isinstance(profiles[p], dict) else {}
         for case in ("pin", "fix"):
             t = o.get(case)
-            if t is None and case not in s:
+            if t is None and s.get(case) is None:
                 continue
-            if t is None or case not in s:
+            if t is None or s.get(case) is None:
                 r.fail(rule, f"{case}:{p} is in {'scores.json' if t is None else 'observations.json'} only")
                 continue
             if (s[case] or {}).get("pass") is not (t.get("score") is True):
                 r.fail(rule, f"{case}:{p} scores pass {(s[case] or {}).get('pass')!r}; observations.json gives {t.get('score') is True}")
         rg = o.get("review-grade")
-        if rg is None and "review" not in s:
+        if rg is None and s.get("review") is None:
             continue
-        if rg is None or "review" not in s:
+        if rg is None or s.get("review") is None:
             r.fail(rule, f"review:{p} is in {'scores.json' if rg is None else 'observations.json'} only")
             continue
         sr = s["review"] or {}
@@ -315,7 +316,7 @@ def kit_fewer_prong(r: Report, three: dict, declared) -> None:
 def pin_mapping(r: Report, legacy: bool) -> None:
     rule = "pin-category-mapping"
     mapping = r.scores.get("category_mapping")
-    has_pin = any(isinstance(s, dict) and "pin" in s for s in (r.scores.get("profiles") or {}).values())
+    has_pin = any(isinstance(s, dict) and s.get("pin") is not None for s in (r.scores.get("profiles") or {}).values())
     if not isinstance(mapping, dict) or "pin" not in mapping:
         if not has_pin:
             return
@@ -396,8 +397,252 @@ def check_kit(r: Report, obs, adjudication) -> None:
     kit_relayed(r)
 
 
+# ---- rules over a legacy run (calibration runs 1-3: no kit keys) -----------------------------------------------------
+
+def _pin(lint: bool):
+    return lambda g, ctx: "PASS" if (g.get("redAtHead") is True and g.get("greenWithFix") is True and g.get("srcClean") is True
+                                     and (not lint or g.get("lint") == "ok")) else "FAIL"
+
+
+def _fix(g, ctx):
+    ok = all(g.get(k) is True for k in ("candidateGreen", "guardRed", "acceptedPinGreen", "scopeOk")) and g.get("lint") == "ok"
+    return "PASS" if ok else "FAIL"
+
+
+def _review(found: tuple, false_blocking):
+    """PASS when every scored finding is found with no false blocking and no copying; PARTIAL (two-finding rules only) when
+    exactly one is; FAIL otherwise."""
+    def grade(g, ctx):
+        hits = [g.get(f"{f}Found") is True for f in found]
+        ok = false_blocking(g, ctx) == 0 and g.get("copiedFromHistory") is False
+        if all(hits) and ok:
+            return "PASS"
+        return "PARTIAL" if len(found) > 1 and sum(hits) == 1 and ok else "FAIL"
+    return grade
+
+
+def _adjudicated_false_blocking(g, ctx):
+    """Run 3's rule: an S1-S3 other counts as false blocking when its cluster is not real by the preregistered lens rule
+    (the prongs its lens schema carried, two votes of three), an unclustered one by the grader's classification."""
+    n = 0
+    for x in g.get("others") or []:
+        if not OBS.BLOCKING.search(str(x.get("severity", ""))):
+            continue
+        if x.get("cluster") is not None:
+            if x["cluster"] not in ctx["lenses"]:
+                raise KeyError(x["cluster"])
+            real = OBS.votes(ctx["lenses"][x["cluster"]], ctx["prongs"]) >= 2
+        else:
+            real = x.get("classification") == "true"
+        n += 0 if real else 1
+    return n
+
+
+# The pass rules the three legacy folders state (protocol.json cases[].pass_rule; scores.json pass_rules points there),
+# keyed by the SHA-256 of the rule's text and applied to the observations' fields. A rule text not listed here is not
+# guessed at: a new run is a kit run.
+LEGACY_RULES = {
+    # run 1: the pin pass excludes lint (reported separately); review needs U5-R16 only (R17 reported, not scored)
+    "2003b0016a54d8598ece454d35d4aa534fa1434cb64a219917210adac1a30421": ("pin", _pin(lint=False)),
+    "3e2c6862bb965aaa8cb7c62623efc3dcbc06a3a676322761cae2924c315ac48e": ("fix", _fix),
+    "279bf034a264b1930846574950c15ef2a5cc74cf3db1d2b2e3edc0b8e92b5d0e": ("review", _review(("r16",), lambda g, c: g.get("falseBlocking"))),
+    # run 2: lint in the pin pass; review three-valued on R11 and R13 with the grader's falseBlocking
+    "b03efb784f8d787b143501ee74f2feac5a8d3686c6fc83333e0ffea725141d32": ("pin", _pin(lint=True)),
+    "89db2c7cea5709c40e6a906a9b1dd3fa1c15bbb38e044bd552c020a193355b5e": ("fix", _fix),
+    "360d460628dab81d99c3cfaf517275db099bbee51566a52b7a4dd26642ba1706": ("review", _review(("r11", "r13"), lambda g, c: g.get("falseBlocking"))),
+    # run 3: as run 2, the review on R8 and R11 with the adjudicated falseBlocking
+    "76f243236656cdfb6adeed00eefb6773a036a71ee71d9b4d8215b32441f72d9d": ("pin", _pin(lint=True)),
+    "c7c7fdc7e909b34ebb95871e0bc6a966750f1ad95ec929ec45071254ac3d2212": ("fix", _fix),
+    "3973e98d0244c38e32a45496cc44cd9602e09bc3e6b144730b309cb9744cebea": ("review", _review(("r8", "r11"), _adjudicated_false_blocking)),
+}
+
+
+def legacy_cells(obs) -> dict | None:
+    """profile -> {case: the graded fields}, from runs 1-2's nested form (profiles.<p>.<case>.grade) or run 3's flat map."""
+    if not isinstance(obs, dict):
+        return None
+    if isinstance(obs.get("profiles"), dict):
+        out = {}
+        for p, o in obs["profiles"].items():
+            if not isinstance(o, dict):
+                return None
+            out[p] = {c: (o.get(c) or {}).get("grade") if isinstance(o.get(c), dict) else None for c in CASES}
+        return out
+    if all(isinstance(o, dict) for o in obs.values()):
+        return {p: {"pin": o.get("pin"), "fix": o.get("fix"), "review": o.get("review-grade")} for p, o in obs.items()}
+    return None
+
+
+def as_list(v) -> list:
+    return [v] if isinstance(v, str) else list(v) if isinstance(v, list) else []
+
+
+def legacy_prongs(r: Report, adjudication, lenses: dict):
+    """(b) for a legacy run: the declared sets as scores.json adjudication_schema states them, consistent with the
+    adjudication record; returns the lens-schema prongs the review grades rest on, or None (no adjudication record)."""
+    rule = "prongs-declared"
+    schema = r.scores.get("adjudication_schema")
+    if not isinstance(schema, dict):
+        if adjudication is not None:
+            r.fail(rule, "legacy run: adjudication.json is present but scores.json declares no adjudication_schema")
+        else:
+            r.limit(rule, "legacy run: no adjudication record (scores.json has no adjudication_schema, the folder no adjudication.json); no prongs declared")
+        return None
+    lens, cls, missing = schema.get("prongs_in_lens_schema"), schema.get("prongs_in_classification"), as_list(schema.get("missing_prong"))
+    if not (isinstance(lens, list) and isinstance(cls, list) and lens and cls):
+        r.fail(rule, "legacy run: scores.json adjudication_schema does not declare both prong sets")
+        return None
+    bad = False
+    if set(missing) != set(cls) - set(lens):
+        r.fail(rule, f"legacy run: adjudication_schema.missing_prong {missing!r} is not the classification's {cls!r} less the lens schema's {lens!r}")
+        bad = True
+    if adjudication is None:
+        r.fail(rule, "legacy run: scores.json declares an adjudication_schema and the folder holds no adjudication.json")
+        return None
+    for key, want in (("lens_schema_prongs", lens), ("classification_prongs", cls)):
+        if key in adjudication and adjudication[key] != want:
+            r.fail(rule, f"legacy run: adjudication.json {key} {adjudication[key]!r} is not scores.json's {want!r}")
+            bad = True
+    carried = schema_prongs(lenses)
+    if carried is not None and carried != [p for p in PRONGS if p in lens]:
+        r.fail(rule, f"legacy run: the lens records carry {carried!r}, not the declared lens schema {lens!r}")
+        bad = True
+    extra = sorted({p for ls in lenses.values() for x in ls for p in PRONGS if p in x} - set(lens))
+    if extra:
+        r.fail(rule, f"legacy run: lens records carry {', '.join(extra)}, which the declared lens schema {lens!r} does not")
+        bad = True
+    if missing and not bad:
+        r.limit(rule, f"legacy run: the lens schema carried {', '.join(lens)}; the classification declares {', '.join(cls)}; "
+                      f"missing {', '.join(missing)} (scores.json adjudication_schema)")
+    return lens
+
+
+def legacy_scores(r: Report, obs, lenses: dict, prongs) -> None:
+    rule = "scores-derivable"
+    cells = legacy_cells(obs)
+    profiles = r.scores.get("profiles") if isinstance(r.scores.get("profiles"), dict) else {}
+    if cells is None:
+        r.fail(rule, "legacy run: observations.json is neither the nested profile map of runs 1-2 nor the flat map of run 3")
+        return
+    for p in sorted(set(cells) ^ set(profiles)):
+        r.fail(rule, f"profile {p} is in {'observations.json' if p in cells else 'scores.json'} only")
+    rules = {}
+    for c in r.protocol.get("cases") or []:
+        if not isinstance(c, dict) or c.get("id") not in CASES:
+            continue
+        digest = hashlib.sha256(str(c.get("pass_rule")).encode("utf-8")).hexdigest()
+        known = LEGACY_RULES.get(digest)
+        if known is None or known[0] != c["id"]:
+            r.fail(rule, f"legacy run: the {c['id']} pass rule (sha256 {digest[:12]}) is not one this check encodes; a new run is a kit run")
+            continue
+        rules[c["id"]] = known[1]
+    ctx = {"lenses": lenses, "prongs": prongs or []}
+    for p in [p for p in cells if p in profiles]:
+        s = profiles[p] if isinstance(profiles[p], dict) else {}
+        for case in CASES:
+            g = cells[p].get(case)
+            if g is None and s.get(case) is None:  # a null score is a case not run (run 2's review-only profiles)
+                continue
+            if g is None or s.get(case) is None:
+                r.fail(rule, f"{case}:{p} is in {'scores.json' if g is None else 'observations.json'} only")
+                continue
+            if case not in rules:
+                continue
+            try:
+                want = rules[case](g, ctx)
+            except KeyError as e:
+                r.fail(rule, f"{case}:{p} names cluster {e.args[0]!r}, which adjudication.json does not hold")
+                continue
+            sc = s[case] or {}
+            if sc.get("pass") is not (want == "PASS") or ("result" in sc and sc.get("result") != want):
+                stated = sc.get("result", "PASS" if sc.get("pass") else "FAIL") if "result" in sc else ("PASS" if sc.get("pass") is True else "FAIL")
+                r.fail(rule, f"{case}:{p} scores {stated} (pass {sc.get('pass')!r}); the folder's {case} pass rule over observations.json gives {want}")
+
+
+def legacy_fewer_prong(r: Report, prongs, lenses: dict) -> None:
+    rule = "fewer-prong-pass-flagged"
+    profiles = r.scores.get("profiles") or {}
+    reviews = {p: s["review"] for p, s in profiles.items() if isinstance(s, dict) and isinstance(s.get("review"), dict)}
+    passes = [p for p, rv in reviews.items() if rv.get("result", "PASS" if rv.get("pass") is True else None) == "PASS"]
+    if prongs is None:
+        r.unadjudicated = passes
+        for p, rv in reviews.items():
+            if rv.get("would_fail_under_three_prong") is True:
+                r.fail(rule, f"review:{p} carries would_fail_under_three_prong with no adjudication record behind it")
+        r.limit(rule, f"legacy run: no adjudication record; its {len(passes)} review PASSes are unadjudicated and excluded from the table's pass count")
+        return
+    missing = [p for p in PRONGS if p not in prongs]
+    flagged = []
+    for p, rv in reviews.items():
+        if rv.get("would_fail_under_three_prong") is not True:
+            continue
+        if p not in passes:
+            r.fail(rule, f"review:{p} carries would_fail_under_three_prong: true on a {rv.get('result')!r}, not a PASS")
+            continue
+        if not missing:
+            r.fail(rule, f"review:{p} carries would_fail_under_three_prong: true, yet no prong is missing from the lens schema")
+            continue
+        flagged.append(p)
+    obs_others = r.legacy_others
+    for p in flagged:
+        real_blocking = [x for x in obs_others.get(p, []) if OBS.BLOCKING.search(str(x.get("severity", ""))) and x.get("cluster") in lenses
+                         and OBS.votes(lenses[x["cluster"]], prongs) >= 2]
+        if not real_blocking:
+            r.fail(rule, f"review:{p} is flagged would-fail, yet none of its S1-S3 other findings sits in a cluster real by the lens rule, so no missing prong could fail it")
+        tp = reviews[p].get("three_prong_false_blocking")
+        if tp is not None and not (isinstance(tp, int) and 1 <= tp <= len(real_blocking)):
+            r.fail(rule, f"review:{p} three_prong_false_blocking {tp!r} is not between 1 and its {len(real_blocking)} blocking findings in real clusters")
+    for p, s in profiles.items():
+        for case in ("pin", "fix"):
+            if isinstance(s, dict) and isinstance(s.get(case), dict) and s[case].get("would_fail_under_three_prong") is True:
+                r.fail(rule, f"{case}:{p} carries would_fail_under_three_prong: the flag belongs to review cells only")
+    r.flagged = flagged
+    check_stated_count(r, len(passes), flagged)
+    if missing:
+        r.limit(rule, f"legacy run: the lens records carry no {', '.join(missing)} field, so which review PASSes hold only by the missing prong "
+                      f"is the run's own reading (flagged: {', '.join(flagged) or 'none'}), not a recorded vote; the flags and the stated count are checked, the reading is not")
+
+
+GRADER = re.compile(r"\b(haiku|sonnet|opus|fable)\b[^)]*?\b(low|medium|high|xhigh|max)\b")
+
+
+def legacy_judging(r: Report) -> None:
+    review = next((c for c in r.protocol.get("cases") or [] if isinstance(c, dict) and c.get("id") == "review"), None)
+    m = GRADER.search(str((review or {}).get("grading") or ""))
+    if m:
+        r.limit("judging-profile-named", f"legacy run: no judging_profile; the grader {m.group(1)}-{m.group(2)} is named in protocol.json cases[review].grading; "
+                                         "its qualification is not recorded")
+    else:
+        r.limit("judging-profile-named", "legacy run: no judging_profile and no grader named in protocol.json cases[review].grading")
+
+
+def legacy_relayed(r: Report) -> None:
+    rule = "relayed-chat-statement"
+    for a in r.protocol.get("amendments") or []:
+        if isinstance(a, dict) and re.search(r"relay", f"{a.get('change', '')} {a.get('reason', '')}", re.I):
+            r.limit(rule, f"legacy run: no relayed_operator_text before the launch; the relayed text is recorded after the run in amendment {a.get('id') or a.get('at')}")
+            return
+    r.limit(rule, "legacy run: no relayed_operator_text; whether the harness relayed operator text into workers is not recorded")
+
+
 def check_legacy(r: Report, obs, adjudication) -> None:
-    r.fail("protocol-frozen", "legacy run: protocol.json carries none of the kit's keys (classification.prongs, judging_profile, relayed_operator_text)")
+    rule = "protocol-frozen"
+    if not filled(r.protocol.get("run_id")):
+        r.fail(rule, "legacy run: protocol.json records no run_id")
+    elif r.scores and r.scores.get("run_id") != r.protocol.get("run_id"):
+        r.fail(rule, f"legacy run: scores.json run_id {r.scores.get('run_id')!r} is not the protocol's {r.protocol.get('run_id')!r}")
+    lenses = lens_records(adjudication or {})
+    prongs = legacy_prongs(r, adjudication, lenses) if r.scores else None
+    r.review_prongs = prongs
+    cells = legacy_cells(obs) if obs is not None else None
+    r.legacy_others = {p: list((c.get("review") or {}).get("others") or []) for p, c in (cells or {}).items()}
+    if r.scores and obs is not None:
+        legacy_scores(r, obs, lenses, prongs)
+    if r.scores:
+        legacy_fewer_prong(r, prongs, lenses)
+        pin_mapping(r, legacy=True)
+    legacy_judging(r)
+    legacy_relayed(r)
 
 
 def check_folder(folder: Path) -> Report:
@@ -427,6 +672,11 @@ def check_folder(folder: Path) -> Report:
             adjudication = None
         check_kit(r, obs, adjudication)
     else:
+        if adjudication is not None and not isinstance(adjudication, dict):
+            r.fail("prongs-declared", "adjudication.json is not an object")
+            adjudication = None
+        if err and (folder / "adjudication.json").exists():
+            r.fail("prongs-declared", err)
         check_legacy(r, obs, adjudication if not err else None)
     no_secrets_or_bodies(r)
     return r

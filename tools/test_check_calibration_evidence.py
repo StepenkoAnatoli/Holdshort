@@ -323,6 +323,146 @@ class KitRuns(unittest.TestCase):
         self.assertRegex(p.stdout.splitlines()[-1], r"^check_calibration_evidence: 2 folder\(s\), 1 failure\(s\), 0 limitation\(s\)$")
 
 
+RUN1 = "docs/evidence/2026-10-17/claude-code-calibration"
+RUN2 = "docs/evidence/2026-10-17/claude-code-calibration-2"
+RUN3 = "docs/evidence/2026-10-18/claude-code-calibration-3"
+PIN_LIMIT = ("pin-category-mapping: legacy run: scores.json records no category_mapping; the protocol labels the pin case build-tests; "
+             "the table reads it as pin-tests under the host's rule 4 (run 3 amendment A-2)")
+JUDGE_LIMIT = ("judging-profile-named: legacy run: no judging_profile; the grader opus-high is named in protocol.json cases[review].grading; "
+               "its qualification is not recorded")
+# the brief's C1: what each legacy folder cannot answer, recorded as a named limitation and never as a pass
+LEGACY_LIMITS = [
+    f"LIMIT {RUN1} prongs-declared: legacy run: no adjudication record (scores.json has no adjudication_schema, the folder no adjudication.json); no prongs declared",
+    f"LIMIT {RUN1} fewer-prong-pass-flagged: legacy run: no adjudication record; its 8 review PASSes are unadjudicated and excluded from the table's pass count",
+    f"LIMIT {RUN1} {PIN_LIMIT}",
+    f"LIMIT {RUN1} {JUDGE_LIMIT}",
+    f"LIMIT {RUN1} relayed-chat-statement: legacy run: no relayed_operator_text; whether the harness relayed operator text into workers is not recorded",
+    f"LIMIT {RUN2} prongs-declared: legacy run: no adjudication record (scores.json has no adjudication_schema, the folder no adjudication.json); no prongs declared",
+    f"LIMIT {RUN2} fewer-prong-pass-flagged: legacy run: no adjudication record; its 9 review PASSes are unadjudicated and excluded from the table's pass count",
+    f"LIMIT {RUN2} {PIN_LIMIT}",
+    f"LIMIT {RUN2} {JUDGE_LIMIT}",
+    f"LIMIT {RUN2} relayed-chat-statement: legacy run: no relayed_operator_text; whether the harness relayed operator text into workers is not recorded",
+    f"LIMIT {RUN3} prongs-declared: legacy run: the lens schema carried holds, reachable; the classification declares holds, reachable, forbidden; "
+    "missing forbidden (scores.json adjudication_schema)",
+    f"LIMIT {RUN3} fewer-prong-pass-flagged: legacy run: the lens records carry no forbidden field, so which review PASSes hold only by the missing prong "
+    "is the run's own reading (flagged: haiku-medium, haiku-high), not a recorded vote; the flags and the stated count are checked, the reading is not",
+    f"LIMIT {RUN3} {JUDGE_LIMIT}",
+    f"LIMIT {RUN3} relayed-chat-statement: legacy run: no relayed_operator_text before the launch; the relayed text is recorded after the run in amendment A-1",
+]
+
+
+class LegacyRuns(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def copy_run(self, rel: str) -> Path:
+        self.n = getattr(self, "n", 0) + 1  # one fresh copy per call, so a failed subtest leaves no folder in the way
+        out = self.root / str(self.n) / Path(rel).name
+        shutil.copytree(ROOT / rel, out)  # a copy: the evidence folders themselves are never edited
+        return out
+
+    def fails(self, folder: Path) -> list[str]:
+        p = run_check(folder)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        return lines(p.stdout, "FAIL")
+
+    def test_the_three_real_folders_pass_with_exactly_these_limitations(self):
+        p = run_check()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(lines(p.stdout, "FAIL"), [])
+        self.assertEqual(lines(p.stdout, "LIMIT"), LEGACY_LIMITS)
+        self.assertEqual(p.stdout.splitlines()[-1], f"check_calibration_evidence: 3 folder(s), 0 failure(s), {len(LEGACY_LIMITS)} limitation(s)")
+
+    def test_the_report_classifies_each_real_folder(self):
+        check = load_check()
+        r1, r2, r3 = (check.check_folder(ROOT / rel) for rel in (RUN1, RUN2, RUN3))
+        self.assertEqual((r1.kind, r2.kind, r3.kind), ("legacy", "legacy", "legacy"))
+        self.assertEqual(r1.unadjudicated, ["sonnet-low", "sonnet-medium", "opus-medium", "opus-high", "opus-xhigh", "fable-medium", "fable-high", "fable-xhigh"])
+        self.assertEqual(len(r2.unadjudicated), 9)
+        self.assertEqual((r3.unadjudicated, r3.flagged, r3.review_prongs), ([], ["haiku-medium", "haiku-high"], ["holds", "reachable"]))
+        self.assertEqual((r1.review_prongs, r2.review_prongs), (None, None))
+
+    def test_a_score_the_observations_do_not_support_fails(self):
+        cases = [
+            (RUN1, "scores.json", lambda s: s["profiles"]["haiku-medium"]["review"].update({"pass": True}), "review:haiku-medium"),
+            (RUN1, "scores.json", lambda s: s["profiles"]["sonnet-low"]["pin"].update({"pass": False}), "pin:sonnet-low"),
+            (RUN2, "scores.json", lambda s: s["profiles"]["sonnet-low"]["review"].update(result="PASS", **{"pass": True}), "review:sonnet-low"),
+            (RUN2, "observations.json", lambda o: o["profiles"]["opus-high"]["fix"]["grade"].update(guardRed=False), "fix:opus-high"),
+            (RUN3, "scores.json", lambda s: s["profiles"]["fable-medium"]["pin"].update({"pass": True}), "pin:fable-medium"),
+            # one lens of C-4 no longer holds: C-4 is not real, so haiku-high's R-2 blocks and its review is no PASS
+            (RUN3, "adjudication.json", lambda a: next(x for x in a["adjudications"] if x["cluster"]["id"] == "C-4")["lenses"][1].update(holds=False), "review:haiku-high"),
+        ]
+        for rel, name, fn, cell in cases:
+            with self.subTest(cell):
+                folder = self.copy_run(rel)
+                edit_json(folder, name, fn)
+                fails = self.fails(folder)
+                self.assertIn("scores-derivable", {rule_of(ln) for ln in fails}, fails)
+                self.assertTrue(any(cell in ln for ln in fails), fails)
+                shutil.rmtree(folder)
+
+    def test_a_pass_rule_the_check_does_not_encode_fails(self):
+        folder = self.copy_run(RUN2)
+        edit_json(folder, "protocol.json", lambda p: p["cases"][0].update(pass_rule=p["cases"][0]["pass_rule"] + " AND the tests are fast"))
+        fails = self.fails(folder)
+        self.assertEqual({rule_of(ln) for ln in fails}, {"scores-derivable"})
+        self.assertIn("pin pass rule", fails[0])
+
+    def test_run3_flags_and_count_must_agree(self):
+        cases = [
+            (lambda s: s["profiles"]["haiku-medium"]["review"].update(would_fail_under_three_prong=False), "15 of 15 PASS"),  # the count still says 13
+            (lambda s: s["profiles"]["sonnet-high"]["review"].update(would_fail_under_three_prong=True),
+             "review:sonnet-high is flagged would-fail, yet none of its S1-S3 other findings"),  # it has no blocking other to fall
+            (lambda s: s["totals"]["cells"].update(review="15 of 15 PASS"), "15 of 15 PASS"),
+            (lambda s: s["profiles"]["fable-medium"]["pin"].update(would_fail_under_three_prong=True) or
+             s["profiles"]["haiku-low"]["review"].update(result="FAIL", would_fail_under_three_prong=True),
+             "review:haiku-low carries would_fail_under_three_prong: true on a 'FAIL', not a PASS"),
+        ]
+        for i, (fn, needle) in enumerate(cases):
+            with self.subTest(i):
+                folder = self.copy_run(RUN3)
+                edit_json(folder, "scores.json", fn)
+                fails = [ln for ln in self.fails(folder) if rule_of(ln) == "fewer-prong-pass-flagged"]
+                self.assertTrue(fails)
+                self.assertIn(needle, "\n".join(fails))
+                shutil.rmtree(folder)
+
+    def test_run3_schema_contradictions_fail_prongs_declared(self):
+        cases = [
+            ("scores.json", lambda s: s["adjudication_schema"].update(missing_prong="reachable")),
+            ("scores.json", lambda s: s["adjudication_schema"].update(prongs_in_lens_schema=["holds", "reachable", "forbidden"])),
+            ("adjudication.json", lambda a: a.update(lens_schema_prongs=["holds"])),
+            ("adjudication.json", lambda a: a["adjudications"][0]["lenses"][0].update(forbidden=True)),
+        ]
+        for i, (name, fn) in enumerate(cases):
+            with self.subTest(i):
+                folder = self.copy_run(RUN3)
+                edit_json(folder, name, fn)
+                self.assertIn("prongs-declared", {rule_of(ln) for ln in self.fails(folder)})
+                shutil.rmtree(folder)
+        folder = self.copy_run(RUN3)
+        (folder / "adjudication.json").unlink()
+        self.assertIn("prongs-declared", {rule_of(ln) for ln in self.fails(folder)})
+
+    def test_a_legacy_run_id_must_agree_and_exist(self):
+        folder = self.copy_run(RUN1)
+        edit_json(folder, "scores.json", lambda s: s.update(run_id="wf_other"))
+        self.assertEqual({rule_of(ln) for ln in self.fails(folder)}, {"protocol-frozen"})
+        edit_json(folder, "protocol.json", lambda p: p.pop("run_id"))
+        self.assertIn("run_id", "\n".join(self.fails(folder)))
+
+    def test_a_legacy_run_carries_no_kit_rule_it_cannot_answer_as_a_failure(self):
+        # a legacy run is never refused for lacking kit keys: it has no judging_profile, relayed text or prongs
+        p = run_check(ROOT / RUN1)
+        self.assertEqual(p.returncode, 0, p.stdout)
+        self.assertEqual({rule_of(ln) for ln in lines(p.stdout, "LIMIT")},
+                         {"prongs-declared", "fewer-prong-pass-flagged", "pin-category-mapping", "judging-profile-named", "relayed-chat-statement"})
+
+
 class Discovery(unittest.TestCase):
     def test_default_folders_are_the_calibration_runs_under_docs_evidence(self):
         check = load_check()
