@@ -205,7 +205,8 @@ class KitRuns(unittest.TestCase):
         self.assertEqual(lines(p.stdout, "FAIL"), [], p.stdout)
 
     def test_prompt_bodies_and_transcripts_fail_the_secrets_rule(self):
-        for name in ("grader.prompt.md", "transcript-1.txt", "journal.jsonl"):
+        # F5: the names in any case (a case-insensitive filesystem holds them under the same name)
+        for name in ("grader.prompt.md", "transcript-1.txt", "journal.jsonl", "Review.PROMPT.md", "Transcript.txt", "JOURNAL.JSONL"):
             with self.subTest(name):
                 folder = self.copy_pass(name)
                 (folder / name).write_text("text\n", encoding="utf-8")

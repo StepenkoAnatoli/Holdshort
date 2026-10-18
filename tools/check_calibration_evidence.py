@@ -43,7 +43,7 @@ TEMPLATE = KIT / "protocol.template.json"
 RULES = ("protocol-frozen", "prongs-declared", "scores-derivable", "fewer-prong-pass-flagged", "pin-category-mapping",
          "judging-profile-named", "relayed-chat-statement", "no-secrets-or-bodies")
 BOOTSTRAP = "judging profile not independently qualified"  # Item 3.3; the kit's launch step requires the same prefix
-FORBIDDEN_NAMES = (re.compile(r".*\.prompt.*"), re.compile(r"journal\.jsonl"), re.compile(r"transcript.*"))
+FORBIDDEN_NAMES = (re.compile(r".*\.prompt.*", re.I), re.compile(r"journal\.jsonl", re.I), re.compile(r"transcript.*", re.I))
 BINARY = {".png", ".jpg", ".jpeg", ".gif", ".zip", ".pdf", ".woff", ".woff2", ".ico"}
 FOLDER_NAME = re.compile(r"^(?P<host>.+?)-calibration(?:-(?P<n>[1-9]\d*))?$")
 CASES = ("pin", "fix", "review")
