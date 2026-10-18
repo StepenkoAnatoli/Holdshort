@@ -54,3 +54,28 @@ them from two coarse observations; see the adapter README, "Usage windows").
 As in run 1: a subscription host, no per-call price; tokens and wall time
 from the workflow journal; an estimate-only cash column from
 `tools/prices-2.json` that supports no savings claim; unknown values null.
+
+## Results (added 2026-10-18 after the run; the sections above are the frozen protocol)
+
+Run `wf_fe91e1d6-d78` finished 2026-10-18T01:24Z: 54 agents (39 items + 15 graders), 7,872,276 reported tokens,
+three agents at a time, 119 minutes. Scores in [scores.json](scores.json), the full observations in
+[observations.json](observations.json), the table in [results-table.md](results-table.md).
+
+- **pin 12/12 PASS, fix 12/12 PASS** (lint now part of the pin pass; every fix committed through the subject's
+  commit gate with the map staged). The harder fix did not separate the profiles either; what keeps small profiles
+  off large units in the host policy is the headroom guard, not these cells.
+- **review**: PASS sonnet-high, sonnet-xhigh, opus-high, opus-xhigh, opus-max, fable-medium, fable-high,
+  fable-xhigh, fable-max; PARTIAL sonnet-low; FAIL haiku-low, haiku-medium, haiku-high, sonnet-medium,
+  opus-medium. Every profile found U2-R13; U2-R11 (the rollback's un-named refs) is what the small and low-effort
+  profiles missed. The three review-only profiles (sonnet-xhigh, opus-max, fable-max) cost 1.3-2.0x the tokens and
+  2-6x the wall time of the high profiles for the same PASS.
+- **One harness error**: fix:haiku-low's structured return was rejected five times (missing `mistakes`); its worktree
+  grades PASS (protocol amendment).
+- **Grader inconsistency (G-1)**: the same other finding ("clear() after an unreadable open answers durable without
+  writing") was classified true by five candidates' graders and false by two on reachability; a post-hoc
+  cross-candidate adjudication (three independent lenses per distinct claim) is recorded as an amendment, the
+  preregistered scores stand.
+- **Usage windows**: 0.0343 (five_hour) and 0.0102 (seven_day) per Mtok of reported sub-agent tokens, upper bounds;
+  lead-only work moved five_hour by 0.10 in 15 minutes with no agent running. The host policy's declared 0.24 / 0.06
+  were 6-7x too high, and its lead reserve covered about eight minutes of the lead's own work (host adapter README,
+  "Usage windows", revision 3).

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "status": "preregistered; run not yet launched at freeze; no result recorded in this file",
-  "run_id": null,
+  "status": "run complete; results in observations.json, scores.json and results-table.md; see amendments",
+  "run_id": "wf_fe91e1d6-d78",
   "run_id_note": "the host assigns the workflow run id at launch; it is recorded in README.md once known, and the protocol is not otherwise changed",
   "frozen_at": "2026-10-17T23:22:51Z",
   "revision": "fc718b7",
@@ -220,5 +220,24 @@
     "model labels are requested aliases, not verified immutable deployments",
     "no overall model ranking, routing threshold or savings claim follows from this run alone"
   ],
-  "amendments": []
+  "amendments": [
+    {
+      "at": "2026-10-18T01:25:00Z",
+      "case": "fix",
+      "change": "fix:haiku-low recorded as a harness error (the harness retried its StructuredOutput five times, the cap, because the output kept omitting the required mistakes field) with self-reported fields null; its worktree holds a complete committed fix (8781c1f) and is graded by grade.sh like every other",
+      "reason": "the protocol's retry_limit 0 concerns re-running the task; this was a return-format retry inside one run, and the mechanical grade does not depend on the structured return"
+    },
+    {
+      "at": "2026-10-18T01:25:00Z",
+      "case": "usage",
+      "change": "usage-window measurement recorded: five_hour 0.12 -> 0.39 and seven_day 0.28 -> 0.36 over 7,872,276 reported tokens (readings 2026-10-17T23:22:51Z and 2026-10-18T01:23:32Z, nothing in flight at either end, the lead idle but for one check-in): 0.0343 and 0.0102 per Mtok, upper bounds (the lead's check-in turns are included)",
+      "reason": "the fourth metric the protocol named; the lead-only interval 23:07-23:22 (five_hour 0.02 -> 0.12 with no sub-agent running) is recorded beside it as the host's dominant cost"
+    },
+    {
+      "at": "2026-10-18T01:28:00Z",
+      "case": "review",
+      "change": "POST-HOC, set after the results existed: a cross-candidate adjudication of the distinct other findings (six claims, three independent lenses each - reproduce, reachability, refute - majority verdict; workflow wf_603131fc-773) is run because the per-candidate graders classified the same claim true for five candidates and false for two (reachability). The preregistered scores stand unchanged (opus-medium review FAIL on one contested classification); the adjudicated verdicts are reported beside them, and run 3 preregisters the adjudication step",
+      "reason": "a per-candidate grader cannot be consistent across candidates; the protocol did not foresee recurring other findings"
+    }
+  ]
 }

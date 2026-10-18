@@ -1,0 +1,501 @@
+{
+ "schema_version": 1,
+ "run_id": "wf_fe91e1d6-d78",
+ "scored_at": "2026-10-18T01:36:49Z",
+ "pass_rules": "as protocol.json cases[].pass_rule (all three set at freeze, before the launch); review is three-valued (PASS/PARTIAL/FAIL)",
+ "accounting_note": "estimated cash is tokens x the prices-2.json rate for the model: a range from all-input to all-output; tokens are the harness's reported counts, not a provider bill; cache pricing not modelled; subscription host, no per-call accounting",
+ "profiles": {
+  "haiku-low": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 122194,
+     "usd_all_input": 0.0122,
+     "usd_all_output": 0.0611
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 139679,
+     "usd_all_input": 0.014,
+     "usd_all_output": 0.0698
+    }
+   },
+   "review": {
+    "result": "FAIL",
+    "pass": false,
+    "r11Found": false,
+    "r11CauseNamed": false,
+    "r13Found": true,
+    "r13CauseNamed": true,
+    "falseBlocking": 1,
+    "true_extra_findings": 2,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 174821,
+     "usd_all_input": 0.0175,
+     "usd_all_output": 0.0874
+    }
+   }
+  },
+  "haiku-medium": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 125966,
+     "usd_all_input": 0.0126,
+     "usd_all_output": 0.063
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 138770,
+     "usd_all_input": 0.0139,
+     "usd_all_output": 0.0694
+    }
+   },
+   "review": {
+    "result": "FAIL",
+    "pass": false,
+    "r11Found": false,
+    "r11CauseNamed": false,
+    "r13Found": true,
+    "r13CauseNamed": true,
+    "falseBlocking": 2,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 182199,
+     "usd_all_input": 0.0182,
+     "usd_all_output": 0.0911
+    }
+   }
+  },
+  "haiku-high": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 135343,
+     "usd_all_input": 0.0135,
+     "usd_all_output": 0.0677
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 170424,
+     "usd_all_input": 0.017,
+     "usd_all_output": 0.0852
+    }
+   },
+   "review": {
+    "result": "FAIL",
+    "pass": false,
+    "r11Found": false,
+    "r11CauseNamed": false,
+    "r13Found": true,
+    "r13CauseNamed": true,
+    "falseBlocking": 2,
+    "true_extra_findings": 2,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 196355,
+     "usd_all_input": 0.0196,
+     "usd_all_output": 0.0982
+    }
+   }
+  },
+  "sonnet-low": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 101390,
+     "usd_all_input": 0.2028,
+     "usd_all_output": 1.0139
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 106006,
+     "usd_all_input": 0.212,
+     "usd_all_output": 1.0601
+    }
+   },
+   "review": {
+    "result": "PARTIAL",
+    "pass": false,
+    "r11Found": false,
+    "r11CauseNamed": false,
+    "r13Found": true,
+    "r13CauseNamed": true,
+    "falseBlocking": 0,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 113230,
+     "usd_all_input": 0.2265,
+     "usd_all_output": 1.1323
+    }
+   }
+  },
+  "sonnet-medium": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 108251,
+     "usd_all_input": 0.2165,
+     "usd_all_output": 1.0825
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 120149,
+     "usd_all_input": 0.2403,
+     "usd_all_output": 1.2015
+    }
+   },
+   "review": {
+    "result": "FAIL",
+    "pass": false,
+    "r11Found": false,
+    "r11CauseNamed": false,
+    "r13Found": true,
+    "r13CauseNamed": true,
+    "falseBlocking": 1,
+    "true_extra_findings": 1,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 127804,
+     "usd_all_input": 0.2556,
+     "usd_all_output": 1.278
+    }
+   }
+  },
+  "sonnet-high": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 119783,
+     "usd_all_input": 0.2396,
+     "usd_all_output": 1.1978
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 124739,
+     "usd_all_input": 0.2495,
+     "usd_all_output": 1.2474
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "r13Found": true,
+    "r13CauseNamed": true,
+    "falseBlocking": 0,
+    "true_extra_findings": 2,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 182356,
+     "usd_all_input": 0.3647,
+     "usd_all_output": 1.8236
+    }
+   }
+  },
+  "sonnet-xhigh": {
+   "pin": null,
+   "fix": null,
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "r13Found": true,
+    "r13CauseNamed": true,
+    "falseBlocking": 0,
+    "true_extra_findings": 1,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 327759,
+     "usd_all_input": 0.6555,
+     "usd_all_output": 3.2776
+    }
+   }
+  },
+  "opus-medium": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 115308,
+     "usd_all_input": 0.4612,
+     "usd_all_output": 2.3062
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 123461,
+     "usd_all_input": 0.4938,
+     "usd_all_output": 2.4692
+    }
+   },
+   "review": {
+    "result": "FAIL",
+    "pass": false,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "r13Found": true,
+    "r13CauseNamed": true,
+    "falseBlocking": 1,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 153636,
+     "usd_all_input": 0.6145,
+     "usd_all_output": 3.0727
+    }
+   }
+  },
+  "opus-high": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 122111,
+     "usd_all_input": 0.4884,
+     "usd_all_output": 2.4422
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 132019,
+     "usd_all_input": 0.5281,
+     "usd_all_output": 2.6404
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "r13Found": true,
+    "r13CauseNamed": true,
+    "falseBlocking": 0,
+    "true_extra_findings": 2,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 171293,
+     "usd_all_input": 0.6852,
+     "usd_all_output": 3.4259
+    }
+   }
+  },
+  "opus-xhigh": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 152218,
+     "usd_all_input": 0.6089,
+     "usd_all_output": 3.0444
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 169745,
+     "usd_all_input": 0.679,
+     "usd_all_output": 3.3949
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "r13Found": true,
+    "r13CauseNamed": true,
+    "falseBlocking": 0,
+    "true_extra_findings": 1,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 239582,
+     "usd_all_input": 0.9583,
+     "usd_all_output": 4.7916
+    }
+   }
+  },
+  "opus-max": {
+   "pin": null,
+   "fix": null,
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "r13Found": true,
+    "r13CauseNamed": true,
+    "falseBlocking": 0,
+    "true_extra_findings": 2,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 306927,
+     "usd_all_input": 1.2277,
+     "usd_all_output": 6.1385
+    }
+   }
+  },
+  "fable-medium": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 118845,
+     "usd_all_input": 1.1885,
+     "usd_all_output": 5.9422
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 131479,
+     "usd_all_input": 1.3148,
+     "usd_all_output": 6.5739
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "r13Found": true,
+    "r13CauseNamed": true,
+    "falseBlocking": 0,
+    "true_extra_findings": 1,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 171828,
+     "usd_all_input": 1.7183,
+     "usd_all_output": 8.5914
+    }
+   }
+  },
+  "fable-high": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 123338,
+     "usd_all_input": 1.2334,
+     "usd_all_output": 6.1669
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 148456,
+     "usd_all_input": 1.4846,
+     "usd_all_output": 7.4228
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "r13Found": true,
+    "r13CauseNamed": true,
+    "falseBlocking": 0,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 196292,
+     "usd_all_input": 1.9629,
+     "usd_all_output": 9.8146
+    }
+   }
+  },
+  "fable-xhigh": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 140504,
+     "usd_all_input": 1.405,
+     "usd_all_output": 7.0252
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 160017,
+     "usd_all_input": 1.6002,
+     "usd_all_output": 8.0008
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "r13Found": true,
+    "r13CauseNamed": true,
+    "falseBlocking": 0,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 235680,
+     "usd_all_input": 2.3568,
+     "usd_all_output": 11.784
+    }
+   }
+  },
+  "fable-max": {
+   "pin": null,
+   "fix": null,
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "r13Found": true,
+    "r13CauseNamed": true,
+    "falseBlocking": 0,
+    "true_extra_findings": 1,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 229283,
+     "usd_all_input": 2.2928,
+     "usd_all_output": 11.4642
+    }
+   }
+  }
+ }
+}
