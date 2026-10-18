@@ -73,8 +73,10 @@ three agents at a time, 119 minutes. Scores in [scores.json](scores.json), the f
   grades PASS (protocol amendment).
 - **Grader inconsistency (G-1)**: the same other finding ("clear() after an unreadable open answers durable without
   writing") was classified true by five candidates' graders and false by two on reachability; a post-hoc
-  cross-candidate adjudication (three independent lenses per distinct claim) is recorded as an amendment, the
-  preregistered scores stand.
+  cross-candidate adjudication (three independent lenses per distinct claim) found two of the six recurring claims real
+  and the contested one unreachable through the spec's flows; the split traces to the grader instruction, which did
+  not say whether reachability is part of a finding holding. Recorded as an amendment with every lens's verdict; the
+  preregistered scores stand, and run 3 must define the question and preregister the adjudication.
 - **Usage windows**: 0.0343 (five_hour) and 0.0102 (seven_day) per Mtok of reported sub-agent tokens, upper bounds;
   lead-only work moved five_hour by 0.10 in 15 minutes with no agent running. The host policy's declared 0.24 / 0.06
   were 6-7x too high, and its lead reserve covered about eight minutes of the lead's own work (host adapter README,

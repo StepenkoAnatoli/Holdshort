@@ -497,5 +497,6 @@
     }
    }
   }
- }
+ },
+ "adjudication_note": "true_extra_findings are the per-candidate graders' counts; the post-hoc adjudication (protocol.json amendments, 2026-10-18T02:00:00Z) finds only two of the six recurring claims real, so the counts overstate: adjudicated real extras are C-B (sonnet-medium, sonnet-xhigh, opus-high, opus-xhigh, opus-max) and C-C (haiku-high, opus-max; sonnet-high filed it as S4). Scores are unchanged."
 }
