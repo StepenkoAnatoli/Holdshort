@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **CI runs the Claude Code adapter's Node suite.** `.github/workflows/regression-gate.yml` gains the job
+  `adapter-tests` (display name `claude-code-adapter-tests`, ubuntu-24.04, `actions/setup-node` pinned by sha,
+  Node 24) running `node --test hosts/claude-code/route.test.mjs` on the workflow's existing triggers. The
+  Python regression gate still has no Node step; the job is not a required status context (branch protection
+  is the maintainer's setting).
+
 ## 2026-10-17 — Claude Code host adapter, usage-window affordability, calibration evidence
 
 A Claude Code build session adopted the v3.0 policy for its sub-agent dispatch and brought back
