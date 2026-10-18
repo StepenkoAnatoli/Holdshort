@@ -194,3 +194,9 @@ reproducible on any record whose cash fields are `null`.
   only beside `evidence.actual-spend-basis: "estimate-only"`; spec-v2.md §10.3
   and §10.5 name both fields. **Items 1-3 remain proposals** under the
   disposition above. No independent non-author verdict is recorded here.
+- Known limit of the Item 4 change: the reference §10.3 store,
+  `tools/outcome_ledger.py`, is not amended. Its `validate` and `record`
+  still refuse an Outcome whose `evidence.actual-spend` is `null`, marked or
+  not, and `read_all` fails closed on a ledger holding such a line, so an
+  Outcome that `conform_spec.py --outcome` accepts cannot yet be recorded
+  there. Bringing the store in line is a follow-up.

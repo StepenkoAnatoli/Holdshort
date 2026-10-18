@@ -13,6 +13,9 @@
   `evidence.actual-spend` only beside `evidence.actual-spend-basis: "estimate-only"`; an unmarked `null` is still
   a violation and a marker with any other value is one. spec-v2.md §10.3 and §10.5 gain both fields (additive,
   §13); `docs/USAGE_TELEMETRY.md` says when they are carried. No cash conversion.
+  Known limit: the reference §10.3 store, `tools/outcome_ledger.py`, is not changed by this entry and still
+  refuses an Outcome whose `evidence.actual-spend` is `null`, marked or not (`validate` and `record` raise, and
+  `read_all` fails closed on a ledger holding such a line); bringing the store in line is a follow-up.
 
 ## 2026-10-17 — Claude Code host adapter, usage-window affordability, calibration evidence
 
