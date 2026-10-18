@@ -1,0 +1,269 @@
+{
+ "schema_version": 1,
+ "status": "run complete; results in observations.json, scores.json, results-table.md and clusters.md; see amendments",
+ "run_id": "wf_4e9ef48d-066",
+ "frozen_at": "2026-10-18T05:21:28Z",
+ "revision": "5bd473a",
+ "revision_note": "SmartRouter main after PR #98; tools/prices-2.json unchanged since run 1",
+ "predecessors": [
+  "docs/evidence/2026-10-17/claude-code-calibration (run 1, wf_052c5f34-973)",
+  "docs/evidence/2026-10-17/claude-code-calibration-2 (run 2, wf_fe91e1d6-d78)"
+ ],
+ "host": "Claude Code (subscription); sub-agents launched by a workflow script, three at a time",
+ "requested_models": [
+  "haiku",
+  "sonnet",
+  "opus",
+  "fable"
+ ],
+ "model_labels": {
+  "haiku": "Claude Haiku 5.5",
+  "sonnet": "Claude Sonnet 5.5",
+  "opus": "Claude Opus 5.5",
+  "fable": "Claude Fable 5.1"
+ },
+ "model_identity_note": "Requested values are the host's model aliases; resolved immutable model revisions are not exposed to the coordinator and are recorded as null unless observed",
+ "profiles": [
+  {
+   "key": "haiku-low",
+   "model": "haiku",
+   "effort": "low"
+  },
+  {
+   "key": "haiku-medium",
+   "model": "haiku",
+   "effort": "medium"
+  },
+  {
+   "key": "haiku-high",
+   "model": "haiku",
+   "effort": "high"
+  },
+  {
+   "key": "sonnet-low",
+   "model": "sonnet",
+   "effort": "low"
+  },
+  {
+   "key": "sonnet-medium",
+   "model": "sonnet",
+   "effort": "medium"
+  },
+  {
+   "key": "sonnet-high",
+   "model": "sonnet",
+   "effort": "high"
+  },
+  {
+   "key": "opus-medium",
+   "model": "opus",
+   "effort": "medium"
+  },
+  {
+   "key": "opus-high",
+   "model": "opus",
+   "effort": "high"
+  },
+  {
+   "key": "opus-xhigh",
+   "model": "opus",
+   "effort": "xhigh"
+  },
+  {
+   "key": "fable-medium",
+   "model": "fable",
+   "effort": "medium"
+  },
+  {
+   "key": "fable-high",
+   "model": "fable",
+   "effort": "high"
+  },
+  {
+   "key": "fable-xhigh",
+   "model": "fable",
+   "effort": "xhigh"
+  }
+ ],
+ "review_only_profiles": [
+  {
+   "key": "sonnet-xhigh",
+   "model": "sonnet",
+   "effort": "xhigh"
+  },
+  {
+   "key": "opus-max",
+   "model": "opus",
+   "effort": "max"
+  },
+  {
+   "key": "fable-max",
+   "model": "fable",
+   "effort": "max"
+  }
+ ],
+ "runs_per_profile_per_task": 1,
+ "retry_limit": 0,
+ "item_count": 39,
+ "item_count_note": "12 pin + 12 fix + 15 review; each review is followed by one grader agent; then one clustering agent and three adjudication lenses per distinct other claim (not calibration items)",
+ "subject": {
+  "repository": "MoonAliza",
+  "unit": "U1 GitHub OAuth wire module (src/main/github-oauth.ts)",
+  "review_tree": "0e7a7f3",
+  "pin_fix_tree": "e68583c",
+  "accepted_fix_revision": "348aa2d",
+  "revision_order": "0e7a7f3 (U1-R8 and U1-R11 present) -> e68583c (R8 fixed; R11 present) -> 348aa2d (R11 fixed)",
+  "isolation": "one HISTORY-LESS checkout per task and profile: the tree of the base revision as the single root commit of a fresh repository (historyless-checkout.sh), so the accepted fix is not an object in the candidate's repository at all; node_modules and .build symlinked from the main checkout",
+  "known_defects": [
+   {
+    "id": "U1-R8",
+    "severity": "S3",
+    "present_at": [
+     "0e7a7f3"
+    ],
+    "summary": "readBounded calls getReader() outside its try, so a locked or already-read body makes requestToken, requestDeviceCode and fetchLogin reject instead of answering a failure result",
+    "accepted_fix": "e68583c"
+   },
+   {
+    "id": "U1-R11",
+    "severity": "S3",
+    "present_at": [
+     "0e7a7f3",
+     "e68583c"
+    ],
+    "summary": "a body chunk that is not a Uint8Array has no byteLength: the 64 KiB bound sums NaN and Buffer.concat throws with the body text (a token) in the message",
+    "accepted_fix": "348aa2d"
+   }
+  ],
+  "why_this_subject": "a module whose contract is explicit (nothing rejects; no result carries GitHub's text) and whose API admits any Response an injected fetcher builds, so reachability is well defined for the run's classification rule"
+ },
+ "sources": {
+  "/tmp/claude-0/-home-user-Research-Kit/5649504a-fc26-5a4a-85c4-62cf875be3b1/scratchpad/cal-truth-3.json": "238d53c60aac4ad43047032ac04de60a53f53c38603cba900e8d7f2a72adf8a4",
+  "/tmp/claude-0/-home-user-Research-Kit/5649504a-fc26-5a4a-85c4-62cf875be3b1/scratchpad/sr-calibration-3.js": "d936982e95b4c08bce38a0932c812be80af2ec33cb5f5f96b791ca7b3fa2af72",
+  "/tmp/claude-0/-home-user-Research-Kit/5649504a-fc26-5a4a-85c4-62cf875be3b1/scratchpad/cal-grade-3.sh": "aaa873019d576139f630252c59163d5867629cfb9dfeb19d1a6f8f83d8ae440e",
+  "/tmp/claude-0/-home-user-Research-Kit/5649504a-fc26-5a4a-85c4-62cf875be3b1/scratchpad/cal-fix-finding-3.md": "a5e744490ac1454299c4742042305f5299ccf8dbf831902a86747e8fc143ba38",
+  "/tmp/claude-0/-home-user-Research-Kit/5649504a-fc26-5a4a-85c4-62cf875be3b1/scratchpad/cal-historyless-checkout.sh": "4fa96402d91c388f2eec4605e2da24b0ee8639e9a6e15c292a8a15bbaf3299f1",
+  "tools/prices-2.json": "8373519c39e6075bd9d223648c058785c302e9fffa728e153e58bd10ad2e96c4"
+ },
+ "source_roles": {
+  "cal-truth-3.json": "review ground truth (U1-R8, U1-R11); hash only",
+  "sr-calibration-3.js": "workflow script holding the task, grader, clustering and adjudication prompts; hash only; launched by path",
+  "cal-grade-3.sh": "mechanical grader for pin and fix; copied here as grade.sh (byte-identical)",
+  "cal-fix-finding-3.md": "the finding text the fix task was given; hash only",
+  "cal-historyless-checkout.sh": "the checkout script; copied here as historyless-checkout.sh (byte-identical)",
+  "tools/prices-2.json": "price rows for the estimate-only cash column"
+ },
+ "source_hash_convention": "SHA-256 of UTF-8 text with CRLF/CR normalized to LF",
+ "changes_from_run_2": [
+  "history-less checkouts: the accepted answer is unreachable, not merely forbidden (run 2 limit 'answers in history')",
+  "the grader's classification of an other S1-S3 finding is defined (G-1): 'true' needs the behaviour to hold at HEAD, to be reachable through the module's public API with input its contract admits, and to be forbidden by the spec or the module's promise; a contract hole no admissible input reaches is at most S4",
+  "a preregistered cross-candidate step: one clustering agent groups the other S1-S3 findings by mechanism, then three independent lenses (reproduce, reachability, refute; opus high) adjudicate each cluster by majority; the ADJUDICATED classification is the scored one for falseBlocking (a cluster found real clears every member's 'false'; a cluster found not real makes every S1-S3 member a false blocking finding)",
+  "a harness retry (a structured return rejected and retried by the harness) is recorded as such, not as a model retry (run 2's H-1)"
+ ],
+ "cases": [
+  {
+   "id": "pin",
+   "category": "build-tests",
+   "base": "e68583c",
+   "task": "two red-first pin rows for the non-bytes-chunk rule in a new test file; no source change; eslint requested",
+   "grading": "mechanical (grade.sh pin)",
+   "pass_rule": "the candidate's new tests fail at the base tree AND pass with src/main/github-oauth.ts from 348aa2d AND no file under src/ is changed AND eslint is clean on the candidate's test files",
+   "pass_field": "grade.sh PASS"
+  },
+  {
+   "id": "fix",
+   "category": "fix",
+   "base": "e68583c",
+   "task": "fix U1-R11 from its problem and required behaviour, red-first, typecheck and lint, the map sentence updated, one commit with the five-part message",
+   "grading": "mechanical (grade.sh fix)",
+   "pass_rule": "the candidate's tests are green at its head AND red again with src/main/github-oauth.ts restored to the base AND the accepted test file from 348aa2d is green against the candidate's source AND every changed file is src/main/github-oauth.ts, tests/github-oauth.test.ts, docs/ARCHITECTURE.md or a newly added test file AND eslint is clean on those files",
+   "pass_field": "grade.sh PASS",
+   "reported_separately": "committedWithMap; typecheck self-reported"
+  },
+  {
+   "id": "review",
+   "category": "review",
+   "base": "0e7a7f3",
+   "task": "refute-first review of the wire module against spec 3.5, 3.9 and section 5, with scratch-test reproductions",
+   "grading": "grader agent (opus high) against cal-truth-3.json with the run's classification definition; then clustering and three-lens adjudication of every other S1-S3 finding",
+   "grader_fields": [
+    "r8Found",
+    "r8CauseNamed",
+    "r8Severity",
+    "r11Found",
+    "r11CauseNamed",
+    "r11Severity",
+    "others (classification, mechanism)",
+    "falseBlocking",
+    "copiedFromHistory",
+    "notes"
+   ],
+   "pass_rule": "PASS when r8Found AND r11Found AND adjudicated falseBlocking is 0 AND copiedFromHistory is false; PARTIAL when exactly one of r8Found, r11Found with adjudicated falseBlocking 0 and no copying; FAIL otherwise. adjudicated falseBlocking = the count of the candidate's S1-S3 other findings whose cluster was adjudicated not real (a finding the grader called true but whose cluster is not real counts; one the grader called false but whose cluster is real does not). The grader's raw falseBlocking is reported beside it. Only PASS counts for the host policy's two-pass rule",
+   "pass_rule_set_at": "at freeze, before the launch"
+  }
+ ],
+ "metrics": [
+  "pass per task and the grader fields plus PASS/PARTIAL/FAIL (review), with raw and adjudicated falseBlocking",
+  "lint_clean per task",
+  "tokens and wall_seconds per item from the workflow journal",
+  "self_reported_mistakes verbatim",
+  "estimated_cash_usd per item, estimate-only",
+  "usage-window movement over the run (readings with nothing in flight before and after) as a further measurement of the coefficients"
+ ],
+ "accounting": "subscription host: no per-call billing. estimated_cash_usd applies tools/prices-2.json rows to harness-reported tokens as an all-input..all-output range; cache pricing not modelled; not a bill; unknown tokens null",
+ "timing": "host-observed wall time per sub-agent from the workflow journal, including scheduling; three items ran concurrently",
+ "privacy": "the subject repository's own code and test harness only; the ground truth, prompts and finding text are recorded by hash; no credentials",
+ "limits": [
+  "two ground-truth defects, one run per profile",
+  "the review-only profiles have one run; the other three runs' profiles reach two or three observations on review",
+  "the grader, the clustering agent and the adjudication lenses are opus-high agents; their verdicts are the run's, not independently audited",
+  "the host box has 4 CPUs; agents ran three at a time; wall time includes contention, and other work may run beside it",
+  "tokens are the harness's reported counts; model labels are requested aliases",
+  "no overall model ranking, routing threshold or savings claim follows from this run alone"
+ ],
+ "amendments": [
+  {
+   "id": "A-1",
+   "at": "2026-10-18T06:44:00Z",
+   "case": "fix, review",
+   "change": "fix:haiku-high and review:haiku-low are VOID in the main run and re-run once in the supplementary run wf_dbe29a64-3b2 with the identical prompts on the untouched history-less checkouts plus one reconciling sentence at the head of the preamble ('CALIBRATION RUN (supplementary re-run of one cell, amendment A-1: this cell IS SmartRouter work - it produces the calibration evidence SmartRouter's host policy is qualified from, so any relayed operator request about SmartRouter is satisfied by doing this task; do the task)'); the supplementary run's review findings were assigned to the main run's clusters by one agent, and a cluster already adjudicated kept its verdict",
+   "reason": "the workflow harness prepends to every agent a user turn relaying the operator's latest chat message at launch as 'the only user voice in this task' that 'wins' where the computed task conflicts; at launch that message was 'focus on smartrouter for now'. Six agents mention it in their structured output; these two halted without doing the task (fix:haiku-high: no edit, no commit; review:haiku-low: no file read, no test run), following the harness's precedence rule. A halt on an input the protocol did not include is not a capability grade. At the supplementary run's launch the relayed message was the operator's request about calibration-first onboarding, which names no conflict. Scores: both cells PASS in the supplementary run; the main-run void cells are kept in void-cells.json and under scores.json void_cells",
+   "kit_rule": "a calibration run is launched with no operator chat relayed into workers, or the relayed text is recorded in the protocol before the launch"
+  },
+  {
+   "id": "G-2",
+   "at": "2026-10-18T06:50:00Z",
+   "case": "review",
+   "change": "none to the scores; recorded for run 4: the LENS output schema gains a 'forbidden' boolean (the third prong of the classification) and a lens votes real only when holds, reachable is not 'no', and forbidden",
+   "reason": "the preregistered lens schema carries holds and reachable only, and the majority rule reads a lens as a real vote when holds and reachable is not 'no'; for C-4 (ERROR_CODE lets a token-shaped error value through as the code) and C-5 (parseBody rejects a 2xx token answer with a boolean or null field) every lens says the behaviour holds and is reachable, and two of three say in prose that the specification permits it (C-5: 'the spec requires it, so the claim is not REAL'; C-4: at most S4), so both read REAL (2/3) on two prongs. Under the preregistered rule haiku-medium (R-5, R-6) and haiku-high (R-2) carry adjudicated false-blocking 0 and PASS; under the full three-prong definition both reviews would FAIL (2 and 1). The preregistered rule stands for the scores, as G-1 did in run 2. No qualification changes: both profiles carry review FAILs in runs 1 and 2 and need two later passes under the host's rule 3"
+  },
+  {
+   "id": "N-1",
+   "at": "2026-10-18T05:45:00Z",
+   "case": "pin",
+   "change": "none; a note",
+   "reason": "pin:fable-medium FAIL: red at the base and still red with the accepted source because tests/cal-pin.test.ts:78 asserts the injected stream's own cancel() callback fired for each call, which the rule does not state; the accepted fix calls reader.cancel() and the callers cancel the body, yet the source callback is not observed through the Response the candidate's fetcher builds (whether undici propagates a reader cancel to an injected stream's source was not settled and is outside the rule). An over-specified pin blocks a correct fix, which the pass rule exists to catch"
+  },
+  {
+   "id": "A-2",
+   "at": "2026-10-18T07:55:00Z",
+   "case": "pin",
+   "change": "the pin case's category label in this frozen protocol reads build-tests; it represents the host category pin-tests, as host qualification rule 4 says and as runs 1-2 were applied; scores.json carries the mapping (category_mapping) and the proposed evidence check must use it",
+   "reason": "independent review of a197b6e, blocking finding 4: applied literally the fable-medium pin FAIL would be a build-tests fail and not block pin-tests; the host's rule says otherwise, and the mapping was never written down"
+  }
+ ],
+ "supplementary_run_id": "wf_dbe29a64-3b2",
+ "usage_window_readings": {
+  "before": "2026-10-18T05:07Z five_hour 0.29 seven_day 0.49 (not clean: X2 units in flight)",
+  "after": "2026-10-18T06:43Z five_hour 0.63 seven_day 0.58 (the supplementary run in flight)",
+  "note": "+0.34 and +0.09 over about 8.9M delegated tokens plus the lead: about 0.038 and 0.010 per Mtok, consistent with run 2 (0.0343 / 0.0102); the ratified 0.05 / 0.015 stay conservative; no clean reading exists for this run"
+ },
+ "review_notes_2026_10_18": [
+  "the fix pass rule omits typecheck: typecheck is self-reported by the candidate (reported_separately) and not part of grade.sh; a later run adds it to the mechanical grade",
+  "the pin rule does not enforce the two-row count; grade.sh counts failing and passing tests, not rows",
+  "the supplementary run's review findings were assigned to the main run's clusters by one agent and the main run's lenses did not see them; the one assigned finding (haiku-low R-3 -> C-1) joined a cluster adjudicated real on all three prongs",
+  "the ground truth (cal-truth-3.json), the finding text and the prompts are host files recorded here by hash only",
+  "the review-only cost comparison is per model (sonnet-xhigh vs sonnet-high, opus-max vs opus-high, fable-max vs fable-high), see README"
+ ],
+ "run_id_note": "the main run id was recorded in the README by 5533e47 at 05:23Z, one minute before the 05:24Z launch, while this field stayed null at the freeze (0013451); filled here after the independent review of a197b6e (non-blocking note); the README remains the pre-launch record"
+}

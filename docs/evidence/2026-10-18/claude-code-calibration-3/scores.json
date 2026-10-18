@@ -1,0 +1,603 @@
+{
+ "schema_version": 1,
+ "run_id": "wf_4e9ef48d-066",
+ "supplementary_run_id": "wf_dbe29a64-3b2",
+ "scored_at": "2026-10-18T06:55:00Z",
+ "pass_rules": {
+  "pin": "protocol cases[pin].pass_rule (grade.sh PASS); the pin case represents the host category pin-tests (host rule 4), not build-tests, whatever the protocol label says (amendment A-2)",
+  "fix": "protocol cases[fix].pass_rule (grade.sh PASS)",
+  "review": "protocol cases[review].pass_rule: PASS when r8Found and r11Found and adjudicated falseBlocking 0 and no copying; PARTIAL when exactly one of r8Found, r11Found with adjudicated falseBlocking 0; FAIL otherwise"
+ },
+ "accounting_note": "estimate-only: tools/prices-2.json rows applied to harness-reported tokens as an all-input..all-output range; not a bill",
+ "profiles": {
+  "haiku-low": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 118993,
+     "usd_all_input": 0.0119,
+     "usd_all_output": 0.0595
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 116605,
+     "usd_all_input": 0.0117,
+     "usd_all_output": 0.0583
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 1,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 130440,
+     "usd_all_input": 0.013,
+     "usd_all_output": 0.0652
+    },
+    "supplementary_run": "wf_dbe29a64-3b2",
+    "would_fail_under_three_prong": false
+   }
+  },
+  "haiku-medium": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 114463,
+     "usd_all_input": 0.0114,
+     "usd_all_output": 0.0572
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 142018,
+     "usd_all_input": 0.0142,
+     "usd_all_output": 0.071
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 2,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 2,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 138791,
+     "usd_all_input": 0.0139,
+     "usd_all_output": 0.0694
+    },
+    "would_fail_under_three_prong": true,
+    "three_prong_false_blocking": 2,
+    "three_prong_note": "the other findings ['R-5', 'R-6'] sit in clusters C-4/C-5, real on two prongs only (G-2); under the full three-prong definition this review is FAIL"
+   }
+  },
+  "haiku-high": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 119515,
+     "usd_all_input": 0.012,
+     "usd_all_output": 0.0598
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 142418,
+     "usd_all_input": 0.0142,
+     "usd_all_output": 0.0712
+    },
+    "supplementary_run": "wf_dbe29a64-3b2"
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 1,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 1,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 174287,
+     "usd_all_input": 0.0174,
+     "usd_all_output": 0.0871
+    },
+    "would_fail_under_three_prong": true,
+    "three_prong_false_blocking": 1,
+    "three_prong_note": "the other findings ['R-2'] sit in clusters C-4/C-5, real on two prongs only (G-2); under the full three-prong definition this review is FAIL"
+   }
+  },
+  "sonnet-low": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 99291,
+     "usd_all_input": 0.1986,
+     "usd_all_output": 0.9929
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 104911,
+     "usd_all_input": 0.2098,
+     "usd_all_output": 1.0491
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 0,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 1,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 109426,
+     "usd_all_input": 0.2189,
+     "usd_all_output": 1.0943
+    },
+    "would_fail_under_three_prong": false
+   }
+  },
+  "sonnet-medium": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 101399,
+     "usd_all_input": 0.2028,
+     "usd_all_output": 1.014
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 107145,
+     "usd_all_input": 0.2143,
+     "usd_all_output": 1.0715
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 0,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 2,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 125630,
+     "usd_all_input": 0.2513,
+     "usd_all_output": 1.2563
+    },
+    "would_fail_under_three_prong": false
+   }
+  },
+  "sonnet-high": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 113314,
+     "usd_all_input": 0.2266,
+     "usd_all_output": 1.1331
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 121541,
+     "usd_all_input": 0.2431,
+     "usd_all_output": 1.2154
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 0,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 159276,
+     "usd_all_input": 0.3186,
+     "usd_all_output": 1.5928
+    },
+    "would_fail_under_three_prong": false
+   }
+  },
+  "sonnet-xhigh": {
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 0,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 1,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 227264,
+     "usd_all_input": 0.4545,
+     "usd_all_output": 2.2726
+    },
+    "would_fail_under_three_prong": false
+   }
+  },
+  "opus-medium": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 103643,
+     "usd_all_input": 0.4146,
+     "usd_all_output": 2.0729
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 107815,
+     "usd_all_input": 0.4313,
+     "usd_all_output": 2.1563
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 1,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 127281,
+     "usd_all_input": 0.5091,
+     "usd_all_output": 2.5456
+    },
+    "would_fail_under_three_prong": false
+   }
+  },
+  "opus-high": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 108414,
+     "usd_all_input": 0.4337,
+     "usd_all_output": 2.1683
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 119586,
+     "usd_all_input": 0.4783,
+     "usd_all_output": 2.3917
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 1,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 141662,
+     "usd_all_input": 0.5666,
+     "usd_all_output": 2.8332
+    },
+    "would_fail_under_three_prong": false
+   }
+  },
+  "opus-xhigh": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 137110,
+     "usd_all_input": 0.5484,
+     "usd_all_output": 2.7422
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 154590,
+     "usd_all_input": 0.6184,
+     "usd_all_output": 3.0918
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 0,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 2,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 182333,
+     "usd_all_input": 0.7293,
+     "usd_all_output": 3.6467
+    },
+    "would_fail_under_three_prong": false
+   }
+  },
+  "opus-max": {
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 0,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 2,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 266339,
+     "usd_all_input": 1.0654,
+     "usd_all_output": 5.3268
+    },
+    "would_fail_under_three_prong": false
+   }
+  },
+  "fable-medium": {
+   "pin": {
+    "pass": false,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 108498,
+     "usd_all_input": 1.085,
+     "usd_all_output": 5.4249
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 116496,
+     "usd_all_input": 1.165,
+     "usd_all_output": 5.8248
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 0,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 148926,
+     "usd_all_input": 1.4893,
+     "usd_all_output": 7.4463
+    },
+    "would_fail_under_three_prong": false
+   }
+  },
+  "fable-high": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 120400,
+     "usd_all_input": 1.204,
+     "usd_all_output": 6.02
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 141930,
+     "usd_all_input": 1.4193,
+     "usd_all_output": 7.0965
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 0,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 147254,
+     "usd_all_input": 1.4725,
+     "usd_all_output": 7.3627
+    },
+    "would_fail_under_three_prong": false
+   }
+  },
+  "fable-xhigh": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 140242,
+     "usd_all_input": 1.4024,
+     "usd_all_output": 7.0121
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 166060,
+     "usd_all_input": 1.6606,
+     "usd_all_output": 8.303
+    }
+   },
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 0,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 1,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 186589,
+     "usd_all_input": 1.8659,
+     "usd_all_output": 9.3294
+    },
+    "would_fail_under_three_prong": false
+   }
+  },
+  "fable-max": {
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "r8Found": true,
+    "r8CauseNamed": true,
+    "r11Found": true,
+    "r11CauseNamed": true,
+    "falseBlocking_raw": 0,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 189364,
+     "usd_all_input": 1.8936,
+     "usd_all_output": 9.4682
+    },
+    "would_fail_under_three_prong": false
+   }
+  }
+ },
+ "void_cells": {
+  "fix:haiku-high": {
+   "status": "VOID (A-1)",
+   "main_run_tokens": 91080
+  },
+  "review:haiku-low": {
+   "status": "VOID (A-1)",
+   "main_run_tokens": {
+    "review": 75186,
+    "grade": 88760
+   }
+  }
+ },
+ "adjudication_note": "all five clusters adjudicated REAL by the preregistered majority rule (holds and reachable not no), so every grader false on an S1-S3 other cleared; G-2 (lead-notes): the lens schema carries no forbidden-by-spec prong and for C-4 and C-5 the lenses prose says the specification permits the behaviour; the preregistered rule stands for the scores and changes no qualification",
+ "totals": {
+  "cells": {
+   "pin": "11 of 12 PASS",
+   "fix": "12 of 12 PASS",
+   "review": "15 of 15 PASS (13 of 15 under the three-prong definition)"
+  },
+  "tokens": {
+   "main_run": {
+    "items": 5274667,
+    "graders": 1597164,
+    "clustering": 81285,
+    "lenses": 1578450,
+    "total": 8531566,
+    "of_which_void_cells": 166266,
+    "of_which_void_grade": 88760
+   },
+   "supplementary_run": {
+    "items": 272858,
+    "graders": 107524,
+    "clustering": 75994,
+    "total": 456376
+   },
+   "both_runs_total": 8987942,
+   "scored_cells_items": 5381259,
+   "judging_both_runs": 3440417,
+   "judging_share_main_run": 0.382,
+   "judging_share_both_runs": 0.383,
+   "note": "scored cells = main items minus the two void cells plus the supplementary items; judging = graders + clustering + lenses; the fourth supplementary agent is cluster:others (75,994), the cluster-assignment agent"
+  },
+  "non_pass": [
+   "pin:fable-medium"
+  ]
+ },
+ "category_mapping": {
+  "pin": "pin-tests",
+  "fix": "fix",
+  "review": "review",
+  "note": "the protocol labels the pin case build-tests; host qualification rule 4 (hosts/claude-code/README.md) says the pin task represents pin-tests; this mapping is the one the host applied in runs 1-2 and applies here (amendment A-2)"
+ },
+ "adjudication_schema": {
+  "prongs_in_lens_schema": [
+   "holds",
+   "reachable"
+  ],
+  "prongs_in_classification": [
+   "holds",
+   "reachable",
+   "forbidden"
+  ],
+  "missing_prong": "forbidden",
+  "vote_rule_as_preregistered": "a lens votes real when holds and reachable is not no; majority of three",
+  "note": "G-2: two clusters (C-4, C-5) read REAL on two prongs while the lenses prose says the specification permits the behaviour"
+ }
+}

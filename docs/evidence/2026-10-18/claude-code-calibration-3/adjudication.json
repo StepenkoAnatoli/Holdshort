@@ -1,0 +1,349 @@
+{
+ "run": "wf_4e9ef48d-066",
+ "supplementary-run": "wf_dbe29a64-3b2",
+ "clusters": [
+  {
+   "id": "C-1",
+   "title": "Body read (and fetch await) not raced against the bounded signal: a stalled body that ignores abort hangs past requestTimeoutMs",
+   "claim": "requestTimeoutMs and the owner abort exist only as the AbortSignal.any signal built in bounded() (src/main/github-oauth.ts:97-99) and passed to the fetcher as init.signal. readBounded's `await reader.read()` (l.108-115, reached from classify l.162 and loginOf l.212) never observes that signal. Some members also cite `await sent` in classify (l.154) and loginOf (l.210), so a fetcher promise that never settles is not raced either. An injected fetcher that ignores init.signal and returns a body that stalls (or never resolves) leaves requestToken, requestDeviceCode and fetchLogin pending forever. Members say this breaks spec 5.1 (every request bounded by requestTimeoutMs) and 5.3 row 1 (timeout gives transient, failed at step 1, or null for the login). They note the shipped stalled-body tests use real fetch over the loopback fake, which honours the signal. One member adds that zero-length chunks are read without limit, and one says the spec does not state whether honouring init.signal is part of the Fetcher contract.",
+   "members": [
+    "haiku-medium R-3",
+    "haiku-high R-3",
+    "sonnet-medium R-4",
+    "opus-medium R-5",
+    "opus-xhigh R-4",
+    "opus-max R-3",
+    "haiku-low R-3"
+   ],
+   "graderClassifications": [
+    "true",
+    "true",
+    "true",
+    "false",
+    "true",
+    "true",
+    "false"
+   ]
+  },
+  {
+   "id": "C-2",
+   "title": "Awaited body/reader cancel() has no bound: a cancel that never settles holds back an already-decided result",
+   "claim": "Every body cancel is awaited with no time bound: the declared-oversize path at src/main/github-oauth.ts:110 (response.body?.cancel()), readBounded's finally at l.119 (reader.cancel(); one member cites l.122), classify's finally at l.171 for 3xx and rate-limited answers, and loginOf's non-2xx path at l.211. ReadableStream.cancel() settles only when the source's cancel does. So an injected Response body whose cancel never settles keeps the call pending, even when the result is already known (429 rate-limited, unusable 302, declared or streamed oversize, 401 to fetchLogin). Neither requestTimeoutMs nor an owner abort can end it. Members say spec 5.1 requires the body to be cancelled or released, not awaited, and that the 'body always cancelled' rule becomes a liveness hole. This is reachable only through an injected Fetcher's custom stream.",
+   "members": [
+    "haiku-medium R-4",
+    "sonnet-medium R-3",
+    "opus-xhigh R-3",
+    "opus-max R-4"
+   ],
+   "graderClassifications": [
+    "true",
+    "true",
+    "true",
+    "true"
+   ]
+  },
+  {
+   "id": "C-3",
+   "title": "Combined: the body phase (read and cancel) never observes the timeout signal, so a stalled stream or a never-settling cancel hangs the call",
+   "claim": "These findings make both claims in one: readBounded/classify/loginOf neither race `await reader.read()` (src/main/github-oauth.ts:115) against the bounded() signal (l.97-99), nor bound the awaited cancels (reader.cancel() at l.119; response.body?.cancel() at l.110, l.171, l.211). The timeout and owner abort reach the body only if the fetcher wires init.signal into the stream. So an injected Response body that stalls, or whose cancel() never settles (for example on an oversize body or a 429), never settles the call after requestTimeoutMs fires. Members say this breaks 5.1 and 5.3 row 1 (timeout gives transient), and that the shipped tests only cover stalls through real fetch/undici. One member calls this a spec gap: 5.1 and 5.3 do not say whether the wire or the fetcher enforces the timeout during the body read.",
+   "members": [
+    "sonnet-low R-3",
+    "opus-high R-3",
+    "sonnet-xhigh R-4",
+    "fable-xhigh R-3"
+   ],
+   "graderClassifications": [
+    "true",
+    "false",
+    "true",
+    "true"
+   ]
+  },
+  {
+   "id": "C-4",
+   "title": "ERROR_CODE /^[a-z_]{1,64}$/ lets a token-shaped error value through verbatim as the result code",
+   "claim": "classify row 5 (src/main/github-oauth.ts:165-166) returns the response's `error` value as the result's code whenever it matches ERROR_CODE = /^[a-z_]{1,64}$/ (cited at l.32 and at l.16). That regex admits a lowercase, all-letter token-shaped string such as 'ghu_abcdefghijklmnopqrstuvwxyz', so a token or response text can reach a result. Members say this breaks spec 3.9 layer 1 and DC-9 (no result carries GitHub's response text or a token). Members say it is hypothetical: GitHub would have to echo a token into `error`, and real tokens usually contain digits, which the regex refuses. One member notes the regex is quoted from spec 3.5 and 5.3 row 5, so this is a spec gap as well.",
+   "members": [
+    "haiku-medium R-6",
+    "haiku-high R-2"
+   ],
+   "graderClassifications": [
+    "false",
+    "false"
+   ]
+  },
+  {
+   "id": "C-5",
+   "title": "parseBody's flat-object check rejects a 2xx token answer that has a boolean or null field",
+   "claim": "parseBody (src/main/github-oauth.ts:136) type-checks every value of the JSON body and rejects the whole 2xx answer when any field is a boolean or null. A valid token answer carrying an extra field such as \"flag\": true therefore becomes transient, and the access token is lost. The member says this contradicts spec 5.3, under which error_description, error_uri and every other field are dropped unread, as against row 4's flat-object rule.",
+   "members": [
+    "haiku-medium R-5"
+   ],
+   "graderClassifications": [
+    "false"
+   ]
+  }
+ ],
+ "adjudications": [
+  {
+   "cluster": {
+    "id": "C-1",
+    "title": "Body read (and fetch await) not raced against the bounded signal: a stalled body that ignores abort hangs past requestTimeoutMs",
+    "claim": "requestTimeoutMs and the owner abort exist only as the AbortSignal.any signal built in bounded() (src/main/github-oauth.ts:97-99) and passed to the fetcher as init.signal. readBounded's `await reader.read()` (l.108-115, reached from classify l.162 and loginOf l.212) never observes that signal. Some members also cite `await sent` in classify (l.154) and loginOf (l.210), so a fetcher promise that never settles is not raced either. An injected fetcher that ignores init.signal and returns a body that stalls (or never resolves) leaves requestToken, requestDeviceCode and fetchLogin pending forever. Members say this breaks spec 5.1 (every request bounded by requestTimeoutMs) and 5.3 row 1 (timeout gives transient, failed at step 1, or null for the login). They note the shipped stalled-body tests use real fetch over the loopback fake, which honours the signal. One member adds that zero-length chunks are read without limit, and one says the spec does not state whether honouring init.signal is part of the Fetcher contract.",
+    "members": [
+     "haiku-medium R-3",
+     "haiku-high R-3",
+     "sonnet-medium R-4",
+     "opus-medium R-5",
+     "opus-xhigh R-4",
+     "opus-max R-3",
+     "haiku-low R-3"
+    ],
+    "graderClassifications": [
+     "true",
+     "true",
+     "true",
+     "false",
+     "true",
+     "true",
+     "false"
+    ]
+   },
+   "lenses": [
+    {
+     "claim": "C-1",
+     "lens": "REPRODUCE",
+     "holds": true,
+     "reachable": "yes",
+     "severity": "S3",
+     "scratchTest": "tests/zz-adj-C-1-reproduce.test.ts (uncommitted; 3/3 pass in 3.5 s). With requestTimeoutMs 50 and an injected Fetcher that ignores init.signal and returns `new Response(stalledStream, {status:200, content-type: application/json})`, the test first checks `seen[0].signal.aborted === true` (the bounded signal fired). It then checks `expect(await within(tokenP, 1000)).toBe(PENDING)`, and does the same for requestDeviceCode and fetchLogin. A second test shows the same PENDING result when the fetcher's promise never settles. Every call is settled afterwards: closing the stream gives transient / failed / null. A control fetcher that errors its body stream on abort gets { kind: 'transient' } within the timeout.",
+     "why": "The timeout exists only as the AbortSignal built by bounded() (src/main/github-oauth.ts:97-99), which is passed to the fetcher as init.signal (l.65 and l.91). Nothing in the module observes it. Neither `await sent` (classify l.154, loginOf l.210) nor readBounded's `await reader.read()` (l.112) is raced against it. The test confirmed that the signal was aborted at 50 ms while all three public functions were still pending at 1000 ms. Spec 5.1 bounds every request by requestTimeoutMs, and 5.3 row 1 says \"the timeout fired \u2192 transient\" (step 1: failed; the login: null). Under this input, neither result arrives. The only input needed was a Response from an injected Fetcher (Fetcher type, src/main/github-credential.ts:5), and the spec does not require a Fetcher to honour init.signal. The module was not edited. I rate it S3, not higher: the shipped lateFetch (real fetch) aborts both the fetch and its body stream on the signal, so production calls are bounded. The hang needs a non-conforming fetcher or a body stream that ignores abort."
+    },
+    {
+     "claim": "C-1",
+     "lens": "reachability",
+     "holds": true,
+     "reachable": "yes",
+     "severity": "S3",
+     "scratchTest": "",
+     "why": "The code does what the claim says. The timeout exists only as the AbortSignal.any value built in bounded() (src/main/github-oauth.ts:97-99). That signal goes only into init.signal: oauthRequest at l.52-53, fetchLogin at l.92. readBounded (l.108-121) takes no signal, and its `await reader.read()` (l.115) races nothing. classify's `await sent` (l.154) and loginOf's (l.210) race nothing either.\nAdmissible input: Fetcher is `(url, init) => Promise<Response>` (src/main/inference.ts:14, spec 3.4 l.262), and its contract does not say it must honour init.signal. So a fetcher that ignores init.signal is admissible. It can return `new Response(new ReadableStream({ pull: () => new Promise(() => {}) }), { status: 200, headers: { 'content-type': 'application/json' } })`, or a promise that never settles. That input passes rows 2 and 3 (l.158-160) and reaches readBounded at l.162, or l.212 for fetchLogin. When the timeout fires, nothing reads the aborted signal, so requestToken, requestDeviceCode and fetchLogin never settle.\nWhat forbids it: spec 5.3 row 1 says \"the timeout fired\" gives transient (failed at step 1, null for the login). Spec 5.1 bounds every request by requestTimeoutMs, and the module header (l.5) promises every failure comes back as a result kind. A promise that never settles breaks all three.\nWhy the tests miss it and how far it reaches: the shipped stalled-body tests (tests/github-oauth.test.ts:192-197, 240-246) use real fetch against the loopback fake, and real fetch errors the body stream when the signal aborts. Production passes lateFetch, which is globalThis.fetch (spec l.264), so the shipped app is not exposed; that is why I rate it S3, not higher. Under the run's definition it is still reachable with an injected fetcher. If it happens, the 6.5 refresh, which waits only on its own timeout (spec l.760-761), would never finish."
+    },
+    {
+     "claim": "C-1",
+     "lens": "REFUTE",
+     "holds": true,
+     "reachable": "yes",
+     "severity": "S3",
+     "scratchTest": "I wrote no file of my own. I ran tests/zz-adj-C-1-reproduce.test.ts, written by another adjudicator, and all 3 tests passed. The decisive check: with a fetcher whose 200 application/json body never enqueues and ignores init.signal, and requestTimeoutMs set to 50, init.signal.aborted is true, yet requestToken, requestDeviceCode and fetchLogin are all still pending after 1 s (expect(tok/code/login).toBe(PENDING)). A control fetcher that errors the body on abort gets {kind:'transient'} within the timeout.",
+     "why": "I could not refute the claim. The timeout exists only as bounded()'s AbortSignal.any (src/main/github-oauth.ts:97-99). That signal goes only into init.signal (l.58, l.92). readBounded's `await reader.read()` (l.112) and the `await sent` calls (l.154, l.210) never see it or race it, so the code behaves as stated. The input is admissible: a stalled-body Response is a Response an injected Fetcher can hand back (Fetcher type, src/main/github-credential.ts:5), and it goes through all three public functions. The spec does not allow the hang. 5.3 row 1 says \"the timeout fired \u2192 transient\". 3.5's union comments list \"timeout\" under failed and transient, and L-3 (spec l.123) says a refresh \"ends only by its response or by its own 20 s timeout\". The only refute angle is that the spec never says a Fetcher must honour init.signal (5.1 names the signal only as what the request uses). That is a gap in the spec, not a permission to hang. The never-settling-promise variant is weaker (it is fetcher behaviour, not a Response), but the stalled body is enough on its own. Severity is S3, not higher: production passes lateFetch, which is globalThis.fetch (github-credential.ts:7), and that aborts both the promise and the body stream. close() is also bounded by quitWaitMs (spec l.838)."
+    }
+   ],
+   "real": true,
+   "realVotes": "3/3",
+   "three_prong_reading": "real on all three prongs in every lens"
+  },
+  {
+   "cluster": {
+    "id": "C-2",
+    "title": "Awaited body/reader cancel() has no bound: a cancel that never settles holds back an already-decided result",
+    "claim": "Every body cancel is awaited with no time bound: the declared-oversize path at src/main/github-oauth.ts:110 (response.body?.cancel()), readBounded's finally at l.119 (reader.cancel(); one member cites l.122), classify's finally at l.171 for 3xx and rate-limited answers, and loginOf's non-2xx path at l.211. ReadableStream.cancel() settles only when the source's cancel does. So an injected Response body whose cancel never settles keeps the call pending, even when the result is already known (429 rate-limited, unusable 302, declared or streamed oversize, 401 to fetchLogin). Neither requestTimeoutMs nor an owner abort can end it. Members say spec 5.1 requires the body to be cancelled or released, not awaited, and that the 'body always cancelled' rule becomes a liveness hole. This is reachable only through an injected Fetcher's custom stream.",
+    "members": [
+     "haiku-medium R-4",
+     "sonnet-medium R-3",
+     "opus-xhigh R-3",
+     "opus-max R-4"
+    ],
+    "graderClassifications": [
+     "true",
+     "true",
+     "true",
+     "true"
+    ]
+   },
+   "lenses": [
+    {
+     "claim": "C-2",
+     "lens": "REPRODUCE",
+     "holds": true,
+     "reachable": "yes",
+     "severity": "S3",
+     "scratchTest": "tests/zz-adj-C-2-reproduce.test.ts (uncommitted). For each of the five paths: `expect(await within(result, 400)).toBe(PENDING)` with requestTimeoutMs 50 and an owner abort at 60 ms, then `body.release()` followed by `expect(await within(result, 400)).toEqual(decided)`. 6/6 pass, control included.",
+     "why": "The test injects a Fetcher that returns `new Response(stream, {status, headers})`. The stream's source `cancel()` returns a promise the test releases later. Nothing else is needed: the input is admissible under the Fetcher contract (src/main/github-credential.ts:5).\nAll five cited paths stayed pending for 400 ms. That is 8x requestTimeoutMs, and the owner's AbortController had already fired. The five paths, each with the result it was holding: 429 gives rate-limited (classify finally, src/main/github-oauth.ts:171); 302 gives unusable/302 (l.171); a declared content-length of 999999 gives failed (readBounded l.110); a 2048-byte streamed chunk against maxBodyBytes 1024 gives transient (readBounded finally l.119); a 401 to fetchLogin gives null (loginOf l.211).\nEach source's cancel() ran exactly once. Every call resolved to the already-decided value as soon as the test released cancel(), so the result was known and held back only by the awaited cancel.\nThe timeout and the abort cannot help: `bounded()` (l.97-98) only feeds the fetcher's init.signal, and once a Response exists, nothing in the module watches that signal.\nThis breaks spec 5.1 (docs/specification/github-sign-in.md:540-541: the signal bounds the request, and the body is 'cancelled or released', not awaited). It also breaks L-3 (l.123: a refresh ends 'only by its response or by its own 20 s timeout') and the table rows at l.162-165.\nSeverity S3, not higher: production uses the real fetch (lateFetch, github-credential.ts:7), whose body cancel settles. The stall needs a custom stream from an injected Fetcher, and nothing is corrupted or leaked; the call just never returns."
+    },
+    {
+     "claim": "C-2",
+     "lens": "reachability",
+     "holds": true,
+     "reachable": "yes",
+     "severity": "S4",
+     "scratchTest": "",
+     "why": "The code does what the claim says. Every cancel is awaited with no time limit: src/main/github-oauth.ts:110 (declared oversize), :119 (readBounded's finally, `await reader.cancel()`), :171 (classify's finally for 3xx and rate-limited answers) and :211 (loginOf for non-2xx). The `.catch` only handles a rejection, not a promise that never settles.\nReachable input: an injected Fetcher (src/main/github-credential.ts:5, which accepts any Promise<Response>) resolves `new Response(new ReadableStream({cancel(){return new Promise(()=>{})}}), {status:429})`. classify returns 'rate-limited' at :160, but the finally at :171 waits forever, because ReadableStream cancel waits for the source's cancel to settle. The same holds for a 302 to requestToken, a 401 to fetchLogin (:211), and a declared or streamed oversize (:110, :116 then :119).\nThe signal is not a way out. bounded() (:97-98) reaches only the fetcher, and once the stream is closed for cancel, erroring it cannot settle a cancel that is still pending. So requestTimeoutMs and an owner abort cannot end the call.\nWhat forbids it: spec 5.1 requires a timeout-bounded signal on every request, and 5.3 row 1 turns a timeout into 'transient'. L-3 (spec l.123) says a refresh ends by its response or by its 20 s timeout, and here it ends by neither. The fetchLogin doc says the call is 'bounded by requestTimeoutMs'. 5.1's 'always cancelled or released' asks for a cancel, not an awaited one, so 5.1 alone does not forbid the awaiting.\nWhy only S4: the production lateFetch (undici) has a body cancel that settles at once, so only a custom injected stream reaches this. The same kind of stream, if it also ignored abort, could already stall reader.read() at :115, so the module already trusts the fetcher to keep the body bounded in time. I did not write a test. Reading settled it, and tests/zz-adj-C-2-reproduce.test.ts from another adjudicator already exists in this checkout."
+    },
+    {
+     "claim": "C-2",
+     "lens": "REFUTE",
+     "holds": false,
+     "reachable": "yes",
+     "severity": "none",
+     "scratchTest": "tests/zz-adj-C-2-refute.test.ts (passes 3/3). Decisive: with a body whose source cancel() returns new Promise(() => {}), race(requestToken(..429..), owner aborted at 100 ms, requestTimeoutMs 50) is 'pending' after 400 ms. The same holds for a 302 to requestDeviceCode, a declared-oversize 200 and a 401 to fetchLogin. Control: a Fetcher returning new Promise(() => {}), which ignores its signal before headers, is also 'pending' after 400 ms.",
+     "why": "The behaviour is as stated, and an injected Fetcher can reach it. The awaits are at src/main/github-oauth.ts:110, :119, :171 and :211, and my scratch test shows each call stays pending. But nothing in the spec forbids it, so the claim fails the run's third condition.\n(1) Spec 5.1 (l.540-541) requires two things. The signal must be AbortSignal.any([owner, timeout]), and the code does that at :97-99. The body must be \"always cancelled or released\", and the code cancels it on every path. Nowhere does the spec say a cancel must be fire-and-forget or bounded.\n(2) The spec writes the awaited form itself. Section 6.4 (l.695) has `await sent.body?.cancel().catch(() => {})`, the same pattern this claim calls a defect.\n(3) Liveness is handed to the Fetcher through the signal everywhere in this module. It never races the signal, not even on the fetch promise (:154, :210). My control test shows a Fetcher that ignores the signal before headers hangs in the same way. Spec 3.5 says the caller's signal \"carries the 20 s timeout\", and 5.3 row 1 only classifies a timeout that the fetch reports. A real fetch errors the body on abort, so cancel() settles.\nA Response whose cancel never settles, even after the abort, is the same signal-ignoring Fetcher. It is not a new hole the spec forbids. At most it is a hardening note."
+    }
+   ],
+   "real": true,
+   "realVotes": "2/3",
+   "three_prong_reading": "real on all three prongs in every lens"
+  },
+  {
+   "cluster": {
+    "id": "C-3",
+    "title": "Combined: the body phase (read and cancel) never observes the timeout signal, so a stalled stream or a never-settling cancel hangs the call",
+    "claim": "These findings make both claims in one: readBounded/classify/loginOf neither race `await reader.read()` (src/main/github-oauth.ts:115) against the bounded() signal (l.97-99), nor bound the awaited cancels (reader.cancel() at l.119; response.body?.cancel() at l.110, l.171, l.211). The timeout and owner abort reach the body only if the fetcher wires init.signal into the stream. So an injected Response body that stalls, or whose cancel() never settles (for example on an oversize body or a 429), never settles the call after requestTimeoutMs fires. Members say this breaks 5.1 and 5.3 row 1 (timeout gives transient), and that the shipped tests only cover stalls through real fetch/undici. One member calls this a spec gap: 5.1 and 5.3 do not say whether the wire or the fetcher enforces the timeout during the body read.",
+    "members": [
+     "sonnet-low R-3",
+     "opus-high R-3",
+     "sonnet-xhigh R-4",
+     "fable-xhigh R-3"
+    ],
+    "graderClassifications": [
+     "true",
+     "false",
+     "true",
+     "true"
+    ]
+   },
+   "lenses": [
+    {
+     "claim": "C-3",
+     "lens": "reproduce",
+     "holds": true,
+     "reachable": "yes",
+     "severity": "S3",
+     "scratchTest": "tests/zz-adj-C-3-reproduce.test.ts (uncommitted; 3/3 pass). C-3a: `expect(t.seen[0]!.signal!.aborted).toBe(true); expect([tok, code, login]).toEqual([PENDING, PENDING, PENDING])` at 1 s with requestTimeoutMs=50 and a stalled body. C-3b: with an underlying-source cancel() that never settles, `expect(r).toEqual([PENDING, PENDING, PENDING, PENDING])` for declared-oversize, streamed-oversize, 429 retry-after and a 404 fetchLogin, after asserting cancelCalled() for all four. C-3c: owner.abort() does not settle a stalled-body requestToken either. Every call is then released and settles to transient / failed / rate-limited 5000 / null.",
+     "why": "src/main/github-oauth.ts:97-99 builds the bounded signal, but the only place it is used is init.signal (l.62, l.89). Nothing in readBounded, classify or loginOf reads it. The body read `await reader.read()` (l.115) is not raced against that signal. The cancels it awaits are not bounded either: response.body?.cancel() at l.110, l.171 and l.211, and reader.cancel() at l.119.\nThe test used an injected Fetcher that resolves a plain `new Response(ReadableStream)` and ignores init.signal, which is admissible input under the Fetcher type (src/main/github-credential.ts:5). With it, requestToken, requestDeviceCode and fetchLogin were all still pending 1 s after the 50 ms timeout had visibly aborted init.signal. An owner abort behaves the same way (C-3c).\nA cancel() that never settles also hangs the call on the oversize paths: declared at l.110, and streamed via the finally at l.119. It hangs on a 429 too, through the finally at l.171, which runs after the rate-limited result is computed, and on a non-ok fetchLogin (l.211).\nThat breaks spec 5.3 row 1 (\"the timeout fired -> transient\") and the 3.5 result comments (\"timeout\" -> transient/failed/null). It also breaks L-3 (\"a refresh ... ends ... by its own 20 s timeout\").\nI rate it S3, not higher. The production fetcher (lateFetch -> globalThis.fetch) wires init.signal into the body stream. The shipped hang tests (tests/github-oauth.test.ts:192, :240) only exercise that path, so a real hang needs a non-conforming fetcher."
+    },
+    {
+     "claim": "C-3",
+     "lens": "REACHABILITY",
+     "holds": true,
+     "reachable": "yes",
+     "severity": "S4",
+     "scratchTest": "",
+     "why": "src/main/github-oauth.ts:97-99 builds the bounded signal, but the only place it goes is init.signal, which is handed to the fetcher (l.78, 84, 92). Nothing after `await sent` reads it. readBounded runs a bare `await reader.read()` (l.115) and awaits reader.cancel() (l.119) with no race. classify (l.171) and loginOf (l.110, l.211) await response.body?.cancel() unbounded, and .catch only handles a rejection, not a promise that never settles.\nAdmissible input: the fetcher's contract is only `(url, init) => Promise<Response>` (spec 3.4), so an injected Fetcher may ignore init.signal. It can return `new Response(new ReadableStream({pull(){ return new Promise(()=>{}) }}))` with status 200, which stalls at l.115. Or it can return a 429 / an oversize content-length whose stream `cancel(){ return new Promise(()=>{}) }`. Per WHATWG streams, stream.cancel() resolves only when the source's cancel promise does, so l.110, l.119 and l.171 hang. Each case leaves requestToken, requestDeviceCode and fetchLogin pending forever after requestTimeoutMs fires.\nWhat forbids it: spec 5.3 row 1 says \"the timeout fired -> transient\", with no condition. 3.5 lists \"timeout\" under transient and failed, and L-3 says a refresh \"ends only by its response or by its own 20 s timeout\". The module's own doc (l.88-90) says the call is \"bounded by requestTimeoutMs\".\nBarrier, which is why this is S4: production uses lateFetch, which is Node's undici fetch (spec 10). Undici errors the body stream on abort, and its cancel settles. The shipped stall tests (tests/github-oauth.test.ts:192-258) go through that path and pass. So this only appears with a fetcher that does not behave like fetch. 5.1 also never says whether the fetcher or the module enforces the timeout during the body read, which is the spec gap one member named."
+    },
+    {
+     "claim": "C-3",
+     "lens": "REFUTE",
+     "holds": true,
+     "reachable": "yes",
+     "severity": "S3",
+     "scratchTest": "tests/zz-adj-C-3-refute.test.ts (uncommitted; 4/4 pass): with a fetcher that ignores init.signal and returns new Response(stalledStream), `expect(await within(requestToken(f, {client_id:'x'}, live(), {requestTimeoutMs:50,...}, now))).toBe('hung')` (800 ms window, same for requestDeviceCode and fetchLogin). An owner abort also gives 'hung'. A 429 or an oversize content-length whose stream cancel() never settles gives 'hung'. Control: a fetcher that errors the stream on init.signal abort gives {kind:'transient'}.",
+     "why": "Refutation failed. src/main/github-oauth.ts:115 awaits reader.read() with no race against bounded() (l.97-99). The signal reaches the body only through the fetcher, via init.signal. The awaited cancels are not bounded either: l.110 (oversize content-length), l.119 (reader.cancel in finally), l.171 (2xx/3xx/429 paths before the read) and l.211 (fetchLogin non-ok). The scratch test confirms every hang the claim describes, through the public API with a plain new Response(ReadableStream). The Fetcher type (src/main/github-credential.ts:5) admits that Response, and the run definition counts any Response an injected Fetcher hands back as admissible. The spec forbids the hang: 5.1 (spec l.540-541) puts the timeout on every request, 5.3 row 1 (l.575) says a fired timeout is transient, L-3 (l.123) says a refresh ends by its response or by its own 20 s timeout, and the module header (l.6) promises a result kind for every failure. A call that never settles meets none of these. The spec-gap reading (5.1 does not say who enforces the timeout during the body read) is the strongest refutation, but row 1 and L-3 state the outcome, not the mechanism, so it does not rescue the code. Severity S3, not higher: the production fetcher, lateFetch \u2192 globalThis.fetch, wires the signal into the body, so the hang needs an injected fetcher or a nonconforming stream."
+    }
+   ],
+   "real": true,
+   "realVotes": "3/3",
+   "three_prong_reading": "real on all three prongs in every lens"
+  },
+  {
+   "cluster": {
+    "id": "C-4",
+    "title": "ERROR_CODE /^[a-z_]{1,64}$/ lets a token-shaped error value through verbatim as the result code",
+    "claim": "classify row 5 (src/main/github-oauth.ts:165-166) returns the response's `error` value as the result's code whenever it matches ERROR_CODE = /^[a-z_]{1,64}$/ (cited at l.32 and at l.16). That regex admits a lowercase, all-letter token-shaped string such as 'ghu_abcdefghijklmnopqrstuvwxyz', so a token or response text can reach a result. Members say this breaks spec 3.9 layer 1 and DC-9 (no result carries GitHub's response text or a token). Members say it is hypothetical: GitHub would have to echo a token into `error`, and real tokens usually contain digits, which the regex refuses. One member notes the regex is quoted from spec 3.5 and 5.3 row 5, so this is a spec gap as well.",
+    "members": [
+     "haiku-medium R-6",
+     "haiku-high R-2"
+    ],
+    "graderClassifications": [
+     "false",
+     "false"
+    ]
+   },
+   "lenses": [
+    {
+     "claim": "C-4",
+     "lens": "REPRODUCE",
+     "holds": true,
+     "reachable": "yes",
+     "severity": "S4",
+     "scratchTest": "tests/zz-adj-C-4-reproduce.test.ts (passes, 1/1): expect(await requestToken(answering(400, { error: 'ghu_abcdefghijklmnopqrstuvwxyz' }), ...)).toEqual({ kind: 'error', code: 'ghu_abcdefghijklmnopqrstuvwxyz', intervalS: null }). The same result comes back for a 200 carrying `error` and for requestDeviceCode. As controls, a token containing digits and a 65-character value both map to 'unknown'.",
+     "why": "I observed the behaviour. classify row 5 (src/main/github-oauth.ts:165) returns the `error` string verbatim when it matches ERROR_CODE (l.32, /^[a-z_]{1,64}$/). tokenResult (l.~199) and deviceCodeResult (l.~185) then copy that string into the result's code. Reaching it took only a JSON Response from an injected Fetcher, which the contract admits, so it is reachable through requestToken and requestDeviceCode.\nThe specification itself prescribes this behaviour, though. Spec 5.3 row 5 (docs/specification/github-sign-in.md:579) and the 3.5 type comment (l.295, repeated at src/main/github-oauth.ts:18) say to pass `error` through when it matches ^[a-z_]{1,64}$ and to use 'unknown' otherwise. The `error` code is GitHub response text by nature, so this is a deliberate carve-out from 3.9 layer 1 (l.398, \"never carry response text\"). Layer 1 also \"crosses nothing\" (it stays inside main).\nThe leak is narrow. A real token contains digits and the regex refuses digits, as my control shows. A token-shaped value can only get through if GitHub echoes an all-letter, token-like string in `error`.\nSo the code matches its spec and the defect is at most a gap between spec 3.9 and 5.3. That is why I grade it S4 and do not count it as a code bug."
+    },
+    {
+     "claim": "C-4",
+     "lens": "reachability",
+     "holds": true,
+     "reachable": "yes",
+     "severity": "none",
+     "scratchTest": "",
+     "why": "The code does what the claim says. At src/main/github-oauth.ts:165-166, classify passes the body's string `error` through unchanged when ERROR_CODE (l.32, /^[a-z_]{1,64}$/) matches. tokenResult (l.195) and deviceCodeResult (l.178) then copy it into the result's `code`. It is also reachable through the public API: requestToken or requestDeviceCode with an injected Fetcher that answers 200 application/json {\"error\":\"ghu_abcdefghijklmnopqrstuvwxyz\"} returns {kind:'error', code:'ghu_abcdefghijklmnopqrstuvwxyz'}. Reading the code settles this, so I wrote no test.\nWhat is missing is a rule that forbids it. Spec 3.5 (docs/specification/github-sign-in.md:295) and 5.3 row 5 (l.579) tell the code to carry `error` bounded to exactly ^[a-z_]{1,64}$, and 'unknown' otherwise. The module's own promise at l.18 says the same. So the specific rule calls for this exact behaviour.\nLayer 1 of spec 3.9 (l.398, \"never carry response text\") is the general rule, and row 5 makes a stated exception to it for the bounded code. DC-9/L-7 (l.136-140) cover tokens that MoonAliza received, meaning issued access or refresh tokens and parse errors with a `cause`. They do not cover a token-shaped string that a server puts in `error`. That string is not a token MoonAliza holds, and it stays inside main (layer 1 does not cross).\nSo the claim is not REAL. At most the spec has a gap in how it worded the regex (S4)."
+    },
+    {
+     "claim": "C-4",
+     "lens": "REFUTE",
+     "holds": false,
+     "reachable": "yes",
+     "severity": "none",
+     "scratchTest": "",
+     "why": "The code does what the claim says. At src/main/github-oauth.ts:165-166 a string `error` that matches ERROR_CODE (l.32, /^[a-z_]{1,64}$/) becomes the code verbatim. Any Response from an injected Fetcher can reach that line, so a value like 'ghu_abcdefghijklmnopqrstuvwxyz' is admissible input and comes back as the code.\nThe claim still fails the \"spec forbids it\" test, because the spec prescribes this exact behaviour. Spec 5.3 row 5 (docs/specification/github-sign-in.md:579) gives the result as \"`error`, with the code bounded to `^[a-z_]{1,64}$` (otherwise `unknown`)\". The 3.5 result type (spec l.295) carries the same comment, and the module copies it at src/main/github-oauth.ts:16.\nSpec 3.9 layer 1 (l.398, \"never carry response text\") and DC-9 sit in the same document next to row 5. Within that document, the bounded code counts as the classified result rather than as response text. The fields 5.3 removes as response text are error_description, error_uri and the rest (l.583), and the code never reads them.\ntests/github-oauth.test.ts:384-385 already pins 'x'.repeat(64) passing through verbatim as the specified behaviour.\nA token reaching `error` is hypothetical: GitHub would have to echo one there, and real ghu_ tokens are mixed-case base62, which the regex refuses. A designer could widen the spec, but the module matches its contract, so this is not a defect at HEAD."
+    }
+   ],
+   "real": true,
+   "realVotes": "2/3",
+   "three_prong_reading": "not real: every lens says the behaviour holds and is reachable, and the lenses prose says the specification permits it (G-2)"
+  },
+  {
+   "cluster": {
+    "id": "C-5",
+    "title": "parseBody's flat-object check rejects a 2xx token answer that has a boolean or null field",
+    "claim": "parseBody (src/main/github-oauth.ts:136) type-checks every value of the JSON body and rejects the whole 2xx answer when any field is a boolean or null. A valid token answer carrying an extra field such as \"flag\": true therefore becomes transient, and the access token is lost. The member says this contradicts spec 5.3, under which error_description, error_uri and every other field are dropped unread, as against row 4's flat-object rule.",
+    "members": [
+     "haiku-medium R-5"
+    ],
+    "graderClassifications": [
+     "false"
+    ]
+   },
+   "lenses": [
+    {
+     "claim": "C-5",
+     "lens": "REPRODUCE",
+     "holds": true,
+     "reachable": "yes",
+     "severity": "none",
+     "scratchTest": "tests/zz-adj-C-5-reproduce.test.ts (uncommitted): `expect(await run({ access_token: 'ghu_'+'a'.repeat(36), token_type: 'bearer', scope: '', flag: true })).toEqual({ v: { kind: 'transient' } })` passes, and so does the same test with `error_uri: null`. The control without the extra field settles to `{ kind: 'tokens' }`. All 3 tests passed under vitest 5.0.1.",
+     "why": "The behaviour is real and reachable, but the spec requires it, so the claim is not REAL.\n- Observed: requestToken (src/main/github-oauth.ts:83) with an injected Fetcher returning a 200 application/json token answer plus `flag: true` or `error_uri: null` settles to `{ kind: 'transient' }`. The same answer without that field settles to `tokens`. Only admissible input was used: a Response from an injected fetcher, through the public API.\n- Cause: parseBody (src/main/github-oauth.ts:136) rejects any value that is not a string or a finite number. classify row 4 (line 165) then returns transient, and tokenResult (line 186) passes that on.\n- Spec 5.3 row 4 (docs/specification/github-sign-in.md:578) requires this outright: \"the result must be a flat object of strings and numbers\", with the result transient.\n- Line 584, \"error_description, error_uri and every other field are dropped unread\", applies after row 4. It describes what happens to fields of a body that already parsed, so it neither overrides nor contradicts the flat-object rule.\n- The module states the same promise on its Parsed type (src/main/github-oauth.ts:37-38) and its TokenResult comment (line 27: \"unparseable\" -> transient).\n- Result: the code matches its specification, nothing forbids the behaviour, and the claim fails the run's REAL test. If losing a token this way is a concern, it is a question about the spec, not a defect in the code."
+    },
+    {
+     "claim": "C-5",
+     "lens": "reachability",
+     "holds": true,
+     "reachable": "yes",
+     "severity": "none",
+     "scratchTest": "",
+     "why": "The code does what the claim says. At src/main/github-oauth.ts:135, parseBody returns null when any value is not a string or a finite number, so a boolean or null fails the check. classify (:163-164) then maps that null to 'transient', and tokenResult (:191) returns { kind: 'transient' }.\nThe path can be reached: an injected Fetcher can return a 200 application/json body such as {\"access_token\":\"ghu_...\",\"flag\":true}. The access token in it is then dropped.\nThe spec does not forbid this; it requires it. docs/specification/github-sign-in.md:578 (5.3 row 4) says the parsed result \"must be a flat object of strings and numbers\", and a body that is not one goes to row 4's outcome, which is transient.\nLine 584 (\"error_description, error_uri and every other field are dropped unread\") is about fields of a body that has already passed row 4. Rows 5 and 6 never read them. It does not exempt any body from row 4's flat-object rule.\nThe code follows its contract word for word, so the claim fails the run's test that the specification must forbid the behaviour. Verdict: not REAL. Any risk from GitHub adding non-string fields is a matter of spec design, not a defect in the code."
+    },
+    {
+     "claim": "C-5",
+     "lens": "REFUTE",
+     "holds": false,
+     "reachable": "yes",
+     "severity": "none",
+     "scratchTest": "",
+     "why": "The mechanics are as described. src/main/github-oauth.ts:135 returns null when any value is not a string or a finite number, and classify (line 160) then maps that null to transient. A Response from an injected Fetcher can reach this path. What the spec forbids is not this behaviour. Spec 5.3 row 4 (docs/specification/github-sign-in.md:578) requires it in so many words: \"the result must be a flat object of strings and numbers\" -> transient. So a boolean or null member is a row-4 parse failure by definition. The line the claim cites, \"error_description, error_uri and every other field are dropped unread\" (line 584), says what happens to fields of a body that passed row 4: they are never stored, returned, shown or opened. It does not exempt them from row 4's shape rule. Read together, the two rules do not conflict. Row 4 applies first, in the stated order. The behaviour is also pinned as intended: tests/github-oauth.test.ts:300-301 ('a null member', 'a boolean member') expect { kind: 'transient' } for the token request and 'failed' at step 1. The comment at lines 279-282 gives the reason for the strict shape rule. So the spec permits this behaviour; in fact it mandates it. The claim is refuted, and I did not need a scratch test."
+    }
+   ],
+   "real": true,
+   "realVotes": "2/3",
+   "three_prong_reading": "not real: every lens says the behaviour holds and is reachable, and the lenses prose says the specification permits it (G-2)"
+  }
+ ],
+ "lens_schema_prongs": [
+  "holds",
+  "reachable"
+ ],
+ "classification_prongs": [
+  "holds",
+  "reachable",
+  "forbidden"
+ ]
+}
