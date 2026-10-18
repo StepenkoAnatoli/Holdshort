@@ -1,0 +1,682 @@
+{
+ "request": {
+  "taskId": "fix-u7-r3",
+  "objective": "U7 fix round 3 (tests only): U7-R9 (S3) a test-side hook records every atomicJson value so a clear write of a token or device code at any path and for any duration is found by T-6; U7-R10 (S3) the static guard forbids child_process and worker_threads and the spawn/exec family in the new modules, with load-bearing proofs (briefs/fix-u7-r3.md). Base 6833f3d on build/gsi-u7.",
+  "category": "fix",
+  "unit": "fix-u7-r3",
+  "estimatedTokens": 170000,
+  "permittedEffects": [
+   "tests/github-signin-invariants.test.ts",
+   "tests/fixtures/*"
+  ],
+  "sources": [
+   "docs/orchestration/2026-10-13-github-sign-in/briefs/fix-u7-r3.md",
+   "docs/orchestration/2026-10-13-github-sign-in/briefs/common.md",
+   "docs/orchestration/2026-10-13-github-sign-in/briefs/u7-builder.md",
+   "docs/specification/github-sign-in.md"
+  ],
+  "nonGoals": [
+   "no push",
+   "no src change",
+   "no history rewrite (U7-R8 is the lead's ruling)",
+   "never --no-verify"
+  ],
+  "acceptanceChecks": [
+   {
+    "command": "npm run typecheck",
+    "expect": "typecheck exit 0"
+   },
+   {
+    "command": "npx eslint tests/github-signin-invariants.test.ts",
+    "expect": "lint exit 0"
+   },
+   {
+    "command": "TMPDIR=$(mktemp -d) npx vitest run tests/github-signin-invariants.test.ts",
+    "expect": "red-first pin per finding: for U7-R9 and U7-R10 a regression pin that is green on unchanged src and red under the named mutation (P3, P4; C1) with the named message, as common.md's pin rule requires; then the file green"
+   },
+   {
+    "command": "bash /home/user/task5-handoff/gate.sh <checkout> <label> + compare.py vs baseline-failing.json",
+    "expect": "full-suite comparison vs baseline at integration: no new failures"
+   },
+   {
+    "command": "refute-first review",
+    "expect": "fresh re-review ACCEPT after at most two fix rounds"
+   }
+  ],
+  "needsVision": false,
+  "dataClasses": [
+   "repo-code",
+   "run-docs"
+  ],
+  "projectStop": {
+   "redSuite": false,
+   "gateOff": false,
+   "researchGateFailing": false
+  },
+  "previousResult": null,
+  "deadline": "2026-10-18T16:00:00Z",
+  "now": "2026-10-18T04:31:00Z"
+ },
+ "inputs-sha256": "6c69501d5fec1e4896d7f4a14e94c2269ae525c8c697b01c1d3434e9bb47e8a4",
+ "bindings": {
+  "policy-revision": "host-policy-3",
+  "policy-sha256": "ed888a35b73260272af80943e37b8e61171f62732fa131c43344e8def16e924d",
+  "smartrouter": {
+   "repo": "https://github.com/StepenkoAnatoli/SmartRouter",
+   "revision": "fbe7bca",
+   "skill-version": "3.0.0",
+   "prices-revision": "prices-2"
+  },
+  "harness": "claude-code-workflow-subagent@2.1.286"
+ },
+ "ledger-before": {
+  "last-seq": 1,
+  "calls-used": 0,
+  "calls-limit": 6,
+  "cash-spent": null,
+  "cash-cap": null,
+  "repairs-used": 0,
+  "repairs-allowed": 1
+ },
+ "decision": {
+  "route": "delegate",
+  "profile": "cc-haiku-low",
+  "profile-tuple": "(cc-haiku-low, claude-code-workflow-subagent, anthropic, claude-haiku-5-5, low, workflow-subagent/structured-output@1)",
+  "isolation": "worktree+branch",
+  "isolation-reason": "Gate 1: concurrent workers in this host never share a tree; Gate 5: the delegated unit owns its worktree+branch (host capability worktree+branch)",
+  "owner": "worker",
+  "human-gate": "none",
+  "nested-allowed": false,
+  "max-nesting-depth": 0,
+  "difficulty": "high-or-ambiguous",
+  "estimated-tokens": 170000,
+  "all-in-bound-usd": 5.265,
+  "candidates": {
+   "cc-fable-xhigh": {
+    "kind": "direct",
+    "eligible": false,
+    "first-failing-gate": 5,
+    "reason": "direct unsuitable: 170000 tokens > direct-max-tokens 15000",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "pass"
+     },
+     {
+      "gate": 3,
+      "result": "pass"
+     },
+     {
+      "gate": 4,
+      "result": "pass",
+      "note": "cash estimate $8.50: estimate only, never a strict cap in this host; usage window seven_day binds: projected 0.4448 <= 0.8"
+     },
+     {
+      "gate": 5,
+      "result": "fail",
+      "reason": "direct unsuitable: 170000 tokens > direct-max-tokens 15000"
+     }
+    ]
+   },
+   "cc-fable-max": {
+    "kind": "delegate",
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "cc-fable-max not qualified for fix",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "fail",
+      "reason": "cc-fable-max not qualified for fix"
+     },
+     {
+      "gate": 3,
+      "result": "not-reached"
+     },
+     {
+      "gate": 4,
+      "result": "not-reached"
+     },
+     {
+      "gate": 5,
+      "result": "not-reached"
+     }
+    ]
+   },
+   "cc-fable-high": {
+    "kind": "delegate",
+    "eligible": true,
+    "all-in-bound-usd": 13.68,
+    "work-bound-usd": 8.5,
+    "review-bound-usd": 4.18,
+    "overhead-bound-usd": 1,
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "pass"
+     },
+     {
+      "gate": 3,
+      "result": "pass"
+     },
+     {
+      "gate": 4,
+      "result": "pass",
+      "note": "cash estimate $13.68: estimate only, never a strict cap in this host; usage window seven_day binds: projected 0.4483 <= 0.8"
+     },
+     {
+      "gate": 5,
+      "result": "pass"
+     }
+    ]
+   },
+   "cc-fable-medium": {
+    "kind": "delegate",
+    "eligible": true,
+    "all-in-bound-usd": 13.68,
+    "work-bound-usd": 8.5,
+    "review-bound-usd": 4.18,
+    "overhead-bound-usd": 1,
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "pass"
+     },
+     {
+      "gate": 3,
+      "result": "pass"
+     },
+     {
+      "gate": 4,
+      "result": "pass",
+      "note": "cash estimate $13.68: estimate only, never a strict cap in this host; usage window seven_day binds: projected 0.4483 <= 0.8"
+     },
+     {
+      "gate": 5,
+      "result": "pass"
+     }
+    ]
+   },
+   "cc-opus-max": {
+    "kind": "delegate",
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "cc-opus-max not qualified for fix",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "fail",
+      "reason": "cc-opus-max not qualified for fix"
+     },
+     {
+      "gate": 3,
+      "result": "not-reached"
+     },
+     {
+      "gate": 4,
+      "result": "not-reached"
+     },
+     {
+      "gate": 5,
+      "result": "not-reached"
+     }
+    ]
+   },
+   "cc-opus-xhigh": {
+    "kind": "delegate",
+    "eligible": true,
+    "all-in-bound-usd": 8.58,
+    "work-bound-usd": 3.4,
+    "review-bound-usd": 4.18,
+    "overhead-bound-usd": 1,
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "pass"
+     },
+     {
+      "gate": 3,
+      "result": "pass"
+     },
+     {
+      "gate": 4,
+      "result": "pass",
+      "note": "cash estimate $8.58: estimate only, never a strict cap in this host; usage window seven_day binds: projected 0.4483 <= 0.8"
+     },
+     {
+      "gate": 5,
+      "result": "pass"
+     }
+    ]
+   },
+   "cc-opus-high": {
+    "kind": "delegate",
+    "eligible": true,
+    "all-in-bound-usd": 8.58,
+    "work-bound-usd": 3.4,
+    "review-bound-usd": 4.18,
+    "overhead-bound-usd": 1,
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "pass"
+     },
+     {
+      "gate": 3,
+      "result": "pass"
+     },
+     {
+      "gate": 4,
+      "result": "pass",
+      "note": "cash estimate $8.58: estimate only, never a strict cap in this host; usage window seven_day binds: projected 0.4483 <= 0.8"
+     },
+     {
+      "gate": 5,
+      "result": "pass"
+     }
+    ]
+   },
+   "cc-opus-medium": {
+    "kind": "delegate",
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "context: 170000 tokens not below headroom-tested 154000 on cc-opus-medium",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "fail",
+      "reason": "context: 170000 tokens not below headroom-tested 154000 on cc-opus-medium"
+     },
+     {
+      "gate": 3,
+      "result": "not-reached"
+     },
+     {
+      "gate": 4,
+      "result": "not-reached"
+     },
+     {
+      "gate": 5,
+      "result": "not-reached"
+     }
+    ]
+   },
+   "cc-sonnet-xhigh": {
+    "kind": "delegate",
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "cc-sonnet-xhigh not qualified for fix",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "fail",
+      "reason": "cc-sonnet-xhigh not qualified for fix"
+     },
+     {
+      "gate": 3,
+      "result": "not-reached"
+     },
+     {
+      "gate": 4,
+      "result": "not-reached"
+     },
+     {
+      "gate": 5,
+      "result": "not-reached"
+     }
+    ]
+   },
+   "cc-sonnet-high": {
+    "kind": "delegate",
+    "eligible": true,
+    "all-in-bound-usd": 6.88,
+    "work-bound-usd": 1.7,
+    "review-bound-usd": 4.18,
+    "overhead-bound-usd": 1,
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "pass"
+     },
+     {
+      "gate": 3,
+      "result": "pass"
+     },
+     {
+      "gate": 4,
+      "result": "pass",
+      "note": "cash estimate $6.88: estimate only, never a strict cap in this host; usage window seven_day binds: projected 0.4483 <= 0.8"
+     },
+     {
+      "gate": 5,
+      "result": "pass"
+     }
+    ]
+   },
+   "cc-sonnet-medium": {
+    "kind": "delegate",
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "context: 170000 tokens not below headroom-tested 128000 on cc-sonnet-medium",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "fail",
+      "reason": "context: 170000 tokens not below headroom-tested 128000 on cc-sonnet-medium"
+     },
+     {
+      "gate": 3,
+      "result": "not-reached"
+     },
+     {
+      "gate": 4,
+      "result": "not-reached"
+     },
+     {
+      "gate": 5,
+      "result": "not-reached"
+     }
+    ]
+   },
+   "cc-sonnet-low": {
+    "kind": "delegate",
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "context: 170000 tokens not below headroom-tested 114000 on cc-sonnet-low",
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "fail",
+      "reason": "context: 170000 tokens not below headroom-tested 114000 on cc-sonnet-low"
+     },
+     {
+      "gate": 3,
+      "result": "not-reached"
+     },
+     {
+      "gate": 4,
+      "result": "not-reached"
+     },
+     {
+      "gate": 5,
+      "result": "not-reached"
+     }
+    ]
+   },
+   "cc-haiku-high": {
+    "kind": "delegate",
+    "eligible": true,
+    "all-in-bound-usd": 5.265,
+    "work-bound-usd": 0.085,
+    "review-bound-usd": 4.18,
+    "overhead-bound-usd": 1,
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "pass"
+     },
+     {
+      "gate": 3,
+      "result": "pass"
+     },
+     {
+      "gate": 4,
+      "result": "pass",
+      "note": "cash estimate $5.26: estimate only, never a strict cap in this host; usage window seven_day binds: projected 0.4483 <= 0.8"
+     },
+     {
+      "gate": 5,
+      "result": "pass"
+     }
+    ]
+   },
+   "cc-haiku-medium": {
+    "kind": "delegate",
+    "eligible": true,
+    "all-in-bound-usd": 5.265,
+    "work-bound-usd": 0.085,
+    "review-bound-usd": 4.18,
+    "overhead-bound-usd": 1,
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "pass"
+     },
+     {
+      "gate": 3,
+      "result": "pass"
+     },
+     {
+      "gate": 4,
+      "result": "pass",
+      "note": "cash estimate $5.26: estimate only, never a strict cap in this host; usage window seven_day binds: projected 0.4483 <= 0.8"
+     },
+     {
+      "gate": 5,
+      "result": "pass"
+     }
+    ]
+   },
+   "cc-haiku-low": {
+    "kind": "delegate",
+    "eligible": true,
+    "all-in-bound-usd": 5.265,
+    "work-bound-usd": 0.085,
+    "review-bound-usd": 4.18,
+    "overhead-bound-usd": 1,
+    "walkthrough": [
+     {
+      "gate": 1,
+      "result": "pass"
+     },
+     {
+      "gate": 2,
+      "result": "pass"
+     },
+     {
+      "gate": 3,
+      "result": "pass"
+     },
+     {
+      "gate": 4,
+      "result": "pass",
+      "note": "cash estimate $5.26: estimate only, never a strict cap in this host; usage window seven_day binds: projected 0.4483 <= 0.8"
+     },
+     {
+      "gate": 5,
+      "result": "pass"
+     }
+    ]
+   }
+  },
+  "eligible-ordered": [
+   "cc-haiku-low",
+   "cc-haiku-medium",
+   "cc-haiku-high",
+   "cc-sonnet-high",
+   "cc-opus-high",
+   "cc-opus-xhigh",
+   "cc-fable-medium",
+   "cc-fable-high"
+  ],
+  "eligible-outside-candidates": [],
+  "speculative-set": null,
+  "uncertainty": [
+   "cash: estimate only, no host accounting (subscription); not a strict cap",
+   "usage windows: coefficients host-declared (ratified 2026-10-18T01:23:32Z (host-policy-3) from calibration run 2 (wf_fe91e1d6-d78): readings 2026-10-17T23:22:51Z (five_hour 0.12, seven_day 0.28) and 2026-10-18T01:23:32Z (five_hour 0.39, seven_day 0.36), nothing in flight at either, the lead idle but for one check-in, 7872276 reported sub-agent tokens between them: measured 0.0343 (five_hour) and 0.0102 (seven_day) per Mtok, declared about 1.5x higher and rounded up, 0.05 and 0.015 (the conservative direction). Lead-only work 2026-10-17T23:07:08Z to 23:22:51Z (no sub-agent running) moved five_hour 0.02 -> 0.12, about 0.40 per hour of active lead work, so lead-reserve is five_hour 0.25 (about 40 minutes of it) and seven_day 0.10. rate could not learn this: the run was not dispatched through the adapter, so every pair of readings during it had no recorded outcome tokens (README Usage windows, friction item 17))"
+  ],
+  "advisory": "recommendation only — no dispatch performed or claimed",
+  "pending-proposals": [],
+  "deadline": "2026-10-18T16:00:00Z",
+  "deadline-capped": false,
+  "review-profile": "cc-opus-high",
+  "review-candidates": {
+   "cc-fable-max": "gate 2: cc-fable-max not qualified for review",
+   "cc-fable-high": null,
+   "cc-fable-medium": "gate 2: context: 209000 tokens not below headroom-tested 172000 on cc-fable-medium",
+   "cc-opus-max": "gate 2: cc-opus-max not qualified for review",
+   "cc-opus-xhigh": null,
+   "cc-opus-high": null,
+   "cc-opus-medium": "gate 2: cc-opus-medium not qualified for review; context: 209000 tokens not below headroom-tested 154000 on cc-opus-medium",
+   "cc-sonnet-xhigh": "gate 2: cc-sonnet-xhigh not qualified for review",
+   "cc-sonnet-high": "gate 2: cc-sonnet-high not qualified for review; context: 209000 tokens not below headroom-tested 183000 on cc-sonnet-high",
+   "cc-sonnet-medium": "gate 2: cc-sonnet-medium not qualified for review; context: 209000 tokens not below headroom-tested 128000 on cc-sonnet-medium",
+   "cc-sonnet-low": "gate 2: cc-sonnet-low not qualified for review; context: 209000 tokens not below headroom-tested 114000 on cc-sonnet-low",
+   "cc-haiku-high": "gate 2: cc-haiku-high not qualified for review",
+   "cc-haiku-medium": "gate 2: cc-haiku-medium not qualified for review; context: 209000 tokens not below headroom-tested 183000 on cc-haiku-medium",
+   "cc-haiku-low": "gate 2: cc-haiku-low not qualified for review; context: 209000 tokens not below headroom-tested 175000 on cc-haiku-low"
+  },
+  "usage": {
+   "reading-ts": "2026-10-18T04:09:26Z",
+   "reading-age-minutes": 21.57,
+   "dispatched-not-in-reading-tokens": 818000,
+   "windows": {
+    "five_hour": {
+     "utilization": 0.05,
+     "resets-at": "2026-10-18T09:00:00Z",
+     "projected": 0.1109,
+     "headroom-mtok": 11.182
+    },
+    "seven_day": {
+     "utilization": 0.43,
+     "resets-at": "2026-10-24T18:00:00Z",
+     "projected": 0.4483,
+     "headroom-mtok": 23.8487
+    }
+   }
+  },
+  "usage-tokens": 399000
+ },
+ "estimates": {
+  "basis": "estimate-only",
+  "cost-bound-rule": "tokens x output_rate_per_mtok / 1e6 (conservative: output rate >= input rate)",
+  "all-in-bound-usd": 5.265
+ },
+ "accounting": {
+  "mode": "estimate-only",
+  "cash-spent": null,
+  "cash-cap": null,
+  "note": "no per-call USD accounting in this host; spend is unknown, never zero"
+ },
+ "brief": {
+  "objective": "U7 fix round 3 (tests only): U7-R9 (S3) a test-side hook records every atomicJson value so a clear write of a token or device code at any path and for any duration is found by T-6; U7-R10 (S3) the static guard forbids child_process and worker_threads and the spawn/exec family in the new modules, with load-bearing proofs (briefs/fix-u7-r3.md). Base 6833f3d on build/gsi-u7.",
+  "acceptance": {
+   "checks": [
+    {
+     "command": "npm run typecheck",
+     "expect": "typecheck exit 0"
+    },
+    {
+     "command": "npx eslint tests/github-signin-invariants.test.ts",
+     "expect": "lint exit 0"
+    },
+    {
+     "command": "TMPDIR=$(mktemp -d) npx vitest run tests/github-signin-invariants.test.ts",
+     "expect": "red-first pin per finding: for U7-R9 and U7-R10 a regression pin that is green on unchanged src and red under the named mutation (P3, P4; C1) with the named message, as common.md's pin rule requires; then the file green"
+    },
+    {
+     "command": "bash /home/user/task5-handoff/gate.sh <checkout> <label> + compare.py vs baseline-failing.json",
+     "expect": "full-suite comparison vs baseline at integration: no new failures"
+    },
+    {
+     "command": "refute-first review",
+     "expect": "fresh re-review ACCEPT after at most two fix rounds"
+    }
+   ]
+  },
+  "sources": [
+   "docs/orchestration/2026-10-13-github-sign-in/briefs/fix-u7-r3.md",
+   "docs/orchestration/2026-10-13-github-sign-in/briefs/common.md",
+   "docs/orchestration/2026-10-13-github-sign-in/briefs/u7-builder.md",
+   "docs/specification/github-sign-in.md"
+  ],
+  "permitted-effects": [
+   "tests/github-signin-invariants.test.ts",
+   "tests/fixtures/*"
+  ],
+  "non-goals": [
+   "no push",
+   "no src change",
+   "no history rewrite (U7-R8 is the lead's ruling)",
+   "never --no-verify",
+   "no recursive delegation (nested-allowed: false)"
+  ],
+  "isolation": "worktree+branch",
+  "branch-hint": "build/fix-u7-r3",
+  "allowance": {
+   "cash": 5.265,
+   "calls": 6,
+   "deadline": "2026-10-18T16:00:00Z",
+   "cash-basis": "estimate-only"
+  },
+  "attempts": 1,
+  "stop-triggers": [
+   "verification failure -> outcome record, then a fresh decision; at most 1 same-profile repair per task",
+   "repairs exhausted -> fresh SmartRouter decision (no ownership transfer without it)",
+   "call slots exhausted (6 per task) -> blocked",
+   "deadline 2026-10-18T16:00:00Z reached -> blocked",
+   "project stop rule -> blocked"
+  ],
+  "ownership": "worker",
+  "nested-allowed": false,
+  "max-nesting-depth": 1
+ },
+ "brief-fingerprint": "b6bcd625b3f8d08abf2df188620c711aef5f3cdf3c8ed793f62de01dfa04e105",
+ "ledger-seq": 2
+}

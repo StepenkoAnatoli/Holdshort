@@ -9,3 +9,5 @@
 {"ts":"2026-10-18T01:37:37Z","windows":{"five_hour":{"utilization":0.47,"resets-at":"2026-10-18T04:00:00Z"},"seven_day":{"utilization":0.38,"resets-at":"2026-10-24T18:00:00Z"}},"source":"rate_limit_event","note":null}
 {"ts":"2026-10-18T02:02:35Z","windows":{"five_hour":{"utilization":0.58,"resets-at":"2026-10-18T04:00:00Z"},"seven_day":{"utilization":0.41,"resets-at":"2026-10-24T18:00:00Z"}},"source":"rate_limit_event","note":null}
 {"ts":"2026-10-18T02:06:43Z","windows":{"five_hour":{"utilization":0.59,"resets-at":"2026-10-18T04:00:00Z"},"seven_day":{"utilization":0.41,"resets-at":"2026-10-24T18:00:00Z"}},"source":"rate_limit_event","note":null}
+{"ts":"2026-10-18T02:17:50Z","windows":{"five_hour":{"utilization":0.6,"resets-at":"2026-10-18T04:00:00Z"},"seven_day":{"utilization":0.41,"resets-at":"2026-10-24T18:00:00Z"}},"source":"rate_limit_event","note":null}
+{"ts":"2026-10-18T04:09:26Z","windows":{"five_hour":{"utilization":0.05,"resets-at":"2026-10-18T09:00:00Z"},"seven_day":{"utilization":0.43,"resets-at":"2026-10-24T18:00:00Z"}},"source":"rate_limit_event","note":null}

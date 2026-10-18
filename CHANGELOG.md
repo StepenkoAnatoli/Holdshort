@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- **CI runs the Claude Code adapter's Node suite.** `.github/workflows/regression-gate.yml` gains the job
+  `adapter-tests` (display name `claude-code-adapter-tests`, ubuntu-24.04, `actions/setup-node` pinned by sha,
+  Node 24) running `node --test hosts/claude-code/route.test.mjs` on the workflow's existing triggers. The
+  Python regression gate still has no Node step; the job is not a required status context (branch protection
+  is the maintainer's setting).
+- **Item 4: `null` cash on an estimate-only host** (`docs/proposals/usage-windows-gate4.md`, accepted by the
+  maintainer on 2026-10-18; Items 1-3 remain proposals). `tools/conform_spec.py` admits a `null`
+  `counters.cash-spent` / `counters.cash-cap` only beside `counters.cash-basis: "estimate-only"` and a `null`
+  `evidence.actual-spend` only beside `evidence.actual-spend-basis: "estimate-only"`; an unmarked `null` is still
+  a violation and a marker with any other value is one. spec-v2.md §10.3 and §10.5 gain both fields (additive,
+  §13); `docs/USAGE_TELEMETRY.md` says when they are carried. No cash conversion.
+  Known limit: the reference §10.3 store, `tools/outcome_ledger.py`, is not changed by this entry and still
+  refuses an Outcome whose `evidence.actual-spend` is `null`, marked or not (`validate` and `record` raise, and
+  `read_all` fails closed on a ledger holding such a line); bringing the store in line is a follow-up.
+
 ## 2026-10-17 — Claude Code host adapter, usage-window affordability, calibration evidence
 
 A Claude Code build session adopted the v3.0 policy for its sub-agent dispatch and brought back

@@ -11,6 +11,10 @@
       a VIOLATION; a tighter one conforms
   K8. LedgerRecord enforces kind enum, seq floor, and repairs-used <= allowed
   K9. malformed JSON is FAIL-CLOSED, not a violation
+  K10. Item 4 (docs/proposals/usage-windows-gate4.md): a null cash field is accepted only beside
+       the estimate-only marker (counters.cash-basis / evidence.actual-spend-basis); an unmarked
+       null keeps today's violation; a marker with another value is a violation; a marker beside
+       a finite number is allowed
 Run as part of the regression gate (tools/run_regression.py).
 """
 from __future__ import annotations
@@ -388,6 +392,103 @@ class Conform(unittest.TestCase):
             self.assertEqual(r.returncode, 2)
             self.assertIn("FAIL-CLOSED", r.stderr)
 
+
+    # K10 ---------------------------------------------------------------------
+    @staticmethod
+    def _rec(**counters) -> dict:
+        c = {"calls-used": 1, "calls-limit": 6, "cash-spent": 0.0, "cash-cap": 1.0,
+             "repairs-used": 0, "repairs-allowed": 1}
+        c.update(counters)
+        return {"task-id": "t", "seq": 3, "kind": "outcome", "ts": "2026-10-17T19:04:07.380Z",
+                "counters": c, "detail": "outcome accepted", "outcome-ref": "t"}
+
+    @staticmethod
+    def _out(**evidence) -> dict:
+        ev = {"checks": [{"command": "review", "exit-code": 0, "output-ref": "r.json"}],
+              "actual-spend": 0.0, "files-touched": [], "notes": ""}
+        ev.update(evidence)
+        return {"task-id": "t", "outcome": "accepted", "evidence": ev, "owner-profile": "worker"}
+
+    def test_k10_record_unmarked_null_cash_keeps_todays_violation(self):
+        for key in ("cash-spent", "cash-cap"):
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(
+                        cs.Violation, f"LedgerRecord counters.{key} must be a finite non-negative number"):
+                    cs.check_record(self._rec(**{key: None}))
+
+    def test_k10_record_marked_null_cash_is_accepted(self):
+        cs.check_record(self._rec(**{"cash-spent": None, "cash-cap": None, "cash-basis": "estimate-only"}))
+        cs.check_record(self._rec(**{"cash-cap": None, "cash-basis": "estimate-only"}))
+        # a host that both estimates and knows: the marker beside finite numbers is allowed
+        cs.check_record(self._rec(**{"cash-basis": "estimate-only"}))
+
+    def test_k10_record_marker_never_admits_other_bad_cash(self):
+        for value in (-0.01, float('nan'), True, "0"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(cs.Violation, "finite non-negative"):
+                    cs.check_record(self._rec(**{"cash-spent": value, "cash-basis": "estimate-only"}))
+        rec = self._rec(**{"cash-basis": "estimate-only"})
+        del rec["counters"]["cash-cap"]
+        with self.assertRaisesRegex(cs.Violation, "cash-cap"):
+            cs.check_record(rec)
+
+    def test_k10_record_wrong_marker_is_a_violation(self):
+        for marker in ("estimate", "Estimate-Only", "", None, 0, ["estimate-only"]):
+            for cash in (None, 0.5):
+                with self.subTest(marker=marker, cash=cash):
+                    with self.assertRaisesRegex(
+                            cs.Violation, 'counters.cash-basis must be "estimate-only" when present'):
+                        cs.check_record(self._rec(**{"cash-spent": cash, "cash-basis": marker}))
+
+    def test_k10_outcome_unmarked_null_spend_keeps_todays_violation(self):
+        with self.assertRaisesRegex(
+                cs.Violation, r"Outcome breaks §10.3 \(evidence actual-spend must be a finite non-negative number\)"):
+            cs.check_outcome(self._out(**{"actual-spend": None}))
+
+    def test_k10_outcome_marked_null_spend_is_accepted(self):
+        cs.check_outcome(self._out(**{"actual-spend": None, "actual-spend-basis": "estimate-only"}))
+        cs.check_outcome(self._out(**{"actual-spend": 0.25, "actual-spend-basis": "estimate-only"}))
+
+    def test_k10_outcome_marker_keeps_the_rest_of_the_schema(self):
+        for bad in (self._out(**{"actual-spend": None, "actual-spend-basis": "estimate-only",
+                                 "notes": None}),
+                    self._out(**{"actual-spend": -1, "actual-spend-basis": "estimate-only"}),
+                    dict(self._out(**{"actual-spend": None, "actual-spend-basis": "estimate-only"}),
+                         outcome="shipped")):
+            with self.subTest(bad=bad):
+                with self.assertRaisesRegex(cs.Violation, "Outcome breaks §10.3"):
+                    cs.check_outcome(bad)
+        missing = self._out(**{"actual-spend-basis": "estimate-only"})
+        del missing["evidence"]["actual-spend"]
+        with self.assertRaisesRegex(cs.Violation, "actual-spend"):
+            cs.check_outcome(missing)
+
+    def test_k10_outcome_wrong_marker_is_a_violation(self):
+        for marker in ("estimate", "", None, 1):
+            for spend in (None, 0.5):
+                with self.subTest(marker=marker, spend=spend):
+                    with self.assertRaisesRegex(
+                            cs.Violation,
+                            'Outcome evidence.actual-spend-basis must be "estimate-only" when present'):
+                        cs.check_outcome(self._out(**{"actual-spend": spend, "actual-spend-basis": marker}))
+
+    def test_k10_cli_accepts_marked_record_and_outcome(self):
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            rec = write(tdp, "r.json", self._rec(**{"cash-spent": None, "cash-cap": None,
+                                                    "cash-basis": "estimate-only"}))
+            r = run("--record", str(rec))
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("CONFORMANT", r.stdout)
+            out = write(tdp, "o.json", self._out(**{"actual-spend": None,
+                                                    "actual-spend-basis": "estimate-only"}))
+            r2 = run("--outcome", str(out))
+            self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
+            self.assertIn("CONFORMANT", r2.stdout)
+            bare = write(tdp, "bare.json", self._rec(**{"cash-cap": None}))
+            r3 = run("--record", str(bare))
+            self.assertEqual(r3.returncode, 1, r3.stdout + r3.stderr)
+            self.assertIn("VIOLATION", r3.stderr)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

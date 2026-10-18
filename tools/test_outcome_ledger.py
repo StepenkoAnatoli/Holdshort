@@ -162,6 +162,23 @@ class OutcomeLedger(unittest.TestCase):
                         ol.record(led, doc)
                     self.assertFalse(led.exists(), "invalid evidence must fail before append")
 
+    def test_marked_null_spend_is_accepted_and_other_markers_refused(self):
+        """Item 4: a null actual-spend is admitted only beside actual-spend-basis "estimate-only" (an estimate-only host has
+        no bill); an unmarked null keeps today's refusal, and any other marker value is refused."""
+        marked = good(); marked["evidence"]["actual-spend"] = None
+        marked["evidence"]["actual-spend-basis"] = "estimate-only"
+        self.assertEqual(ol.validate(marked)["evidence"]["actual-spend-basis"], "estimate-only")
+        unmarked = good(); unmarked["evidence"]["actual-spend"] = None
+        with self.assertRaisesRegex(ol.FailClosed, "finite non-negative number"):
+            ol.validate(unmarked)
+        for bad in ("estimate", "ESTIMATE-ONLY", "", None, 0, True):
+            with self.subTest(marker=repr(bad)):
+                doc = good(); doc["evidence"]["actual-spend"] = None; doc["evidence"]["actual-spend-basis"] = bad
+                with self.assertRaisesRegex(ol.FailClosed, "actual-spend-basis"):
+                    ol.validate(doc)
+        beside = good(); beside["evidence"]["actual-spend-basis"] = "estimate-only"   # a marker beside a number is allowed
+        self.assertEqual(ol.validate(beside)["evidence"]["actual-spend"], good()["evidence"]["actual-spend"])
+
     def test_spend_requires_finite_nonnegative_number_on_write_and_read(self):
         for spend in (True, -1, float('nan'), float('inf'), -float('inf'), 10**1000):
             with self.subTest(spend_type=type(spend).__name__):
