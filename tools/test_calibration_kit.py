@@ -432,6 +432,9 @@ class Scripts(unittest.TestCase):
             (shares, "--pack", str(pack), "--link", f"up={self.root}"),  # a directory holding the pack
             (shares, "--pack", str(pack), "--link", "node_modules=/"),  # N2: the root holds everything, the pack too
             (shares, "--link", "node_modules=/"),  # N2: and SOURCE_REPO, with no --pack
+            (shares, "--pack", str(pack), "--link", "node_modules=//"),  # N3: bash keeps a leading '//' from pwd -P; it is the root
+            (shares, "--link", "node_modules=//"),  # N3: and with no --pack
+            (shares, "--pack", "/" + str(pack), "--link", f"node_modules={pack / 'repo'}"),  # N3: the pack spelled //abs/... still holds the link
             (bare, "--pack", str(pack), "--link", "node_modules"),  # no directory: the old form linked into SOURCE_REPO
         ]
         for i, (reason, *flags) in enumerate(cases):
@@ -453,6 +456,14 @@ class Scripts(unittest.TestCase):
         p = checkout(c["repo"], c["base"], self.root / "under-root", self.env, "--pack", "/")  # N2: every target is inside /
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertIn("is inside the pack /", p.stderr)
+        p = checkout(c["repo"], c["base"], self.root / "under-root-2", self.env, "--pack", "//")  # N3: '//' is the root too
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn("is inside the pack /", p.stderr)
+        self.assertFalse((self.root / "under-root-2").exists())
+        p = checkout(c["repo"], c["base"], pack / "cand-2", self.env, "--pack", "/" + str(pack))  # N3: a //-spelled pack
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn("pack", p.stderr)
+        self.assertFalse((pack / "cand-2").exists())
         self.assertFalse((self.root / "under-root").exists())
         p = checkout(c["repo"], c["base"], self.root / "ok", self.env, "--pack", str(pack))
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
@@ -794,7 +805,10 @@ class RunTemplate(unittest.TestCase):
     @NEEDS_NODE
     def test_launch_refuses_checkouts_that_share_a_path_with_the_pack(self):
         for host in ({"checkout_root": str(self.root / "pack" / "checkouts")}, {"pack_dir": str(self.root / "checkouts" / "pack")},
-                     {"adjudication_checkout": str(self.root / "pack" / "adj")}):
+                     {"adjudication_checkout": str(self.root / "pack" / "adj")},
+                     {"checkout_root": f"{self.root}//pack/co"},  # N3: a doubled separator spells the same path
+                     {"checkout_root": f"{self.root}/./pack/co"},  # N3: and so does a '.' segment
+                     {"pack_dir": f"{self.root}//checkouts/pack"}):
             out = execute_template(run_config(self.root, **host), self.root)
             self.assertIn("pack", out["error"] or "", host)
             self.assertEqual(out["calls"], [], host)

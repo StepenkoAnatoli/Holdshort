@@ -50,15 +50,18 @@ DIR=$3
 BRANCH=$4
 
 [ -e "$DIR" ] || [ -L "$DIR" ] && refuse "target exists: $DIR"
-SRC_ABS=$(cd -- "$SRC" 2>/dev/null && pwd -P) || refuse "no source repository: $SRC"
+# phys DIR: the physical path of DIR with a leading '//' collapsed to '/' (bash keeps '//' from pwd -P for //, //. and
+# //x/.., which are all the root; a guard that compares spellings would let a //-spelled path past it - N3)
+phys() { local p; p=$(cd -- "$1" 2>/dev/null && pwd -P) || return 1; printf '%s' "${p/#\/\//\/}"; }
+SRC_ABS=$(phys "$SRC") || refuse "no source repository: $SRC"
 TREE=$(git -C "$SRC_ABS" rev-parse --verify --quiet "$COMMIT^{tree}") || refuse "not a commit in $SRC: $COMMIT"
 git check-ref-format --branch "$BRANCH" >/dev/null 2>&1 || refuse "not a branch name: $BRANCH"
-# within A B: A is B or lies under it (both physical paths; pwd -P ends in '/' only for the root, which holds everything)
+# within A B: A is B or lies under it (both physical paths from phys, so the root is spelled '/' and holds everything)
 within() { [ "$2" = / ] && return 0; case "$1/" in "$2"/*) return 0 ;; esac; return 1; }
 
 PACK_ABS=""
 if [ -n "$PACK" ]; then
-  PACK_ABS=$(cd -- "$PACK" 2>/dev/null && pwd -P) || refuse "no pack directory: $PACK"
+  PACK_ABS=$(phys "$PACK") || refuse "no pack directory: $PACK"
 fi
 LINK_NAMES=()
 LINK_DIRS=()
@@ -71,7 +74,7 @@ for spec in ${LINKS[@]+"${LINKS[@]}"}; do
   case "$name" in
     "" | /* | *..* ) refuse "--link takes a plain relative name: $name" ;;
   esac
-  dep=$(cd -- "${spec#*=}" 2>/dev/null && pwd -P) || refuse "--link $name: no directory ${spec#*=}"
+  dep=$(phys "${spec#*=}") || refuse "--link $name: no directory ${spec#*=}"
   for guarded in "$SRC_ABS" ${PACK_ABS:+"$PACK_ABS"}; do
     if within "$dep" "$guarded" || within "$guarded" "$dep"; then
       refuse "--link $name: $dep shares a path with $guarded, which holds the accepted fix (Item 2)"
@@ -83,7 +86,7 @@ done
 
 PARENT=$(dirname -- "$DIR")
 mkdir -p -- "$PARENT"
-TARGET_ABS="$(cd -- "$PARENT" && pwd -P)/$(basename -- "$DIR")"
+TARGET_ABS="$(phys "$PARENT")/$(basename -- "$DIR")"
 if [ -n "$PACK_ABS" ]; then
   within "$TARGET_ABS" "$PACK_ABS" && refuse "target $TARGET_ABS is inside the pack $PACK_ABS"
   within "$PACK_ABS" "$TARGET_ABS" && refuse "the pack $PACK_ABS is inside the target $TARGET_ABS"

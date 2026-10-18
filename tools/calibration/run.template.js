@@ -66,7 +66,8 @@ if (JSON.stringify(P.classification?.prongs) !== JSON.stringify(PRONGS)) refuse(
 // The path check compares the host's paths as strings and follows no symlink (a harness script reads no filesystem):
 // a dependency link inside a checkout is checked where it is made, by historyless-checkout.sh --link, which refuses a
 // directory inside the pack or its repository; a checkout made any other way is the host's to check (Item 2).
-const norm = (p) => String(p).replace(/\\/g, '/').replace(/\/+$/, '') + '/'
+// one spelling per path: '\\' to '/', runs of '/' collapsed, '.' segments dropped, one trailing '/' (N3: '//' and '/./' spell the same path)
+const norm = (p) => `${String(p).replace(/\\/g, '/').split('/').filter((s, i) => (s !== '' || i === 0) && s !== '.').join('/')}/`.replace(/^\/*/, '/')
 const shares = (a, b) => norm(a).startsWith(norm(b)) || norm(b).startsWith(norm(a))
 for (const k of ['checkout_root', 'adjudication_checkout', 'pack_dir', 'run_tag', 'commit_command']) if (unfilled(H[k])) refuse(`host.${k} is not set`)
 for (const k of ['checkout_root', 'adjudication_checkout']) if (shares(H[k], H.pack_dir)) refuse(`host.${k} shares a filesystem path with the pack directory: Item 2`)
