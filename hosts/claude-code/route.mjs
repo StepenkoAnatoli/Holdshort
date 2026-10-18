@@ -33,9 +33,32 @@ const TASK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const FINGERPRINT = /^[0-9a-f]{64}$/;
 const TUPLE = /^\([^,()]+(, [^,()]+){5}\)$/;
 const EXPIRY_WARN_DAYS = 14;
-// a calibration grade in a profile's evidence: 'calibration-<run>: <category> PASS|PARTIAL|FAIL (n=<count>)'. PARTIAL
-// (host-policy-3) is calibration-2's third review grade: one of the two ground-truth findings, no false blocking one
-const CALIBRATION_ENTRY = /^calibration-([1-9]\d*): (\S+) (PASS|PARTIAL|FAIL) \(n=([1-9]\d*)\)$/;
+// a calibration grade in a profile's evidence: 'calibration-<run>: <category>[@T<k>] PASS|PARTIAL|FAIL (n=<count>)'.
+// PARTIAL (host-policy-3) is calibration-2's third review grade: one of the two ground-truth findings, no false blocking
+// one. The tier (difficulty tiers, proposal 2.6) is optional: a tierless entry reads @T1
+const CALIBRATION_ENTRY = /^calibration-([1-9]\d*): ([^\s@]+)(?:@(T[1-3]))? (PASS|PARTIAL|FAIL) \(n=([1-9]\d*)\)$/;
+// difficulty tiers (SmartRouter docs/proposals/difficulty-tiers.md, the lead's decisions D1-D9 in briefs/policy5-builder.md).
+// A policy turns them on with "difficulty-tiers": "enforced" (D1); absent, the policy is untiered and behaves as before
+export const TIERS = ['T1', 'T2', 'T3'];
+export const TIERS_ENFORCED = 'enforced';
+export const TIERS_OFF = 'difficulty tiers: not enforced by this policy';
+const tierRank = (t) => TIERS.indexOf(t) + 1;
+const tiersEnforced = (policy) => policy['difficulty-tiers'] === TIERS_ENFORCED;
+// a qualified-for entry is '<category>' or '<category>@T1|T2|T3' (D2)
+const QUALIFICATION = /^([^\s@]+)(?:@(T[1-3]))?$/;
+function parseQualification(entry) {
+  const m = QUALIFICATION.exec(entry);
+  return m ? { category: m[1], tier: m[2] ?? null } : null;
+}
+// the tier at which a profile holds a category: 1-3, or 0 when it holds nothing of it. A bare entry reads @T1 (proposal
+// 2.2); under an untiered policy only "holds it or not" is read (D1: the form is checked, the tier ignored)
+function heldTier(pr, category) {
+  for (const e of pr['qualified-for']) {
+    const q = parseQualification(e);
+    if (q && q.category === category) return q.tier ? tierRank(q.tier) : 1;
+  }
+  return 0;
+}
 
 export class RouterError extends Error {
   constructor(code, message) {
@@ -110,6 +133,7 @@ function validatePolicy(p) {
   if (!s || !isInt(s['calls-per-task'], 1) || !isInt(s['same-profile-repairs-per-task']) || !(s['deadline-per-task-hours'] > 0)) fail('accounting.strict incomplete');
   if (!p.prices || typeof p.prices !== 'object') fail('prices missing');
   if (!p.categories || typeof p.categories !== 'object') fail('categories missing');
+  if (p['difficulty-tiers'] !== undefined && p['difficulty-tiers'] !== TIERS_ENFORCED) fail(`difficulty-tiers must be "${TIERS_ENFORCED}" when present (absent: untiered); got ${JSON.stringify(p['difficulty-tiers'])}`);
   for (const [id, c] of Object.entries(p.categories)) {
     if (!isStrArray(c.verification) || !isStrArray(c['required-tools']) || !isInt(c['median-tokens'], 1) || !isStr(c.risk)) fail(`category ${id} incomplete`);
   }
@@ -119,8 +143,16 @@ function validatePolicy(p) {
     if (!isStr(pr.id) || !isStr(pr.model) || !isStr(pr.effort) || !isStr(pr.config) || !isStrArray(pr['qualified-for'])) fail(`profile ${pr.id} incomplete`);
     if (ids.has(pr.id)) fail(`duplicate profile ${pr.id}`);
     ids.add(pr.id);
-    // a qualification names a category the policy has: a misspelt one would silently never qualify
-    for (const c of pr['qualified-for']) if (!Object.hasOwn(p.categories, c)) fail(`profile ${pr.id} qualified-for names unknown category '${c}'`);
+    // a qualification names a category the policy has: a misspelt one would silently never qualify. An entry may carry
+    // a tier (D2), and a category is held once: two entries for it (bare and tiered, or two tiers) would make the tier ambiguous
+    const held = new Map();
+    for (const c of pr['qualified-for']) {
+      const q = parseQualification(c);
+      if (!q) fail(`profile ${pr.id} qualified-for entry '${c}' is not '<category>' or '<category>@T1|T2|T3'`);
+      if (!Object.hasOwn(p.categories, q.category)) fail(`profile ${pr.id} qualified-for names unknown category '${q.category}'`);
+      if (held.has(q.category)) fail(`profile ${pr.id} qualified-for names ${q.category} twice ('${held.get(q.category)}', '${c}'): one entry per category`);
+      held.set(q.category, c);
+    }
     if (pr.evidence !== undefined && !isStrArray(pr.evidence)) fail(`profile ${pr.id} evidence must be an array of strings`);
     // a calibration grade entry (host-policy-2) is counted by the lead's qualification rules, so its form is fixed
     for (const e of pr.evidence ?? []) {
@@ -283,6 +315,37 @@ function validateRequest(r, policy) {
   if (r.hostOptIns !== undefined && (typeof r.hostOptIns !== 'object' || r.hostOptIns === null)) fail('hostOptIns');
   if (r.uncertainty !== undefined && typeof r.uncertainty !== 'string') fail('uncertainty');
   if (r.requiredIsolation !== undefined && !ISOLATION.includes(r.requiredIsolation)) fail('requiredIsolation');
+  // D3: the form is checked under any policy; the floor only under an enforced one (requestTier)
+  if (r.difficultyTier !== undefined && !TIERS.includes(r.difficultyTier)) fail(`difficultyTier must be "T1", "T2" or "T3" when present (got ${JSON.stringify(r.difficultyTier)})`);
+}
+
+// the floor (D3, proposal Item 1 rule 1): the mechanical part of the tier predicates, from the request's structural
+// fields only. The edit set is permittedEffects without the architecture map; docs-mechanical is always T1
+function tierFloor(r) {
+  if (r.category === 'docs-mechanical') return { tier: 'T1', reason: 'docs-mechanical is always T1' };
+  const edits = r.permittedEffects.filter((p) => !p.endsWith('ARCHITECTURE.md')).length;
+  const t3 = [];
+  if (r.uncertainty === 'high') t3.push('uncertainty high');
+  if (edits > 3) t3.push(`edit set of ${edits} files, more than three`);
+  if (t3.length) return { tier: 'T3', reason: t3.join('; ') };
+  if (edits === 3) return { tier: 'T2', reason: 'edit set of exactly three files' };
+  return { tier: 'T1', reason: `edit set of ${edits} file${edits === 1 ? '' : 's'}` };
+}
+
+// the request's difficulty tier under the policy (D3). Untiered: tier null, nothing enforced. Enforced: a declared tier
+// below the floor is an invalid request; at or above it, it is accepted as given; undeclared reads the proposal's
+// default (T3 for a high-risk category - an unknown one counts as high, as Difficulty does - T2 otherwise), raised to the floor
+export function requestTier(r, policy) {
+  const declared = r.difficultyTier ?? null;
+  if (!tiersEnforced(policy)) return { tier: null, declared, floor: null, default: null };
+  const floor = tierFloor(r);
+  if (declared && tierRank(declared) < tierRank(floor.tier)) {
+    throw invalid(`invalid request: difficultyTier ${declared} is below the floor ${floor.tier} (${floor.reason}); a declared tier above the floor is accepted as given, one below it never`);
+  }
+  const category = Object.hasOwn(policy.categories, r.category) ? policy.categories[r.category] : null;
+  const def = !category || category.risk === 'high' ? 'T3' : 'T2';
+  const tier = declared ?? (tierRank(floor.tier) > tierRank(def) ? floor.tier : def);
+  return { tier, declared, floor: floor.tier, default: def };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -546,6 +609,9 @@ function counters(st, calls = st.callsUsed, repairs = st.repairsUsed) {
   return { 'calls-used': calls, 'calls-limit': st.callsLimit, 'cash-spent': null, 'cash-cap': null, 'repairs-used': repairs, 'repairs-allowed': st.repairsAllowed };
 }
 
+// per task: the category and the difficulty tier from its decision files (D7), and the tier of each decision by its ledger
+// seq, so an outcome counts at the tier of the decision its dispatch was made under. A decision without a tier (every
+// one before host-policy-5, or under an untiered policy) counts at T1
 function categoryMap(traceDir) {
   const dir = join(traceDir, 'decisions');
   const map = {};
@@ -553,7 +619,14 @@ function categoryMap(traceDir) {
   for (const f of readdirSync(dir).filter((x) => x.endsWith('.json')).sort()) {
     let j;
     try { j = JSON.parse(readFileSync(join(dir, f), 'utf8')); } catch { throw new RouterError(4, `decision file ${f} is unparseable`); }
-    if (isStr(j?.request?.taskId) && isStr(j.request.category)) map[j.request.taskId] = j.request.category;
+    if (!(isStr(j?.request?.taskId) && isStr(j.request.category))) continue;
+    const t = j.decision?.['difficulty-tier'];
+    if (t !== undefined && !TIERS.includes(t)) throw new RouterError(4, `decision file ${f}: difficulty-tier ${JSON.stringify(t)} is not T1, T2 or T3`);
+    const tier = t ?? 'T1';
+    const entry = (map[j.request.taskId] ??= { tiers: {} });
+    entry.category = j.request.category;
+    entry.tier = tier;
+    if (isInt(j['ledger-seq'], 1)) entry.tiers[j['ledger-seq']] = tier;
   }
   return map;
 }
@@ -579,7 +652,11 @@ function latestOutcomes(records) {
   return [...latest.values()];
 }
 
+// under an enforced policy the streams are per (profile, category, tier) (D7, proposal 2.3-2.4): stats keys and proposals
+// read '<category>@T<k>'; a profile is qualified at tier k when it holds the category at k or above. Untiered: per
+// (profile, category), as before
 function learn(policy, records, catMap) {
+  const tiered = tiersEnforced(policy);
   const stats = {};
   const streams = {};
   const dispatchBySeq = new Map(records.filter((r) => r.kind === 'dispatch').map((r) => [`${r['task-id']}#${r.seq}`, r]));
@@ -587,26 +664,32 @@ function learn(policy, records, catMap) {
     const value = outcomeValue(r);
     const pid = tupleId(r.profile);
     if (!value || !pid) continue;
-    const cat = catMap[r['task-id']] ?? 'unknown';
-    stats[pid] ??= {};
-    stats[pid][cat] ??= { ...Object.fromEntries(OUTCOMES.map((o) => [o, 0])), deviations: 0 };
-    const s = stats[pid][cat];
-    s[value] += 1;
+    const m = catMap[r['task-id']];
+    const entry = typeof m === 'string' ? { category: m, tier: 'T1', tiers: {} } : m;
+    const cat = entry?.category ?? 'unknown';
     const d = dispatchBySeq.get(`${r['task-id']}#${r['dispatch-seq']}`);
+    // the tier of the decision the dispatch was made under, else the task's (a dispatch recorded without decision-seq)
+    const tier = (d && entry?.tiers?.[d['decision-seq']]) || entry?.tier || 'T1';
+    const label = tiered && cat !== 'unknown' ? `${cat}@${tier}` : cat;
+    stats[pid] ??= {};
+    stats[pid][label] ??= { ...Object.fromEntries(OUTCOMES.map((o) => [o, 0])), deviations: 0 };
+    const s = stats[pid][label];
+    s[value] += 1;
     if (d && isDeviation(d)) s.deviations += 1;
     streams[pid] ??= {};
-    streams[pid][cat] ??= [];
-    streams[pid][cat].push({ value, task: r['task-id'], ms: isoMs(r.ts) });
+    streams[pid][label] ??= { cat, tier, list: [] };
+    streams[pid][label].list.push({ value, task: r['task-id'], ms: isoMs(r.ts) });
   }
   const proposals = [];
   for (const pid of Object.keys(streams).sort()) {
     const pr = policy.profiles.find((p) => p.id === pid);
     if (!pr) continue;
-    for (const cat of Object.keys(streams[pid]).sort()) {
+    for (const label of Object.keys(streams[pid]).sort()) {
+      const { cat, tier } = streams[pid][label];
       if (cat === 'unknown') continue;
-      const qualified = pr['qualified-for'].includes(cat);
+      const qualified = tiered ? heldTier(pr, cat) >= tierRank(tier) : heldTier(pr, cat) > 0;
       const since = dayMs(pr['qualified-at']);
-      const list = streams[pid][cat].filter((o) => since === null || o.ms >= since);
+      const list = streams[pid][label].list.filter((o) => since === null || o.ms >= since);
       if (qualified) {
         let run = [];
         let hit = null;
@@ -615,11 +698,11 @@ function learn(policy, records, catMap) {
           if (run.length >= 2 && !hit) hit = run.slice(-2);
         }
         const overrun = list.filter((o) => o.value === 'cost-overrun').map((o) => o.task);
-        if (hit) proposals.push({ kind: 'demote', profile: pid, category: cat, reason: `2 consecutive verification-failed (${hit.join(', ')})` });
-        else if (overrun.length) proposals.push({ kind: 'demote', profile: pid, category: cat, reason: `cost-overrun (${overrun.join(', ')})` });
+        if (hit) proposals.push({ kind: 'demote', profile: pid, category: label, reason: `2 consecutive verification-failed (${hit.join(', ')})` });
+        else if (overrun.length) proposals.push({ kind: 'demote', profile: pid, category: label, reason: `cost-overrun (${overrun.join(', ')})` });
       } else {
         const acc = list.filter((o) => o.value === 'accepted').map((o) => o.task);
-        if (acc.length >= 3) proposals.push({ kind: 'qualify', profile: pid, category: cat, reason: `${acc.length} accepted while unqualified (host deviations: ${acc.join(', ')})` });
+        if (acc.length >= 3) proposals.push({ kind: 'qualify', profile: pid, category: label, reason: `${acc.length} accepted while unqualified (host deviations: ${acc.join(', ')})` });
       }
     }
   }
@@ -697,13 +780,16 @@ function fingerprintProblem(nowMs, pr) {
   return null;
 }
 
-// the capability walk for one role: the work itself, or the required review (category 'review', its median, its tools)
-function capabilities(ctx, pr, id, { category, tokens, tools }) {
+// the capability walk for one role: the work itself, or the required review (category 'review', its median, its tools).
+// tier: the tier the role needs under an enforced policy (D4: held at that tier or above), null when untiered
+function capabilities(ctx, pr, id, { category, tokens, tools, tier }) {
   // collect every capability reason, then fail once (run_gates in the fixture runner)
   const reasons = [];
   const fp = fingerprintProblem(ctx.nowMs, pr);
   if (fp) reasons.push(fp);
-  if (!pr['qualified-for'].includes(category)) reasons.push(`${id} not qualified for ${category}`);
+  const held = heldTier(pr, category);
+  if (held === 0) reasons.push(`${id} not qualified for ${category}`);
+  else if (tier && held < tierRank(tier)) reasons.push(`${id} not qualified for ${category}@${tier} (holds ${category}@T${held})`);
   const missing = pr.tools === true ? [] : Array.isArray(pr.tools) ? tools.filter((t) => !pr.tools.includes(t)) : tools;
   if (missing.length) reasons.push(`required tools missing on ${id}: ${missing.join(', ')}`);
   if (ctx.req.needsVision && pr.vision !== true) reasons.push(`vision required, ${id} lacks it`);
@@ -714,7 +800,7 @@ function capabilities(ctx, pr, id, { category, tokens, tools }) {
 }
 
 function gate2(ctx, pr, id) {
-  return capabilities(ctx, pr, id, { category: ctx.req.category, tokens: ctx.tokens, tools: ctx.requiredTools });
+  return capabilities(ctx, pr, id, { category: ctx.req.category, tokens: ctx.tokens, tools: ctx.requiredTools, tier: ctx.tier });
 }
 
 function gate3(ctx) {
@@ -821,7 +907,9 @@ const byEconomics = (a, b) => a._allIn - b._allIn || a._rate - b._rate || a._eff
 
 // gates.md: the gates apply to every profile under consideration, the reviewer included. The required reviewer is
 // drawn from the request's candidates (never the lead-direct profile) and walked through Gate 1 and Gate 2 for the
-// review category, with headroom against the review median; an unpriced reviewer cannot bound the review.
+// review category, with headroom against the review median; an unpriced reviewer cannot bound the review. Under an
+// enforced policy the walk requires review@T1 (D5): the review of a unit is its own request when the lead dispatches it,
+// with its own declared tier, so the unit's tier is not the reviewer's
 function reviewerFor(ctx, ids, leadId) {
   const rev = ctx.policy.categories.review;
   const walk = {};
@@ -831,7 +919,7 @@ function reviewerFor(ctx, ids, leadId) {
     const pr = ctx.policy.profiles.find((p) => p.id === id);
     if (!pr) continue;
     const g1 = gate1(ctx, pr, id, 'delegate');
-    const g2 = g1 || !rev ? null : capabilities(ctx, pr, id, { category: 'review', tokens: rev['median-tokens'], tools: rev['required-tools'] });
+    const g2 = g1 || !rev ? null : capabilities(ctx, pr, id, { category: 'review', tokens: rev['median-tokens'], tools: rev['required-tools'], tier: ctx.tier ? 'T1' : null });
     const why = g1 ? `gate 1: ${g1}` : !rev ? 'gate 2: the policy has no review category' : g2 ? `gate 2: ${g2}` : outRate(ctx.policy, pr) === null ? `gate 4: unknown price for ${pr.model}` : null;
     walk[id] = why;
     if (!why) pool.push(pr);
@@ -846,6 +934,7 @@ function reviewerFor(ctx, ids, leadId) {
 // ---------------------------------------------------------------------------------------------
 export function computeDecision(req, policy, records = [], catMap = {}, { probe = null, readings = [] } = {}) {
   validateRequest(req, policy);
+  const tiering = requestTier(req, policy);
   const optIns = optInsOf(policy, req.hostOptIns);
   const category = Object.hasOwn(policy.categories, req.category) ? policy.categories[req.category] : null;
   const leadId = policy.economics['lead-direct-profile'];
@@ -865,7 +954,7 @@ export function computeDecision(req, policy, records = [], catMap = {}, { probe 
     tokens: req.estimatedTokens ?? category?.['median-tokens'] ?? 0,
     requiredTools: req.requiredTools ?? category?.['required-tools'] ?? [],
     reviewer: null, reviewWalk: {},
-    usage: null
+    usage: null, tier: tiering.tier
   };
   if (policy['usage-windows']) {
     const reading = latestReading(readings, nowMs);
@@ -927,6 +1016,8 @@ export function computeDecision(req, policy, records = [], catMap = {}, { probe 
   const { proposals } = learn(policy, records, catMap);
   const pending = [...proposals, ...expiryFlags(policy, nowMs)].filter((p) => chosen && p.profile === chosen.id);
   for (const p of pending) uncertainty.push(`pending proposal (not applied): ${proposalText(p)}`);
+  // D3: a declared tier against an untiered policy has no effect, and says so
+  if (tiering.tier === null && tiering.declared) uncertainty.push(TIERS_OFF);
 
   const isolation = route === 'blocked' ? 'none' : requiredIsolation(ctx, route === 'direct' ? 'direct' : 'delegate');
   const isolationReason = {
@@ -961,7 +1052,9 @@ export function computeDecision(req, policy, records = [], catMap = {}, { probe 
       ],
       ownership: 'worker',
       'nested-allowed': false,
-      'max-nesting-depth': 1
+      'max-nesting-depth': 1,
+      // D6: additive (spec-v2 §13); the recheck recomputes it, so the fingerprint binds the tier
+      ...(tiering.tier ? { 'difficulty-tier': tiering.tier } : {})
     };
     validateBrief(brief, { callsRemaining: st.callsLimit - st.callsUsed, repairsAllowed: st.repairsAllowed, now: req.now });
     fingerprint = briefFingerprint(brief);
@@ -986,7 +1079,7 @@ export function computeDecision(req, policy, records = [], catMap = {}, { probe 
   const maxDepth = optIns['nested-allowed'] ? 0 : optIns['max-nesting-depth'];
 
   const lines = [
-    ['Difficulty', difficulty], ['Route', route], ['Profile', profileLine], ['Isolation', isolation],
+    ['Difficulty', difficulty], ...(tiering.tier ? [['DifficultyTier', tiering.tier]] : []), ['Route', route], ['Profile', profileLine], ['Isolation', isolation],
     ['IsolationReason', isolationReason], ['Owner', owner], ['HumanGate', optIns['human-gate']], ['NestedAllowed', 'no'],
     ['MaxNestingDepth', String(maxDepth)], ['Reservations', reservations],
     ['Calls', `${st.callsUsed} / ${st.callsLimit}`], ['Deadline', deadlineLine], ['Uncertainty', uncertainty.join('; ')]
@@ -1004,7 +1097,7 @@ export function computeDecision(req, policy, records = [], catMap = {}, { probe 
   return {
     route, profile: route === 'blocked' ? null : chosen.id, 'profile-tuple': route === 'blocked' ? null : profileTuple(policy, pr),
     isolation, 'isolation-reason': isolationReason, owner, 'human-gate': optIns['human-gate'], 'nested-allowed': false,
-    'max-nesting-depth': maxDepth, difficulty, 'estimated-tokens': ctx.tokens,
+    'max-nesting-depth': maxDepth, difficulty, ...(tiering.tier ? { 'difficulty-tier': tiering.tier } : {}), 'estimated-tokens': ctx.tokens,
     'all-in-bound-usd': allIn, candidates: Object.fromEntries(results.map((r) => [r.id, strip(r)])),
     'eligible-ordered': eligible.map((r) => r.id), 'eligible-outside-candidates': outside, 'speculative-set': specSet, uncertainty,
     advisory: ADVISORY_TEXT, 'pending-proposals': pending, deadline: deadlineIso, 'deadline-capped': capped,
@@ -1048,6 +1141,8 @@ export function decide(req, { policyPath = DEFAULT_POLICY, traceDir = DEFAULT_TR
     'task-id': req.taskId, seq, kind: 'decision', ts: req.now, profile: d['profile-tuple'], counters: ctr,
     deadline: d.deadline, 'brief-fingerprint': fp, detail: `route ${d.route}`,
     'outcome-ref': null,
+    // additive (spec-v2 §13, D6): the request's difficulty tier under an enforced policy
+    ...('difficulty-tier' in d ? { 'difficulty-tier': d['difficulty-tier'] } : {}),
     // additive (spec-v2 §13): the tokens Gate 4 projected for the chosen profile, so dispatch re-checks that count
     ...('usage-tokens' in d ? { 'usage-tokens': d['usage-tokens'] } : {}),
     ...(d['speculative-set'] ? { 'speculative-profiles': d['speculative-set'].candidates.map((c) => c.profile), 'speculative-calls': d['speculative-set']['shared-budget'].calls } : {})
@@ -1317,7 +1412,10 @@ function reviewGrade(o) {
   if (g.result !== undefined) return ['PASS', 'PARTIAL', 'FAIL'].includes(g.result) ? g.result.toLowerCase() : 'ungraded';
   return scoreGrade(g);
 }
-const CALIBRATION_TASKS = [['pin-tests', (o) => scoreGrade(o?.pin)], ['fix', (o) => scoreGrade(o?.fix)], ['review', reviewGrade]];
+// D8: a task object (pin, fix, review) may carry "tier": "T2" | "T3" (run 4 will); absent or T1 counts as today, a tier
+// counts apart under '<category>@T<k>'
+const CALIBRATION_TASKS = [['pin-tests', (o) => scoreGrade(o?.pin), (o) => o?.pin?.tier], ['fix', (o) => scoreGrade(o?.fix), (o) => o?.fix?.tier], ['review', reviewGrade, (o) => o?.review?.tier]];
+const CALIBRATION_SUFFIXES = ['', '@T2', '@T3'];
 
 function calibrationEvidence(policy, traceDir) {
   if (!existsSync(traceDir)) return null;
@@ -1345,12 +1443,15 @@ function calibrationEvidence(policy, traceDir) {
       const name = isStr(o?.profile) ? o.profile : key;
       const pr = policy.profiles.find((p) => p.model === model && p.effort === name.split('-').pop());
       const label = pr ? pr.id : `${name} (no policy profile)`;
-      for (const [cat, grade] of CALIBRATION_TASKS) {
+      for (const [cat, grade, tierOf] of CALIBRATION_TASKS) {
         const g = grade(o);
         if (g === null) continue; // the task was not run for this profile: nothing to count
-        const c = ((profiles[label] ??= {})[cat] ??= { pass: 0, partial: 0, fail: 0, ungraded: 0 });
+        const t = tierOf(o);
+        if (t !== undefined && !TIERS.includes(t)) throw new RouterError(4, `${run}/observations.json: observation ${JSON.stringify(key)} ${cat} tier ${JSON.stringify(t)} is not T1, T2 or T3; refusing to rate (${path})`);
+        const k = t === undefined || t === 'T1' ? cat : `${cat}@${t}`;
+        const c = ((profiles[label] ??= {})[k] ??= { pass: 0, partial: 0, fail: 0, ungraded: 0 });
         c[g] += 1;
-        const r = ((seen[label] ??= {})[cat] ??= []);
+        const r = ((seen[label] ??= {})[k] ??= []);
         if (!r.includes(run)) r.push(run);
       }
     }
@@ -1358,9 +1459,12 @@ function calibrationEvidence(policy, traceDir) {
   const lines = [];
   for (const label of Object.keys(profiles).sort()) {
     for (const [cat] of CALIBRATION_TASKS) {
-      const c = profiles[label][cat];
-      if (!c) continue;
-      lines.push(`CALIBRATION ${label} ${cat}: ${c.pass} pass, ${c.partial} partial, ${c.fail} fail${c.ungraded ? `, ${c.ungraded} ungraded` : ''} (${seen[label][cat].join(', ')})`);
+      for (const suffix of CALIBRATION_SUFFIXES) {
+        const k = `${cat}${suffix}`;
+        const c = profiles[label][k];
+        if (!c) continue;
+        lines.push(`CALIBRATION ${label} ${k}: ${c.pass} pass, ${c.partial} partial, ${c.fail} fail${c.ungraded ? `, ${c.ungraded} ungraded` : ''} (${seen[label][k].join(', ')})`);
+      }
     }
   }
   return { doc: { runs, profiles }, lines };

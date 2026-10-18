@@ -139,7 +139,8 @@
     }
    ],
    "real": true,
-   "realVotes": "3/3"
+   "realVotes": "3/3",
+   "three_prong_reading": "real on all three prongs in every lens"
   },
   {
    "cluster": {
@@ -189,7 +190,8 @@
     }
    ],
    "real": true,
-   "realVotes": "2/3"
+   "realVotes": "2/3",
+   "three_prong_reading": "real on all three prongs in every lens"
   },
   {
    "cluster": {
@@ -239,7 +241,8 @@
     }
    ],
    "real": true,
-   "realVotes": "3/3"
+   "realVotes": "3/3",
+   "three_prong_reading": "real on all three prongs in every lens"
   },
   {
    "cluster": {
@@ -285,7 +288,8 @@
     }
    ],
    "real": true,
-   "realVotes": "2/3"
+   "realVotes": "2/3",
+   "three_prong_reading": "not real: every lens says the behaviour holds and is reachable, and the lenses prose says the specification permits it (G-2)"
   },
   {
    "cluster": {
@@ -329,7 +333,17 @@
     }
    ],
    "real": true,
-   "realVotes": "2/3"
+   "realVotes": "2/3",
+   "three_prong_reading": "not real: every lens says the behaviour holds and is reachable, and the lenses prose says the specification permits it (G-2)"
   }
+ ],
+ "lens_schema_prongs": [
+  "holds",
+  "reachable"
+ ],
+ "classification_prongs": [
+  "holds",
+  "reachable",
+  "forbidden"
  ]
 }

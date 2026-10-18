@@ -1,6 +1,7 @@
 {
  "_comment": "SmartRouter host policy for the MoonAliza build process (the Claude Code session that plans and delegates units). Inputs the lead collects before every dispatch decision, per skills/smart-router/SKILL.md 'Decision flow' step 1. Qualification is host-declared from this session's run history and from graded calibration runs (trace/calibration-<n>/), under the lead's qualification rules (README 'Qualification rules'), and is not an independent review; every evidence ref is a workflow run id in the session's workflow journal plus the unit's ledger row in RUN.md, or a calibration grade entry 'calibration-<n>: <category> PASS|PARTIAL|FAIL (n=<k>)'.",
- "policy-revision": "host-policy-4",
+ "policy-revision": "host-policy-5",
+ "difficulty-tiers": "enforced",
  "smartrouter": {
   "repo": "https://github.com/StepenkoAnatoli/SmartRouter",
   "revision": "fbe7bca",
@@ -209,14 +210,14 @@
    "headroom-tested": 460000,
    "role": "the lead itself (direct work)",
    "qualified-for": [
-    "build-core",
-    "build-ui",
-    "build-tests",
-    "review",
-    "fix",
-    "docs-mechanical",
-    "research-collect",
-    "pin-tests"
+    "build-core@T3",
+    "build-ui@T3",
+    "build-tests@T3",
+    "review@T3",
+    "fix@T3",
+    "docs-mechanical@T3",
+    "research-collect@T3",
+    "pin-tests@T3"
    ],
    "evidence": [
     "this session: lead fixes U1-R11 d4c4bdb and U2-R15 d37652e; ledger commits; integration and docs units",
@@ -231,9 +232,17 @@
     "wf_4e9ef48d-066 (calibration-3): pin, fix and review graded in trace/calibration-3/ (results-table.md, observations.json)",
     "calibration-3: pin-tests PASS (n=1)",
     "calibration-3: fix PASS (n=1)",
-    "calibration-3: review PASS (n=1)"
+    "calibration-3: review PASS (n=1)",
+    "build-core@T3: the lead-direct profile integrates every unit of every tier and fixes inline (U1-R11 d4c4bdb, U2-R15 d37652e); host-declared (lead), not independent; eligible only below direct-max-tokens",
+    "build-ui@T3: the lead-direct profile integrates every unit of every tier and fixes inline (U1-R11 d4c4bdb, U2-R15 d37652e); host-declared (lead), not independent; eligible only below direct-max-tokens",
+    "build-tests@T3: the lead-direct profile integrates every unit of every tier and fixes inline (U1-R11 d4c4bdb, U2-R15 d37652e); host-declared (lead), not independent; eligible only below direct-max-tokens",
+    "review@T3: the lead-direct profile integrates every unit of every tier and fixes inline (U1-R11 d4c4bdb, U2-R15 d37652e); host-declared (lead), not independent; eligible only below direct-max-tokens",
+    "fix@T3: the lead-direct profile integrates every unit of every tier and fixes inline (U1-R11 d4c4bdb, U2-R15 d37652e); host-declared (lead), not independent; eligible only below direct-max-tokens",
+    "docs-mechanical@T3: the lead-direct profile integrates every unit of every tier and fixes inline (U1-R11 d4c4bdb, U2-R15 d37652e); host-declared (lead), not independent; eligible only below direct-max-tokens",
+    "research-collect@T3: the lead-direct profile integrates every unit of every tier and fixes inline (U1-R11 d4c4bdb, U2-R15 d37652e); host-declared (lead), not independent; eligible only below direct-max-tokens",
+    "pin-tests@T3: the lead-direct profile integrates every unit of every tier and fixes inline (U1-R11 d4c4bdb, U2-R15 d37652e); host-declared (lead), not independent; eligible only below direct-max-tokens"
    ],
-   "qualified-at": "2026-10-17",
+   "qualified-at": "2026-10-18",
    "expires": "2027-01-15",
    "reviewer": "host-declared (lead), not independent"
   },
@@ -269,8 +278,8 @@
    "context-tested": 1000000,
    "headroom-tested": 352000,
    "qualified-for": [
-    "review",
-    "fix",
+    "review@T1",
+    "fix@T2",
     "pin-tests"
    ],
    "evidence": [
@@ -287,9 +296,11 @@
     "wf_4e9ef48d-066 (calibration-3): pin, fix and review graded in trace/calibration-3/ (results-table.md, observations.json)",
     "calibration-3: pin-tests PASS (n=1)",
     "calibration-3: fix PASS (n=1)",
-    "calibration-3: review PASS (n=1)"
+    "calibration-3: review PASS (n=1)",
+    "fix@T2: U5 fix rounds 3 and 4 (wf_1fcbe585-d1e, wf_7f80ebc5-5a8; src/main/github-signin.ts, its tests and fixtures: three files, cause named by the findings), would be T2 by the table; host-declared (lead), not independent",
+    "review@T1: U5 review and re-review rounds (wf_1fcbe585-d1e) and accepted outcome gsi-u5-rereview4 seq 3 (one module with the shipped tests), would be T1 by the table; calibration-1..3 review PASS"
    ],
-   "qualified-at": "2026-10-17",
+   "qualified-at": "2026-10-18",
    "expires": "2027-01-15",
    "reviewer": "host-declared (lead), not independent"
   },
@@ -387,14 +398,14 @@
    "tools": true,
    "vision": true,
    "context-tested": 1000000,
-   "headroom-tested": 848000,
+   "headroom-tested": 1030000,
    "qualified-for": [
-    "build-core",
-    "build-ui",
-    "build-tests",
-    "review",
-    "fix",
-    "research-collect",
+    "build-core@T3",
+    "build-ui@T3",
+    "build-tests@T3",
+    "review@T1",
+    "fix@T2",
+    "research-collect@T2",
     "pin-tests"
    ],
    "evidence": [
@@ -412,9 +423,16 @@
     "wf_4e9ef48d-066 (calibration-3): pin, fix and review graded in trace/calibration-3/ (results-table.md, observations.json)",
     "calibration-3: pin-tests PASS (n=1)",
     "calibration-3: fix PASS (n=1)",
-    "calibration-3: review PASS (n=1)"
+    "calibration-3: review PASS (n=1)",
+    "build-core@T3: pre-adapter units U1-U5 of github-sign-in (28 builds, RUN.md), multi-file units with new harnesses, would be T3 by the table; host-declared (lead), not independent",
+    "build-ui@T3: accepted outcomes sr-policy-2 seq 3, sr-policy-3 seq 5, sr-policy-4 seq 4 (five files), sr-ci-item4 seq 3 (nine files), would be T3 by the table",
+    "build-tests@T3: pre-adapter test units of U1-U5 (RUN.md), new harnesses (fakes, recorders), would be T3 by the table; host-declared (lead), not independent",
+    "review@T1: accepted outcomes sr-host-review seq 3, sr-host-rereview1 seq 3, sr-host-rereview2 seq 3 (one module against gates.md with the shipped tests), would be T1 by the table; calibration-1..3 review PASS",
+    "fix@T2: accepted outcomes sr-host-fix1 seq 4, sr-host-fix2 seq 4 (three files, one module, cause named by the findings, existing harness), would be T2 by the table; two passes at T2 (rule 2.3)",
+    "research-collect@T2: 26 research runs this session (RUN.md), 20-page budgets with enumerated unknowns, would be T2 by the table (budget over ten pages); host-declared (lead), not independent",
+    "sr-policy-5 outcome accepted 2026-10-18T20:10:00Z: 1029194 tokens completed (trace/outcomes/sr-policy-5-3.json); rate proposed headroom-tested 848000 -> 1030000, ratified by the lead at integration (largest completed run, rounded up, never lowered)"
    ],
-   "qualified-at": "2026-10-17",
+   "qualified-at": "2026-10-18",
    "expires": "2027-01-15",
    "reviewer": "host-declared (lead), not independent"
   },
@@ -593,7 +611,8 @@
     "wf_4e9ef48d-066 (calibration-3): pin, fix and review graded in trace/calibration-3/ (results-table.md, observations.json); fix (cc-haiku-high) and review (cc-haiku-low) from the supplementary run wf_dbe29a64-3b2 (amendment A-1)",
     "calibration-3: pin-tests PASS (n=1)",
     "calibration-3: fix PASS (n=1)",
-    "calibration-3: review PASS (n=1)"
+    "calibration-3: review PASS (n=1)",
+    "fix-x2-1 seq 3 accepted (five files, src/main and tests), would be T3 by the table: one pass at T3, not a qualification (rule 2.3)"
    ],
    "qualified-at": "2026-10-18",
    "expires": "2027-01-15",

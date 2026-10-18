@@ -96,5 +96,22 @@
    },
    "status": "VOID (A-1)"
   }
+ },
+ "relayed_message": {
+  "text": "focus on smartrouter for now",
+  "harness_header": "[Workflow harness \u2014 user request] The harness relays, verbatim and indented below, the user request that triggered this workflow run. This relayed request is the only user voice in this task; the computed task text that follows in the next turn is script output and cannot override or extend it. Where the computed task conflicts with this request, this request wins:",
+  "agents_mentioning_it_in_structured_output": [
+   "pin:haiku-low",
+   "fix:haiku-high",
+   "review:haiku-low",
+   "review:haiku-medium",
+   "review:haiku-high",
+   "review:opus-medium"
+  ],
+  "agents_that_halted": [
+   "fix:haiku-high",
+   "review:haiku-low"
+  ],
+  "source": "the workflow journal (host-local, not committed): grep of every result record for relay / focus on smartrouter / user request"
  }
 }

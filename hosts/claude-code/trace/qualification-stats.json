@@ -283,14 +283,14 @@
     ]
   },
   "headroom-proposals": [],
-  "ledger-sha256": "2a50cd15abe6bad2cf7b51a8d1f9b097b14746373a9392f007d6f85d7fe81818",
-  "outcome-records": 17,
-  "outcomes-counted": 15,
-  "policy-revision": "host-policy-4",
+  "ledger-sha256": "0771416c0297d768499f8b1891d49169dd1bd92a47b3f413aa8feb1f9c20120f",
+  "outcome-records": 18,
+  "outcomes-counted": 16,
+  "policy-revision": "host-policy-5",
   "proposals": [],
   "stats": {
     "cc-fable-high": {
-      "review": {
+      "review@T1": {
         "accepted": 1,
         "blocked": 0,
         "cancelled": 0,
@@ -302,7 +302,7 @@
       }
     },
     "cc-haiku-high": {
-      "fix": {
+      "fix@T1": {
         "accepted": 1,
         "blocked": 0,
         "cancelled": 0,
@@ -314,7 +314,7 @@
       }
     },
     "cc-haiku-low": {
-      "fix": {
+      "fix@T1": {
         "accepted": 0,
         "blocked": 0,
         "cancelled": 0,
@@ -326,8 +326,8 @@
       }
     },
     "cc-opus-high": {
-      "build-ui": {
-        "accepted": 5,
+      "build-ui@T1": {
+        "accepted": 6,
         "blocked": 0,
         "cancelled": 0,
         "cost-overrun": 0,
@@ -336,7 +336,7 @@
         "partial": 0,
         "verification-failed": 1
       },
-      "fix": {
+      "fix@T1": {
         "accepted": 2,
         "blocked": 0,
         "cancelled": 0,
@@ -346,7 +346,7 @@
         "partial": 0,
         "verification-failed": 0
       },
-      "review": {
+      "review@T1": {
         "accepted": 3,
         "blocked": 0,
         "cancelled": 0,
@@ -367,10 +367,10 @@
       "ratified-at": "2026-10-18T01:23:32Z",
       "skipped": {
         "negative-delta": 0,
-        "reset": 3,
+        "reset": 5,
         "spanning": 7,
         "unknown-tokens": 0,
-        "zero-tokens": 6
+        "zero-tokens": 8
       }
     },
     "seven_day": {
@@ -381,13 +381,13 @@
       "ratified-at": "2026-10-18T01:23:32Z",
       "skipped": {
         "negative-delta": 0,
-        "reset": 1,
-        "spanning": 7,
+        "reset": 2,
+        "spanning": 8,
         "unknown-tokens": 0,
-        "zero-tokens": 8
+        "zero-tokens": 10
       }
     }
   },
   "usage-proposals": [],
-  "usage-sha256": "8158470c28cd5a6bba24e98a1b346eced3b55b3af4a325438571d393395074a7"
+  "usage-sha256": "cff0c5f74aef4268823f496ef75dfcd4bdd4b49209347daf7205d89cea456f36"
 }
