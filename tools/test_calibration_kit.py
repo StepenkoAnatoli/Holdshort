@@ -1307,6 +1307,67 @@ class SharedPack(unittest.TestCase):
         self.assertEqual((d["scopeOk"], d["outOfScope"]), (False, ["SPEC.md"]), d)
         self.assertIs(d["PASS"], False)
 
+    # ---- the workflow template filled with this pack (P5) ------------------------------------------------------------
+    def shared_run_config(self, **host) -> dict:
+        co = self.root / "launch" / "checkouts"
+        cfg = run_config(self.root / "launch", **{"pack_dir": str(self.pack), "checkout_root": str(co),
+                                                   "adjudication_checkout": str(co / "cal-adjudication"), **host})
+        cfg["manifest"] = self.manifest()
+        return cfg
+
+    @NEEDS_NODE
+    def test_the_workflow_template_launches_on_this_pack(self):
+        m = self.manifest()
+        out = execute_template(self.shared_run_config(), self.root)
+        self.assertIsNone(out["error"])
+        labels = sorted(c["label"] for c in out["calls"])
+        self.assertEqual([x for x in labels if x.split(":")[0] in ("pin", "fix", "review")],
+                         ["fix:alpha-low", "pin:alpha-low", "review:alpha-low", "review:beta-max"])
+        truth = {f["id"]: f for f in m["findings"]}
+        for c in out["calls"]:
+            self.assertNotIn("{{", c["prompt"], c["label"])
+            task = c["label"].split(":")[0]
+            if task not in ("pin", "fix", "review"):
+                continue
+            prompt = c["prompt"]
+            self.assertIn(str(self.root / "launch" / "checkouts" / f"cal-{c['label'].replace(':', '-')}"), prompt)
+            self.assertIn(m["subject"]["promise"], prompt)
+            self.assertIn("python3 tests/run.py <file>", prompt)
+            for secret in (str(self.pack), "trees/", "make-repo", "zz_accepted_pin", self.ids["accepted0"], self.ids["base0"], self.ids["review0"]):
+                self.assertNotIn(secret, prompt, f"{c['label']} names {secret}")  # Item 2: the prompt names only the checkout
+            if task == "review":
+                self.assertIn(m["cases"]["review"]["scope"], prompt)
+                for f in truth.values():  # no ground truth in a review prompt
+                    for field in ("summary", "cause", "required_behaviour"):
+                        self.assertNotIn(f[field], prompt, f"{f['id']}.{field}")
+        pin = next(c["prompt"] for c in out["calls"] if c["label"] == "pin:alpha-low")
+        self.assertIn("NEW file tests/test_pin.py", pin)
+        self.assertIn(truth["D-2"]["required_behaviour"], pin)
+        self.assertIn(m["cases"]["pin"]["instructions"], pin)
+        self.assertNotIn(truth["D-1"]["summary"], pin)
+        fix = next(c["prompt"] for c in out["calls"] if c["label"] == "fix:alpha-low")
+        for field in ("summary", "cause", "required_behaviour"):
+            self.assertIn(truth["D-2"][field], fix, field)
+        self.assertIn("'fix(bounded): D-2 - '", fix)
+        self.assertIn("python3 -m py_compile src/bounded.py tests/test_bounded.py", fix)
+        self.assertNotIn(truth["D-1"]["summary"], fix)
+        grader = next(c["prompt"] for c in out["calls"] if c["label"] == "grade:beta-max")
+        for f in truth.values():
+            self.assertIn(f"{f['id']} (S3): {f['summary']}", grader)
+
+    @NEEDS_NODE
+    def test_the_launch_refusals_hold_on_this_pack(self):
+        for host in ({"checkout_root": str(self.pack / "checkouts")}, {"adjudication_checkout": str(self.pack / "repo" / "adj")},
+                     {"pack_dir": str(self.root / "launch" / "checkouts" / "pack")}):
+            out = execute_template(self.shared_run_config(**host), self.root)
+            self.assertIn("shares a filesystem path with the pack directory", out["error"] or "", host)
+            self.assertEqual(out["calls"], [], host)
+        cfg = self.shared_run_config()
+        cfg["protocol"]["frozen_at"] = "{{ISO-8601 UTC time of the freeze commit}}"
+        out = execute_template(cfg, self.root)
+        self.assertIn("frozen", out["error"] or "")
+        self.assertEqual(out["calls"], [])
+
 class Docs(unittest.TestCase):
     def readme(self) -> str:
         return (KIT / "README.md").read_text()
