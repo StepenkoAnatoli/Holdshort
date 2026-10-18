@@ -463,6 +463,22 @@ class LegacyRuns(unittest.TestCase):
                          {"prongs-declared", "fewer-prong-pass-flagged", "pin-category-mapping", "judging-profile-named", "relayed-chat-statement"})
 
 
+class Gate(unittest.TestCase):
+    def test_registered_in_the_regression_gate_after_the_kit(self):
+        spec = importlib.util.spec_from_file_location("run_regression", ROOT / "tools" / "run_regression.py")
+        gate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gate)
+        names = [name for name, _ in gate.CHECKS]
+        i = names.index("test_calibration_kit")
+        want = [("test_check_calibration_evidence", ["tools/test_check_calibration_evidence.py"]),
+                ("check_calibration_evidence", ["tools/check_calibration_evidence.py"]),
+                ("test_qualification_table", ["tools/test_qualification_table.py"]),
+                ("qualification_table", ["tools/qualification_table.py", "--check"])]
+        self.assertEqual([(n, cmd[1:]) for n, cmd in gate.CHECKS[i + 1:i + 5]], want)
+        for _, cmd in gate.CHECKS[i + 1:i + 5]:
+            self.assertEqual(cmd[0], sys.executable)
+
+
 class Discovery(unittest.TestCase):
     def test_default_folders_are_the_calibration_runs_under_docs_evidence(self):
         check = load_check()
