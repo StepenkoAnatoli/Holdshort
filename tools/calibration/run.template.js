@@ -3,7 +3,8 @@
 // from run 3: every subject value comes from RUN (the pack manifest, the frozen protocol, the host's paths); the
 // candidate preamble reconciles a relayed operator request (amendment A-1); a lens votes real only on all three prongs
 // (amendment G-2); the launch refuses a run whose checkouts share a path with the pack, whose relayed operator text is
-// unrecorded, or whose protocol is not frozen (proposal Items 2, 3.1, 3.2); one supplementary mode re-runs void cells.
+// unrecorded, whose judging profile has neither a qualification nor the bootstrap line, whose protocol is not frozen
+// or still holds a placeholder (proposal Items 2, 3.1-3.3); one supplementary mode re-runs void cells.
 //
 // HARNESS: written for the Claude Code workflow harness, the only harness with a run so far. It provides `agent(prompt,
 // {label, phase, schema, model, effort})` (one sub-agent, resolving to its structured output or null), `pipeline(items,
@@ -59,6 +60,7 @@ if (P.retry_limit !== 0 || P.runs_per_profile_per_task !== 1) refuse('retry_limi
 if (!P.relayed_operator_text || !('text' in P.relayed_operator_text)) refuse('the protocol does not record relayed_operator_text.text (the text, or null when the harness relays nothing): Item 3.2')
 const RELAYED = P.relayed_operator_text.text
 if (RELAYED !== null && typeof RELAYED !== 'string') refuse('relayed_operator_text.text must be a string or null')
+if (unfilled(P.relayed_operator_text.statement)) refuse('the protocol does not record relayed_operator_text.statement (what the harness relays into workers): Item 3.2')
 const PRONGS = ['holds', 'reachable', 'forbidden']
 if (JSON.stringify(P.classification?.prongs) !== JSON.stringify(PRONGS)) refuse(`classification.prongs must be ${PRONGS.join(', ')} (G-2)`)
 // The path check compares the host's paths as strings and follows no symlink (a harness script reads no filesystem):
@@ -70,7 +72,22 @@ for (const k of ['checkout_root', 'adjudication_checkout', 'pack_dir', 'run_tag'
 for (const k of ['checkout_root', 'adjudication_checkout']) if (shares(H[k], H.pack_dir)) refuse(`host.${k} shares a filesystem path with the pack directory: Item 2`)
 const JUDGE = P.judging_profile
 if (!JUDGE || unfilled(JUDGE.model) || unfilled(JUDGE.effort)) refuse('judging_profile.model and .effort are not set: Item 3.3')
-if (JUDGE.qualification == null && unfilled(JUDGE.limitation)) refuse('judging_profile carries neither its qualification nor the bootstrap limitation line: Item 3.3')
+// a placeholder qualification is no qualification; without one, the limitation is the bootstrap line itself (Item 3.3)
+const BOOTSTRAP = 'judging profile not independently qualified'
+if (unfilled(JUDGE.qualification) && (unfilled(JUDGE.limitation) || !JUDGE.limitation.startsWith(BOOTSTRAP))) refuse(`judging_profile carries neither its qualification nor the bootstrap limitation line ("${BOOTSTRAP}, ..."): Item 3.3`)
+// every {{placeholder}} is filled before the freeze (README step 2); the relayed text is verbatim operator text, not scanned
+const placeholderAt = (v, at) => {
+  if (typeof v === 'string') return v.includes('{{') ? at : null
+  const entries = Array.isArray(v) ? v.map((x, i) => [`${at}[${i}]`, x]) : v && typeof v === 'object' ? Object.entries(v).map(([k, x]) => [`${at}.${k}`, x]) : []
+  for (const [path, x] of entries) {
+    if (path === 'protocol.relayed_operator_text.text') continue
+    const found = placeholderAt(x, path)
+    if (found) return found
+  }
+  return null
+}
+const LEFT = placeholderAt(P, 'protocol')
+if (LEFT) refuse(`unfilled placeholder at ${LEFT}: fill every {{placeholder}} of the protocol before the freeze`)
 
 // ---- the prompt files ------------------------------------------------------------------------------------------------
 const section = (md, heading) => {

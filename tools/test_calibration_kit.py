@@ -815,6 +815,63 @@ class RunTemplate(unittest.TestCase):
         self.assertIn("prongs", out["error"] or "")
         self.assertEqual(out["calls"], [])
 
+    def launch(self, mutate) -> dict:
+        cfg = run_config(self.root)
+        mutate(cfg["protocol"])
+        return execute_template(cfg, self.root)
+
+    @NEEDS_NODE
+    def test_launch_treats_a_placeholder_qualification_as_unset(self):
+        # F3: the template ships qualification and limitation as {{...}} strings; neither is a qualification or the line
+        tmpl = json.loads((KIT / "protocol.template.json").read_text())["judging_profile"]
+        for lim in (tmpl["limitation"], None):
+            out = self.launch(lambda p: p["judging_profile"].update(qualification=tmpl["qualification"], limitation=lim))
+            self.assertIn("neither its qualification nor the bootstrap limitation line", out["error"] or "", lim)
+            self.assertEqual(out["calls"], [])
+
+    @NEEDS_NODE
+    def test_launch_requires_the_bootstrap_limitation_line_itself(self):
+        # F3, Item 3.3: with no qualification, the limitation is the line, not any text
+        out = self.launch(lambda p: p["judging_profile"].update(qualification=None, limitation="trust me"))
+        self.assertIn("neither its qualification nor the bootstrap limitation line", out["error"] or "")
+        self.assertEqual(out["calls"], [])
+        line = "judging profile not independently qualified, host-declared by the operator"
+        out = self.launch(lambda p: p["judging_profile"].update(qualification=None, limitation=line))
+        self.assertIsNone(out["error"])
+
+    @NEEDS_NODE
+    def test_launch_requires_the_relayed_text_statement(self):
+        # F3, Item 3.2: the record is the text (or null) and the statement of what the harness relays
+        for rec in ({"text": None}, {"text": None, "statement": ""}, {"text": None, "statement": "{{statement}}"}):
+            out = self.launch(lambda p: p.update(relayed_operator_text=rec))
+            self.assertIn("relayed_operator_text.statement", out["error"] or "", rec)
+            self.assertEqual(out["calls"], [])
+
+    @NEEDS_NODE
+    def test_launch_refuses_any_placeholder_left_in_the_protocol(self):
+        # F3: "fill every placeholder" - a {{...}} anywhere in the protocol stops the launch, and the error names where
+        tmpl = json.loads((KIT / "protocol.template.json").read_text())
+        out = self.launch(lambda p: p.update(profiles=tmpl["profiles"]))
+        self.assertIn("unfilled placeholder at protocol.profiles[0].key", out["error"] or "")
+        self.assertEqual(out["calls"], [])
+        out = self.launch(lambda p: p["accounting"].update(statement="{{how tokens are read}}"))
+        self.assertIn("unfilled placeholder at protocol.accounting", out["error"] or "")
+        self.assertEqual(out["calls"], [])
+        # the relayed text is the operator's words verbatim: a '{{' in it is data, not a placeholder
+        out = self.launch(lambda p: p.update(relayed_operator_text={"text": "keep {{this}} as typed", "statement": "the harness relays this operator text"}))
+        self.assertIsNone(out["error"])
+        # the template as shipped, with only the freeze time and the judging profile filled (the reviewer's case)
+        shipped = copy.deepcopy(tmpl)
+        shipped.pop("_lineage", None)
+        shipped.pop("sources", None)
+        shipped["frozen_at"] = "2026-01-01T00:00:00Z"
+        shipped["judging_profile"].update(key="gamma-high", model="gamma", effort="high", qualification="qualified by revision 1", limitation=None)
+        cfg = run_config(self.root)
+        cfg["protocol"] = shipped
+        out = execute_template(cfg, self.root)
+        self.assertIn("unfilled placeholder", out["error"] or "")
+        self.assertEqual(out["calls"], [])
+
     @NEEDS_NODE
     def test_a_recorded_relayed_text_reaches_every_candidate_verbatim(self):
         cfg = run_config(self.root)

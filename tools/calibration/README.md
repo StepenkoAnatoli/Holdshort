@@ -63,9 +63,10 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    sys.stdout.write(t.replace("null // {{RUN}}", json.dumps(c)).replace("null // {{PROMPTS}}", json.dumps(p)))' tools/calibration run-config.json > run.js
    ```
 5. **Launch.** Launch `run.js` in the harness (Claude Code: the workflow tool, with the script path). The script's launch
-   step refuses, before any agent starts, a protocol that is not frozen, an unrecorded relayed text, prongs other than
-   the three, a judging profile with neither its qualification nor the bootstrap line, and a checkout that shares a path
-   with the pack. Record the run id the harness assigns in `protocol.json` (`run_id`) and in the folder's README at the
+   step refuses, before any agent starts, a protocol that is not frozen, an unrecorded relayed text or statement, prongs
+   other than the three, a judging profile with neither its qualification nor the bootstrap line (a `{{placeholder}}`
+   qualification counts as none, and the limitation must begin with that line), any `{{placeholder}}` left in the
+   protocol, and a checkout that shares a path with the pack. Record the run id the harness assigns in `protocol.json` (`run_id`) and in the folder's README at the
    launch, with the time.
 6. **Grade.** For each pin and fix cell, after it finishes:
    `bash tools/calibration/grade.sh <pack dir>/manifest.json <case> <checkout> > <grades dir>/<case>-<profile>.json`.
