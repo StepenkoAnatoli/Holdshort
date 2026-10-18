@@ -1,0 +1,43 @@
+{
+ "task-id": "fix-x2-1",
+ "outcome": "accepted",
+ "owner-profile": "cc-haiku-high",
+ "original-brief-fingerprint": "682b1864e8dc7bc5589a34f0474c6fcd6715dde535eb6093a7f39b2f1fd4daec",
+ "evidence": {
+  "checks": [
+   {
+    "command": "npx vitest run tests/github-account-store.test.ts; npx vitest run tests/vault.test.ts",
+    "exit-code": 0,
+    "output-ref": "96 passed and 9 passed at the unit's commits (build report); red-first: the three X2-1 rows failed at HEAD f020e49 before the change; guard-removal proofs G1-G3 red, files restored to identical hashes (build report)"
+   },
+   {
+    "command": "npm run typecheck; npm run lint; npx eslint e2e",
+    "exit-code": 0,
+    "output-ref": "exit 0 (build report)"
+   },
+   {
+    "command": "refute-first review",
+    "exit-code": 0,
+    "output-ref": "wf_8f566a03-727: review FIX (F1 S3 scope gap: the wiring pin at tests/github-main-wiring.test.ts:81 pins the reconcile line; F2, F3, F4 S4); fix round 1 (08738ee, cdd74ce, 6d3c900, 0e7dc89) -> re-review ACCEPT (N1 S4 optional)"
+   },
+   {
+    "command": "bash gate.sh wt/gsi-build x2-int; compare.py vs baseline-failing.json (74)",
+    "exit-code": 0,
+    "output-ref": "integration head 97cbfbd (results/x2-int): typecheck 0, lint 0, build 0; vitest 2164 tests, 2084 passed, 74 failed all in the 74-failure baseline, no new failures, 6 Windows-only skipped (compare.py); scratchpad/gsi-x2-gate.log"
+   }
+  ],
+  "actual-spend": null,
+  "actual-tokens": 725422,
+  "files-touched": [
+   "src/main/github-account-store.ts",
+   "src/main/vault.ts",
+   "src/main/index.ts",
+   "tests/github-account-store.test.ts",
+   "tests/vault.test.ts",
+   "docs/ARCHITECTURE.md",
+   "tests/github-main-wiring.test.ts"
+  ],
+  "notes": "integrated as ed5fe5c, 5e35b72, 75384e5, 01a8604 on build/github-sign-in. Deviation from the decided permitted-effects: the fix round changed one literal at tests/github-main-wiring.test.ts:81 (the U6 wiring pin that pins the whole reconcile line of src/main/index.ts), which the brief had excluded; the builder stopped and reported it instead of committing (round 0), and the lead authorised the one-line pin change at integration as finding F1 (the lead's call, recorded here rather than by a new decision, because the dispatch had already happened and the change is the pin's text, not behaviour). Commit 0e7dc89 lacked the two trailers; the lead re-messaged it at cherry-pick (01a8604). Four workflow agents, 725422 harness tokens (not a bill).",
+  "actual-spend-basis": "estimate-only"
+ }
+}

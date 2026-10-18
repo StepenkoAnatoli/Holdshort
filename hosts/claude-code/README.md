@@ -9,13 +9,14 @@ itself. Every output it prints carries `Advisory: recommendation only — no dis
 
 | File | What it is |
 |---|---|
-| `host-policy.json` | The host's declared inputs: harness, authorization, accounting mode, prices, categories, profiles with qualification evidence, economics constants, opt-ins. Edited only by the lead. Current revision: `host-policy-3`. |
+| `host-policy.json` | The host's declared inputs: harness, authorization, accounting mode, prices, categories, profiles with qualification evidence, economics constants, opt-ins. Edited only by the lead. Current revision: `host-policy-4`. |
 | `route.mjs` | The adapter: CLI plus named exports. Node built-ins only. |
-| `route.test.mjs` | `node --test` suite, one test per SmartRouter fixture it mirrors, plus the three golden hand-walked decisions. The base tests and the goldens run on `host-policy-1`, the usage-window and host-policy-2 tests on `host-policy-2` (the fixtures below), the live policy on its own tests. |
+| `route.test.mjs` | `node --test` suite, one test per SmartRouter fixture it mirrors, plus the three golden hand-walked decisions. The base tests and the goldens run on `host-policy-1`, the usage-window and host-policy-2 tests on `host-policy-2`, the host-policy-3 tests on `host-policy-3` (the fixtures below), the live policy on its own tests. |
 | `trace/ledger.jsonl` | The Outcome Ledger: spec-v2 §10.5 records, append-only, never rewritten. |
 | `trace/decisions/<task>-<seq>.json` | One file per decision: the request, input and policy digests, the per-candidate gate walkthrough with reasons, the chosen profile, estimates vs accounting, the Brief. `hand-*.json` are the lead's hand-walked decisions from before the adapter existed. |
 | `trace/policies/host-policy-1.json` | The policy before revision 2, byte-identical to the one the hand-walked decisions and `sr-policy-2-1` were decided under. A test fixture, never edited: the goldens decide against it with `--policy`. It lives apart from `trace/decisions/`, whose `<task>-<seq>.json` names belong to decisions (a fixture there would block a task named `host-policy` at seq 1). `sr-policy-2-1`'s Brief names the fixture's first path, `trace/decisions/host-policy-1.json`; the decision file is a record and is not rewritten. |
 | `trace/policies/host-policy-2.json` | The policy before revision 3, byte-identical to the one the `sr-policy-3` decisions were bound to (sha256 `71e47f17...`). A test fixture, never edited: the host-policy-2 assertions and the usage-window tests run on it. |
+| `trace/policies/host-policy-3.json` | The policy before revision 4, byte-identical to the one the `sr-policy-4` decisions were bound to (sha256 `43fc8d9a...`). A test fixture, never edited: the host-policy-3 assertions (its table, validation and routing, revision 3's routing consequence, its usage tests, `committed policy (ii)`) run on it, and the tests that read the ledger for it stop at its freeze instant (2026-10-18T09:07:43Z). |
 | `trace/outcomes/<task>-<seq>.json` | The §10.3 Outcome objects that outcome records point at. |
 | `trace/calibration-<n>/` | A graded calibration run: `observations.json` (per profile: the pin, fix and review grades and the tokens used), `results-table.md`, the lead's notes. Evidence for the qualification rules, read by `rate`, never written to the ledger. |
 | `trace/usage.jsonl` | The usage readings (the subscription's five-hour and seven-day windows) pasted by the lead with `route.mjs usage`. Append-only, never rewritten, separate from the ledger. |
@@ -118,10 +119,12 @@ it, and the fix is to add the missing newline, which changes no record.
 
 ## Qualification table
 
-Status of every row: **host-declared, reviewer: lead, expires 2027-01-15**. Rows whose qualifications host-policy-3
-adds or changes, and the four profiles it adds, carry the reviewer `host-declared (lead) from calibration-1 and
-calibration-2 grades` and `qualified-at` 2026-10-18; `cc-opus-high`, `cc-fable-high` and `cc-fable-xhigh` keep their
-production qualifications, `qualified-at` and reviewer (`host-declared (lead), not independent`) and gain the entries. None of this is an independent review. Qualification is declared by the host, never inferred from price
+Status of every row: **host-declared, reviewer: lead, expires 2027-01-15**. The seven profiles whose qualifications
+host-policy-4 adds or removes carry the reviewer `host-declared (lead) from calibration-1, calibration-2 and
+calibration-3 grades` and `qualified-at` 2026-10-18. The other profiles whose qualifications host-policy-3 added or
+changed keep `host-declared (lead) from calibration-1 and calibration-2 grades`; `cc-opus-high`, `cc-fable-high` and
+`cc-fable-xhigh` keep their production qualifications, `qualified-at` and reviewer (`host-declared (lead), not
+independent`). Every profile gains the entries of each run. None of this is an independent review. Qualification is declared by the host, never inferred from price
 or label (gates.md, 'Qualification, freshness and pre-dispatch binding').
 
 ### Qualification rules (the lead's, from host-policy-2)
@@ -181,8 +184,8 @@ the cell representative in kind. The size difference is held by three things: th
 (`tokens < headroom-tested` at Gate 2), the category's required fresh re-review, and the learning loop's demotion
 after two consecutive `verification-failed` outcomes.
 
-**The routing consequence.** A default `fix` request (193000 tokens) fits only the fix-qualified profiles whose
-headroom admits it: `cc-haiku-high` (261k), `cc-opus-xhigh` (246k), `cc-opus-high` (848k), `cc-fable-high` (352k)
+**The routing consequence (host-policy-3; host-policy-4 moves the reviewer, below).** A default `fix` request (193000 tokens) fits only the fix-qualified profiles whose
+headroom admits it: `cc-haiku-high` (726k), `cc-opus-xhigh` (246k), `cc-opus-high` (848k), `cc-fable-high` (352k)
 (and the lead, whose direct path stops at 15k). Every other fix-qualified profile fails Gate 2 on its headroom. Each
 delegate carries the same required review at `cc-opus-high` ($4.18 for the 209000-token review median) and $1.00 of
 brief overhead, so the cheapest worker wins: **a default `fix` request now routes to `cc-haiku-high`**. `decide` on
@@ -212,28 +215,160 @@ Gate walk (per candidate):
 
 Gate 5's reason: `cc-haiku-high` has the lowest all-in bound among the four eligible delegates, $5.2765 (work
 193000 x the output rate / 1e6 = $0.0965, review $4.18, overhead $1.00), against $9.04 for `cc-opus-high` and
-`cc-opus-xhigh` and $14.83 for `cc-fable-high`. A fix estimated at 261000 tokens or more no longer fits
-`cc-haiku-high` (or `cc-opus-xhigh`, 246k) and goes to `cc-opus-high` ($10.40 at 261000).
+`cc-opus-xhigh` and $14.83 for `cc-fable-high`. A fix estimated at 726000 tokens or more no longer fits
+`cc-haiku-high` (or `cc-opus-xhigh`, 246k) and goes to `cc-opus-high` ($19.70 at 726000).
 
-### The table (host-policy-3, generated from `host-policy.json`)
+### How calibration run 3 was applied (host-policy-4)
 
-| Profile | Effort | Qualified for | Headroom tested | calibration-1 pin / fix / review | calibration-2 pin / fix / review | Basis |
-|---|---|---|---|---|---|---|
-| `cc-fable-xhigh` | xhigh, **direct only** (the lead), up to 15k tokens | build-core, build-ui, build-tests, review, fix, docs-mechanical, research-collect, pin-tests | 460k | PASS / PASS / PASS | PASS / PASS / PASS | session runs (host-policy-1) + calibration-1 + calibration-2 |
-| `cc-fable-max` | max | none | 230k | - / - / - | - / - / PASS | calibration-2 review only: one pass, not a qualification |
-| `cc-fable-high` | high | review, fix, pin-tests | 352k | PASS / PASS / PASS | PASS / PASS / PASS | session runs (host-policy-1) + calibration-1 + calibration-2 |
-| `cc-fable-medium` | medium | review, fix, pin-tests | 172k | PASS / PASS / PASS | PASS / PASS / PASS | calibration-1 + calibration-2 |
-| `cc-opus-max` | max | none | 307k | - / - / - | - / - / PASS | calibration-2 review only: one pass, not a qualification |
-| `cc-opus-xhigh` | xhigh | review, fix, pin-tests | 246k | PASS / PASS / PASS | PASS / PASS / PASS | calibration-1 + calibration-2 (new in host-policy-3) |
-| `cc-opus-high` | high | build-core, build-ui, build-tests, review, fix, research-collect, pin-tests | 848k | PASS / PASS / PASS | PASS / PASS / PASS | session runs (host-policy-1) + calibration-1 + calibration-2; headroom from the accepted sr-policy-2 outcome (770527 tokens) |
-| `cc-opus-medium` | medium | fix, pin-tests | 154k | PASS / PASS / PASS | PASS / PASS / FAIL | calibration-1 + calibration-2; review: a pass, then a FAIL (G-1 recorded, not applied) |
-| `cc-sonnet-xhigh` | xhigh | none | 328k | - / - / - | - / - / PASS | calibration-2 review only: one pass, not a qualification |
-| `cc-sonnet-high` | high | fix, pin-tests | 183k | PASS / PASS / FAIL | PASS / PASS / PASS | calibration-1 + calibration-2; review: a FAIL, then a pass |
-| `cc-sonnet-medium` | medium | fix, pin-tests | 128k | PASS / PASS / PASS | PASS / PASS / FAIL | calibration-1 + calibration-2; review: a pass, then a FAIL |
-| `cc-sonnet-low` | low | fix, pin-tests | 114k | PASS / PASS / PASS | PASS / PASS / PARTIAL | calibration-1 + calibration-2; review: a pass, then a PARTIAL |
-| `cc-haiku-high` | high, no vision | fix, pin-tests | 261k | PASS / PASS / FAIL | PASS / PASS / FAIL | calibration-1 + calibration-2 |
-| `cc-haiku-medium` | medium, no vision | fix, pin-tests | 183k | PASS / PASS / FAIL | PASS / PASS / FAIL | calibration-1 + calibration-2 |
-| `cc-haiku-low` | low, no vision | fix, docs-mechanical, pin-tests | 175k | PASS / PASS / FAIL | PASS / PASS / FAIL | session runs (host-policy-1) + calibration-1 + calibration-2 |
+Calibration run 3 (`trace/calibration-3/`, main run `wf_4e9ef48d-066` plus the supplementary run `wf_dbe29a64-3b2`
+for the two cells void under amendment A-1; protocol preregistered upstream in SmartRouter
+`docs/evidence/2026-10-18/claude-code-calibration-3/`) graded twelve profiles on pin and fix (U1-R11 at `e68583c`,
+history-less checkouts) and fifteen on review (U1-R8 + U1-R11 at `0e7a7f3`, a reachability-defined classification, a
+preregistered three-lens adjudication). Final tally: pin 11 of 12, fix 12 of 12, review 15 of 15 PASS, no PARTIAL.
+With runs 1 and 2 that gives second passes for several high-risk review cells, one pin fail, and the learning loop's
+first demotion proposal from production outcomes. The lead applied rules 1-4 (unchanged); `rate` prints the counts.
+
+| profile | review run 1 / 2 / 3 | pin run 3 | fix run 3 | host-policy-4 |
+|---|---|---|---|---|
+| `cc-haiku-low` | FAIL / FAIL / PASS | PASS | PASS | review: one of the two later passes rule 3 needs, not qualified. **`fix` removed** (demotion ratified, below). Keeps `docs-mechanical`, `pin-tests` |
+| `cc-haiku-medium` | FAIL / FAIL / PASS | PASS | PASS | review: one of two later passes, not qualified. Unchanged otherwise |
+| `cc-haiku-high` | FAIL / FAIL / PASS | PASS | PASS (supplementary run) | review: one of two later passes, not qualified. Unchanged otherwise |
+| `cc-sonnet-low` | PASS / PARTIAL / PASS | PASS | PASS | **`review` added**: two independent passes (rule 2); the PARTIAL is neither a pass nor a fail and is recorded as such |
+| `cc-sonnet-medium` | PASS / FAIL / PASS | PASS | PASS | review: one of the two later passes rule 3 needs after the fail, not qualified |
+| `cc-sonnet-high` | FAIL / PASS / PASS | PASS | PASS | **`review` added**: two passes after the fail (rule 3 satisfied) |
+| `cc-sonnet-xhigh` (review only) | - / PASS / PASS | - | - | **`review` added** (two passes) |
+| `cc-opus-medium` | PASS / FAIL / PASS | PASS | PASS | review: one of two later passes, not qualified |
+| `cc-opus-high` | PASS / PASS / PASS | PASS | PASS | unchanged; gains the entries |
+| `cc-opus-xhigh` | PASS / PASS / PASS | PASS | PASS | unchanged; gains the entries |
+| `cc-opus-max` (review only) | - / PASS / PASS | - | - | **`review` added** (two passes) |
+| `cc-fable-medium` | PASS / PASS / PASS | **FAIL** | PASS | **`pin-tests` removed** (rule 3, below). Keeps `review`, `fix` |
+| `cc-fable-high` | PASS / PASS / PASS | PASS | PASS | unchanged; gains the entries |
+| `cc-fable-xhigh` | PASS / PASS / PASS | PASS | PASS | unchanged (lead-direct); gains the entries |
+| `cc-fable-max` (review only) | - / PASS / PASS | - | - | **`review` added** (two passes) |
+
+G-2 (lead-notes.md): two of the five adjudicated clusters rest on two prongs of the classification; under the full
+definition the run-3 review of cc-haiku-medium and cc-haiku-high would be FAIL. The preregistered score (PASS) is
+what the evidence entries record, and it changes nothing above (both profiles need two later passes either way).
+
+- **The demotion is ratified.** `rate` proposed demoting `cc-haiku-low` from `fix` after two consecutive
+  `verification-failed` production outcomes (fix-u7-r3 seq 4, fix-x2-2 seq 3): the learning loop's first demotion
+  from production outcomes. Host-policy-4 removes `fix` from the profile, and its evidence records
+  `demoted from fix 2026-10-18: ...; re-qualification needs two later passes`, which means two later passes dated
+  after 2026-10-18. Its three calibration fix passes stay recorded; they do not outweigh the production failures.
+  Under host-policy-4 `rate` no longer prints the proposal, because a demotion concerns a qualified profile, and the
+  outcome stats keep both failures.
+- **The pin block.** The run-3 pin FAIL of `cc-fable-medium` (an over-specified pin: red at the base and still red
+  with the accepted fix, lead-notes.md) blocks `pin-tests` for `cc-fable-medium` until two later passes (rule 3). It
+  keeps `review` and `fix`.
+- **Entries.** Each profile gains the run-id entry `wf_4e9ef48d-066 (calibration-3): pin, fix and review graded in
+  trace/calibration-3/ (results-table.md, observations.json)` and one grade entry per task it ran. For `cc-haiku-high`
+  and `cc-haiku-low` the run-id entry adds `; fix (cc-haiku-high) and review (cc-haiku-low) from the supplementary run
+  wf_dbe29a64-3b2 (amendment A-1)`. The three review-only profiles say `review graded ...; a review-only profile in
+  that run (no pin or fix cell)`, as revision 3 wrote it (finding 2 below). The seven profiles whose qualifications
+  change take `qualified-at` 2026-10-18 and the reviewer `host-declared (lead) from calibration-1, calibration-2 and
+  calibration-3 grades`; the rest keep theirs. `expires` stays 2027-01-15.
+- **`headroom-tested` raises nothing.** Every run-3 cell is below its profile's current figure (largest:
+  `cc-sonnet-xhigh` review 227264 < 328000; `cc-opus-max` review 266339 < 307000; `cc-fable-max` review 189364 <
+  230000; `cc-haiku-high` fix 142418 < 726000).
+
+**The routing consequence.** Two defaults move, and so does the required reviewer. `cc-sonnet-xhigh` is now
+review-qualified, and it is the cheapest review-qualified profile whose headroom (328k) admits the 209000-token review
+median. So it becomes the required reviewer of every `build-core`, `build-ui`, `build-tests` and `fix` delegate:
+$2.09 of review bound, where `cc-opus-high`'s was $4.18. This applies the existing reviewer rule (Gate 3, the
+`review` category's median at the cheapest review-qualified candidate that passes Gates 1-2) to the table; no rule
+changed. `cc-sonnet-low` and `cc-sonnet-high` are review-qualified too, but their headroom (114k, 183k) is below the
+review median, so they fail Gate 2 for a default review and are never the reviewer.
+
+A default `fix` request (193000 tokens) loses `cc-haiku-low` (demoted; its 175k headroom would have failed it anyway),
+and `cc-haiku-medium`'s 183k does not admit it, so the cheapest eligible worker is still `cc-haiku-high`. The demotion
+does change smaller fixes: a fix estimated below 175000 tokens, which host-policy-3 sent to `cc-haiku-low`, now goes
+to `cc-haiku-medium`, the cheapest fix-qualified profile whose 183k headroom admits it (a 150000-token fix:
+`cc-haiku-medium`, reviewer `cc-sonnet-xhigh`; pinned in the host-policy-4 routing test). `decide` on
+that request with the live policy (feature-off derivative, as the tests use) prints:
+
+```
+Route:             delegate
+Profile:           (cc-haiku-high, claude-code-workflow-subagent, anthropic, <model>, high, workflow-subagent/structured-output@1)
+Reservations:      $3.19 conservative all-in bound, estimate only (work $0.10 + review $2.09 + brief overhead $1.00)
+Gate walk (per candidate):
+  cc-fable-xhigh   direct    gate 5: direct unsuitable: 193000 tokens > direct-max-tokens 15000
+  cc-fable-max     delegate  gate 2: cc-fable-max not qualified for fix
+  cc-fable-high    delegate  eligible, all-in $12.74
+  cc-fable-medium  delegate  gate 2: context: 193000 tokens not below headroom-tested 172000 on cc-fable-medium
+  cc-opus-max      delegate  gate 2: cc-opus-max not qualified for fix
+  cc-opus-xhigh    delegate  eligible, all-in $6.95
+  cc-opus-high     delegate  eligible, all-in $6.95
+  cc-opus-medium   delegate  gate 2: context: 193000 tokens not below headroom-tested 154000 on cc-opus-medium
+  cc-sonnet-xhigh  delegate  gate 2: cc-sonnet-xhigh not qualified for fix
+  cc-sonnet-high   delegate  gate 2: context: 193000 tokens not below headroom-tested 183000 on cc-sonnet-high
+  cc-sonnet-medium delegate  gate 2: context: 193000 tokens not below headroom-tested 128000 on cc-sonnet-medium
+  cc-sonnet-low    delegate  gate 2: context: 193000 tokens not below headroom-tested 114000 on cc-sonnet-low
+  cc-haiku-high    delegate  eligible, all-in $3.19
+  cc-haiku-medium  delegate  gate 2: context: 193000 tokens not below headroom-tested 183000 on cc-haiku-medium
+  cc-haiku-low     delegate  gate 2: cc-haiku-low not qualified for fix; context: 193000 tokens not below headroom-tested 175000 on cc-haiku-low
+```
+
+Gate 5's reason: `cc-haiku-high` has the lowest all-in bound among the four eligible delegates, $3.1865 (work 193000
+x the output rate / 1e6 = $0.0965, review $2.09 at `cc-sonnet-xhigh`, overhead $1.00), against $6.95 for
+`cc-opus-high` and `cc-opus-xhigh` (equal bounds: the lower effort ranks first) and $12.74 for `cc-fable-high`.
+A fix estimated at 726000 tokens or more no longer fits `cc-haiku-high` (or `cc-opus-xhigh`, 246k) and goes to `cc-opus-high` ($17.61 at 726000).
+
+A default `review` request (209000 tokens) now routes to `cc-sonnet-xhigh`. A review names no further reviewer, so
+its bound is the work at its own rate plus the brief overhead:
+
+```
+Route:             delegate
+Profile:           (cc-sonnet-xhigh, claude-code-workflow-subagent, anthropic, <model>, xhigh, workflow-subagent/structured-output@1)
+Reservations:      $3.09 conservative all-in bound, estimate only (work $2.09 + review $0.00 + brief overhead $1.00)
+Gate walk (per candidate):
+  cc-fable-xhigh   direct    gate 5: direct unsuitable: 209000 tokens > direct-max-tokens 15000
+  cc-fable-max     delegate  eligible, all-in $11.45
+  cc-fable-high    delegate  eligible, all-in $11.45
+  cc-fable-medium  delegate  gate 2: context: 209000 tokens not below headroom-tested 172000 on cc-fable-medium
+  cc-opus-max      delegate  eligible, all-in $5.18
+  cc-opus-xhigh    delegate  eligible, all-in $5.18
+  cc-opus-high     delegate  eligible, all-in $5.18
+  cc-opus-medium   delegate  gate 2: cc-opus-medium not qualified for review; context: 209000 tokens not below headroom-tested 154000 on cc-opus-medium
+  cc-sonnet-xhigh  delegate  eligible, all-in $3.09
+  cc-sonnet-high   delegate  gate 2: context: 209000 tokens not below headroom-tested 183000 on cc-sonnet-high
+  cc-sonnet-medium delegate  gate 2: cc-sonnet-medium not qualified for review; context: 209000 tokens not below headroom-tested 128000 on cc-sonnet-medium
+  cc-sonnet-low    delegate  gate 2: context: 209000 tokens not below headroom-tested 114000 on cc-sonnet-low
+  cc-haiku-high    delegate  gate 2: cc-haiku-high not qualified for review
+  cc-haiku-medium  delegate  gate 2: cc-haiku-medium not qualified for review; context: 209000 tokens not below headroom-tested 183000 on cc-haiku-medium
+  cc-haiku-low     delegate  gate 2: cc-haiku-low not qualified for review; context: 209000 tokens not below headroom-tested 175000 on cc-haiku-low
+```
+
+Gate 5's reason: `cc-sonnet-xhigh` has the lowest all-in bound among the six eligible delegates, $3.09 (work 209000 x
+the output rate / 1e6 = $2.09, overhead $1.00), against $5.18 for `cc-opus-high`, `cc-opus-xhigh` and `cc-opus-max`
+and $11.45 for `cc-fable-high` and `cc-fable-max`. In host-policy-3 the same request went to `cc-opus-high` at $5.18.
+A review estimated at 328000 tokens or more no longer fits `cc-sonnet-xhigh` (or `cc-opus-max`, 307k) and goes to `cc-opus-high` ($7.56 at 328000).
+
+The stored build request (`hand-sr-host-build.json`, `build-ui`) still routes to `cc-opus-high`, at $9.41 instead of
+the golden's $11.50: the same work ($6.32) and overhead ($1.00), with the review at `cc-sonnet-xhigh`. The usage
+projection is unchanged (545000 tokens), because Gate 4 counts the review median's tokens, not the reviewer's price.
+Restricted to their own candidates, the demoted, blocked and one-later-pass profiles route `blocked` at Gate 2: a
+`review` limited to `cc-haiku-low`, `cc-haiku-medium`, `cc-haiku-high`, `cc-sonnet-medium` and `cc-opus-medium`; a
+`fix` limited to `cc-haiku-low`; a `pin-tests` request limited to `cc-fable-medium`.
+
+### The table (host-policy-4, generated from `host-policy.json`)
+
+| Profile | Effort | Qualified for | Headroom tested | calibration-1 pin / fix / review | calibration-2 pin / fix / review | calibration-3 pin / fix / review | Basis |
+|---|---|---|---|---|---|---|---|
+| `cc-fable-xhigh` | xhigh, **direct only** (the lead), up to 15k tokens | build-core, build-ui, build-tests, review, fix, docs-mechanical, research-collect, pin-tests | 460k | PASS / PASS / PASS | PASS / PASS / PASS | PASS / PASS / PASS | session runs (host-policy-1) + calibration-1, -2, -3 |
+| `cc-fable-max` | max | review | 230k | - / - / - | - / - / PASS | - / - / PASS | calibration-2 + calibration-3 review only: two passes (review new in host-policy-4) |
+| `cc-fable-high` | high | review, fix, pin-tests | 352k | PASS / PASS / PASS | PASS / PASS / PASS | PASS / PASS / PASS | session runs (host-policy-1) + calibration-1, -2, -3 |
+| `cc-fable-medium` | medium | review, fix | 172k | PASS / PASS / PASS | PASS / PASS / PASS | FAIL / PASS / PASS | calibration-1, -2, -3; `pin-tests` blocked by the run-3 pin FAIL until two later passes (rule 3) |
+| `cc-opus-max` | max | review | 307k | - / - / - | - / - / PASS | - / - / PASS | calibration-2 + calibration-3 review only: two passes (review new in host-policy-4) |
+| `cc-opus-xhigh` | xhigh | review, fix, pin-tests | 246k | PASS / PASS / PASS | PASS / PASS / PASS | PASS / PASS / PASS | calibration-1, -2, -3 |
+| `cc-opus-high` | high | build-core, build-ui, build-tests, review, fix, research-collect, pin-tests | 848k | PASS / PASS / PASS | PASS / PASS / PASS | PASS / PASS / PASS | session runs (host-policy-1) + calibration-1, -2, -3; headroom from the accepted sr-policy-3 outcome (847844 tokens) |
+| `cc-opus-medium` | medium | fix, pin-tests | 154k | PASS / PASS / PASS | PASS / PASS / FAIL | PASS / PASS / PASS | calibration-1, -2, -3; review: PASS, FAIL, PASS - one of the two later passes rule 3 needs (G-1 recorded, not applied) |
+| `cc-sonnet-xhigh` | xhigh | review | 328k | - / - / - | - / - / PASS | - / - / PASS | calibration-2 + calibration-3 review only: two passes (review new in host-policy-4) |
+| `cc-sonnet-high` | high | review, fix, pin-tests | 183k | PASS / PASS / FAIL | PASS / PASS / PASS | PASS / PASS / PASS | calibration-1, -2, -3; review: FAIL, PASS, PASS - two passes after the fail (review new in host-policy-4) |
+| `cc-sonnet-medium` | medium | fix, pin-tests | 128k | PASS / PASS / PASS | PASS / PASS / FAIL | PASS / PASS / PASS | calibration-1, -2, -3; review: PASS, FAIL, PASS - one of the two later passes rule 3 needs |
+| `cc-sonnet-low` | low | review, fix, pin-tests | 114k | PASS / PASS / PASS | PASS / PASS / PARTIAL | PASS / PASS / PASS | calibration-1, -2, -3; review: PASS, PARTIAL, PASS - two passes (review new in host-policy-4) |
+| `cc-haiku-high` | high, no vision | fix, pin-tests | 726k | PASS / PASS / FAIL | PASS / PASS / FAIL | PASS / PASS / PASS | calibration-1, -2, -3; headroom from the accepted fix-x2-1 outcome (725422 tokens); review: FAIL, FAIL, PASS - one of two later passes |
+| `cc-haiku-medium` | medium, no vision | fix, pin-tests | 183k | PASS / PASS / FAIL | PASS / PASS / FAIL | PASS / PASS / PASS | calibration-1, -2, -3; review: FAIL, FAIL, PASS - one of two later passes |
+| `cc-haiku-low` | low, no vision | docs-mechanical, pin-tests | 175k | PASS / PASS / FAIL | PASS / PASS / FAIL | PASS / PASS / PASS | session runs (host-policy-1) + calibration-1, -2, -3; `fix` demoted 2026-10-18 (two consecutive verification-failed outcomes); review: FAIL, FAIL, PASS |
 
 The session runs behind the host-policy-1 rows: `cc-fable-xhigh`, the lead's own direct fixes and integration units;
 `cc-fable-high`, workflow runs `wf_1fcbe585-d1e` (U5 review 3, fix 3, re-review 3) and `wf_7f80ebc5-5a8` (U5 fix 4);
@@ -244,11 +379,12 @@ the four profiles the lead listed (`cc-opus-xhigh` and the review-only `cc-sonne
 `host-policy.json`. The `Profile:` line prints the full identity tuple
 `(id, harness, provider, model, effort, config)`.
 
-With the current prices the adapter routes `build-core`, `build-ui`, `build-tests` and `research-collect` to
-`cc-opus-high` (no calibrated profile is qualified for any of them), `review` to `cc-opus-high` (`cc-opus-xhigh` ties
-on the bound and loses on effort; `cc-fable-medium`'s 172k headroom is below the 209000-token review median), `fix` to
-`cc-haiku-high` (above), and `docs-mechanical` and `pin-tests` to `cc-haiku-low`. Work of at most 15k tokens goes
-direct to the lead.
+With the current prices (host-policy-4) the adapter routes `build-core`, `build-ui`, `build-tests` and
+`research-collect` to `cc-opus-high` (no calibrated profile is qualified for any of them), `review` to
+`cc-sonnet-xhigh` (above; `cc-sonnet-low` and `cc-sonnet-high` are qualified but their headroom is below the
+209000-token review median), `fix` to `cc-haiku-high` (above), and `docs-mechanical` and `pin-tests` to
+`cc-haiku-low`. The required reviewer of every `build-*` and `fix` delegate is `cc-sonnet-xhigh` ($2.09 at the review
+median; it was `cc-opus-high`, $4.18, through host-policy-3). Work of at most 15k tokens goes direct to the lead.
 
 **`pin-tests` routes to the cheapest qualified profile, `cc-haiku-low`.** A default pin (120000 tokens) has an
 output-rate bound of $0.06 there (120000 x the output rate / 1e6), plus $1.00 of brief overhead at the lead's rate:
@@ -517,6 +653,40 @@ older history (re-review finding SW-5). Ratify by editing the coefficient and `r
 of readings with a unit in flight at either reading are skipped as `spanning` (SW-8): a unit's tokens are
 recorded whole at its outcome, so such a pair cannot say what they cost.
 
+## Policy findings (host-policy-4)
+
+Found while building revision 4 (unit sr-policy-4). The lead decides.
+
+1. **The required reviewer moved with the table.** The brief names the fix and review defaults; it does not name the
+   reviewer. With `cc-sonnet-xhigh` review-qualified, the reviewer of every `build-*` and `fix` delegate is
+   `cc-sonnet-xhigh`, not `cc-opus-high`: the review bound falls from $4.18 to $2.09, a default fix from $5.28 to
+   $3.19, and the stored build request from $11.50 to $9.41. This is the existing reviewer rule applied to the
+   table, not a new rule. In practice, a review that used to go to the profile with 130 production reviews now goes
+   to one with two calibration passes on one task. A lead who wants a stronger reviewer would pass `candidates`, or
+   qualify review per risk (the difficulty-tiers proposal upstream).
+2. **The review-only run-id entry** says `review graded ...; a review-only profile in that run (no pin or fix cell)`
+   rather than the brief's `pin, fix and review graded`, which is not true of `cc-sonnet-xhigh`, `cc-opus-max` and
+   `cc-fable-max` in run 3. Revision 3 made the same call (its finding 4).
+3. **`cc-sonnet-low` and `cc-sonnet-high` are review-qualified but take no default review.** Gate 2 compares the
+   work estimate alone with `headroom-tested` (209000 against 114000 and 183000); the brief's "209000 + overhead"
+   overstates what Gate 2 counts, and the outcome is the same. A smaller review with an explicit `estimatedTokens`
+   below their headroom can route to `cc-sonnet-low`, the cheaper of the two.
+4. **"lead-notes N-1".** The block entry cites `lead-notes N-1`, as the brief words it. `trace/calibration-3/lead-notes.md`
+   has no N-1 label: the pin FAIL is its section "pin:fable-medium FAIL — an over-specified pin". The entry is kept
+   verbatim; the README cites the section.
+5. **One test moved that the brief did not list by name.** `committed policy (ii)` ends by comparing the stored build
+   request's bound with the hand-walked golden's ($11.50, review at `cc-opus-high`). Under revision 4 that bound is
+   $9.41, so the test runs on the host-policy-3 fixture, and the live policy has its own assertion
+   (`host-policy-4 routing: the stored build request ...`). `committed policy (i)` (no reading: Gate 4 fails closed)
+   and P2-4 are unchanged under revision 4 and stay on the live policy.
+6. **A frozen policy is judged against the ledger it was frozen with.** The host-policy-3 table test's headroom rule
+   reads accepted outcomes up to 2026-10-18T09:07:43Z, the last record at the unit's base commit, so a later
+   outcome can never redden the fixture's tests. The host-policy-4 test reads the whole ledger, as the live test did
+   in revision 3: an accepted outcome above a headroom figure reddens it until the lead ratifies `rate`'s proposal.
+7. **The `cc-opus-high` row's basis was stale.** The host-policy-3 table said the 848k headroom came from the accepted
+   sr-policy-2 outcome (770527 tokens). It came from sr-policy-3 (847844 tokens, ratified in `9698427`). The
+   revision-4 row says so.
+
 ## Policy findings (host-policy-3)
 
 Found while building revision 3 (unit sr-policy-3). The lead decides.
@@ -700,3 +870,25 @@ Every point where the spec was ambiguous or did not fit a subscription host. Cit
     subscription host the lead's own turns dominate the usage windows (run 2: about 0.40 of the five-hour window per
     hour of active lead work, against 0.034 per million sub-agent tokens), and no record carries them; this host
     covers them with a `lead-reserve` sized by hand. Upstream could add a per-turn lead cost to the host model.
+19. **The workflow harness relays the operator's latest chat message into every worker as the request that "wins"
+    over the computed task** (amendment A-1 upstream; `trace/calibration-3/lead-notes.md` 'A-1'). The harness
+    prepends a user turn stating that the relayed request "is the only user voice in this task" and that "where the
+    computed task conflicts with this request, this request wins". In calibration run 3 the message was the operator's
+    chat at launch ("focus on smartrouter for now"); two cells halted on it and were voided and re-run. The spec's
+    route table (spec-v2 §5) says a delegate is "one isolated Worker that becomes the sole owner of the brief", and
+    §10.1 requires a Brief for every delegate; nothing in the spec states that the brief is a worker's only input,
+    and that gap is this item. A host whose harness
+    injects operator chat cannot guarantee that the brief is the whole input, so a worker's behaviour is a function
+    of the brief and of whatever the operator last typed. The calibration kit must record the relayed text before
+    the launch (the kit rule run 3 adopted), and a host should record it in the dispatch, as the launch of this unit
+    did: its computed task quoted the relayed message ("i asked him to re-review it. wait", about pull-request
+    reviews upstream) and said it did not ask the worker to wait. Upstream could name operator-chat injection as an
+    isolation input the Brief must declare, or forbid it for delegated workers.
+20. **The three-lens adjudication's output schema has no `forbidden` prong** (G-2, `trace/calibration-3/lead-notes.md`).
+    Run 3's classification has three prongs: the behaviour holds at HEAD, it is reachable through the public API with
+    admissible input, and the spec or the module's promise forbids it. The lens schema carries `holds` and `reachable`
+    only, and a lens counts as a 'real' vote when `holds && reachable !== 'no'`, so the majority counts on two prongs.
+    For clusters C-4 and C-5 the lenses' prose says the spec permits the behaviour, while the votes read REAL (2/3).
+    The preregistered score stands and no qualification changes (host-policy-4), but under the full definition two
+    reviews would be FAIL. The adjudication schema needs `forbidden`, with a real vote only on all three prongs (run 4
+    adds it).

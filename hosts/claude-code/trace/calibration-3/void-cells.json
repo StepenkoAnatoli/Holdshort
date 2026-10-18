@@ -1,0 +1,100 @@
+{
+ "run": "wf_4e9ef48d-066",
+ "supplementary-run": "wf_dbe29a64-3b2",
+ "void-cells": {
+  "fix:haiku-high": {
+   "main-run": {
+    "grade": {
+     "score": false,
+     "candidateGreen": true,
+     "guardRed": false,
+     "acceptedPinGreen": false,
+     "scopeOk": true,
+     "lint": "ok",
+     "committedWithMap": false,
+     "commits": 0,
+     "srcDiffLines": 0,
+     "candidateTests": {
+      "passed": 172,
+      "failed": 0,
+      "total": 172
+     },
+     "guardRemoved": {
+      "passed": 172,
+      "failed": 0,
+      "total": 172
+     },
+     "acceptedPin": {
+      "passed": 172,
+      "failed": 2,
+      "total": 174
+     }
+    },
+    "self-reported-mistakes": [
+     "Halted on a conflict, not on a failure. The relayed user request says 'focus on smartrouter for now', while the computed task asks for the U1-R11 fix in src/main/github-oauth.ts. The relayed request wins where the two conflict, so I did not start the github-oauth work. The finding file (/tmp/claude-0/-home-user-Research-Kit/5649504a-fc26-5a4a-85c4-62cf875be3b1/scratchpad/cal-fix-finding-3.md) was read in full and the checkout state was verified before stopping.",
+     "SmartRouter is not in this checkout. A search of the cal3-fix-haiku-high tree finds it only as prose in docs (docs/superpowers/plans/2026-10-02-research-jobs.md and docs/orchestration/2026-10-05-more-models/MANDATE.md), where it is described as a separate repository (github.com/StepenkoAnatoli/SmartRouter). I did not work on it, and I did not read outside my checkout. To proceed, the orchestrator needs to say whether to run the github-oauth fix anyway, or to point at a checkout that holds SmartRouter's code."
+    ],
+    "usage": {
+     "label": "fix:haiku-high",
+     "model": "claude-haiku-5-5",
+     "effort": null,
+     "state": "done",
+     "tokens": 91080,
+     "ms": 20924
+    }
+   },
+   "status": "VOID (A-1)"
+  },
+  "review:haiku-low": {
+   "main-run": {
+    "review": {
+     "verdict": "FIX",
+     "findings": [
+      [
+       "NOT-RUN",
+       "n/a",
+       "No review was performed. The computed task asked for a refute-first review of src/main/github-oauth.ts in /home/user/task5-handoff/wt/cal3-review-haiku-low, but the relayed user request says \"focus on"
+      ]
+     ],
+     "checked": 1
+    },
+    "review-grade": {
+     "result": "FAIL",
+     "rawFalseBlocking": 0,
+     "adjudicatedFalseBlocking": 0,
+     "r8Found": false,
+     "r8CauseNamed": false,
+     "r8Severity": "",
+     "r11Found": false,
+     "r11CauseNamed": false,
+     "r11Severity": "",
+     "copiedFromHistory": false,
+     "others": [],
+     "notes": "The candidate did not do the review. It read \"focus on smartrouter for now\" as conflicting with the calibration task and stopped. That reading is doubtful, because the calibration review is part of the model-routing (smartrouter) work. It read no files and ran no tests, and the checkout has no tests/zz-scratch-*.test.ts files, which confirms that. Its only finding, NOT-RUN with severity n/a, is not a code defect, so there are no S1-S3 findings to classify. It found neither U1-R8 nor U1-R11. On r"
+    },
+    "self-reported-mistakes": [
+     "Stopped before starting the calibration review because the relayed user request (\"focus on smartrouter for now\") conflicts with the computed task; I did not ask first. The verdict FIX here means the review is incomplete, not that github-oauth.ts has defects."
+    ],
+    "usage": {
+     "review": {
+      "label": "review:haiku-low",
+      "model": "claude-haiku-5-5",
+      "effort": null,
+      "state": "done",
+      "tokens": 75186,
+      "ms": 7297
+     },
+     "grade": {
+      "label": "grade:haiku-low",
+      "model": "claude-opus-5-5",
+      "effort": null,
+      "state": "done",
+      "tokens": 88760,
+      "ms": 10122
+     }
+    }
+   },
+   "status": "VOID (A-1)"
+  }
+ }
+}

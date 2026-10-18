@@ -1,0 +1,32 @@
+{
+ "task-id": "fix-u7-r3",
+ "outcome": "verification-failed",
+ "owner-profile": "cc-haiku-low",
+ "original-brief-fingerprint": "b6bcd625b3f8d08abf2df188620c711aef5f3cdf3c8ed793f62de01dfa04e105",
+ "evidence": {
+  "checks": [
+   {
+    "command": "TMPDIR=$(mktemp -d) npx vitest run tests/github-signin-invariants.test.ts",
+    "exit-code": 0,
+    "output-ref": "4 passed at every unit commit (build report) and on the integration head after the lead's R17/R18 commit (scratchpad/gsi-u7-int.log)"
+   },
+   {
+    "command": "npm run typecheck; npx eslint tests/github-signin-invariants.test.ts",
+    "exit-code": 0,
+    "output-ref": "exit 0 (build report and the lead's run)"
+   },
+   {
+    "command": "refute-first review",
+    "exit-code": 1,
+    "output-ref": "wf_01299d2c-07c: review FIX (R11 S3, R12 S3, R13 S4, R14 S4); fix round 1 -> re-review FIX (R15 S3, R16 S3); fix round 2 -> re-review FIX (R17 S3, R18 S3, R19 S4): the cap of two rounds reached without ACCEPT; the lead fixed R17 and R18 inline (f3b5c9c) and recorded R19 as a known limit"
+   }
+  ],
+  "actual-spend": null,
+  "actual-tokens": 1012799,
+  "files-touched": [
+   "tests/github-signin-invariants.test.ts"
+  ],
+  "notes": "the unit delivered U7-R9 and U7-R10 and four further pins across two fix rounds, but each round's re-review found the same class again (a by-reference bypass of the recorder's module-object swap); the required 'fresh re-review ACCEPT' was not reached within the cap, so the outcome is verification-failed for the profile although the branch is integrated with the lead's completion; six workflow agents, 1012799 harness tokens (not a bill)",
+  "actual-spend-basis": "estimate-only"
+ }
+}
