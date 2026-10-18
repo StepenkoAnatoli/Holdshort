@@ -9,7 +9,9 @@
 #   MANIFEST  the subject pack's manifest.json (format: tools/calibration/subject-pack/README.md)
 #   pin|fix   the case; a review is graded by the grader agent, not here
 #   CHECKOUT  the candidate's history-less checkout (historyless-checkout.sh), graded in place: the grade swaps the
-#             manifest's source files for the accepted or base versions while it runs the tests and restores them
+#             manifest's source files for the accepted or base versions while it runs the tests and restores them;
+#             each swap gives the files a fresh mtime two seconds past the last, so a cache keyed on mtime and size
+#             (Python's __pycache__) never runs a previous version, and the original mtimes go back at the end
 #
 # Exit 0 with the grade (PASS true or false) as one JSON object; 2 on a bad argument, an unusable manifest or a
 # checkout that shares a path with the pack; 3 with {"error": ...} when the checkout is missing or has no commit.
@@ -17,7 +19,7 @@ set -u
 [ $# -eq 3 ] || { echo "usage: grade.sh MANIFEST pin|fix CHECKOUT" >&2; exit 2; }
 command -v python3 >/dev/null 2>&1 || { echo "grade.sh: python3 not found" >&2; exit 2; }
 exec python3 -I - "$@" <<'PY'
-import json, re, shlex, subprocess, sys, tempfile
+import json, os, re, shlex, subprocess, sys, tempfile, time
 from pathlib import Path
 
 def refuse(msg, code=2):
@@ -129,6 +131,19 @@ def show(rev, path):
     return p.stdout if p.returncode == 0 else None
 
 saved = {f: ((cand / f).read_bytes() if (cand / f).is_file() else None) for f in sources}
+saved_mtime = {f: (cand / f).stat().st_mtime_ns for f in sources if (cand / f).is_file()}
+
+# Every swap gives the swapped files an mtime of their own, two seconds past the last one, so a runner that validates a
+# cache by mtime and size (Python's __pycache__ keeps the mtime in whole seconds) never runs the previous version of a
+# same-size file; the original mtimes go back at the end.
+STEP_NS = 2_000_000_000
+clock = [max([time.time_ns(), *saved_mtime.values()])]
+
+def stamp():
+    clock[0] += STEP_NS
+    for f in sources:
+        if (cand / f).is_file():
+            os.utime(cand / f, ns=(clock[0], clock[0]))
 
 def put(rev):
     for f in sources:
@@ -138,14 +153,20 @@ def put(rev):
         else:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(data)
+    stamp()
 
-def restore():
+def restore(final=False):
     for f, data in saved.items():
         path = cand / f
         if data is None:
             path.unlink(missing_ok=True)
         else:
             path.write_bytes(data)
+    if not final:
+        stamp()
+        return
+    for f, ns in saved_mtime.items():
+        os.utime(cand / f, ns=(ns, ns))
 
 result = {"task": task, "head": head, "commits": commits, "changed": changed, "staged": staged, "untracked": untracked}
 try:
@@ -192,8 +213,9 @@ try:
                       outOfScope=sorted(set(changed) - allowed),
                       PASS=c_green and g_red and a_green and scope_ok and lint_res in ("ok", "none"))
 finally:
-    restore()
-restored = all(((cand / f).read_bytes() if (cand / f).is_file() else None) == data for f, data in saved.items())
+    restore(final=True)
+restored = (all(((cand / f).read_bytes() if (cand / f).is_file() else None) == data for f, data in saved.items())
+            and all((cand / f).stat().st_mtime_ns == ns for f, ns in saved_mtime.items()))
 result["restored"] = restored
 if not restored:
     print(f"grade.sh: WARNING: the source files in {cand} were not restored", file=sys.stderr)

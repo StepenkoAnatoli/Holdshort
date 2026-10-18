@@ -10,6 +10,7 @@ import copy
 import importlib.util
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -51,7 +52,10 @@ def git_env(home: Path) -> dict:
     cfg = home / "gitconfig"
     if not cfg.exists():
         cfg.write_text("[user]\n\tname = t\n\temail = t@localhost\n[init]\n\tdefaultBranch = main\n")
-    env.update(GIT_CONFIG_GLOBAL=str(cfg), GIT_CONFIG_NOSYSTEM="1", PYTHONDONTWRITEBYTECODE="1")
+    env.update(GIT_CONFIG_GLOBAL=str(cfg), GIT_CONFIG_NOSYSTEM="1")
+    # the bytecode cache stays ON, as in a host's shell: grade.sh must grade correctly with it (review finding F1)
+    env.pop("PYTHONDONTWRITEBYTECODE", None)
+    env.pop("PYTHONPYCACHEPREFIX", None)
     return env
 
 
@@ -98,6 +102,10 @@ def make_pack(root: Path, env: dict, report: str = "exit-code") -> tuple[Path, d
     manifest["cases"]["review"]["base"] = base
     (pack / "manifest.json").write_text(json.dumps(manifest, indent=1))
     return pack, {"base": base, "accepted": accepted, "repo": repo}
+
+
+def show_bytes(c: dict, rev: str, path: str = "src/mod.py") -> bytes:
+    return subprocess.run(["git", "-C", str(c["repo"]), "show", f"{rev}:{path}"], capture_output=True, check=True).stdout
 
 
 def checkout(src: Path, commit: str, target: Path, env: dict, *flags: str) -> subprocess.CompletedProcess:
@@ -505,6 +513,62 @@ class Scripts(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual((d["atHead"]["failed"], d["withAcceptedFix"]["passed"]), (1, 1), out)
         self.assertIs(d["PASS"], True)
+
+    def test_grade_a_same_size_swap_with_the_bytecode_cache_on(self):
+        # F1: the base (a - b) and the accepted fix (a + b) have the same size; a runner that caches by mtime and size
+        # (Python's __pycache__) must still run the version each step swapped in. The cache is warmed first.
+        self.assertNotIn("PYTHONDONTWRITEBYTECODE", self.env)
+        pack, c = make_pack(self.root, self.env)
+        self.assertEqual(len(show_bytes(c, c["base"])), len(show_bytes(c, c["accepted"])))
+        fix = self.candidate(c, "fix-same-size")
+        self.fix_like_the_accepted_one(fix)
+        commit_all(fix, self.env, "fix")
+        pin = self.candidate(c, "pin-same-size")
+        (pin / "tests" / "test_pin.py").write_text(
+            "import unittest\nfrom src.mod import add\n\n\nclass P(unittest.TestCase):\n    def test_sum(self):\n        self.assertEqual(add(2, 3), 5)\n")
+        commit_all(pin, self.env, "pin")
+        for cand in (fix, pin):
+            sh([sys.executable, "-m", "unittest", "tests/test_mod.py"], cand, self.env, check=False)  # warm the cache
+            self.assertTrue(list((cand / "src" / "__pycache__").glob("mod.*.pyc")), "the bytecode cache is on")
+        for run in range(3):
+            code, d, out = grade(pack / "manifest.json", "fix", fix, self.env)
+            self.assertEqual(code, 0, out)
+            self.assertEqual((d["candidateGreen"], d["guardRed"], d["acceptedPinGreen"]), (True, True, True), f"run {run}: {out}")
+            self.assertIs(d["PASS"], True, out)
+            code, d, out = grade(pack / "manifest.json", "pin", pin, self.env)
+            self.assertEqual(code, 0, out)
+            self.assertEqual((d["redAtHead"], d["greenWithFix"]), (True, True), f"run {run}: {out}")
+            self.assertIs(d["PASS"], True, out)
+
+    def test_grade_gives_every_swapped_version_its_own_mtime_and_puts_the_original_back(self):
+        # F1, deterministic: the test command logs the source's mtime at each run. Each run must see an mtime at least
+        # two seconds from every other run's (a cache keyed on whole seconds and size cannot confuse them), and the
+        # original mtime is back after the grade.
+        pack, c = make_pack(self.root, self.env)
+        log = self.root / "mtimes.log"
+        m = json.loads((pack / "manifest.json").read_text())
+        m["commands"]["test"] = (f"python3 -c \"import os; print(os.stat('src/mod.py').st_mtime_ns)\" >> {shlex.quote(str(log))}; "
+                                 + m["commands"]["test"])
+        (pack / "manifest.json").write_text(json.dumps(m, indent=1))
+        for task in ("fix", "pin"):
+            cand = self.candidate(c, f"{task}-mtime")
+            if task == "fix":
+                self.fix_like_the_accepted_one(cand)
+            else:
+                (cand / "tests" / "test_pin.py").write_text(
+                    "import unittest\nfrom src.mod import add\n\n\nclass P(unittest.TestCase):\n    def test_sum(self):\n        self.assertEqual(add(2, 3), 5)\n")
+            commit_all(cand, self.env, task)
+            before = (cand / "src" / "mod.py").stat().st_mtime_ns
+            log.write_text("")
+            code, d, out = grade(pack / "manifest.json", task, cand, self.env)
+            self.assertEqual(code, 0, out)
+            seen = [int(x) for x in log.read_text().split()]
+            self.assertEqual(len(seen), 3 if task == "fix" else 2, out)
+            for i, a in enumerate(seen):
+                for b in seen[i + 1:]:
+                    self.assertGreaterEqual(abs(a - b), 2_000_000_000, f"{task}: mtimes {seen}")
+            self.assertEqual((cand / "src" / "mod.py").stat().st_mtime_ns, before, task)
+            self.assertIs(d["restored"], True, out)
 
     def test_grade_refuses_a_checkout_inside_the_pack_and_a_bad_task(self):
         pack, c = make_pack(self.root, self.env)
