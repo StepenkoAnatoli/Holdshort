@@ -1,0 +1,39 @@
+{
+ "task-id": "fix-x2-2",
+ "outcome": "verification-failed",
+ "owner-profile": "cc-haiku-low",
+ "original-brief-fingerprint": "5298b0873fadf7ca5f101ce2a8e2f0df06b1ccbb08b5bb27d82716ebeaded5f9",
+ "evidence": {
+  "checks": [
+   {
+    "command": "npx vitest run tests/vault.test.ts",
+    "exit-code": 0,
+    "output-ref": "green at every unit commit (build and fix reports); red-first pins per finding (X2-2, R1, R2, R4)"
+   },
+   {
+    "command": "npm run typecheck; npx eslint src/main/vault.ts tests/vault.test.ts",
+    "exit-code": 0,
+    "output-ref": "exit 0 (build and fix reports)"
+   },
+   {
+    "command": "refute-first review",
+    "exit-code": 1,
+    "output-ref": "wf_8f566a03-727: review FIX (R1 S3 unlink failure after a failed persist, R2 S3 error identity not pinned, R3 S4 trailer convention); fix round 1 (0b421e4, 5e957a2) -> re-review FIX (R4 S2: the ENOENT branch had no test); fix round 2 (2c9bfc1) -> re-review FIX (R5 S3: 2c9bfc1 carries neither required trailer): the cap of two rounds reached without ACCEPT; the lead re-messaged 2c9bfc1 with the trailers at cherry-pick (97cbfbd)"
+   },
+   {
+    "command": "bash gate.sh wt/gsi-build x2-int; compare.py vs baseline-failing.json (74)",
+    "exit-code": 0,
+    "output-ref": "integration head 97cbfbd (results/x2-int): typecheck 0, lint 0, build 0; vitest 2164 tests, 2084 passed, 74 failed all in the 74-failure baseline, no new failures, 6 Windows-only skipped (compare.py); scratchpad/gsi-x2-gate.log"
+   }
+  ],
+  "actual-spend": null,
+  "actual-tokens": 768208,
+  "files-touched": [
+   "src/main/vault.ts",
+   "tests/vault.test.ts",
+   "docs/ARCHITECTURE.md"
+  ],
+  "notes": "integrated as 85cc095, 1dad695, 62bc81b, 97cbfbd on build/github-sign-in. The code residue after two rounds is nil; the residue is process compliance (R5, a commit without the required trailers, and R3's trailer question, which briefs/common.md already settles: the Co-Authored-By line names the model that wrote the commit). The required fresh re-review ACCEPT was not reached within the cap, so the outcome is verification-failed for the profile although the branch is integrated. The unit's own full-suite comparison did not complete (killed after about 15 minutes, fix round 1) and was not run in round 2; the lead's gate on the integration head is the check above. Six workflow agents, 768208 harness tokens (not a bill).",
+  "actual-spend-basis": "estimate-only"
+ }
+}

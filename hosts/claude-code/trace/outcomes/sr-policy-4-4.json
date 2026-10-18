@@ -1,0 +1,45 @@
+{
+ "task-id": "sr-policy-4",
+ "outcome": "accepted",
+ "owner-profile": "cc-opus-high",
+ "original-brief-fingerprint": "daf9bfa23045cc7ec971f0ba5f154a1a7c6845a64a44a60632eb6447a675c9df",
+ "evidence": {
+  "checks": [
+   {
+    "command": "node --check docs/orchestration/smartrouter/route.mjs",
+    "exit-code": 0,
+    "output-ref": "exit 0 at every unit commit and on the integration head b1b84a2 (lead's run)"
+   },
+   {
+    "command": "npx eslint docs/orchestration/smartrouter/route.mjs docs/orchestration/smartrouter/route.test.mjs",
+    "exit-code": 0,
+    "output-ref": "exit 0 (unit report and the lead's run on b1b84a2)"
+   },
+   {
+    "command": "node --test docs/orchestration/smartrouter/route.test.mjs",
+    "exit-code": 0,
+    "output-ref": "red-first per deliverable with guard-removal proofs (unit report); 93/93 at base 3d3b5b2, 94, 97, 99, 100/100 at the unit's commits; 100 pass 0 fail on the integration head b1b84a2 (scratchpad/route-test-p4.log)"
+   },
+   {
+    "command": "node --test docs/orchestration/smartrouter/route.test.mjs (whole file)",
+    "exit-code": 0,
+    "output-ref": "the 93 base tests stay green; host-policy-1 goldens and host-policy-2 assertions unchanged under their fixtures; the host-policy-3 assertions pinned to trace/policies/host-policy-3.json (byte-identical to the policy the sr-policy-4 decisions were bound to)"
+   },
+   {
+    "command": "refute-first review",
+    "exit-code": 0,
+    "output-ref": "wf_de4ea62d-545: review ACCEPT (P4-R1 S4 README friction item 19 miscites spec §6; P4-R2 S4 README routing-consequence wording); the lead fixed both at integration"
+   }
+  ],
+  "actual-spend": null,
+  "actual-tokens": 588963,
+  "files-touched": [
+   "docs/orchestration/smartrouter/host-policy.json",
+   "docs/orchestration/smartrouter/route.test.mjs",
+   "docs/orchestration/smartrouter/README.md",
+   "docs/orchestration/smartrouter/trace/policies/host-policy-3.json"
+  ],
+  "notes": "integrated as 284013d, 326f93d, a8569d2, b1b84a2 on build/github-sign-in, plus the lead's P4-R1/P4-R2 commit; route.mjs unchanged (rate already demotes only a qualified profile). Routing under revision 4 (decide on the live policy): default fix -> cc-haiku-high ($3.19 all-in) with cc-sonnet-xhigh the required reviewer; default review -> cc-sonnet-xhigh ($3.09); above 726000 tokens a fix goes to cc-opus-high. Two workflow agents (build 382,477; review 206,486), 588,963 harness tokens (not a bill). Lead-only review work moved the previous five_hour window to 0.89 before this unit ran; the unit ran in the fresh window.",
+  "actual-spend-basis": "estimate-only"
+ }
+}
