@@ -33,8 +33,9 @@ const TASK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const FINGERPRINT = /^[0-9a-f]{64}$/;
 const TUPLE = /^\([^,()]+(, [^,()]+){5}\)$/;
 const EXPIRY_WARN_DAYS = 14;
-// a calibration grade in a profile's evidence: 'calibration-<run>: <category> PASS|FAIL (n=<count>)'
-const CALIBRATION_ENTRY = /^calibration-([1-9]\d*): (\S+) (PASS|FAIL) \(n=([1-9]\d*)\)$/;
+// a calibration grade in a profile's evidence: 'calibration-<run>: <category> PASS|PARTIAL|FAIL (n=<count>)'. PARTIAL
+// (host-policy-3) is calibration-2's third review grade: one of the two ground-truth findings, no false blocking one
+const CALIBRATION_ENTRY = /^calibration-([1-9]\d*): (\S+) (PASS|PARTIAL|FAIL) \(n=([1-9]\d*)\)$/;
 
 export class RouterError extends Error {
   constructor(code, message) {
@@ -125,7 +126,7 @@ function validatePolicy(p) {
     for (const e of pr.evidence ?? []) {
       if (!e.startsWith('calibration-')) continue;
       const m = CALIBRATION_ENTRY.exec(e);
-      if (!m) fail(`profile ${pr.id} evidence '${e}' is not 'calibration-<n>: <category> PASS|FAIL (n=<k>)'`);
+      if (!m) fail(`profile ${pr.id} evidence '${e}' is not 'calibration-<n>: <category> PASS|PARTIAL|FAIL (n=<k>)'`);
       if (!Object.hasOwn(p.categories, m[2])) fail(`profile ${pr.id} evidence '${e}' names unknown category '${m[2]}'`);
     }
   }
@@ -611,6 +612,22 @@ function learn(policy, records, catMap) {
     }
   }
   return { stats, proposals };
+}
+
+// headroom-tested is the largest completed run, rounded up to the next thousand, never lowered: an accepted outcome
+// (one per dispatch, the latest) whose recorded tokens exceed the profile's current value proposes the raise to them,
+// rounded up. Unknown tokens (null) and other outcome values propose nothing. One proposal per profile, from its largest
+// accepted run; never applied (deliverable F of sr-policy-3: the stale cc-opus-high headroom blocked its seq-1 decision)
+function headroomProposals(policy, records) {
+  const best = new Map();
+  for (const r of latestOutcomes(records)) {
+    if (outcomeValue(r) !== 'accepted' || !isInt(r.tokens)) continue;
+    const pr = policy.profiles.find((p) => p.id === tupleId(r.profile));
+    if (!pr || !isInt(pr['headroom-tested']) || !(r.tokens > pr['headroom-tested'])) continue;
+    const prev = best.get(pr.id);
+    if (!prev || r.tokens > prev.tokens) best.set(pr.id, { profile: pr.id, from: pr['headroom-tested'], to: Math.ceil(r.tokens / 1000) * 1000, tokens: r.tokens, task: r['task-id'] });
+  }
+  return [...best.values()].sort((a, b) => (a.profile < b.profile ? -1 : 1));
 }
 
 function expiryFlags(policy, nowMs) {
@@ -1267,8 +1284,20 @@ function usageLearning(cfg, readings, records) {
 // calibration evidence (host-policy-2): graded calibration runs in <trace>/calibration-<n>/observations.json, counted per
 // (profile, category) apart from the outcomes. They never enter the ledger and never make a proposal: proposals stay
 // outcome-based, and qualification from calibration is the lead's, under the qualification rules (README).
-// The tasks and the categories they represent: the pin task is pin-tests (rule 4), the fix task fix, the review task review
-const CALIBRATION_TASKS = [['pin-tests', (o) => o?.pin?.score], ['fix', (o) => o?.fix?.score], ['review', (o) => o?.['review-grade']?.score]];
+// The tasks and the categories they represent: the pin task is pin-tests (rule 4), the fix task fix, the review task review.
+// Each reads a grade: 'pass' | 'partial' | 'fail' | 'ungraded', or null when the observation does not carry the task (not
+// run: calibration-2's review-only profiles have pin and fix null). Pin and fix carry a boolean score in both runs; the
+// review grade is calibration-1's boolean review-grade.score or calibration-2's three-valued review-grade.result
+// (PASS | PARTIAL | FAIL, its preregistered protocol), the result read first. Anything else is ungraded, never a pass.
+const isObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+const scoreGrade = (task) => (!isObject(task) ? null : task.score === true ? 'pass' : task.score === false ? 'fail' : 'ungraded');
+function reviewGrade(o) {
+  const g = o?.['review-grade'];
+  if (!isObject(g)) return null;
+  if (g.result !== undefined) return ['PASS', 'PARTIAL', 'FAIL'].includes(g.result) ? g.result.toLowerCase() : 'ungraded';
+  return scoreGrade(g);
+}
+const CALIBRATION_TASKS = [['pin-tests', (o) => scoreGrade(o?.pin)], ['fix', (o) => scoreGrade(o?.fix)], ['review', reviewGrade]];
 
 function calibrationEvidence(policy, traceDir) {
   if (!existsSync(traceDir)) return null;
@@ -1291,15 +1320,16 @@ function calibrationEvidence(policy, traceDir) {
     }
     runs.push({ run, 'observations-sha256': sha256(bytes) });
     for (const [key, o] of Object.entries(obs)) {
-      // an observation is a profile's model (any task's usage) at the effort its name ends in
-      const model = Object.values(o?.usage ?? {}).find((u) => isStr(u?.model))?.model;
+      // an observation is a profile's model (any of its own tasks' usage, never the grader's) at the effort its name ends in
+      const model = Object.entries(o?.usage ?? {}).filter(([t]) => t !== 'grade').map(([, u]) => u).find((u) => isStr(u?.model))?.model;
       const name = isStr(o?.profile) ? o.profile : key;
       const pr = policy.profiles.find((p) => p.model === model && p.effort === name.split('-').pop());
       const label = pr ? pr.id : `${name} (no policy profile)`;
-      for (const [cat, score] of CALIBRATION_TASKS) {
-        const c = ((profiles[label] ??= {})[cat] ??= { pass: 0, fail: 0, ungraded: 0 });
-        const s = score(o);
-        if (s === true) c.pass += 1; else if (s === false) c.fail += 1; else c.ungraded += 1;
+      for (const [cat, grade] of CALIBRATION_TASKS) {
+        const g = grade(o);
+        if (g === null) continue; // the task was not run for this profile: nothing to count
+        const c = ((profiles[label] ??= {})[cat] ??= { pass: 0, partial: 0, fail: 0, ungraded: 0 });
+        c[g] += 1;
         const r = ((seen[label] ??= {})[cat] ??= []);
         if (!r.includes(run)) r.push(run);
       }
@@ -1309,7 +1339,8 @@ function calibrationEvidence(policy, traceDir) {
   for (const label of Object.keys(profiles).sort()) {
     for (const [cat] of CALIBRATION_TASKS) {
       const c = profiles[label][cat];
-      lines.push(`CALIBRATION ${label} ${cat}: ${c.pass} pass, ${c.fail} fail${c.ungraded ? `, ${c.ungraded} ungraded` : ''} (${seen[label][cat].join(', ')})`);
+      if (!c) continue;
+      lines.push(`CALIBRATION ${label} ${cat}: ${c.pass} pass, ${c.partial} partial, ${c.fail} fail${c.ungraded ? `, ${c.ungraded} ungraded` : ''} (${seen[label][cat].join(', ')})`);
     }
   }
   return { doc: { runs, profiles }, lines };
@@ -1323,6 +1354,7 @@ export function rate({ policyPath = DEFAULT_POLICY, traceDir = DEFAULT_TRACE, no
   const learned = policy['usage-windows'] ? usageLearning(policy['usage-windows'], readUsage(traceDir), records) : null;
   const usageProposals = learned ? learned.proposals : [];
   const calibration = calibrationEvidence(policy, traceDir);
+  const headroom = headroomProposals(policy, records);
   const path = ledgerPath(traceDir);
   const doc = {
     _comment: 'derived by route.mjs rate from ledger.jsonl and the decision files; regenerated on every run, never hand-edited',
@@ -1332,6 +1364,7 @@ export function rate({ policyPath = DEFAULT_POLICY, traceDir = DEFAULT_TRACE, no
     'outcome-records': records.filter((r) => r.kind === 'outcome').length,
     stats,
     proposals,
+    'headroom-proposals': headroom,
     ...(learned ? { usage: learned.usage, 'usage-proposals': usageProposals, 'usage-sha256': existsSync(usagePath(traceDir)) ? sha256(readFileSync(usagePath(traceDir))) : null } : {}),
     ...(calibration ? { calibration: calibration.doc } : {})
   };
@@ -1342,10 +1375,11 @@ export function rate({ policyPath = DEFAULT_POLICY, traceDir = DEFAULT_TRACE, no
   const lines = [`${statsPath} regenerated (${doc['outcomes-counted']} outcomes)`];
   if (calibration) lines.push(...calibration.lines);
   for (const p of proposals) lines.push(`PROPOSAL ${proposalText(p)}; not applied — the lead ratifies by editing host-policy.json`);
+  for (const h of headroom) lines.push(`PROPOSAL profiles.${h.profile}.headroom-tested: ${h.from} -> ${h.to} (accepted outcome ${h.task} completed ${h.tokens} tokens); not applied — the lead ratifies by editing host-policy.json`);
   for (const p of usageProposals) lines.push(`PROPOSAL usage-windows.windows.${p.window}.utilization-per-mtok: ${p.from} -> ${p.to} (${p.reason}); not applied — the lead ratifies by editing host-policy.json`);
   for (const f of flags) lines.push(`FLAG ${f.profile}: ${f.reason}`);
-  if (!proposals.length && !usageProposals.length && !flags.length) lines.push('no proposals');
-  return { stats: doc, proposals, usageProposals, flags, statsPath, text: `${lines.join('\n')}\n` };
+  if (!proposals.length && !headroom.length && !usageProposals.length && !flags.length) lines.push('no proposals');
+  return { stats: doc, proposals, headroomProposals: headroom, usageProposals, flags, statsPath, text: `${lines.join('\n')}\n` };
 }
 
 // ---------------------------------------------------------------------------------------------

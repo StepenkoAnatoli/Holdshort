@@ -9,12 +9,13 @@ itself. Every output it prints carries `Advisory: recommendation only — no dis
 
 | File | What it is |
 |---|---|
-| `host-policy.json` | The host's declared inputs: harness, authorization, accounting mode, prices, categories, profiles with qualification evidence, economics constants, opt-ins. Edited only by the lead. Current revision: `host-policy-2`. |
+| `host-policy.json` | The host's declared inputs: harness, authorization, accounting mode, prices, categories, profiles with qualification evidence, economics constants, opt-ins. Edited only by the lead. Current revision: `host-policy-3`. |
 | `route.mjs` | The adapter: CLI plus named exports. Node built-ins only. |
-| `route.test.mjs` | `node --test` suite, one test per SmartRouter fixture it mirrors, plus the three golden hand-walked decisions. The base tests and the goldens run on `host-policy-1` (the fixture below), the live policy on its own tests. |
+| `route.test.mjs` | `node --test` suite, one test per SmartRouter fixture it mirrors, plus the three golden hand-walked decisions. The base tests and the goldens run on `host-policy-1`, the usage-window and host-policy-2 tests on `host-policy-2` (the fixtures below), the live policy on its own tests. |
 | `trace/ledger.jsonl` | The Outcome Ledger: spec-v2 §10.5 records, append-only, never rewritten. |
 | `trace/decisions/<task>-<seq>.json` | One file per decision: the request, input and policy digests, the per-candidate gate walkthrough with reasons, the chosen profile, estimates vs accounting, the Brief. `hand-*.json` are the lead's hand-walked decisions from before the adapter existed. |
 | `trace/policies/host-policy-1.json` | The policy before revision 2, byte-identical to the one the hand-walked decisions and `sr-policy-2-1` were decided under. A test fixture, never edited: the goldens decide against it with `--policy`. It lives apart from `trace/decisions/`, whose `<task>-<seq>.json` names belong to decisions (a fixture there would block a task named `host-policy` at seq 1). `sr-policy-2-1`'s Brief names the fixture's first path, `trace/decisions/host-policy-1.json`; the decision file is a record and is not rewritten. |
+| `trace/policies/host-policy-2.json` | The policy before revision 3, byte-identical to the one the `sr-policy-3` decisions were bound to (sha256 `71e47f17...`). A test fixture, never edited: the host-policy-2 assertions and the usage-window tests run on it. |
 | `trace/outcomes/<task>-<seq>.json` | The §10.3 Outcome objects that outcome records point at. |
 | `trace/calibration-<n>/` | A graded calibration run: `observations.json` (per profile: the pin, fix and review grades and the tokens used), `results-table.md`, the lead's notes. Evidence for the qualification rules, read by `rate`, never written to the ledger. |
 | `trace/usage.jsonl` | The usage readings (the subscription's five-hour and seven-day windows) pasted by the lead with `route.mjs usage`. Append-only, never rewritten, separate from the ledger. |
@@ -114,9 +115,10 @@ it, and the fix is to add the missing newline, which changes no record.
 
 ## Qualification table
 
-Status of every row: **host-declared, reviewer: lead, expires 2027-01-15**. Rows qualified from calibration-1 alone
-carry the reviewer `host-declared (lead) from calibration-1 grades`; the others keep `host-declared (lead), not
-independent`. None of this is an independent review. Qualification is declared by the host, never inferred from price
+Status of every row: **host-declared, reviewer: lead, expires 2027-01-15**. Rows whose qualifications host-policy-3
+adds or changes, and the four profiles it adds, carry the reviewer `host-declared (lead) from calibration-1 and
+calibration-2 grades` and `qualified-at` 2026-10-18; `cc-opus-high`, `cc-fable-high` and `cc-fable-xhigh` keep their
+production qualifications, `qualified-at` and reviewer (`host-declared (lead), not independent`) and gain the entries. None of this is an independent review. Qualification is declared by the host, never inferred from price
 or label (gates.md, 'Qualification, freshness and pre-dispatch binding').
 
 ### Qualification rules (the lead's, from host-policy-2)
@@ -142,33 +144,108 @@ entries. `headroom-tested` of a profile qualified from calibration-1 is its larg
 up to the next thousand (the host-policy-1 basis: a 91k run gave 92000), and is never lowered. The rules are applied by
 the lead when editing the policy. The adapter checks only the form of the entries; it does not count passes.
 
-### The table (host-policy-2, generated from `host-policy.json`)
+### How calibration run 2 was applied (host-policy-3)
 
-| Profile | Effort | Qualified for | Headroom tested | calibration-1 pin / fix / review | Basis |
-|---|---|---|---|---|---|
-| `cc-fable-xhigh` | xhigh, **direct only** (the lead), up to 15k tokens | build-core, build-ui, build-tests, review, fix, docs-mechanical, research-collect, pin-tests | 460k | PASS / PASS / PASS | session runs (host-policy-1) + calibration-1 |
-| `cc-fable-high` | high | review, fix, pin-tests | 352k | PASS / PASS / PASS | session runs (host-policy-1) + calibration-1 |
-| `cc-fable-medium` | medium | pin-tests | 139k | PASS / PASS / PASS | calibration-1 only |
-| `cc-opus-high` | high | build-core, build-ui, build-tests, review, fix, research-collect, pin-tests | 514k | PASS / PASS / PASS | session runs (host-policy-1) + calibration-1 |
-| `cc-opus-medium` | medium | pin-tests | 115k | PASS / PASS / PASS | calibration-1 only |
-| `cc-sonnet-high` | high | pin-tests | 163k | PASS / PASS / FAIL | calibration-1 only |
-| `cc-sonnet-medium` | medium | pin-tests | 121k | PASS / PASS / PASS | calibration-1 only |
-| `cc-sonnet-low` | low | pin-tests | 110k | PASS / PASS / PASS | calibration-1 only |
-| `cc-haiku-high` | high, no vision | pin-tests | 261k | PASS / PASS / FAIL | calibration-1 only |
-| `cc-haiku-medium` | medium, no vision | pin-tests | 162k | PASS / PASS / FAIL | calibration-1 only |
-| `cc-haiku-low` | low, no vision | docs-mechanical, pin-tests | 139k | PASS / PASS / FAIL | session runs (host-policy-1) + calibration-1 |
+Calibration run 2 (`trace/calibration-2/`, workflow run `wf_fe91e1d6-d78`, protocol preregistered upstream in
+SmartRouter `docs/evidence/2026-10-17/claude-code-calibration-2/`) graded twelve profiles on pin and fix and fifteen
+on review. Its review grade is three-valued by that protocol: PASS (both ground-truth findings), PARTIAL (one, and no
+false blocking finding), FAIL. A PARTIAL is not a pass. With run 1 that gives two independent calibration passes for
+several high-risk cells, and the lead applied rules 1-4:
+
+- **Every pin PASS** (12 of 12) is a second `pin-tests` pass; those profiles were already qualified from run 1.
+- **`fix`** (12 of 12 PASS, every one a second pass): qualified for `cc-haiku-low`, `cc-haiku-medium`,
+  `cc-haiku-high`, `cc-sonnet-low`, `cc-sonnet-medium`, `cc-sonnet-high`, `cc-opus-medium` and `cc-fable-medium`.
+- **`review`**: two passes qualify `cc-fable-medium`. Not qualified: the three `cc-haiku-*` profiles (two fails);
+  `cc-sonnet-low` (a pass, then a PARTIAL); `cc-sonnet-medium` and `cc-opus-medium` (a pass, then a fail: under rule 3
+  they need two later passes); `cc-sonnet-high` (a fail, then a pass: one more pass needed). The `cc-opus-medium`
+  FAIL rests on one grader classification that the cross-candidate adjudication contests (G-1,
+  `trace/calibration-2/lead-notes.md`); the preregistered rule stands for the score, and the adjudication is
+  recorded in the profile's evidence, not applied.
+- **New profiles.** `cc-opus-xhigh` (PASS on every task in both runs) is added with `pin-tests`, `fix` and `review`.
+  `cc-sonnet-xhigh`, `cc-opus-max` and `cc-fable-max` ran the review only (one PASS each): they are added with
+  `qualified-for: []` and that one entry, because one pass of a high-risk category is not a qualification.
+- `cc-opus-high`, `cc-fable-high` and `cc-fable-xhigh` are unchanged and gain the entries.
+
+Each calibrated profile carries the run-id entry `wf_fe91e1d6-d78 (calibration-2): ...` and one grade entry per task
+it ran, in the form `calibration-<n>: <category> PASS|PARTIAL|FAIL (n=<k>)`. `PARTIAL` is a grade word the adapter
+accepts from host-policy-3 on; any other word is refused. `headroom-tested` is the largest completed run, rounded up
+to the next thousand, never lowered: a calibration run or an accepted production outcome (`cc-opus-high` stays at
+771000 from the accepted sr-policy-2 outcome).
+
+**The lead's note on `fix`.** The two calibration fix cells were single-finding fixes with the accepted finding text
+given (110000-170000 tokens); a production fix round (`fix` median 193000) carries several findings. Rule 1 judges
+the cell representative in kind. The size difference is held by three things: the `headroom-tested` guard
+(`tokens < headroom-tested` at Gate 2), the category's required fresh re-review, and the learning loop's demotion
+after two consecutive `verification-failed` outcomes.
+
+**The routing consequence.** A default `fix` request (193000 tokens) fits only the fix-qualified profiles whose
+headroom admits it: `cc-haiku-high` (261k), `cc-opus-xhigh` (246k), `cc-opus-high` (848k), `cc-fable-high` (352k)
+(and the lead, whose direct path stops at 15k). Every other fix-qualified profile fails Gate 2 on its headroom. Each
+delegate carries the same required review at `cc-opus-high` ($4.18 for the 209000-token review median) and $1.00 of
+brief overhead, so the cheapest worker wins: **a default `fix` request now routes to `cc-haiku-high`**. `decide` on
+that request with the live policy (feature-off derivative, as the tests use) prints:
+
+```
+Route:             delegate
+Profile:           (cc-haiku-high, claude-code-workflow-subagent, anthropic, <model>, high, workflow-subagent/structured-output@1)
+Reservations:      $5.28 conservative all-in bound, estimate only (work $0.10 + review $4.18 + brief overhead $1.00)
+Gate walk (per candidate):
+  cc-fable-xhigh   direct    gate 5: direct unsuitable: 193000 tokens > direct-max-tokens 15000
+  cc-fable-max     delegate  gate 2: cc-fable-max not qualified for fix
+  cc-fable-high    delegate  eligible, all-in $14.83
+  cc-fable-medium  delegate  gate 2: context: 193000 tokens not below headroom-tested 172000 on cc-fable-medium
+  cc-opus-max      delegate  gate 2: cc-opus-max not qualified for fix
+  cc-opus-xhigh    delegate  eligible, all-in $9.04
+  cc-opus-high     delegate  eligible, all-in $9.04
+  cc-opus-medium   delegate  gate 2: context: 193000 tokens not below headroom-tested 154000 on cc-opus-medium
+  cc-sonnet-xhigh  delegate  gate 2: cc-sonnet-xhigh not qualified for fix
+  cc-sonnet-high   delegate  gate 2: context: 193000 tokens not below headroom-tested 183000 on cc-sonnet-high
+  cc-sonnet-medium delegate  gate 2: context: 193000 tokens not below headroom-tested 128000 on cc-sonnet-medium
+  cc-sonnet-low    delegate  gate 2: context: 193000 tokens not below headroom-tested 114000 on cc-sonnet-low
+  cc-haiku-high    delegate  eligible, all-in $5.28
+  cc-haiku-medium  delegate  gate 2: context: 193000 tokens not below headroom-tested 183000 on cc-haiku-medium
+  cc-haiku-low     delegate  gate 2: context: 193000 tokens not below headroom-tested 175000 on cc-haiku-low
+```
+
+Gate 5's reason: `cc-haiku-high` has the lowest all-in bound among the four eligible delegates, $5.2765 (work
+193000 x the output rate / 1e6 = $0.0965, review $4.18, overhead $1.00), against $9.04 for `cc-opus-high` and
+`cc-opus-xhigh` and $14.83 for `cc-fable-high`. A fix estimated at 261000 tokens or more no longer fits
+`cc-haiku-high` (or `cc-opus-xhigh`, 246k) and goes to `cc-opus-high` ($10.40 at 261000).
+
+### The table (host-policy-3, generated from `host-policy.json`)
+
+| Profile | Effort | Qualified for | Headroom tested | calibration-1 pin / fix / review | calibration-2 pin / fix / review | Basis |
+|---|---|---|---|---|---|---|
+| `cc-fable-xhigh` | xhigh, **direct only** (the lead), up to 15k tokens | build-core, build-ui, build-tests, review, fix, docs-mechanical, research-collect, pin-tests | 460k | PASS / PASS / PASS | PASS / PASS / PASS | session runs (host-policy-1) + calibration-1 + calibration-2 |
+| `cc-fable-max` | max | none | 230k | - / - / - | - / - / PASS | calibration-2 review only: one pass, not a qualification |
+| `cc-fable-high` | high | review, fix, pin-tests | 352k | PASS / PASS / PASS | PASS / PASS / PASS | session runs (host-policy-1) + calibration-1 + calibration-2 |
+| `cc-fable-medium` | medium | review, fix, pin-tests | 172k | PASS / PASS / PASS | PASS / PASS / PASS | calibration-1 + calibration-2 |
+| `cc-opus-max` | max | none | 307k | - / - / - | - / - / PASS | calibration-2 review only: one pass, not a qualification |
+| `cc-opus-xhigh` | xhigh | review, fix, pin-tests | 246k | PASS / PASS / PASS | PASS / PASS / PASS | calibration-1 + calibration-2 (new in host-policy-3) |
+| `cc-opus-high` | high | build-core, build-ui, build-tests, review, fix, research-collect, pin-tests | 848k | PASS / PASS / PASS | PASS / PASS / PASS | session runs (host-policy-1) + calibration-1 + calibration-2; headroom from the accepted sr-policy-2 outcome (770527 tokens) |
+| `cc-opus-medium` | medium | fix, pin-tests | 154k | PASS / PASS / PASS | PASS / PASS / FAIL | calibration-1 + calibration-2; review: a pass, then a FAIL (G-1 recorded, not applied) |
+| `cc-sonnet-xhigh` | xhigh | none | 328k | - / - / - | - / - / PASS | calibration-2 review only: one pass, not a qualification |
+| `cc-sonnet-high` | high | fix, pin-tests | 183k | PASS / PASS / FAIL | PASS / PASS / PASS | calibration-1 + calibration-2; review: a FAIL, then a pass |
+| `cc-sonnet-medium` | medium | fix, pin-tests | 128k | PASS / PASS / PASS | PASS / PASS / FAIL | calibration-1 + calibration-2; review: a pass, then a FAIL |
+| `cc-sonnet-low` | low | fix, pin-tests | 114k | PASS / PASS / PASS | PASS / PASS / PARTIAL | calibration-1 + calibration-2; review: a pass, then a PARTIAL |
+| `cc-haiku-high` | high, no vision | fix, pin-tests | 261k | PASS / PASS / FAIL | PASS / PASS / FAIL | calibration-1 + calibration-2 |
+| `cc-haiku-medium` | medium, no vision | fix, pin-tests | 183k | PASS / PASS / FAIL | PASS / PASS / FAIL | calibration-1 + calibration-2 |
+| `cc-haiku-low` | low, no vision | fix, docs-mechanical, pin-tests | 175k | PASS / PASS / FAIL | PASS / PASS / FAIL | session runs (host-policy-1) + calibration-1 + calibration-2 |
 
 The session runs behind the host-policy-1 rows: `cc-fable-xhigh`, the lead's own direct fixes and integration units;
 `cc-fable-high`, workflow runs `wf_1fcbe585-d1e` (U5 review 3, fix 3, re-review 3) and `wf_7f80ebc5-5a8` (U5 fix 4);
 `cc-opus-high`, 302 completed dispatches (28 builds, 130 reviews, 39 fix rounds, 26 research runs), every unit at
-ACCEPT within three fix rounds; `cc-haiku-low`, one mechanical extraction dispatch (91k tokens). The calibrated
-profile at xhigh effort on the worker model is not in the policy: the revision adds only the eight profiles the lead
-listed. The exact model ids live in `host-policy.json`. The `Profile:` line prints the full identity tuple
+ACCEPT within three fix rounds; `cc-haiku-low`, one mechanical extraction dispatch (91k tokens). Host-policy-3 adds
+the four profiles the lead listed (`cc-opus-xhigh` and the review-only `cc-sonnet-xhigh`, `cc-opus-max`,
+`cc-fable-max`), each with its siblings' config, tools, vision and context-tested. The exact model ids live in
+`host-policy.json`. The `Profile:` line prints the full identity tuple
 `(id, harness, provider, model, effort, config)`.
 
-With the current prices the adapter routes `build-core`, `build-ui`, `build-tests`, `fix`, `review` and
-`research-collect` to `cc-opus-high` (no profile qualified from calibration-1 is qualified for any of them), and
-`docs-mechanical` to `cc-haiku-low`. Work of at most 15k tokens goes direct to the lead.
+With the current prices the adapter routes `build-core`, `build-ui`, `build-tests` and `research-collect` to
+`cc-opus-high` (no calibrated profile is qualified for any of them), `review` to `cc-opus-high` (`cc-opus-xhigh` ties
+on the bound and loses on effort; `cc-fable-medium`'s 172k headroom is below the 209000-token review median), `fix` to
+`cc-haiku-high` (above), and `docs-mechanical` and `pin-tests` to `cc-haiku-low`. Work of at most 15k tokens goes
+direct to the lead.
 
 **`pin-tests` routes to the cheapest qualified profile, `cc-haiku-low`.** A default pin (120000 tokens) has an
 output-rate bound of $0.06 there (120000 x the output rate / 1e6), plus $1.00 of brief overhead at the lead's rate:
@@ -176,8 +253,7 @@ $1.06 all-in. No reviewer is added, because `pin-tests` names no review: every p
 the fix, green with it, the guard-removal proof, lint) and the lead reads the diff. The three profiles of that model
 share the $1.06 bound, so Gate 5 ranks equal bounds by the lower output rate, then the **lower effort**, then the id:
 calibration-1 measured fewer tokens at the lower effort for every model on every task (12 model-task pairs).
-`cc-sonnet-low` (110k) and `cc-opus-medium` (115k) are qualified, but their headroom is below a default pin, so a pin
-that size fails them at Gate 2.
+`cc-sonnet-low` (114k) is qualified, but its headroom is below a default pin, so a pin that size fails it at Gate 2.
 
 ### How to add evidence
 
@@ -187,14 +263,18 @@ that size fails them at Gate 2.
    uses is a **calibration run** outside SmartRouter routing: the same graded tasks for every profile, on past work
    with a known answer (calibration-1: the R16 finding), graded by the lead (friction item 14). Its grades go in
    `trace/calibration-<n>/observations.json`, never in the ledger.
-2. Run `rate`. It prints one `CALIBRATION` line per profile and category with the pass and fail counts across every
-   calibration run, e.g. `CALIBRATION cc-haiku-low review: 0 pass, 1 fail (calibration-1)`, and writes them under
+2. Run `rate`. It prints one `CALIBRATION` line per profile and category with the pass, partial and fail counts
+   across every calibration run, e.g. `CALIBRATION cc-sonnet-low review: 1 pass, 1 partial, 0 fail (calibration-1,
+   calibration-2)`. It reads both observation formats: calibration-1 grades the review with the boolean
+   `review-grade.score`, calibration-2 with the three-valued `review-grade.result` (PASS, PARTIAL or FAIL; any other
+   value counts as ungraded, never as a pass). A task an observation does not carry (the review-only profiles' pin
+   and fix) was not run and is not counted. It writes the counts under
    `calibration` in `trace/qualification-stats.json`, apart from the outcome stats. Calibration counts never make a
    proposal. Separately, three `accepted` outcomes for an unqualified (profile, category) produce a **qualification
    proposal**; such outcomes appear only if the lead records out-of-band runs in the ledger by hand, as dispatch
    records marked `deviation: true`.
 3. The lead applies the qualification rules above and ratifies by editing `host-policy.json`: add the category to
-   `qualified-for`, append the run ids and the `calibration-<n>: <category> PASS|FAIL (n=<k>)` entries to `evidence`,
+   `qualified-for`, append the run ids and the `calibration-<n>: <category> PASS|PARTIAL|FAIL (n=<k>)` entries to `evidence`,
    set `qualified-at` to the ratification date, and set `expires` (at most three months out). Bump
    `policy-revision`. The decision files bind every decision to the policy digest, so old decisions stay readable.
    A decision not yet dispatched is rechecked against the edited policy at `dispatch`, so a demotion or a
@@ -219,9 +299,17 @@ writes the policy.
 - It proposes **qualification** after three `accepted` outcomes in a category the profile is not qualified for.
   `dispatch` refuses such runs, so these outcomes can only come from runs the lead recorded by hand (see 'How to
   add evidence').
+- It proposes a **`headroom-tested` raise** when an accepted outcome (the latest per dispatch) completed more tokens
+  than its profile's current value:
+  `PROPOSAL profiles.<id>.headroom-tested: <current> -> <tokens rounded up to the next thousand> (accepted outcome <task> completed <tokens> tokens); not applied — the lead ratifies by editing host-policy.json`.
+  One proposal per profile, from its largest accepted run; unknown tokens propose nothing. It never moves a route:
+  `decide` routes by `headroom-tested` as it stands. (The first sr-policy-3 decision was blocked on a stale
+  headroom that nothing proposed: `cc-opus-high` had completed 770527 tokens at 514000.) The proposals are written
+  under `headroom-proposals` in `qualification-stats.json`.
 - It **flags** a profile whose `expires` falls within 14 days.
 - It prints the **calibration evidence** next to the outcome stats, one `CALIBRATION` line per profile and category,
-  read from every `trace/calibration-<n>/observations.json` (see 'How to add evidence'). These lines feed the lead's
+  read from every `trace/calibration-<n>/observations.json`, pass, partial and fail counted across runs (see 'How to
+  add evidence'). These lines feed the lead's
   qualification rules, never a proposal: proposals stay outcome-based. An unreadable observations file stops `rate`
   with exit 4.
 - Proposals are printed, never applied. Until the lead edits the policy, `decide` routes by the policy as it
@@ -278,8 +366,8 @@ recorded. Exit 2, with nothing appended, when:
 
 ```
 latest usage reading 2026-10-17T19:00:22Z (age 9.63 min, max 30)
-  five_hour: utilization 0.2, resets 2026-10-17T23:00:00Z, headroom 2.7083 Mtok ((0.9 - 0.05 - 0.2) / 0.24)
-  seven_day: utilization 0.05, resets 2026-10-24T18:00:00Z, headroom 13.3333 Mtok ((0.9 - 0.05 - 0.05) / 0.06)
+  five_hour: utilization 0.2, resets 2026-10-17T23:00:00Z, headroom 9 Mtok ((0.9 - 0.25 - 0.2) / 0.05)
+  seven_day: utilization 0.05, resets 2026-10-24T18:00:00Z, headroom 50 Mtok ((0.9 - 0.1 - 0.05) / 0.015)
 ```
 
 **What refreshes a reading.** Only a new `route.mjs usage <reading.json>`. A reading is used by decisions whose `now`
@@ -289,8 +377,9 @@ happens, `route.mjs usage` with no file reports it (`stale; refresh with route.m
 `reset since the reading`). A decision uses the latest reading at or before its own `now`, never a later one.
 
 **The rule.** The standing rule (user, 2026-10-14) stops work at 0.90 of the weekly window, and this host applies
-the same threshold to the five-hour window. Each window also keeps a `lead-reserve` of 0.05 for the lead's own
-work, which no recorded sub-agent token counts. Gate 4 runs after its call, repair, deadline and price checks, and
+the same threshold to the five-hour window. Each window also keeps a `lead-reserve` for the lead's own work, which
+no recorded sub-agent token counts: 0.25 of five_hour and 0.10 of seven_day since host-policy-3 (0.05 each before;
+see 'Measured coefficients (run 2)'). Gate 4 runs after its call, repair, deadline and price checks, and
 requires, in this order:
 
 1. a reading exists at or before `now`, and `now - ts <= reading-max-age-minutes`. Otherwise it fails with
@@ -336,7 +425,7 @@ The decision file carries
 `projected` is the chosen profile's projection (the set's, for speculative), `null` when the route is blocked. It
 also carries `usage-tokens`, the tokens projected for the chosen profile (the set's sum, for speculative). The decision ledger record carries `usage-tokens` as an additive
 field. The Gate 4 note in the walkthrough names the binding window (`usage window five_hour binds: projected
-0.3308 <= 0.85` for a default `build-core` unit against the reading above). Uncertainty says
+0.2273 <= 0.65` for a default `build-core` unit against the reading above). Uncertainty says
 `usage windows: coefficients host-declared (<coefficient-basis>)`.
 
 `dispatch` re-checks steps 1-3 at its `--now`, against the decision's `usage-tokens` plus every dispatch the
@@ -350,20 +439,49 @@ The pre-dispatch recheck walks Gate 4 with the readings as well, so a host devia
 
 **Headroom.** `headroom-mtok = (stop-at - lead-reserve - utilization) / utilization-per-mtok - dispatched / 1e6`:
 the million sub-agent tokens the window still admits after the dispatches the reading does not hold (step 3).
-Against the reading above, five_hour admits (0.90 - 0.05 - 0.20) / 0.24 = 2.71 Mtok: four default `build-core`
-delegations (545k tokens each: 316k work + 209k review + 20k overhead; a fifth would bring the total to 2.725).
+Against the reading above, five_hour admits (0.90 - 0.25 - 0.20) / 0.05 = 9 Mtok: sixteen default `build-core`
+delegations (545k tokens each: 316k work + 209k review + 20k overhead; a seventeenth would bring the total to 9.265).
 Gate 4 counts them: each dispatch lowers the headroom the next decision and dispatch see, and keeps lowering it
 while it runs, across any number of newer readings, until a reading taken at or after its outcome. A delegation
 that runs longer than `reading-max-age-minutes` therefore stays in the accounting through the refreshes the
-staleness rule forces. seven_day admits (0.90 - 0.05 - 0.05) / 0.06 = 13.3 Mtok. `route.mjs usage` with no file
+staleness rule forces. seven_day admits (0.90 - 0.10 - 0.05) / 0.015 = 50 Mtok. `route.mjs usage` with no file
 prints `dispatched and not in the reading: N tokens (A since the reading, B in flight from before it)` and
 subtracts N from each window's headroom.
 
 What the gate cannot see is the lead's own work, which is never dispatched. The `lead-reserve` is the margin for
-that alone. It is not a margin for sub-agent work: on five_hour, 0.05 / 0.24 = 0.208 Mtok, less than one default
-`build-core` delegation (545k tokens = 0.1308 of the window).
+that alone, and on this host it is the larger cost: run 2 measured about 0.40 of five_hour per hour of active lead
+work, so the 0.25 reserve is about 40 minutes of it. In sub-agent terms the same 0.25 is 0.25 / 0.05 = 5 Mtok, more
+than nine default `build-core` delegations (545k tokens = 0.0273 of the window each); the reserve is sized by the
+lead's turns, not by delegations.
 
-**The coefficients and their basis.** `utilization-per-mtok` is host-declared from two coarse observations:
+**Measured coefficients (run 2).** Host-policy-3 ratifies `utilization-per-mtok` from calibration run 2
+(`wf_fe91e1d6-d78`), measured with the lead idle but for one check-in, from the readings in `trace/usage.jsonl` at
+2026-10-17T23:22:51Z and 2026-10-18T01:23:32Z (nothing in flight at either end) over the run's 7,872,276 reported
+sub-agent tokens:
+
+| Window | Reading 23:22:51 | Reading 01:23:32 | Measured per Mtok | host-policy-2 | host-policy-3 (ratified) | lead-reserve |
+|---|---|---|---|---|---|---|
+| five_hour | 0.12 | 0.39 | 0.0343 | 0.24 (about 7x) | **0.05** | 0.05 -> **0.25** |
+| seven_day | 0.28 | 0.36 | 0.0102 | 0.06 (about 6x) | **0.015** | 0.05 -> **0.10** |
+
+The ratified values are about 1.5x the measured ones, rounded up: the conservative direction. Both windows carry
+`ratified-at` 2026-10-18T01:23:32Z, so `rate` considers only later observations. Separately, lead-only work (no
+sub-agent running) moved five_hour from 0.02 to 0.12 between 2026-10-17T23:07:08Z and 23:22:51Z: about 0.40 per hour
+of active lead work. **The lead's own turns, not sub-agent tokens, are this host's dominant cost**, and the old 0.05
+reserve covered about eight minutes of them; 0.25 covers about 40. `rate` could not learn any of this: the run was
+not dispatched through the adapter, so every pair of readings during it had no recorded outcome tokens (`T` = 0,
+skipped), and during ordinary work every pair spans a running unit (friction items 17 and 18). The gate's arithmetic
+is unchanged. `route.mjs usage` against the committed readings, at 2026-10-18T01:45:00Z:
+
+```
+latest usage reading 2026-10-18T01:30:06Z (age 14.9 min, max 30)
+  dispatched and not in the reading: 829000 tokens (829000 since the reading, 0 in flight from before it)
+  five_hour: utilization 0.42, resets 2026-10-18T04:00:00Z, headroom 3.771 Mtok ((0.9 - 0.25 - 0.42) / 0.05 - 0.829 dispatched and not in the reading)
+  seven_day: utilization 0.36, resets 2026-10-24T18:00:00Z, headroom 28.5043 Mtok ((0.9 - 0.1 - 0.36) / 0.015 - 0.829 dispatched and not in the reading)
+```
+
+**The coefficients before (host-policy-1 and -2, superseded).** `utilization-per-mtok` was host-declared from two
+coarse observations:
 
 - 2026-10-14 17:01 to 18:18: the weekly window went from 0.82 to 0.88 while about 1.06M recorded sub-agent tokens
   ran (the lead's own tokens unrecorded). That is 0.06 / 1.06 = 0.057 per Mtok, declared as **0.06** for
@@ -395,6 +513,31 @@ the three-in-a-row downward rule, so a ratified downward change is not followed 
 older history (re-review finding SW-5). Ratify by editing the coefficient and `ratified-at` together. Pairs
 of readings with a unit in flight at either reading are skipped as `spanning` (SW-8): a unit's tokens are
 recorded whole at its outcome, so such a pair cannot say what they cost.
+
+## Policy findings (host-policy-3)
+
+Found while building revision 3 (unit sr-policy-3). The lead decides.
+
+1. **The suite was red at the start.** At `b525131` the suite gave 78 pass, 2 fail (cwd the unit's worktree):
+   commit `490b7ed` raised `cc-opus-high` to 771000 in the policy only, while the README table said 514k and the
+   host-policy-2 test computed the headroom from calibration runs alone. Fixed first, on its own commit: the README
+   row says 771k and the test counts accepted ledger outcomes as completed runs, as the policy's definition does.
+2. **The brief's headroom list was stale for `cc-opus-high`** ('514000 (unchanged)'). The policy has carried 771000
+   since `490b7ed`; 'never lowered' keeps it.
+3. **'Every entry this revision adds or changes'** was read as every qualification added or changed: the profiles
+   whose `qualified-for` changed and the four new ones take `qualified-at` 2026-10-18 and the new reviewer. The
+   three unchanged profiles keep theirs, because a new `qualified-at` would also restart their demotion streams
+   (the learning loop counts outcomes since `qualified-at`).
+4. **The review-only run-id entry** says `review graded ... a review-only profile in that run (no pin or fix cell)`
+   rather than the brief's `pin, fix and review graded`, which would not be true of those three profiles.
+5. **A default `fix` now goes to the cheapest model.** It is the policy's own economics under the lead's table and
+   note on `fix`; the guards the note names (headroom, fresh re-review, demotion) are the only difference from a
+   production-qualified worker. A lead who wants a size floor for `fix` would raise the category's median or pass a
+   larger `estimatedTokens`.
+6. **The usage-window tests moved to the host-policy-2 fixture.** SW-1 and SW-2 assumed host-policy-2's profile set
+   (the speculative review pair was `cc-opus-high` + `cc-fable-high`; under host-policy-3 `cc-opus-xhigh` ties
+   `cc-opus-high` and joins the pair), and the others its coefficients. They run on the frozen fixture unchanged;
+   P2-4 and the two 'committed policy' tests stay on the live policy.
 
 ## Policy findings (host-policy-2)
 
@@ -538,3 +681,14 @@ Every point where the spec was ambiguous or did not fit a subscription host. Cit
     them in additive fields: the decision's `usage` block, `usage-tokens` on the decision record, and `tokens` on
     the outcome record. Upstream could type a `windows` allowance, or a window counter in §10.5, next to cash.
     (The brief named this item 13. Item 13 was already taken, so it is 16.)
+17. **`rate` cannot learn the usage coefficients on this host.** It pairs readings and divides by the outcome tokens
+    recorded between them. Calibration run 2 was not dispatched through the adapter, so it recorded no outcome
+    tokens and every pair during it had `T` = 0; and on a host where units overlap continuously every pair of
+    readings is `spanning` (a unit in flight at either end) or `T` = 0, so the learning loop never gets a clean pair.
+    The run-2 coefficients were measured by hand and ratified (host-policy-3). Upstream could add a
+    `usage-observation` record (a pair of readings with a token count the lead attests), or let calibration runs be
+    recorded as outcomes without a decision.
+18. **The budget model does not see the lead.** The spec's budget is cash and tokens per dispatched unit. On a
+    subscription host the lead's own turns dominate the usage windows (run 2: about 0.40 of the five-hour window per
+    hour of active lead work, against 0.034 per million sub-agent tokens), and no record carries them; this host
+    covers them with a `lead-reserve` sized by hand. Upstream could add a per-turn lead cost to the host model.

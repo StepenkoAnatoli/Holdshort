@@ -1,0 +1,40 @@
+{
+ "task-id": "sr-policy-3",
+ "outcome": "accepted",
+ "owner-profile": "cc-opus-high",
+ "original-brief-fingerprint": "998abf66b994de0a17107b659be3ef60070b44d08bf57f669f315a33f6f8b5b8",
+ "evidence": {
+  "checks": [
+   {
+    "command": "node --test docs/orchestration/smartrouter/route.test.mjs",
+    "exit-code": 0,
+    "output-ref": "wf_cdbe23fc-dbb build report: 89 pass at 82bcd64, 91 pass at 2874537; on the integration head 91 pass after the lead's P3-L1 pin (scratchpad/gsi-suite-p3b.log)"
+   },
+   {
+    "command": "npx eslint docs/orchestration/smartrouter/route.mjs docs/orchestration/smartrouter/route.test.mjs",
+    "exit-code": 0,
+    "output-ref": "exit 0 at every unit commit (build report) and on the integration head"
+   },
+   {
+    "command": "node --check docs/orchestration/smartrouter/route.mjs",
+    "exit-code": 0,
+    "output-ref": "exit 0"
+   },
+   {
+    "command": "refute-first review",
+    "exit-code": 0,
+    "output-ref": "wf_cdbe23fc-dbb: review FIX (P3-R1 S3 test-only, P3-R2 S4) fixed in 1497f79, 2874537; re-review ACCEPT (13 checks)"
+   }
+  ],
+  "actual-spend": null,
+  "actual-tokens": 847844,
+  "files-touched": [
+   "docs/orchestration/smartrouter/host-policy.json",
+   "docs/orchestration/smartrouter/route.mjs",
+   "docs/orchestration/smartrouter/route.test.mjs",
+   "docs/orchestration/smartrouter/README.md",
+   "docs/orchestration/smartrouter/trace/policies/host-policy-2.json"
+  ],
+  "notes": "policy revision 3 integrated (0d760df..84c8fa2 plus the pre-unit red fix 907d9a6); the four workflow agents (build, review, fix1, re-review1) used 847844 harness tokens in all (not a bill); the lead's P3-L1 test pin is not counted; the builder found the suite red at the unit's base (the lead's L-5) and fixed it first"
+ }
+}

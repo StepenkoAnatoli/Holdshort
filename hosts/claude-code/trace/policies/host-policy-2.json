@@ -1,0 +1,498 @@
+{
+ "_comment": "SmartRouter host policy for the MoonAliza build process (the Claude Code session that plans and delegates units). Inputs the lead collects before every dispatch decision, per skills/smart-router/SKILL.md 'Decision flow' step 1. Qualification is host-declared from this session's run history and from graded calibration runs (trace/calibration-<n>/), under the lead's qualification rules (README 'Qualification rules'), and is not an independent review; every evidence ref is a workflow run id in the session's workflow journal plus the unit's ledger row in RUN.md, or a calibration grade entry 'calibration-<n>: <category> PASS|FAIL (n=<k>)'.",
+ "policy-revision": "host-policy-2",
+ "smartrouter": {
+  "repo": "https://github.com/StepenkoAnatoli/SmartRouter",
+  "revision": "fbe7bca",
+  "skill-version": "3.0.0",
+  "prices-revision": "prices-2"
+ },
+ "harness": {
+  "id": "claude-code-workflow-subagent",
+  "version": "2.1.286",
+  "note": "Workflow tool sub-agents (agent() in a workflow script) and Agent-tool sub-agents; model and effort are per-dispatch options; worktree isolation available"
+ },
+ "authorization": {
+  "actor": "StepenkoAnatoli (owner) via session_01VdJ51CTnHT4Zet6eScsBBh",
+  "granted": "2026-10-17 'yes absolutely full permission' to let SmartRouter decide model and effort for MoonAliza build sub-agents",
+  "destinations": [
+   "anthropic (Claude Code hosted sub-agents)"
+  ],
+  "data-classes-permitted": [
+   "repo-code",
+   "run-docs",
+   "research-captures"
+  ],
+  "data-classes-forbidden": [
+   "secrets",
+   "vault-values",
+   "local-only"
+  ],
+  "project-stop-rules": [
+   "red suite: full-suite comparison drifts from the 74-failure baseline",
+   "GATE_OFF or --no-verify in use",
+   "research gate failing on the project"
+  ]
+ },
+ "isolation": {
+  "capability": "worktree+branch",
+  "branch-convention": "build/<unit-slug> (host convention; SmartRouter suggests sr/<task-id>/<slug>, recorded as branch-hint)",
+  "shared-surfaces": [
+   "node_modules symlink to the main checkout",
+   ".build symlink",
+   "private TMPDIR per run"
+  ]
+ },
+ "accounting": {
+  "mode": "estimate-only",
+  "reason": "the session runs on a subscription with weekly token limits; no per-call USD accounting exists, so cash caps are advisory, never strict (gates.md Gate 4: a strict cap needs reliable accounting)",
+  "strict": {
+   "calls-per-task": 6,
+   "same-profile-repairs-per-task": 1,
+   "deadline-per-task-hours": 12
+  },
+  "token-estimate-basis": "median total tokens per role from this session's 327 recorded sub-agent runs (scratchpad/sr-evidence.txt)",
+  "cost-bound-rule": "tokens x output_rate_per_mtok / 1e6 (conservative: output rate >= input rate)"
+ },
+ "prices": {
+  "source": "SmartRouter tools/prices-2.json @ fbe7bca, verified by its owner against platform.claude.com/docs/en/about-claude/pricing on 2026-10-14",
+  "claude-fable-5-1": {
+   "input_rate_per_mtok": 10.0,
+   "output_rate_per_mtok": 50.0
+  },
+  "claude-opus-5-5": {
+   "input_rate_per_mtok": 4.0,
+   "output_rate_per_mtok": 20.0
+  },
+  "claude-sonnet-5-5": {
+   "input_rate_per_mtok": 2.0,
+   "output_rate_per_mtok": 10.0
+  },
+  "claude-haiku-5-5": {
+   "input_rate_per_mtok": 0.1,
+   "output_rate_per_mtok": 0.5
+  }
+ },
+ "categories": {
+  "build-core": {
+   "risk": "high",
+   "description": "a unit touching auth, credentials, concurrency, persistence or IPC",
+   "required-tools": [
+    "bash",
+    "edit",
+    "git"
+   ],
+   "verification": [
+    "typecheck",
+    "lint",
+    "unit tests red-first",
+    "full-suite comparison vs baseline",
+    "refute-first review"
+   ],
+   "median-tokens": 316000
+  },
+  "build-ui": {
+   "risk": "normal",
+   "description": "renderer or docs-adjacent code unit",
+   "required-tools": [
+    "bash",
+    "edit",
+    "git"
+   ],
+   "verification": [
+    "typecheck",
+    "lint",
+    "unit tests red-first",
+    "full-suite comparison vs baseline",
+    "refute-first review"
+   ],
+   "median-tokens": 316000
+  },
+  "build-tests": {
+   "risk": "normal",
+   "description": "tests-only unit",
+   "required-tools": [
+    "bash",
+    "edit",
+    "git"
+   ],
+   "verification": [
+    "typecheck",
+    "lint",
+    "the new tests green, guard-removal proofs",
+    "full-suite comparison vs baseline",
+    "refute-first review"
+   ],
+   "median-tokens": 250000
+  },
+  "review": {
+   "risk": "high",
+   "description": "refute-first unit or integration review",
+   "required-tools": [
+    "bash",
+    "read"
+   ],
+   "verification": [
+    "findings carry reproductions; proofs re-run"
+   ],
+   "median-tokens": 209000
+  },
+  "fix": {
+   "risk": "high",
+   "description": "a fix round on review findings",
+   "required-tools": [
+    "bash",
+    "edit",
+    "git"
+   ],
+   "verification": [
+    "red-first pin per finding",
+    "full-suite comparison vs baseline",
+    "fresh re-review"
+   ],
+   "median-tokens": 193000
+  },
+  "research-collect": {
+   "risk": "normal",
+   "description": "Research-Kit collection and brief",
+   "required-tools": [
+    "bash",
+    "edit",
+    "git",
+    "firecrawl"
+   ],
+   "verification": [
+    "preflight PASS",
+    "handoff 0",
+    "refute-first verifier"
+   ],
+   "median-tokens": 232000
+  },
+  "docs-mechanical": {
+   "risk": "low",
+   "description": "mechanical documentation or report extraction against a checklist",
+   "required-tools": [
+    "bash",
+    "edit"
+   ],
+   "verification": [
+    "lead reads the diff"
+   ],
+   "median-tokens": 92000
+  },
+  "pin-tests": {
+   "risk": "normal",
+   "description": "a bounded red-first pin: new tests only, no source change (the calibration-1 pin task); not build-tests, whose units are 250000-token engine journeys",
+   "required-tools": [
+    "bash",
+    "edit",
+    "git"
+   ],
+   "verification": [
+    "lint",
+    "the new tests green",
+    "guard-removal proof",
+    "the lead reads the diff"
+   ],
+   "median-tokens": 120000
+  }
+ },
+ "profiles": [
+  {
+   "id": "cc-fable-xhigh",
+   "model": "claude-fable-5-1",
+   "effort": "xhigh",
+   "config": "workflow-subagent/structured-output@1",
+   "tools": true,
+   "vision": true,
+   "context-tested": 1000000,
+   "headroom-tested": 460000,
+   "role": "the lead itself (direct work)",
+   "qualified-for": [
+    "build-core",
+    "build-ui",
+    "build-tests",
+    "review",
+    "fix",
+    "docs-mechanical",
+    "research-collect",
+    "pin-tests"
+   ],
+   "evidence": [
+    "this session: lead fixes U1-R11 d4c4bdb and U2-R15 d37652e; ledger commits; integration and docs units",
+    "wf_052c5f34-973 (calibration-1): pin, fix and review graded in trace/calibration-1/ (results-table.md, observations.json)",
+    "calibration-1: pin-tests PASS (n=1)",
+    "calibration-1: fix PASS (n=1)",
+    "calibration-1: review PASS (n=1)"
+   ],
+   "qualified-at": "2026-10-17",
+   "expires": "2027-01-15",
+   "reviewer": "host-declared (lead), not independent"
+  },
+  {
+   "id": "cc-fable-high",
+   "model": "claude-fable-5-1",
+   "effort": "high",
+   "config": "workflow-subagent/structured-output@1",
+   "tools": true,
+   "vision": true,
+   "context-tested": 1000000,
+   "headroom-tested": 352000,
+   "qualified-for": [
+    "review",
+    "fix",
+    "pin-tests"
+   ],
+   "evidence": [
+    "wf_1fcbe585-d1e review3:U5 (R13-R15 found, proofs re-run), fix3:U5 (3 commits, red-first), rereview3:U5 (R16-R17 found)",
+    "wf_7f80ebc5-5a8 fix4:U5 (2 commits, red-first)",
+    "wf_052c5f34-973 (calibration-1): pin, fix and review graded in trace/calibration-1/ (results-table.md, observations.json)",
+    "calibration-1: pin-tests PASS (n=1)",
+    "calibration-1: fix PASS (n=1)",
+    "calibration-1: review PASS (n=1)"
+   ],
+   "qualified-at": "2026-10-17",
+   "expires": "2027-01-15",
+   "reviewer": "host-declared (lead), not independent"
+  },
+  {
+   "id": "cc-fable-medium",
+   "model": "claude-fable-5-1",
+   "effort": "medium",
+   "config": "workflow-subagent/structured-output@1",
+   "tools": true,
+   "vision": true,
+   "context-tested": 1000000,
+   "headroom-tested": 139000,
+   "qualified-for": [
+    "pin-tests"
+   ],
+   "evidence": [
+    "wf_052c5f34-973 (calibration-1): pin, fix and review graded in trace/calibration-1/ (results-table.md, observations.json); headroom-tested is its largest completed run (138825 tokens) rounded up to the next thousand",
+    "calibration-1: pin-tests PASS (n=1)",
+    "calibration-1: fix PASS (n=1)",
+    "calibration-1: review PASS (n=1)"
+   ],
+   "qualified-at": "2026-10-17",
+   "expires": "2027-01-15",
+   "reviewer": "host-declared (lead) from calibration-1 grades"
+  },
+  {
+   "id": "cc-opus-high",
+   "model": "claude-opus-5-5",
+   "effort": "high",
+   "config": "workflow-subagent/structured-output@1",
+   "tools": true,
+   "vision": true,
+   "context-tested": 1000000,
+   "headroom-tested": 771000,
+   "qualified-for": [
+    "build-core",
+    "build-ui",
+    "build-tests",
+    "review",
+    "fix",
+    "research-collect",
+    "pin-tests"
+   ],
+   "evidence": [
+    "302 completed dispatches this session: 28 builds (U1-U5 of github-sign-in, More models phases), 130 reviews, 39 fix rounds, 26 research runs; every unit reached ACCEPT after at most three fix rounds (RUN.md ledgers of 2026-10-05-more-models and 2026-10-13-github-sign-in)",
+    "wf_052c5f34-973 (calibration-1): pin, fix and review graded in trace/calibration-1/ (results-table.md, observations.json)",
+    "calibration-1: pin-tests PASS (n=1)",
+    "calibration-1: fix PASS (n=1)",
+    "calibration-1: review PASS (n=1)",
+    "sr-policy-2 outcome accepted 2026-10-17T21:25:59Z: 770527 tokens completed (trace/outcomes/sr-policy-2-3.json); headroom-tested raised 514000 -> 771000 (largest completed run, rounded up, never lowered)"
+   ],
+   "qualified-at": "2026-10-17",
+   "expires": "2027-01-15",
+   "reviewer": "host-declared (lead), not independent"
+  },
+  {
+   "id": "cc-opus-medium",
+   "model": "claude-opus-5-5",
+   "effort": "medium",
+   "config": "workflow-subagent/structured-output@1",
+   "tools": true,
+   "vision": true,
+   "context-tested": 1000000,
+   "headroom-tested": 115000,
+   "qualified-for": [
+    "pin-tests"
+   ],
+   "evidence": [
+    "wf_052c5f34-973 (calibration-1): pin, fix and review graded in trace/calibration-1/ (results-table.md, observations.json); headroom-tested is its largest completed run (114273 tokens) rounded up to the next thousand",
+    "calibration-1: pin-tests PASS (n=1)",
+    "calibration-1: fix PASS (n=1)",
+    "calibration-1: review PASS (n=1)"
+   ],
+   "qualified-at": "2026-10-17",
+   "expires": "2027-01-15",
+   "reviewer": "host-declared (lead) from calibration-1 grades"
+  },
+  {
+   "id": "cc-sonnet-high",
+   "model": "claude-sonnet-5-5",
+   "effort": "high",
+   "config": "workflow-subagent/structured-output@1",
+   "tools": true,
+   "vision": true,
+   "context-tested": null,
+   "headroom-tested": 163000,
+   "qualified-for": [
+    "pin-tests"
+   ],
+   "evidence": [
+    "wf_052c5f34-973 (calibration-1): pin, fix and review graded in trace/calibration-1/ (results-table.md, observations.json); headroom-tested is its largest completed run (162318 tokens) rounded up to the next thousand",
+    "calibration-1: pin-tests PASS (n=1)",
+    "calibration-1: fix PASS (n=1)",
+    "calibration-1: review FAIL (n=1)"
+   ],
+   "qualified-at": "2026-10-17",
+   "expires": "2027-01-15",
+   "reviewer": "host-declared (lead) from calibration-1 grades"
+  },
+  {
+   "id": "cc-sonnet-medium",
+   "model": "claude-sonnet-5-5",
+   "effort": "medium",
+   "config": "workflow-subagent/structured-output@1",
+   "tools": true,
+   "vision": true,
+   "context-tested": null,
+   "headroom-tested": 121000,
+   "qualified-for": [
+    "pin-tests"
+   ],
+   "evidence": [
+    "wf_052c5f34-973 (calibration-1): pin, fix and review graded in trace/calibration-1/ (results-table.md, observations.json); headroom-tested is its largest completed run (120217 tokens) rounded up to the next thousand",
+    "calibration-1: pin-tests PASS (n=1)",
+    "calibration-1: fix PASS (n=1)",
+    "calibration-1: review PASS (n=1)"
+   ],
+   "qualified-at": "2026-10-17",
+   "expires": "2027-01-15",
+   "reviewer": "host-declared (lead) from calibration-1 grades"
+  },
+  {
+   "id": "cc-sonnet-low",
+   "model": "claude-sonnet-5-5",
+   "effort": "low",
+   "config": "workflow-subagent/structured-output@1",
+   "tools": true,
+   "vision": true,
+   "context-tested": null,
+   "headroom-tested": 110000,
+   "qualified-for": [
+    "pin-tests"
+   ],
+   "evidence": [
+    "wf_052c5f34-973 (calibration-1): pin, fix and review graded in trace/calibration-1/ (results-table.md, observations.json); headroom-tested is its largest completed run (109830 tokens) rounded up to the next thousand",
+    "calibration-1: pin-tests PASS (n=1)",
+    "calibration-1: fix PASS (n=1)",
+    "calibration-1: review PASS (n=1)"
+   ],
+   "qualified-at": "2026-10-17",
+   "expires": "2027-01-15",
+   "reviewer": "host-declared (lead) from calibration-1 grades"
+  },
+  {
+   "id": "cc-haiku-high",
+   "model": "claude-haiku-5-5",
+   "effort": "high",
+   "config": "workflow-subagent/structured-output@1",
+   "tools": true,
+   "vision": false,
+   "context-tested": 1000000,
+   "headroom-tested": 261000,
+   "qualified-for": [
+    "pin-tests"
+   ],
+   "evidence": [
+    "wf_052c5f34-973 (calibration-1): pin, fix and review graded in trace/calibration-1/ (results-table.md, observations.json); headroom-tested is its largest completed run (260363 tokens) rounded up to the next thousand",
+    "calibration-1: pin-tests PASS (n=1)",
+    "calibration-1: fix PASS (n=1)",
+    "calibration-1: review FAIL (n=1)"
+   ],
+   "qualified-at": "2026-10-17",
+   "expires": "2027-01-15",
+   "reviewer": "host-declared (lead) from calibration-1 grades"
+  },
+  {
+   "id": "cc-haiku-medium",
+   "model": "claude-haiku-5-5",
+   "effort": "medium",
+   "config": "workflow-subagent/structured-output@1",
+   "tools": true,
+   "vision": false,
+   "context-tested": 1000000,
+   "headroom-tested": 162000,
+   "qualified-for": [
+    "pin-tests"
+   ],
+   "evidence": [
+    "wf_052c5f34-973 (calibration-1): pin, fix and review graded in trace/calibration-1/ (results-table.md, observations.json); headroom-tested is its largest completed run (161937 tokens) rounded up to the next thousand",
+    "calibration-1: pin-tests PASS (n=1)",
+    "calibration-1: fix PASS (n=1)",
+    "calibration-1: review FAIL (n=1)"
+   ],
+   "qualified-at": "2026-10-17",
+   "expires": "2027-01-15",
+   "reviewer": "host-declared (lead) from calibration-1 grades"
+  },
+  {
+   "id": "cc-haiku-low",
+   "model": "claude-haiku-5-5",
+   "effort": "low",
+   "config": "workflow-subagent/structured-output@1",
+   "tools": true,
+   "vision": false,
+   "context-tested": 1000000,
+   "headroom-tested": 139000,
+   "qualified-for": [
+    "docs-mechanical",
+    "pin-tests"
+   ],
+   "evidence": [
+    "one completed mechanical extraction dispatch this session (91k tokens, done)",
+    "wf_052c5f34-973 (calibration-1): pin, fix and review graded in trace/calibration-1/ (results-table.md, observations.json); headroom-tested is its largest completed run (138101 tokens) rounded up to the next thousand",
+    "calibration-1: pin-tests PASS (n=1)",
+    "calibration-1: fix PASS (n=1)",
+    "calibration-1: review FAIL (n=1)"
+   ],
+   "qualified-at": "2026-10-17",
+   "expires": "2027-01-15",
+   "reviewer": "host-declared (lead), not independent"
+  }
+ ],
+ "economics": {
+  "delegate-overhead-tokens": 20000,
+  "lead-direct-profile": "cc-fable-xhigh",
+  "direct-max-tokens": 15000,
+  "note": "direct (the lead inline) is eligible only for work bounded by direct-max-tokens; above that the lead's context is the scarce resource and delegation is compared all-in: worker bound + required review bound + brief overhead at the lead's rates"
+ },
+ "host-opt-ins": {
+  "speculative": false,
+  "nested-allowed": false,
+  "max-nesting-depth": 0,
+  "human-gate": "none"
+ },
+ "usage-windows": {
+  "source": "claude-code-remote list_events kinds=[\"rate_limit_event\"] -> rate_limit_info.unifiedWindows; the lead pastes it with route.mjs usage <reading.json>",
+  "reading-max-age-minutes": 30,
+  "windows": {
+   "five_hour": {
+    "length-seconds": 18000,
+    "stop-at": 0.9,
+    "lead-reserve": 0.05,
+    "utilization-per-mtok": 0.24
+   },
+   "seven_day": {
+    "length-seconds": 604800,
+    "stop-at": 0.9,
+    "lead-reserve": 0.05,
+    "utilization-per-mtok": 0.06
+   }
+  },
+  "coefficient-basis": "host-declared 2026-10-17 from two coarse observations (README 'Usage windows'); rate proposes revisions from paired readings"
+ }
+}
