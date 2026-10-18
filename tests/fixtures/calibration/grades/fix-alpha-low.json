@@ -1,0 +1,39 @@
+{
+ "task": "fix",
+ "head": "2222222",
+ "commits": 1,
+ "staged": [],
+ "committedWithMap": true,
+ "changed": [
+  "docs/MAP.md",
+  "src/mod.py",
+  "tests/test_mod.py"
+ ],
+ "untracked": [],
+ "newTests": [],
+ "srcDiffLines": 2,
+ "candidateTests": {
+  "passed": null,
+  "failed": null,
+  "total": null,
+  "exit": 0
+ },
+ "guardRemoved": {
+  "passed": null,
+  "failed": null,
+  "total": null,
+  "exit": 1
+ },
+ "acceptedPin": {
+  "passed": null,
+  "failed": null,
+  "total": null,
+  "exit": 0
+ },
+ "lint": "ok",
+ "candidateGreen": true,
+ "guardRed": true,
+ "acceptedPinGreen": true,
+ "scopeOk": true,
+ "PASS": true
+}

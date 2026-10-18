@@ -1,0 +1,32 @@
+{
+ "task": "pin",
+ "head": "1111111",
+ "commits": 1,
+ "changed": [
+  "tests/test_pin.py"
+ ],
+ "staged": [],
+ "untracked": [],
+ "srcTouched": [],
+ "testFiles": [
+  "tests/test_pin.py"
+ ],
+ "atHead": {
+  "passed": null,
+  "failed": null,
+  "total": null,
+  "exit": 1
+ },
+ "withAcceptedFix": {
+  "passed": null,
+  "failed": null,
+  "total": null,
+  "exit": 0
+ },
+ "lint": "ok",
+ "redAtHead": true,
+ "greenWithFix": true,
+ "srcClean": true,
+ "committed": true,
+ "PASS": true
+}
