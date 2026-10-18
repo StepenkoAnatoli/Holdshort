@@ -42,6 +42,76 @@ def build(out: Path, *extra: str, run: Path | None = None) -> subprocess.Complet
     return subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
 
+def git_env(home: Path) -> dict:
+    """Hermetic git: no global or system config (signing, machine-wide hooks), a fixed identity."""
+    import os
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    cfg = home / "gitconfig"
+    if not cfg.exists():
+        cfg.write_text("[user]\n\tname = t\n\temail = t@localhost\n[init]\n\tdefaultBranch = main\n")
+    env.update(GIT_CONFIG_GLOBAL=str(cfg), GIT_CONFIG_NOSYSTEM="1", PYTHONDONTWRITEBYTECODE="1")
+    return env
+
+
+def sh(args, cwd: Path, env: dict, check: bool = True) -> subprocess.CompletedProcess:
+    p = subprocess.run(args, cwd=cwd, env=env, capture_output=True, text=True, timeout=300)
+    if check and p.returncode != 0:
+        raise AssertionError(f"{args} exit {p.returncode}: {p.stdout}{p.stderr}")
+    return p
+
+
+def commit_all(repo: Path, env: dict, msg: str) -> str:
+    sh(["git", "add", "-A"], repo, env)
+    sh(["git", "commit", "-q", "-m", msg], repo, env)
+    return sh(["git", "rev-parse", "HEAD"], repo, env).stdout.strip()
+
+
+def make_pack(root: Path, env: dict, report: str = "exit-code") -> tuple[Path, dict]:
+    """A temporary subject pack: a two-line module (add answers a - b at the base), a one-row test, the accepted fix."""
+    pack, repo = root / "pack", root / "pack" / "repo"
+    (repo / "src").mkdir(parents=True)
+    (repo / "tests").mkdir()
+    (repo / "docs").mkdir()
+    (repo / ".gitignore").write_text("__pycache__/\n")
+    (repo / "src" / "mod.py").write_text("def add(a, b):\n    return a - b\n")
+    (repo / "src" / "other.py").write_text("X = 1\n")
+    (repo / "docs" / "MAP.md").write_text("map\n")
+    (repo / "README.md").write_text("readme\n")
+    (repo / "tests" / "test_mod.py").write_text(
+        "import unittest\nfrom src.mod import add\n\n\nclass T(unittest.TestCase):\n    def test_zero(self):\n        self.assertEqual(add(0, 0), 0)\n")
+    sh(["git", "init", "-q"], repo, env)
+    base = commit_all(repo, env, "base")
+    (repo / "src" / "mod.py").write_text("def add(a, b):\n    return a + b\n")
+    with (repo / "tests" / "test_mod.py").open("a") as f:
+        f.write("\n    def test_sum(self):\n        self.assertEqual(add(2, 3), 5)\n")
+    accepted = commit_all(repo, env, "accepted fix")
+    test_cmd = "python3 -m unittest {files}"
+    if report == "vitest-json":
+        test_cmd = ("if python3 -m unittest {files}; then echo '{\"numPassedTests\": 1, \"numFailedTests\": 0, \"numTotalTests\": 1}' > {report}; "
+                    "else echo '{\"numPassedTests\": 0, \"numFailedTests\": 1, \"numTotalTests\": 1}' > {report}; fi")
+    manifest = json.loads((FIX / "manifest.json").read_text())
+    manifest.update(accepted_fix=accepted, commands={"test": test_cmd, "test_report": report, "lint": "python3 -m py_compile {files}", "timeout_seconds": 120})
+    for case in ("pin", "fix"):
+        manifest["cases"][case]["base"] = base
+    manifest["cases"]["review"]["base"] = base
+    (pack / "manifest.json").write_text(json.dumps(manifest, indent=1))
+    return pack, {"base": base, "accepted": accepted, "repo": repo}
+
+
+def checkout(src: Path, commit: str, target: Path, env: dict, *flags: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["bash", str(KIT / "historyless-checkout.sh"), *flags, str(src), commit, str(target), "cal/test"],
+                          env=env, capture_output=True, text=True, timeout=120)
+
+
+def grade(manifest: Path, task: str, cand: Path, env: dict) -> tuple[int, dict, str]:
+    p = subprocess.run(["bash", str(KIT / "grade.sh"), str(manifest), task, str(cand)], env=env, capture_output=True, text=True, timeout=600)
+    try:
+        doc = json.loads(p.stdout)
+    except ValueError:
+        doc = {}
+    return p.returncode, doc, p.stdout + p.stderr
+
+
 class Observations(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -194,6 +264,161 @@ class Observations(unittest.TestCase):
         self.assertEqual(mod.review_result({**g, "copiedFromHistory": True}, 0, ["D-1", "D-2"]), "FAIL")
         # a ground-truth id the grader left out is not found
         self.assertEqual(mod.review_result({**g, "truth": truth(True)}, 0, ["D-1", "D-2"]), "PARTIAL")
+
+
+class Scripts(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.env = git_env(self.root)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_both_scripts_pass_bash_n(self):
+        for name in ("grade.sh", "historyless-checkout.sh"):
+            p = subprocess.run(["bash", "-n", str(KIT / name)], capture_output=True, text=True, timeout=30)
+            self.assertEqual(p.returncode, 0, f"{name}: {p.stderr}")
+
+    def test_historyless_checkout_is_one_root_commit_with_the_source_tree(self):
+        pack, c = make_pack(self.root, self.env)
+        (c["repo"] / ".gitattributes").write_text("README.md export-ignore\n")  # git archive would drop it; the tree must not
+        base2 = commit_all(c["repo"], self.env, "attributes")
+        target = self.root / "cand"
+        p = checkout(c["repo"], base2, target, self.env)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        g = lambda *a: sh(["git", *a], target, self.env).stdout.strip()
+        self.assertEqual(g("rev-list", "--all", "--count"), "1")
+        self.assertEqual(g("rev-list", "--max-parents=0", "HEAD"), g("rev-parse", "HEAD"))
+        self.assertEqual(g("rev-parse", "HEAD^{tree}"), sh(["git", "rev-parse", f"{base2}^{{tree}}"], c["repo"], self.env).stdout.strip())
+        self.assertEqual(g("branch", "--show-current"), "cal/test")
+        self.assertEqual(g("status", "--porcelain"), "")
+        self.assertTrue((target / "README.md").is_file())
+        for sha in (c["accepted"], c["base"], base2):  # no commit of the source is an object here
+            self.assertNotEqual(sh(["git", "cat-file", "-e", sha], target, self.env, check=False).returncode, 0, sha)
+
+    def test_historyless_checkout_links_only_on_request_and_hides_the_links(self):
+        pack, c = make_pack(self.root, self.env)
+        (c["repo"] / "deps").mkdir()
+        p = checkout(c["repo"], c["base"], self.root / "plain", self.env)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertFalse((self.root / "plain" / "deps").exists())
+        p = checkout(c["repo"], c["base"], self.root / "linked", self.env, "--link", "deps")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertTrue((self.root / "linked" / "deps").is_symlink())
+        self.assertEqual(sh(["git", "status", "--porcelain"], self.root / "linked", self.env).stdout.strip(), "")
+
+    def test_historyless_checkout_refuses_an_existing_target_and_one_inside_the_pack(self):
+        pack, c = make_pack(self.root, self.env)
+        (self.root / "taken").mkdir()
+        p = checkout(c["repo"], c["base"], self.root / "taken", self.env)
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        p = checkout(c["repo"], c["base"], pack / "cand", self.env, "--pack", str(pack))
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn("pack", p.stderr)
+        self.assertFalse((pack / "cand").exists())
+        p = checkout(c["repo"], c["base"], self.root / "ok", self.env, "--pack", str(pack))
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+    def candidate(self, c, name):
+        target = self.root / name
+        p = checkout(c["repo"], c["base"], target, self.env)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return target
+
+    def fix_like_the_accepted_one(self, cand):
+        (cand / "src" / "mod.py").write_text("def add(a, b):\n    return a + b\n")
+        with (cand / "tests" / "test_mod.py").open("a") as f:
+            f.write("\n    def test_sum(self):\n        self.assertEqual(add(2, 3), 5)\n")
+        (cand / "docs" / "MAP.md").write_text("map: add answers the sum\n")
+
+    def test_grade_fix_green_candidate_passes(self):
+        pack, c = make_pack(self.root, self.env)
+        cand = self.candidate(c, "fix-good")
+        self.fix_like_the_accepted_one(cand)
+        commit_all(cand, self.env, "fix")
+        before = (cand / "src" / "mod.py").read_bytes()
+        code, d, out = grade(pack / "manifest.json", "fix", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((d["candidateGreen"], d["guardRed"], d["acceptedPinGreen"], d["scopeOk"], d["lint"]), (True, True, True, True, "ok"), out)
+        self.assertIs(d["committedWithMap"], True)
+        self.assertIs(d["PASS"], True)
+        self.assertEqual((cand / "src" / "mod.py").read_bytes(), before)  # the grade restores what it swapped
+        self.assertFalse((cand / "tests" / "test_zz_accepted.py").exists())
+
+    def test_grade_fix_source_touching_candidate_fails_on_scope(self):
+        pack, c = make_pack(self.root, self.env)
+        cand = self.candidate(c, "fix-scope")
+        self.fix_like_the_accepted_one(cand)
+        (cand / "src" / "other.py").write_text("X = 2\n")
+        commit_all(cand, self.env, "fix and more")
+        code, d, out = grade(pack / "manifest.json", "fix", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertIs(d["candidateGreen"], True, out)
+        self.assertIs(d["scopeOk"], False, out)
+        self.assertIn("src/other.py", d["changed"])
+        self.assertIs(d["PASS"], False)
+
+    def test_grade_pin_red_then_green_with_the_accepted_fix_passes(self):
+        pack, c = make_pack(self.root, self.env)
+        cand = self.candidate(c, "pin-good")
+        (cand / "tests" / "test_pin.py").write_text(
+            "import unittest\nfrom src.mod import add\n\n\nclass P(unittest.TestCase):\n    def test_sum(self):\n        self.assertEqual(add(2, 3), 5)\n")
+        commit_all(cand, self.env, "pin")
+        code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["testFiles"], ["tests/test_pin.py"])
+        self.assertEqual((d["redAtHead"], d["greenWithFix"], d["srcClean"], d["lint"], d["committed"]), (True, True, True, "ok", True), out)
+        self.assertIs(d["PASS"], True)
+        self.assertEqual((cand / "src" / "mod.py").read_text(), "def add(a, b):\n    return a - b\n")
+
+    def test_grade_pin_source_touching_candidate_fails(self):
+        pack, c = make_pack(self.root, self.env)
+        cand = self.candidate(c, "pin-src")
+        (cand / "tests" / "test_pin.py").write_text(
+            "import unittest\nfrom src.mod import add\n\n\nclass P(unittest.TestCase):\n    def test_sum(self):\n        self.assertEqual(add(2, 3), 5)\n")
+        (cand / "src" / "other.py").write_text("X = 3\n")
+        commit_all(cand, self.env, "pin and a source edit")
+        code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertIs(d["srcClean"], False, out)
+        self.assertEqual(d["srcTouched"], ["src/other.py"])
+        self.assertIs(d["PASS"], False)
+
+    def test_grade_pin_green_at_the_base_fails(self):
+        pack, c = make_pack(self.root, self.env)
+        cand = self.candidate(c, "pin-weak")
+        (cand / "tests" / "test_pin.py").write_text(  # passes at the base: it does not express the rule
+            "import unittest\nfrom src.mod import add\n\n\nclass P(unittest.TestCase):\n    def test_zero(self):\n        self.assertEqual(add(0, 0), 0)\n")
+        commit_all(cand, self.env, "pin")
+        code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((d["redAtHead"], d["greenWithFix"]), (False, True), out)
+        self.assertIs(d["PASS"], False)
+
+    def test_grade_reads_a_counting_report(self):
+        pack, c = make_pack(self.root, self.env, report="vitest-json")
+        cand = self.candidate(c, "pin-json")
+        (cand / "tests" / "test_pin.py").write_text(
+            "import unittest\nfrom src.mod import add\n\n\nclass P(unittest.TestCase):\n    def test_sum(self):\n        self.assertEqual(add(2, 3), 5)\n")
+        commit_all(cand, self.env, "pin")
+        code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((d["atHead"]["failed"], d["withAcceptedFix"]["passed"]), (1, 1), out)
+        self.assertIs(d["PASS"], True)
+
+    def test_grade_refuses_a_checkout_inside_the_pack_and_a_bad_task(self):
+        pack, c = make_pack(self.root, self.env)
+        inside = pack / "cand"
+        self.assertEqual(checkout(c["repo"], c["base"], inside, self.env).returncode, 0)
+        code, d, out = grade(pack / "manifest.json", "pin", inside, self.env)
+        self.assertEqual(code, 2, out)
+        self.assertIn("pack", out)
+        code, d, out = grade(pack / "manifest.json", "review", self.candidate(c, "x"), self.env)
+        self.assertEqual(code, 2, out)
+        code, d, out = grade(pack / "manifest.json", "fix", self.root / "missing", self.env)
+        self.assertEqual(code, 3, out)
+        self.assertIn("error", d)
 
 
 if __name__ == "__main__":
