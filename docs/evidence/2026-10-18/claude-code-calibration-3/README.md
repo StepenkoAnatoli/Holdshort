@@ -1,6 +1,7 @@
 # Claude Code calibration run 3 — preregistered protocol
 
-Status: **preregistered; launched after this file was committed** (the run id is added once the host assigns it).
+Status: **preregistered; launched after this file was committed.** The host assigned run id `wf_4e9ef48d-066`, launched
+2026-10-18T05:24Z from the script whose hash the protocol records, after the protocol commit `0013451`.
 Results come later as `observations.json`, `scores.json` and `results-table.md`; nothing here is a result.
 
 Run 3 keeps the method of runs 1 and 2 and changes what their limits named:
