@@ -47,7 +47,9 @@ def _fresh_clone(bare_src: Path) -> dict:
     dst = tmp / "clone"
     env = dict(os.environ)
     env["GIT_CONFIG_GLOBAL"] = str(tmp / "gitconfig")   # isolation: no user gitconfig
-    env["GIT_CONFIG_SYSTEM"] = os.devnull
+    empty = tmp / "empty-gitconfig"                       # an empty file, as the other tests isolate:
+    empty.write_text("", encoding="utf-8")                # os.devnull is only a config file while it is a device
+    env["GIT_CONFIG_SYSTEM"] = str(empty)
     subprocess.run(["git", "clone", "-q", str(bare_src), str(dst)], env=env, check=True)
     subprocess.run(["git", "config", "user.name", "t"], cwd=dst, env=env, check=True)
     subprocess.run(["git", "config", "user.email", "t@example.invalid"], cwd=dst, env=env, check=True)

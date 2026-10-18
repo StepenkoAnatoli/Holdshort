@@ -1,0 +1,383 @@
+{
+  "schema_version": 1,
+  "status": "run complete; results in observations.json, scores.json and results-table.md; see amendments",
+  "run_id": "wf_fe91e1d6-d78",
+  "run_id_note": "the host assigns the workflow run id at launch; it is recorded in README.md once known, and the protocol is not otherwise changed",
+  "frozen_at": "2026-10-17T23:22:51Z",
+  "revision": "fc718b7",
+  "revision_note": "the SmartRouter branch host/claude-code-adapter head at freeze (short sha; the commit adding this file is its child); tools/prices-2.json is unchanged since run 1",
+  "predecessor": "docs/evidence/2026-10-17/claude-code-calibration (run 1, wf_052c5f34-973)",
+  "host": "Claude Code (subscription); sub-agents launched by a workflow script, two at a time",
+  "requested_models": [
+    "haiku",
+    "sonnet",
+    "opus",
+    "fable"
+  ],
+  "model_labels": {
+    "haiku": "Claude Haiku 5.5",
+    "sonnet": "Claude Sonnet 5.5",
+    "opus": "Claude Opus 5.5",
+    "fable": "Claude Fable 5.1"
+  },
+  "model_identity_note": "Requested values are the host's model aliases; resolved immutable model revisions are not exposed to the coordinator and are recorded as null unless observed",
+  "profiles": [
+    {
+      "key": "haiku-low",
+      "model": "haiku",
+      "effort": "low"
+    },
+    {
+      "key": "haiku-medium",
+      "model": "haiku",
+      "effort": "medium"
+    },
+    {
+      "key": "haiku-high",
+      "model": "haiku",
+      "effort": "high"
+    },
+    {
+      "key": "sonnet-low",
+      "model": "sonnet",
+      "effort": "low"
+    },
+    {
+      "key": "sonnet-medium",
+      "model": "sonnet",
+      "effort": "medium"
+    },
+    {
+      "key": "sonnet-high",
+      "model": "sonnet",
+      "effort": "high"
+    },
+    {
+      "key": "opus-medium",
+      "model": "opus",
+      "effort": "medium"
+    },
+    {
+      "key": "opus-high",
+      "model": "opus",
+      "effort": "high"
+    },
+    {
+      "key": "opus-xhigh",
+      "model": "opus",
+      "effort": "xhigh"
+    },
+    {
+      "key": "fable-medium",
+      "model": "fable",
+      "effort": "medium"
+    },
+    {
+      "key": "fable-high",
+      "model": "fable",
+      "effort": "high"
+    },
+    {
+      "key": "fable-xhigh",
+      "model": "fable",
+      "effort": "xhigh"
+    }
+  ],
+  "review_only_profiles": [
+    {
+      "key": "sonnet-xhigh",
+      "model": "sonnet",
+      "effort": "xhigh",
+      "reason": "added on review only, where run 1 separated profiles least; not run on pin or fix"
+    },
+    {
+      "key": "opus-max",
+      "model": "opus",
+      "effort": "max",
+      "reason": "added on review only, where run 1 separated profiles least; not run on pin or fix"
+    },
+    {
+      "key": "fable-max",
+      "model": "fable",
+      "effort": "max",
+      "reason": "added on review only, where run 1 separated profiles least; not run on pin or fix"
+    }
+  ],
+  "runs_per_profile_per_task": 1,
+  "retry_limit": 0,
+  "item_count": 39,
+  "item_count_note": "12 pin + 12 fix + 15 review; each review is followed by one grader agent (15 more agents, not calibration items)",
+  "subject": {
+    "repository": "MoonAliza",
+    "unit": "U2 GitHub account store (src/main/github-account-store.ts)",
+    "review_base_revision": "d3aaf21",
+    "pin_fix_base_revision": "d0bb208",
+    "accepted_fix_revision": "587d445",
+    "revision_order": "d3aaf21 (U2-R11 pin only; R11 and R13 both present) -> d0bb208 (R11 fixed; R13 present) -> 587d445 (R13 fixed) -> 97b0b9e (R15 pin)",
+    "isolation": "one git worktree and branch per task and profile, created at the task's base revision, with node_modules and .build symlinked to the main checkout",
+    "known_defects": [
+      {
+        "id": "U2-R11",
+        "severity": "S3",
+        "present_at": [
+          "d3aaf21"
+        ],
+        "summary": "a sign-in's rollback after a failed commit writes a file that never names the new refs, so a new ref that commit(access) already committed can outlive the file (a committed orphan, or REDACTION_UNAVAILABLE at the next start)",
+        "accepted_fix": "d0bb208"
+      },
+      {
+        "id": "U2-R13",
+        "severity": "S3",
+        "present_at": [
+          "d3aaf21",
+          "d0bb208"
+        ],
+        "summary": "a sign-in after a start whose open() could not read the valid file (an I/O error) writes over it with before = null, so the pair it named stays committed in the vault for good",
+        "accepted_fix": "587d445"
+      }
+    ],
+    "why_harder_than_run_1": "run 1's defect was a one-line order regression in a refresh path the prompt pointed at; here the review must find two S3 durability holes across a restart in a store with eight write steps, a rollback, a reconcile and three failure injectors, and the fix needs a new re-read step under a lock plus the subject repository's commit gate (map staged, five-part message)"
+  },
+  "sources": {
+    "/tmp/claude-0/-home-user-Research-Kit/5649504a-fc26-5a4a-85c4-62cf875be3b1/scratchpad/cal-truth-2.json": "b1e0bed8d1369bd1f2e8529d778e4f05b49880c8cc41b454dd8e453e72262b2b",
+    "/tmp/claude-0/-home-user-Research-Kit/5649504a-fc26-5a4a-85c4-62cf875be3b1/scratchpad/sr-calibration-2.js": "3161dfbf0282cd06215b2647864ae490757b5d28d15771e38dcbeb21e83f57fb",
+    "/tmp/claude-0/-home-user-Research-Kit/5649504a-fc26-5a4a-85c4-62cf875be3b1/scratchpad/cal-grade-2.sh": "5248a05c4c09607389353bff5bfbdead4070dae5d82b28af322e82f49115f2ed",
+    "/tmp/claude-0/-home-user-Research-Kit/5649504a-fc26-5a4a-85c4-62cf875be3b1/scratchpad/cal-fix-finding-2.md": "91149ff650654700f955d0c7e2853b2ff9bddf9865f626e965212966bd713566",
+    "tools/prices-2.json": "8373519c39e6075bd9d223648c058785c302e9fffa728e153e58bd10ad2e96c4"
+  },
+  "source_roles": {
+    "cal-truth-2.json": "review ground truth (U2-R11, U2-R13, from the accepted fix commits' reports); hash only, text not copied into this repository",
+    "sr-calibration-2.js": "workflow script holding the task and grader prompts; hash only; launched by path, so the hash is taken before the launch",
+    "cal-grade-2.sh": "mechanical grader for pin and fix; copied here as grade.sh (byte-identical)",
+    "cal-fix-finding-2.md": "the finding text the fix task was given (problem and required behaviour, not the accepted implementation); hash only",
+    "tools/prices-2.json": "price rows for the estimate-only cash column (revision prices-2)"
+  },
+  "source_hash_convention": "SHA-256 of UTF-8 text with CRLF/CR normalized to LF",
+  "cases": [
+    {
+      "id": "pin",
+      "category": "build-tests",
+      "base": "d0bb208",
+      "task": "write two red-first pin tests for the re-read rule (U2-R13's required behaviour, stated as a rule without the finding id) in a new test file; no source change; eslint requested this time",
+      "grading": "mechanical (grade.sh pin)",
+      "pass_rule": "the candidate's new tests fail at d0bb208 AND pass with src/main/github-account-store.ts from 587d445 AND no file under src/ is changed (committed, staged or unstaged) AND eslint is clean on the candidate's test files",
+      "pass_field": "grade.sh PASS",
+      "difference_from_run_1": "lint is part of the pass rule because the prompt asks for it (run 1 reported it as hygiene only)"
+    },
+    {
+      "id": "fix",
+      "category": "fix",
+      "base": "d0bb208",
+      "task": "fix U2-R13 from its problem and required behaviour (cal-fix-finding-2.md), red-first, typecheck and lint, the map sentence updated, one commit with the five-part message",
+      "grading": "mechanical (grade.sh fix)",
+      "pass_rule": "the candidate's tests (tests/github-account-store.test.ts and any new test files) are green at its head AND those tests are red again with src/main/github-account-store.ts restored to d0bb208 AND the accepted test file from 587d445 is green against the candidate's source AND every changed file is src/main/github-account-store.ts, tests/github-account-store.test.ts, docs/ARCHITECTURE.md or a newly added test file AND eslint is clean on those files",
+      "pass_field": "grade.sh PASS",
+      "reported_separately": "committedWithMap (the commit landed through the subject's gate with the map staged); typecheck is self-reported by the candidate and not re-run by the grader",
+      "difference_from_run_1": "the prompt states the commit gate's map rule (run 1's lead mistake L-1) and asks for typecheck, lint and the five-part message"
+    },
+    {
+      "id": "review",
+      "category": "review",
+      "base": "d3aaf21",
+      "task": "refute-first review of the account store's open, finishStartup, replace and clear paths against spec 4.2-4.5 and 3.6, with scratch-test reproductions",
+      "grading": "grader agent (model opus, effort high, as in run 1) against cal-truth-2.json; read-only access to the candidate's worktree",
+      "grader_fields": [
+        "r11Found",
+        "r11CauseNamed",
+        "r11Severity",
+        "r13Found",
+        "r13CauseNamed",
+        "r13Severity",
+        "others (each other S1-S3 finding classified true, false or unverifiable)",
+        "falseBlocking (count of false among S1-S3)",
+        "copiedFromHistory",
+        "notes"
+      ],
+      "pass_rule": "PASS when r11Found AND r13Found AND falseBlocking is 0 AND copiedFromHistory is false; PARTIAL when exactly one of r11Found, r13Found holds with falseBlocking 0 and copiedFromHistory false; FAIL otherwise. Only PASS counts as a pass for the host policy's two-pass qualification rule; r11CauseNamed, r13CauseNamed and the severities are reported, not scored",
+      "pass_rule_set_at": "at freeze, before the launch"
+    }
+  ],
+  "metrics": [
+    "pass per task (pin, fix) and the grader fields plus PASS/PARTIAL/FAIL (review)",
+    "lint_clean per task",
+    "tokens per item, as reported by the workflow journal",
+    "wall_seconds per item, as reported by the workflow journal",
+    "self_reported_mistakes per item, recorded verbatim",
+    "estimated_cash_usd per item, estimate-only",
+    "usage-window movement over the run: the platform's five_hour and seven_day utilization read with nothing in flight before the launch and after the last agent, against the run's total reported tokens (items plus graders), as a measurement of the adapter's utilization-per-mtok coefficients"
+  ],
+  "accounting": "subscription host: no per-call billing or price applies. estimated_cash_usd applies the tools/prices-2.json rows (revision prices-2; haiku -> cloud-C, sonnet -> cloud-S, opus -> cloud-O, fable -> cloud-F) to the harness-reported tokens; when the journal gives no input/output split the estimate is a range from all-input to all-output rates, and cache pricing is not modelled. It is not a bill and supports no savings claim. Unknown tokens are null, never zero.",
+  "timing": "host-observed wall time per sub-agent from the workflow journal, including scheduling; two items ran concurrently, so wall time is not pure model latency",
+  "privacy": "the subject repository's own code and test harness only; the ground truth, prompts and finding text are recorded by hash; no credentials or account data",
+  "limits": [
+    "two ground-truth defects, one run per profile: a profile can find or fix one by luck, and one run cannot separate luck from capability; run 1 and run 2 together give at most two observations per profile and task category",
+    "the accepted answers exist in the subject repository's git history; candidates are told not to read history beyond the base revision, the review grader checks copiedFromHistory, and the test file at d3aaf21 already names U2-R11 in a comment (the pin of its sibling rule), which is not copying but is a hint the original reviewer did not have",
+    "the review prompt names durability across restarts as the store's promise, which points at the area of both defects without naming them; run 1's prompt pointed at the refresh path the same way",
+    "the grader is one opus-high agent per review; its 'others' classifications are not independently verified in this run and are reported as the grader's, as in run 1",
+    "the host box has 4 CPUs, so agents ran two at a time; wall time includes contention",
+    "the usage-window measurement includes the lead's own tokens during the run (unrecorded, small: readings and checks only) and so overstates the per-token coefficient, the safe direction",
+    "tokens are the harness's reported counts, not a provider bill",
+    "model labels are requested aliases, not verified immutable deployments",
+    "no overall model ranking, routing threshold or savings claim follows from this run alone"
+  ],
+  "amendments": [
+    {
+      "at": "2026-10-18T01:25:00Z",
+      "case": "fix",
+      "change": "fix:haiku-low recorded as a harness error (the harness retried its StructuredOutput five times, the cap, because the output kept omitting the required mistakes field) with self-reported fields null; its worktree holds a complete committed fix (8781c1f) and is graded by grade.sh like every other",
+      "reason": "the protocol's retry_limit 0 concerns re-running the task; this was a return-format retry inside one run, and the mechanical grade does not depend on the structured return"
+    },
+    {
+      "at": "2026-10-18T01:25:00Z",
+      "case": "usage",
+      "change": "usage-window measurement recorded: five_hour 0.12 -> 0.39 and seven_day 0.28 -> 0.36 over 7,872,276 reported tokens (readings 2026-10-17T23:22:51Z and 2026-10-18T01:23:32Z, nothing in flight at either end, the lead idle but for one check-in): 0.0343 and 0.0102 per Mtok, upper bounds (the lead's check-in turns are included)",
+      "reason": "the fourth metric the protocol named; the lead-only interval 23:07-23:22 (five_hour 0.02 -> 0.12 with no sub-agent running) is recorded beside it as the host's dominant cost"
+    },
+    {
+      "at": "2026-10-18T01:28:00Z",
+      "case": "review",
+      "change": "POST-HOC, set after the results existed: a cross-candidate adjudication of the distinct other findings (six claims, three independent lenses each - reproduce, reachability, refute - majority verdict; workflow wf_603131fc-773) is run because the per-candidate graders classified the same claim true for five candidates and false for two (reachability). The preregistered scores stand unchanged (opus-medium review FAIL on one contested classification); the adjudicated verdicts are reported beside them, and run 3 preregisters the adjudication step",
+      "reason": "a per-candidate grader cannot be consistent across candidates; the protocol did not foresee recurring other findings"
+    },
+    {
+      "at": "2026-10-18T02:00:00Z",
+      "case": "review",
+      "change": "POST-HOC adjudication result (workflow wf_603131fc-773, 18 fable-high lenses): C-B real (S3: a crash between the file write and the commit, then an unreadable start, loses the account) and C-C real (an unindexed encrypted file left by the vault on a failed index persist; S3 by reachability, S4 by the other two lenses); C-A, C-D, C-E, C-F not real (C-A and C-D hold in code but no flow reaches the state; C-E needs a reconcile failure startup does not survive; C-F is pinned and cleared by the service). No preregistered score changes. Root cause of the grader split on C-A: the grader instruction defined false as \"the claim does not hold, or the test does not show what it says\" without saying whether reachability through the spec's flows is part of holding; five graders followed the letter (true), two reasoned on reachability (false). Under a reachability-strict reading three more reviews (opus-high, fable-medium, fable-max) would fail on their C-A claims; under a code-behaviour reading opus-medium would pass; neither is applied",
+      "reason": "the adjudication was announced in the previous amendment; run 3 must define the classification question and preregister the adjudication step",
+      "verdicts": {
+        "C-A": {
+          "title": "clear() after an unreadable open() answers durable without writing",
+          "real": false,
+          "votes": "1/3",
+          "lenses": {
+            "reproduce": {
+              "holds": true,
+              "reachable": "unclear",
+              "severity": "S4"
+            },
+            "reachability": {
+              "holds": true,
+              "reachable": "no",
+              "severity": "S4"
+            },
+            "refute": {
+              "holds": true,
+              "reachable": "no",
+              "severity": "S4"
+            }
+          }
+        },
+        "C-B": {
+          "title": "a crash between the file write and the commit, then an unreadable start, loses the account",
+          "real": true,
+          "votes": "3/3",
+          "lenses": {
+            "reproduce": {
+              "holds": true,
+              "reachable": "yes",
+              "severity": "S3"
+            },
+            "reachability": {
+              "holds": true,
+              "reachable": "yes",
+              "severity": "S3"
+            },
+            "refute": {
+              "holds": true,
+              "reachable": "yes",
+              "severity": "S3"
+            }
+          }
+        },
+        "C-C": {
+          "title": "vault.saveStaged leaves an unindexed .bin when its persist fails",
+          "real": true,
+          "votes": "3/3",
+          "lenses": {
+            "reproduce": {
+              "holds": true,
+              "reachable": "yes",
+              "severity": "S4"
+            },
+            "reachability": {
+              "holds": true,
+              "reachable": "yes",
+              "severity": "S3"
+            },
+            "refute": {
+              "holds": true,
+              "reachable": "yes",
+              "severity": "S4"
+            }
+          }
+        },
+        "C-D": {
+          "title": "cap() ignores a failed removal, leaving a dropped ref committed and unnamed",
+          "real": false,
+          "votes": "0/3",
+          "lenses": {
+            "reproduce": {
+              "holds": true,
+              "reachable": "no",
+              "severity": "S4"
+            },
+            "reachability": {
+              "holds": true,
+              "reachable": "no",
+              "severity": "S4"
+            },
+            "refute": {
+              "holds": false,
+              "reachable": "no",
+              "severity": "none"
+            }
+          }
+        },
+        "C-E": {
+          "title": "a retired ref whose tombstone never reached disk is un-named by finishStartup",
+          "real": false,
+          "votes": "0/3",
+          "lenses": {
+            "reproduce": {
+              "holds": false,
+              "reachable": "no",
+              "severity": "none"
+            },
+            "reachability": {
+              "holds": false,
+              "reachable": "no",
+              "severity": "none"
+            },
+            "refute": {
+              "holds": false,
+              "reachable": "no",
+              "severity": "none"
+            }
+          }
+        },
+        "C-F": {
+          "title": "setLogin is dropped after a refresh whose commit failed",
+          "real": false,
+          "votes": "1/3",
+          "lenses": {
+            "reproduce": {
+              "holds": true,
+              "reachable": "yes",
+              "severity": "none"
+            },
+            "reachability": {
+              "holds": true,
+              "reachable": "no",
+              "severity": "none"
+            },
+            "refute": {
+              "holds": false,
+              "reachable": "no",
+              "severity": "none"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

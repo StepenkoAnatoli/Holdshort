@@ -1,0 +1,119 @@
+{
+ "request": {
+  "taskId": "sr-host-build",
+  "objective": "Build the SmartRouter host adapter route.mjs with red-first tests and README",
+  "category": "build-ui",
+  "unit": "smartrouter-host-adapter",
+  "permittedEffects": [
+   "docs/orchestration/smartrouter/route.mjs",
+   "docs/orchestration/smartrouter/route.test.mjs",
+   "docs/orchestration/smartrouter/README.md"
+  ],
+  "sources": [
+   "docs/orchestration/smartrouter/briefs/router-builder.md",
+   "docs/orchestration/smartrouter/host-policy.json",
+   "/home/user/stepenkoanatoli/smartrouter/skills/smart-router/"
+  ],
+  "nonGoals": [
+   "no change to host-policy.json",
+   "no src/ change",
+   "no push",
+   "no nested delegation",
+   "no spend expansion"
+  ],
+  "acceptanceChecks": [
+   {
+    "command": "node --test docs/orchestration/smartrouter/route.test.mjs",
+    "expect": "exit 0, every test red first"
+   },
+   {
+    "command": "npx eslint docs/orchestration/smartrouter/*.mjs",
+    "expect": "exit 0 or config exclusion stated"
+   },
+   {
+    "command": "NODE_OPTIONS=--max-old-space-size=2048 npm run typecheck",
+    "expect": "exit 0 (typecheck)"
+   },
+   {
+    "command": "npm run lint",
+    "expect": "exit 0 (lint)"
+   },
+   {
+    "command": "npx vitest run --reporter=json + compare.py",
+    "expect": "no new failure vs the 74 baseline (full-suite comparison vs baseline)"
+   },
+   {
+    "command": "refute-first review",
+    "expect": "ACCEPT"
+   },
+   {
+    "command": "red-first",
+    "expect": "unit tests red-first"
+   }
+  ],
+  "needsVision": false,
+  "dataClasses": [
+   "repo-code",
+   "run-docs"
+  ],
+  "projectStop": {
+   "redSuite": false,
+   "gateOff": false,
+   "researchGateFailing": false
+  },
+  "previousResult": null,
+  "deadline": "2026-10-18T06:00:00Z",
+  "now": "2026-10-17T18:40:00Z",
+  "allowDirect": true
+ },
+ "decision": {
+  "route": "delegate",
+  "profile": "cc-opus-high",
+  "isolation": "worktree+branch",
+  "owner": "worker",
+  "human-gate": "none",
+  "nested-allowed": false,
+  "max-nesting-depth": 0,
+  "estimated-tokens": 316000,
+  "all-in-bound-usd": 11.5,
+  "candidates": {
+   "cc-fable-xhigh": {
+    "eligible": false,
+    "first-failing-gate": 5,
+    "reason": "direct unsuitable: 316000 tokens > direct-max-tokens 15000"
+   },
+   "cc-fable-high": {
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "cc-fable-high not qualified for build-ui"
+   },
+   "cc-opus-high": {
+    "eligible": true,
+    "kind": "delegate",
+    "all-in-bound-usd": 11.5,
+    "work-bound-usd": 6.32,
+    "review-bound-usd": 4.18
+   },
+   "cc-sonnet-high": {
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "missing or stale capability fingerprint"
+   },
+   "cc-haiku-low": {
+    "eligible": false,
+    "first-failing-gate": 2,
+    "reason": "cc-haiku-low not qualified for build-ui"
+   }
+  },
+  "eligible-ordered": [
+   "cc-opus-high"
+  ],
+  "uncertainty": [
+   "cash: estimate only, no host accounting (subscription); not a strict cap"
+  ],
+  "advisory": "recommendation only \u2014 no dispatch performed or claimed"
+ },
+ "note": "hand-walked by the lead before the adapter existed; dispatched as decided (cc-opus-high)",
+ "walked-by": "lead, by hand, from host-policy.json and gates.md",
+ "walked-at": "2026-10-17T18:40:00Z"
+}

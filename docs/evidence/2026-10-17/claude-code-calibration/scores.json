@@ -1,0 +1,425 @@
+{
+ "schema_version": 1,
+ "run_id": "wf_052c5f34-973",
+ "scored_at": "2026-10-17T20:00:00Z",
+ "pass_rules": "as protocol.json cases[].pass_rule (review rule set before any review ran, see amendments)",
+ "accounting_note": "estimated cash is tokens x the prices-2.json rate for the model: a range from all-input to all-output; tokens are the harness's reported counts, not a provider bill; cache pricing not modelled; subscription host, no per-call accounting",
+ "profiles": {
+  "haiku-low": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 122581,
+     "usd_all_input": 0.0123,
+     "usd_all_output": 0.0613
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": false,
+    "estimate": {
+     "tokens": 109688,
+     "usd_all_input": 0.011,
+     "usd_all_output": 0.0548
+    }
+   },
+   "review": {
+    "pass": false,
+    "r16Found": false,
+    "r16CauseNamed": false,
+    "r17Found": false,
+    "falseBlocking": 1,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 138101,
+     "usd_all_input": 0.0138,
+     "usd_all_output": 0.0691
+    }
+   }
+  },
+  "haiku-medium": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 126590,
+     "usd_all_input": 0.0127,
+     "usd_all_output": 0.0633
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": false,
+    "estimate": {
+     "tokens": 115117,
+     "usd_all_input": 0.0115,
+     "usd_all_output": 0.0576
+    }
+   },
+   "review": {
+    "pass": false,
+    "r16Found": true,
+    "r16CauseNamed": true,
+    "r17Found": false,
+    "falseBlocking": 1,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 161937,
+     "usd_all_input": 0.0162,
+     "usd_all_output": 0.081
+    }
+   }
+  },
+  "haiku-high": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 142538,
+     "usd_all_input": 0.0143,
+     "usd_all_output": 0.0713
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": false,
+    "estimate": {
+     "tokens": 131891,
+     "usd_all_input": 0.0132,
+     "usd_all_output": 0.0659
+    }
+   },
+   "review": {
+    "pass": false,
+    "r16Found": false,
+    "r16CauseNamed": false,
+    "r17Found": false,
+    "falseBlocking": 0,
+    "true_extra_findings": 4,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 260363,
+     "usd_all_input": 0.026,
+     "usd_all_output": 0.1302
+    }
+   }
+  },
+  "sonnet-low": {
+   "pin": {
+    "pass": true,
+    "lint_clean": false,
+    "estimate": {
+     "tokens": 99705,
+     "usd_all_input": 0.1994,
+     "usd_all_output": 0.997
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": false,
+    "estimate": {
+     "tokens": 98822,
+     "usd_all_input": 0.1976,
+     "usd_all_output": 0.9882
+    }
+   },
+   "review": {
+    "pass": true,
+    "r16Found": true,
+    "r16CauseNamed": true,
+    "r17Found": false,
+    "falseBlocking": 0,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 109830,
+     "usd_all_input": 0.2197,
+     "usd_all_output": 1.0983
+    }
+   }
+  },
+  "sonnet-medium": {
+   "pin": {
+    "pass": true,
+    "lint_clean": false,
+    "estimate": {
+     "tokens": 108528,
+     "usd_all_input": 0.2171,
+     "usd_all_output": 1.0853
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": false,
+    "estimate": {
+     "tokens": 105359,
+     "usd_all_input": 0.2107,
+     "usd_all_output": 1.0536
+    }
+   },
+   "review": {
+    "pass": true,
+    "r16Found": true,
+    "r16CauseNamed": true,
+    "r17Found": false,
+    "falseBlocking": 0,
+    "true_extra_findings": 1,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 120217,
+     "usd_all_input": 0.2404,
+     "usd_all_output": 1.2022
+    }
+   }
+  },
+  "sonnet-high": {
+   "pin": {
+    "pass": true,
+    "lint_clean": false,
+    "estimate": {
+     "tokens": 113013,
+     "usd_all_input": 0.226,
+     "usd_all_output": 1.1301
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": false,
+    "estimate": {
+     "tokens": 109257,
+     "usd_all_input": 0.2185,
+     "usd_all_output": 1.0926
+    }
+   },
+   "review": {
+    "pass": false,
+    "r16Found": true,
+    "r16CauseNamed": true,
+    "r17Found": false,
+    "falseBlocking": 1,
+    "true_extra_findings": 3,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 162318,
+     "usd_all_input": 0.3246,
+     "usd_all_output": 1.6232
+    }
+   }
+  },
+  "opus-medium": {
+   "pin": {
+    "pass": true,
+    "lint_clean": false,
+    "estimate": {
+     "tokens": 110076,
+     "usd_all_input": 0.4403,
+     "usd_all_output": 2.2015
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": false,
+    "estimate": {
+     "tokens": 106137,
+     "usd_all_input": 0.4245,
+     "usd_all_output": 2.1227
+    }
+   },
+   "review": {
+    "pass": true,
+    "r16Found": true,
+    "r16CauseNamed": true,
+    "r17Found": false,
+    "falseBlocking": 0,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 114273,
+     "usd_all_input": 0.4571,
+     "usd_all_output": 2.2855
+    }
+   }
+  },
+  "opus-high": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 113809,
+     "usd_all_input": 0.4552,
+     "usd_all_output": 2.2762
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 116435,
+     "usd_all_input": 0.4657,
+     "usd_all_output": 2.3287
+    }
+   },
+   "review": {
+    "pass": true,
+    "r16Found": true,
+    "r16CauseNamed": true,
+    "r17Found": false,
+    "falseBlocking": 0,
+    "true_extra_findings": 2,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 168518,
+     "usd_all_input": 0.6741,
+     "usd_all_output": 3.3704
+    }
+   }
+  },
+  "opus-xhigh": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 130727,
+     "usd_all_input": 0.5229,
+     "usd_all_output": 2.6145
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 134368,
+     "usd_all_input": 0.5375,
+     "usd_all_output": 2.6874
+    }
+   },
+   "review": {
+    "pass": true,
+    "r16Found": true,
+    "r16CauseNamed": true,
+    "r17Found": false,
+    "falseBlocking": 0,
+    "true_extra_findings": 4,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 245925,
+     "usd_all_input": 0.9837,
+     "usd_all_output": 4.9185
+    }
+   }
+  },
+  "fable-medium": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 117795,
+     "usd_all_input": 1.178,
+     "usd_all_output": 5.8898
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 116990,
+     "usd_all_input": 1.1699,
+     "usd_all_output": 5.8495
+    }
+   },
+   "review": {
+    "pass": true,
+    "r16Found": true,
+    "r16CauseNamed": true,
+    "r17Found": false,
+    "falseBlocking": 0,
+    "true_extra_findings": 0,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 138825,
+     "usd_all_input": 1.3882,
+     "usd_all_output": 6.9413
+    }
+   }
+  },
+  "fable-high": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 127874,
+     "usd_all_input": 1.2787,
+     "usd_all_output": 6.3937
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 140394,
+     "usd_all_input": 1.4039,
+     "usd_all_output": 7.0197
+    }
+   },
+   "review": {
+    "pass": true,
+    "r16Found": true,
+    "r16CauseNamed": true,
+    "r17Found": false,
+    "falseBlocking": 0,
+    "true_extra_findings": 1,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 178291,
+     "usd_all_input": 1.7829,
+     "usd_all_output": 8.9146
+    }
+   }
+  },
+  "fable-xhigh": {
+   "pin": {
+    "pass": true,
+    "lint_clean": true,
+    "estimate": {
+     "tokens": 153418,
+     "usd_all_input": 1.5342,
+     "usd_all_output": 7.6709
+    }
+   },
+   "fix": {
+    "pass": true,
+    "committed_with_map": true,
+    "estimate": {
+     "tokens": 147083,
+     "usd_all_input": 1.4708,
+     "usd_all_output": 7.3541
+    }
+   },
+   "review": {
+    "pass": true,
+    "r16Found": true,
+    "r16CauseNamed": true,
+    "r17Found": false,
+    "falseBlocking": 0,
+    "true_extra_findings": 1,
+    "copiedFromHistory": false,
+    "estimate": {
+     "tokens": 221286,
+     "usd_all_input": 2.2129,
+     "usd_all_output": 11.0643
+    }
+   }
+  }
+ },
+ "summary": {
+  "pin_pass": 12,
+  "fix_pass": 12,
+  "review_pass": 8,
+  "profiles": 12,
+  "reading": "pin and fix did not separate the profiles (12/12 each); review did: haiku-low and haiku-high missed the ground-truth defect, haiku-medium and sonnet-high found it with one false blocking finding each; sonnet-low, sonnet-medium, opus-medium, opus-high, opus-xhigh, fable-medium, fable-high, fable-xhigh passed. One ground truth, one run per cell: a pass is one observation, not a qualification.",
+  "lead_mistakes": "# Calibration run 1 (wf_052c5f34-973) - lead's notes and the lead's own mistakes\n\n## Lead mistake L-1 (prompt defect, fix task)\nThe fix prompt said \"Do not touch any other file\" and \"Commit test and fix together\", while the repository's\ncommit gate (standing protocol rule 1, research/kit.json declared code paths) refuses a commit that touches\nsrc/main/github-signin.ts without docs/ARCHITECTURE.md staged. The real build briefs (common.md) say so; the\ncalibration prompt did not. Impact: 7 candidates stopped at the gate and left the work staged (haiku low/\nmedium/high, sonnet low/medium/high, opus-medium), 3 deviated deliberately and committed with a one-clause\nmap update (opus-high, opus-xhigh, fable-medium); fable-high/xhigh pending. Both behaviours are defensible;\nneither is a model failure. Grading: the mechanical checks run on the working tree (staged or committed);\na \"committedWithMap\" column records the deviation; docs/ARCHITECTURE.md is an allowed file.\nCause: the lead wrote the calibration prompt without re-reading the commit gate's rule. Fix: this note and\nthe script change; the next calibration prompt names the map rule. Verified: grades re-run (see cal-grades/).\n\n## Lead mistake L-2 (grading script)\ncal-grade.sh computed `changed` and `srcDiffLines` from `d87f796..HEAD` only, so staged-but-uncommitted\ncandidates showed \"commits 0, srcDiff 0\" while their tests passed. It also restored src with\n`git checkout -- file`, which restores from the index: a staged candidate change survived (verified by\n`git status` after grading: still `M  src/main/github-signin.ts`); an unstaged one would have been lost.\nFix: `changed` is the union of committed, staged and unstaged; srcDiff is working tree vs base.\n\n## Pin task: lint not requested\nThe pin prompt did not ask for eslint; 4 of 12 left unused imports from copying the harness (sonnet x3,\nopus-medium). Reported as a hygiene column, not a task failure.\n"
+ }
+}

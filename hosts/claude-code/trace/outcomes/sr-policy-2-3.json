@@ -1,0 +1,30 @@
+{
+ "task-id": "sr-policy-2",
+ "outcome": "accepted",
+ "owner-profile": "cc-opus-high",
+ "original-brief-fingerprint": "35de948b83619c625001667e1f5daff6ab93d18339ba7ed3d34b00133baf598d",
+ "evidence": {
+  "checks": [
+   {
+    "command": "node --test docs/orchestration/smartrouter/route.test.mjs",
+    "exit-code": 0,
+    "output-ref": "wf_6bac98f6-611 build report: 79 pass at d09b65b; 80 pass after the lead's P2-4 fix 6a7ca5e"
+   },
+   {
+    "command": "refute-first review",
+    "exit-code": 0,
+    "output-ref": "wf_6bac98f6-611: review FIX (P2-1 S3, P2-2 S4, P2-3 S4) fixed in b57f97b..d09b65b; re-review FIX on one S4 (P2-4) taken by the lead"
+   }
+  ],
+  "actual-spend": null,
+  "actual-tokens": 770527,
+  "files-touched": [
+   "docs/orchestration/smartrouter/host-policy.json",
+   "docs/orchestration/smartrouter/route.mjs",
+   "docs/orchestration/smartrouter/route.test.mjs",
+   "docs/orchestration/smartrouter/README.md",
+   "docs/orchestration/smartrouter/trace/policies/host-policy-1.json"
+  ],
+  "notes": "policy revision 2 integrated; the four workflow agents (build, review, fix, re-review) used 770527 harness tokens in all (not a bill); the lead's P2-4 fix is not counted"
+ }
+}

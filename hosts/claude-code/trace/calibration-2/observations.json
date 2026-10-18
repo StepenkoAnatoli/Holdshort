@@ -1,0 +1,2046 @@
+{
+ "haiku-low": {
+  "profile": "haiku-low",
+  "review-only": false,
+  "pin": {
+   "score": true,
+   "redAtHead": true,
+   "greenWithFix": true,
+   "srcClean": true,
+   "lint": "ok",
+   "committed": true,
+   "atHead": {
+    "passed": 0,
+    "failed": 2,
+    "total": 2
+   },
+   "withAcceptedFix": {
+    "passed": 2,
+    "failed": 0,
+    "total": 2
+   }
+  },
+  "self-reported-mistakes": {
+   "pin": [
+    "Left an unused existsSync import and a `void existsSync` line in the first draft; removed both before the run and before lint, so the committed file is clean.",
+    "Nothing else to report."
+   ],
+   "fix": "no structured output: None",
+   "review": [
+    "nothing to report"
+   ]
+  },
+  "fix": {
+   "score": true,
+   "candidateGreen": true,
+   "guardRed": true,
+   "acceptedPinGreen": true,
+   "scopeOk": true,
+   "lint": "ok",
+   "committedWithMap": true,
+   "commits": 1,
+   "srcDiffLines": 18,
+   "candidateTests": {
+    "passed": 89,
+    "failed": 0,
+    "total": 89
+   },
+   "guardRemoved": {
+    "passed": 87,
+    "failed": 2,
+    "total": 89
+   },
+   "acceptedPin": {
+    "passed": 91,
+    "failed": 0,
+    "total": 91
+   }
+  },
+  "review": {
+   "verdict": "FIX",
+   "findings": [
+    [
+     "R-3",
+     "S2",
+     "After the account file could not be read at open(), open() sets this.disk = null (src/main/github-account-store.ts:75-76, 79) and clear() then has nothing to write: clear() returns 'durable' at line 1"
+    ],
+    [
+     "R-1",
+     "S3",
+     "open() tombstones retiredRefs and the other-client account's refs with tombstoneNow() and ignores the result (src/main/github-account-store.ts:87 and the doomed loop at :85-86). finishStartup() then u"
+    ],
+    [
+     "R-2",
+     "S3",
+     "After open() could not read the file (EBUSY), this.disk is null (:75-79), so replace() computes before = null (:131), its step-4 cap sees no retired refs and no account refs (:140), and write() overwr"
+    ],
+    [
+     "R-4",
+     "S3",
+     "cap() drops the oldest refs beyond 8 with `await drop(ref)` and ignores the boolean that retire()/removeTombstoned() returns (src/main/github-account-store.ts:218-222, called from replace step 4 at :1"
+    ]
+   ],
+   "checked": 16
+  },
+  "review-grade": {
+   "result": "FAIL",
+   "r11Found": false,
+   "r11CauseNamed": false,
+   "r11Severity": "",
+   "r13Found": true,
+   "r13CauseNamed": true,
+   "r13Severity": "S3",
+   "falseBlocking": 1,
+   "copiedFromHistory": false,
+   "others": [
+    {
+     "id": "R-3",
+     "severity": "S2",
+     "classification": "true",
+     "why": "It holds at the store API. After an EBUSY open(), disk is null and taken is [], so clearLocked returns 'durable' at :188 with no write. The scratch test reproduces this: the next start reads the old pair, which breaks DC-6's 'durable' meaning. It shares R13's root cause, and the accepted fix only re-reads in replace(). It is narrow: the signed-out UI (8.2) offers no Sign out, so it is reachable only by a signOut issued from A1. S2 overstates it."
+    },
+    {
+     "id": "R-1",
+     "severity": "S3",
+     "classification": "false",
+     "why": "The scratch tests wrap vault.reconcile in .catch(() => {}) and then call finishStartup. The real startup (index.ts:183, spec 4.4) awaits reconcile without a catch. A reconcile whose persist fails therefore aborts startup before finishStartup, and the file keeps naming x. If the reconcile persist lands instead, it records the deletion. The un-named committed entry with no .bin cannot arise in the specified startup flow."
+    },
+    {
+     "id": "R-4",
+     "severity": "S3",
+     "classification": "true",
+     "why": "cap() at :218-222 ignores drop()'s false. Take a clear on a failing vault index whose unlinks land, over 10 refs: the 8 retired ones can be reached through DC-10's failing step-7 writes. The 2 dropped refs keep a committed on-disk entry with no .bin and are no longer named, so every later redact throws REDACTION_UNAVAILABLE (scratch test reproduced). It is the same failure class as GT R11 case (1). Spec 4.2's 'already tombstoned' premise does not cover a tombstone persist that failed. The setup is white-box, but the state is reachable."
+    }
+   ],
+   "notes": "Found R13 (as R-2, S3) with the exact cause: disk is null after an I/O-unreadable open(), so before = null at :131. It missed R11: its 'checked' list calls the step-5 rollback tested and correct without asking whether the rollback file names the new refs that the partial commit left behind. Reproduction is strong: every finding has a red scratch test, and all 5 fail as described. But R-1's test depends on a startup flow that swallows a reconcile failure, which production does not do, so that one"
+  },
+  "usage": {
+   "pin": {
+    "label": "pin:haiku-low",
+    "model": "claude-haiku-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 122194,
+    "ms": 68417,
+    "ts": null,
+    "startedAt": 1792279484293
+   },
+   "fix": {
+    "label": "fix:haiku-low",
+    "model": "claude-haiku-5-5",
+    "effort": null,
+    "state": "error",
+    "tokens": 139679,
+    "ms": 148170,
+    "ts": null,
+    "startedAt": 1792280008497
+   },
+   "review": {
+    "label": "review:haiku-low",
+    "model": "claude-haiku-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 174821,
+    "ms": 234326,
+    "ts": null,
+    "startedAt": 1792281282957
+   },
+   "grade": {
+    "label": "grade:haiku-low",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 128757,
+    "ms": 98506,
+    "ts": null,
+    "startedAt": 1792285700709
+   }
+  }
+ },
+ "haiku-medium": {
+  "profile": "haiku-medium",
+  "review-only": false,
+  "pin": {
+   "score": true,
+   "redAtHead": true,
+   "greenWithFix": true,
+   "srcClean": true,
+   "lint": "ok",
+   "committed": true,
+   "atHead": {
+    "passed": 0,
+    "failed": 2,
+    "total": 2
+   },
+   "withAcceptedFix": {
+    "passed": 2,
+    "failed": 0,
+    "total": 2
+   }
+  },
+  "self-reported-mistakes": {
+   "pin": [
+    "nothing to report"
+   ],
+   "fix": [
+    "Wrote the red-run output to .build/red.txt inside the worktree and created an empty /tmp/x directory during the red step; both were removed, and .build was already untracked before I started.",
+    "Used /tmp for temporary copies (the pre-fix source and the commit-message and diff files) instead of the session scratchpad; the copies were moved or removed, and the commit message file is in the scratchpad.",
+    "The spec amendment to 4.3 (new step 3a) described in the finding was not written to docs/specification/github-sign-in.md, because the task allowed only the three files named (tests, source, ARCHITECTURE.md). The spec is therefore behind the code until that amendment is made."
+   ],
+   "review": [
+    "nothing to report"
+   ]
+  },
+  "fix": {
+   "score": true,
+   "candidateGreen": true,
+   "guardRed": true,
+   "acceptedPinGreen": true,
+   "scopeOk": true,
+   "lint": "ok",
+   "committedWithMap": true,
+   "commits": 1,
+   "srcDiffLines": 22,
+   "candidateTests": {
+    "passed": 89,
+    "failed": 0,
+    "total": 89
+   },
+   "guardRemoved": {
+    "passed": 87,
+    "failed": 2,
+    "total": 89
+   },
+   "acceptedPin": {
+    "passed": 91,
+    "failed": 0,
+    "total": 91
+   }
+  },
+  "review": {
+   "verdict": "FIX",
+   "findings": [
+    [
+     "R-1",
+     "S1",
+     "open() cannot read account.json (EBUSY/EACCES) and leaves this.disk null (src/main/github-account-store.ts:76-79). clearLocked then computes accountRefs from the null disk (:185-188), finds nothing to"
+    ],
+    [
+     "R-2",
+     "S3",
+     "Same root cause as R-1: an unreadable file leaves this.disk null (src/main/github-account-store.ts:79). replace() then takes before = null (:131), so the step-4 write has retiredRefs = [] (:140) and t"
+    ],
+    [
+     "R-3",
+     "S3",
+     "open() tombstones the doomed refs (retiredRefs, and the account of a different client ID) at src/main/github-account-store.ts:86-87 and discards the boolean from tombstoneNow. finishStartup then write"
+    ]
+   ],
+   "checked": 22
+  },
+  "review-grade": {
+   "result": "FAIL",
+   "r11Found": false,
+   "r11CauseNamed": false,
+   "r11Severity": "",
+   "r13Found": true,
+   "r13CauseNamed": true,
+   "r13Severity": "S3",
+   "falseBlocking": 2,
+   "copiedFromHistory": false,
+   "others": [
+    {
+     "id": "R-1",
+     "severity": "S1",
+     "classification": "false",
+     "why": "The code fact holds (clearLocked returns 'durable' at :188 when disk is null, and the scratch test passes that assertion), but the scenario needs a sign-out while live is null. The spec offers Sign out only in the signed-in state (8.2), and the only way to become signed in after an unreadable open is a sign-in, whose write sets disk (that is the R13 path). The user-facing failure described is unreachable, the S1 rating is unwarranted, and U2-R9 keeps the unread file so that the next start signs in."
+    },
+    {
+     "id": "R-3",
+     "severity": "S3",
+     "classification": "false",
+     "why": "The test reaches the orphan only by swallowing the reconcile's rejection (`.catch(() => undefined)`) and then running finishStartup. Real startup awaits vault.reconcile without a catch, before finishStartup (index.ts:183, spec 4.4 and the :1019 wiring), so a failed reconcile persist stops startup and the file keeps naming A. A reconcile that does persist deletes the tombstoned A from the index. The open() path is therefore not asymmetric with the live path at :104-108, which runs after the reconcile."
+    }
+   ],
+   "notes": "The review found R13 (as R-2) with the right cause and fix shape, and reproduced it with a real-vault scratch test that fails as claimed. It missed R11: its 'checked' list marks the step-5 rollback as covered by passing shipped tests and never asks whether the rollback file names the new refs. Its 'checked' list is broad and honest, and it kept its unreproduced ideas apart as 'considered, not reproduced'. Its reproduction discipline is weaker than it looks. R-1 inflates a path the UI cannot reac"
+  },
+  "usage": {
+   "pin": {
+    "label": "pin:haiku-medium",
+    "model": "claude-haiku-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 125966,
+    "ms": 63824,
+    "ts": null,
+    "startedAt": 1792279484293
+   },
+   "fix": {
+    "label": "fix:haiku-medium",
+    "model": "claude-haiku-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 138770,
+    "ms": 149703,
+    "ts": null,
+    "startedAt": 1792280156678
+   },
+   "review": {
+    "label": "review:haiku-medium",
+    "model": "claude-haiku-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 182199,
+    "ms": 266627,
+    "ts": null,
+    "startedAt": 1792281412841
+   },
+   "grade": {
+    "label": "grade:haiku-medium",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 129639,
+    "ms": 101219,
+    "ts": null,
+    "startedAt": 1792285801165
+   }
+  }
+ },
+ "haiku-high": {
+  "profile": "haiku-high",
+  "review-only": false,
+  "pin": {
+   "score": true,
+   "redAtHead": true,
+   "greenWithFix": true,
+   "srcClean": true,
+   "lint": "ok",
+   "committed": true,
+   "atHead": {
+    "passed": 0,
+    "failed": 2,
+    "total": 2
+   },
+   "withAcceptedFix": {
+    "passed": 2,
+    "failed": 0,
+    "total": 2
+   }
+  },
+  "self-reported-mistakes": {
+   "pin": [
+    "The first lint run failed on `let outcome: unknown = undefined;` (no-useless-assignment). Cause: a redundant initializer. Fix: removed the initializer, re-ran eslint (exit 0) and the test (still 2 of 2 failing as expected), all before the commit. Impact: none on committed state."
+   ],
+   "fix": [
+    "The first two Edit calls on tests/github-account-store.test.ts failed because the file had not been read with the Read tool (sed through Bash does not count); fixed by reading the ranges and re-applying the edits. No file changed by the failed calls.",
+    "A Bash command redirected a log to /tmp/red-unused, outside the scratchpad; the file was deleted with rm -f. No repository file or other worktree was touched.",
+    "The first commit (2146045) omitted the Co-Authored-By and Claude-Session trailers the attribution reminder asks for, and its last verification line claimed an ls that was never run; fixed by amending my own unpushed commit to e82944d with the trailers and a corrected line.",
+    "Scope deviation: the finding asks for a spec amendment to docs/specification/github-sign-in.md section 4.3 (a new step before step 4). It is not in this commit because the task limited changes to the code, the test file and docs/ARCHITECTURE.md. The commit message says so. Spec 4.3 still describes the old replace() order, so the spec and the code now differ until that amendment is written.",
+    "Full suite (npm test) and the other github-* test files were not run; only tests/github-account-store.test.ts, typecheck and eslint on the two changed files."
+   ],
+   "review": [
+    "First plan for R-1 was 4 refreshes with failing step-7 removals, then a failing-disk clear. Reasoning (not a run) showed the earlier successful tombstone persists would record the retired refs on disk, so no orphan was possible. Rebuilt the setup by committing 8 unreferenced vault entries and naming them in account.json, then ran it.",
+    "R-2's harness catches the reconcile error to model a caller that continues past it. Current index.ts does not do this, so R-2 is rated S3 and labelled latent.",
+    "R-6 in the findings list is not a defect. It records the uncommitted scratch file, as the task requires; the severity field is a placeholder."
+   ]
+  },
+  "fix": {
+   "score": true,
+   "candidateGreen": true,
+   "guardRed": true,
+   "acceptedPinGreen": true,
+   "scopeOk": true,
+   "lint": "ok",
+   "committedWithMap": true,
+   "commits": 1,
+   "srcDiffLines": 16,
+   "candidateTests": {
+    "passed": 89,
+    "failed": 0,
+    "total": 89
+   },
+   "guardRemoved": {
+    "passed": 87,
+    "failed": 2,
+    "total": 89
+   },
+   "acceptedPin": {
+    "passed": 91,
+    "failed": 0,
+    "total": 91
+   }
+  },
+  "review": {
+   "verdict": "FIX",
+   "findings": [
+    [
+     "R-1",
+     "S2",
+     "clearLocked() trims the retired list with cap(all, ref => this.removeTombstoned(ref)) (src/main/github-account-store.ts:196; cap at :218-222 discards each drop()'s result). When a dropped ref's remova"
+    ],
+    [
+     "R-5",
+     "S2",
+     "After an unreadable (EBUSY) start, open() sets this.disk = null (github-account-store.ts:76, :79-80), so clearLocked() sees no account refs (:186-188) and returns 'durable' without writing anything. T"
+    ],
+    [
+     "R-2",
+     "S3",
+     "open() tombstones retiredRefs (github-account-store.ts:87) but ignores whether each tombstone reached disk (tombstoneNow's boolean is dropped). finishStartup() then writes retiredRefs [] (:111), with "
+    ],
+    [
+     "R-3",
+     "S3",
+     "vault.saveStaged() writes the .bin (vault.ts:87) and sets the staged entry in memory before persist() (:90-91). If the persist fails, the .bin and the in-memory staged entry remain. replace() step 2's"
+    ],
+    [
+     "R-4",
+     "S3",
+     "Same root as R-5. An unreadable but valid account.json (EBUSY) is read as no account with this.disk = null. A later sign-in's replace() (github-account-store.ts:129-140) takes before = null, so it ret"
+    ],
+    [
+     "R-6",
+     "S4",
+     "This is the entry that is not a finding: the scratch tests are left uncommitted in tests/zz-scratch-account-store.test.ts, and no src/ or shipped test was changed. Recorded here so the report is compl"
+    ]
+   ],
+   "checked": 16
+  },
+  "review-grade": {
+   "result": "FAIL",
+   "r11Found": false,
+   "r11CauseNamed": false,
+   "r11Severity": "",
+   "r13Found": true,
+   "r13CauseNamed": true,
+   "r13Severity": "S3",
+   "falseBlocking": 2,
+   "copiedFromHistory": false,
+   "others": [
+    {
+     "id": "R-1",
+     "severity": "S2",
+     "classification": "false",
+     "why": "The test reproduces the mechanism only on a disk state it made by hand: 8 unreferenced entries committed and named in the file. The candidate's own mistakes note concedes that the natural path records the tombstones. In reachable flows, a ref that cap() drops is older than refs whose replaces needed a later vault persist to succeed (saveStaged/commit). That persist already recorded the dropped ref as tombstoned or deleted, so the next reconcile handles it and DC-10's premise holds."
+    },
+    {
+     "id": "R-5",
+     "severity": "S2",
+     "classification": "true",
+     "why": "Verified (the scratch test fails as described). After an EBUSY open(), clearLocked sees disk null and returns 'durable' at :188, while the file still names the pair, which the next start reads. That breaks the documented 'durable' contract. It is reachable only through a signOut while the UI shows signed-out (the Sign out button exists only when signed in), so S2 overstates it."
+    },
+    {
+     "id": "R-2",
+     "severity": "S3",
+     "classification": "false",
+     "why": "It shows up only because the harness swallows the reconcile's error (test :195). Under spec 4.4 and the index.ts:181-184 pattern, a reconcile failure aborts startup before finishStartup runs, and the method's comment (:96) states that precondition. The candidate itself calls it latent, so at HEAD it is not reachable."
+    },
+    {
+     "id": "R-3",
+     "severity": "S3",
+     "classification": "true",
+     "why": "Verified: a third .bin with no index entry is left. vault.saveStaged writes the .bin and sets the in-memory entry before persist() (vault.ts:87-91); replace() never gets the ref, so the step-2 discard cannot remove it, and reconcile iterates index entries only. The defect lives in vault.ts, not in the store, and is cleared if any later vault persist lands in the same session."
+    }
+   ],
+   "notes": "The review found R13 (as R-4, with its cause and a re-read-under-lock fix) but missed R11 entirely: its 'checked' list marks step 5's rollback as fine because the shipped tests pass. It ran a real failing scratch test for each claim and reported its mistakes honestly. But R-1 rests on a fabricated vault state the store cannot produce, and R-2 rests on a harness that swallows the reconcile error, so 2 of its 4 S2-S3 findings do not hold. Its severities are inflated: two S2s, one unreachable and o"
+  },
+  "usage": {
+   "pin": {
+    "label": "pin:haiku-high",
+    "model": "claude-haiku-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 135343,
+    "ms": 113768,
+    "ts": null,
+    "startedAt": 1792279550472
+   },
+   "fix": {
+    "label": "fix:haiku-high",
+    "model": "claude-haiku-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 170424,
+    "ms": 234413,
+    "ts": null,
+    "startedAt": 1792280289586
+   },
+   "review": {
+    "label": "review:haiku-high",
+    "model": "claude-haiku-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 196355,
+    "ms": 341684,
+    "ts": null,
+    "startedAt": 1792281519339
+   },
+   "grade": {
+    "label": "grade:haiku-high",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 127507,
+    "ms": 186160,
+    "ts": null,
+    "startedAt": 1792285981922
+   }
+  }
+ },
+ "sonnet-low": {
+  "profile": "sonnet-low",
+  "review-only": false,
+  "pin": {
+   "score": true,
+   "redAtHead": true,
+   "greenWithFix": true,
+   "srcClean": true,
+   "lint": "ok",
+   "committed": true,
+   "atHead": {
+    "passed": 0,
+    "failed": 2,
+    "total": 2
+   },
+   "withAcceptedFix": {
+    "passed": 2,
+    "failed": 0,
+    "total": 2
+   }
+  },
+  "self-reported-mistakes": {
+   "pin": [
+    "Copied the harness header wholesale, which left unused imports and helpers (randomUUID, mkdir, writeFile, atomicJson, serialized, gate, failVaultDisk) that eslint flagged; removed them and eslint is now clean."
+   ],
+   "fix": [
+    "nothing to report"
+   ],
+   "review": [
+    "My first scratch design for R-B passed, so I dropped it as 'considered, not reproduced'; I did not try more crash points or combinations, so this review covers only two reproductions."
+   ]
+  },
+  "fix": {
+   "score": true,
+   "candidateGreen": true,
+   "guardRed": true,
+   "acceptedPinGreen": true,
+   "scopeOk": true,
+   "lint": "ok",
+   "committedWithMap": true,
+   "commits": 1,
+   "srcDiffLines": 16,
+   "candidateTests": {
+    "passed": 89,
+    "failed": 0,
+    "total": 89
+   },
+   "guardRemoved": {
+    "passed": 87,
+    "failed": 2,
+    "total": 89
+   },
+   "acceptedPin": {
+    "passed": 91,
+    "failed": 0,
+    "total": 91
+   }
+  },
+  "review": {
+   "verdict": "FIX",
+   "findings": [
+    [
+     "R-1",
+     "S3",
+     "src/main/github-account-store.ts open() (about line 76): a valid account file that cannot be read (EBUSY/EACCES) leaves disk = null with no startup write, which is deliberate. But the first replace() "
+    ]
+   ],
+   "checked": 4
+  },
+  "review-grade": {
+   "result": "PARTIAL",
+   "r11Found": false,
+   "r11CauseNamed": false,
+   "r11Severity": "",
+   "r13Found": true,
+   "r13CauseNamed": true,
+   "r13Severity": "S3",
+   "falseBlocking": 0,
+   "copiedFromHistory": false,
+   "others": [],
+   "notes": "The review has one finding, R-1, and it matches R13. It names the cause (open() leaves disk = null, so the sign-in runs with before = null and writes over the file it never read). The scratch test /home/user/task5-handoff/wt/cal2-review-sonnet-low/tests/zz-scratch-a.test.ts reproduces it when re-run: R-A fails at the index-keys assertion with the old pair left committed. The suggested fix (re-read inside replace(), or refuse) is close to the accepted one, but nothing in the text quotes it.\nR11 w"
+  },
+  "usage": {
+   "pin": {
+    "label": "pin:sonnet-low",
+    "model": "claude-sonnet-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 101390,
+    "ms": 40524,
+    "ts": null,
+    "startedAt": 1792279554970
+   },
+   "fix": {
+    "label": "fix:sonnet-low",
+    "model": "claude-sonnet-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 106006,
+    "ms": 80517,
+    "ts": null,
+    "startedAt": 1792280308208
+   },
+   "review": {
+    "label": "review:sonnet-low",
+    "model": "claude-sonnet-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 113230,
+    "ms": 47573,
+    "ts": null,
+    "startedAt": 1792281681357
+   },
+   "grade": {
+    "label": "grade:sonnet-low",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 90709,
+    "ms": 16576,
+    "ts": null,
+    "startedAt": 1792285904249
+   }
+  }
+ },
+ "sonnet-medium": {
+  "profile": "sonnet-medium",
+  "review-only": false,
+  "pin": {
+   "score": true,
+   "redAtHead": true,
+   "greenWithFix": true,
+   "srcClean": true,
+   "lint": "ok",
+   "committed": true,
+   "atHead": {
+    "passed": 0,
+    "failed": 2,
+    "total": 2
+   },
+   "withAcceptedFix": {
+    "passed": 2,
+    "failed": 0,
+    "total": 2
+   }
+  },
+  "self-reported-mistakes": {
+   "pin": [
+    "First lint run failed on unused imports and helpers (randomUUID, mkdir, writeFile, atomicJson, serialized, gate, failVaultDisk) and a useless initial assignment to `next`; removed them and re-ran lint clean and the tests unchanged."
+   ],
+   "fix": [
+    "First draft of pin 1 expected file revision 4 after the sign-in; the correct value is 3 (first sign-in writes once). Corrected the expectation after the run and re-ran.",
+    "Left a pointless expect(vault).toBeDefined() and an unused destructured vault in pin 2; removed before commit.",
+    "docs/specification section 4.3 was not amended with step 3a (outside the allowed file list); only the code comment and ARCHITECTURE.md record it."
+   ],
+   "review": [
+    "My first scratch file was truncated mid-describe by head -n; I removed the leftover shipped test block and re-ran.",
+    "I first suspected the old pair was orphaned after a failed refresh followed by a second refresh (Q); reading the shipped test showed the old pair is in retiredRefs, so I dropped that suspicion without a repro."
+   ]
+  },
+  "fix": {
+   "score": true,
+   "candidateGreen": true,
+   "guardRed": true,
+   "acceptedPinGreen": true,
+   "scopeOk": true,
+   "lint": "ok",
+   "committedWithMap": true,
+   "commits": 1,
+   "srcDiffLines": 17,
+   "candidateTests": {
+    "passed": 89,
+    "failed": 0,
+    "total": 89
+   },
+   "guardRemoved": {
+    "passed": 87,
+    "failed": 2,
+    "total": 89
+   },
+   "acceptedPin": {
+    "passed": 91,
+    "failed": 0,
+    "total": 91
+   }
+  },
+  "review": {
+   "verdict": "FIX",
+   "findings": [
+    [
+     "R-1",
+     "S3",
+     "An account file that open() could not read (EBUSY/EACCES) is never loaded, so this.disk stays null and write() starts at revision 1. The first sign-in of that session then overwrites the still-valid f"
+    ],
+    [
+     "R-2",
+     "S3",
+     "Crash after the step-4 file write and before commit leaves the new pair staged and named in the file. If the next start cannot read the file (open() reads no account), references() is empty and the re"
+    ],
+    [
+     "R-3",
+     "S3",
+     "setLogin silently drops the login after a refresh whose commit failed (ReplaceFailure(true)). Live is still the old pair, but disk.account names the new pair, so the guard account.accessRef !== live.a"
+    ],
+    [
+     "R-4",
+     "S4",
+     "finishStartup writes retiredRefs [] after open() tombstoned the file's retired refs even when those tombstone persists failed. If the reconcile also could not persist, the index on disk still holds co"
+    ]
+   ],
+   "checked": 11
+  },
+  "review-grade": {
+   "result": "FAIL",
+   "r11Found": false,
+   "r11CauseNamed": false,
+   "r11Severity": "",
+   "r13Found": true,
+   "r13CauseNamed": true,
+   "r13Severity": "S3",
+   "falseBlocking": 1,
+   "copiedFromHistory": false,
+   "others": [
+    {
+     "id": "R-2",
+     "severity": "S3",
+     "classification": "true",
+     "why": "Ran scratch test A: the snapshot is taken before the refresh's first commit, so both new refs are staged and the file names them. At the unreadable start, open() leaves live null, references() is empty, and the reconcile deletes the unreferenced staged entries (spec 4.4 step 2). The next clean start reads a file whose pair is gone, so finishStartup drops the account. This is a real compound-fault sign-out that U2-R9's 'keep the account' promise does not cover, and the ground truth missed it. It is low-probability, so S3 is generous."
+    },
+    {
+     "id": "R-3",
+     "severity": "S3",
+     "classification": "false",
+     "why": "The scratch test does show setLogin returning early, because disk.account names the new pair after ReplaceFailure(true). But spec 6.x (line 774) has the caller run clearIf(from.accessRef) on any refresh ReplaceFailure ('the old pair is dead, so never keep it'). The login is dropped only for an account that is about to be cleared, so no harm results and there is no defect."
+    }
+   ],
+   "notes": "R-1 matches U2-R13 with its cause (open() catch leaves this.disk null, and write() overwrites the unread file without retiring its pair), and its fix direction (re-read under the lock) matches the accepted one. U2-R11 was missed outright: 'checked' calls the step-5 sign-in rollback 'correct by reading' without asking whether the rollback file names a new ref that commit(access) already committed. Reproduction discipline is good: every finding has a scratch test that actually fails as described. "
+  },
+  "usage": {
+   "pin": {
+    "label": "pin:sonnet-medium",
+    "model": "claude-sonnet-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 108251,
+    "ms": 42985,
+    "ts": null,
+    "startedAt": 1792279597388
+   },
+   "fix": {
+    "label": "fix:sonnet-medium",
+    "model": "claude-sonnet-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 120149,
+    "ms": 119497,
+    "ts": null,
+    "startedAt": 1792280390626
+   },
+   "review": {
+    "label": "review:sonnet-medium",
+    "model": "claude-sonnet-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 127804,
+    "ms": 115885,
+    "ts": null,
+    "startedAt": 1792281730842
+   },
+   "grade": {
+    "label": "grade:sonnet-medium",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 115662,
+    "ms": 57334,
+    "ts": null,
+    "startedAt": 1792285922794
+   }
+  }
+ },
+ "sonnet-high": {
+  "profile": "sonnet-high",
+  "review-only": false,
+  "pin": {
+   "score": true,
+   "redAtHead": true,
+   "greenWithFix": true,
+   "srcClean": true,
+   "lint": "ok",
+   "committed": true,
+   "atHead": {
+    "passed": 0,
+    "failed": 2,
+    "total": 2
+   },
+   "withAcceptedFix": {
+    "passed": 2,
+    "failed": 0,
+    "total": 2
+   }
+  },
+  "self-reported-mistakes": {
+   "pin": [
+    "The first draft left unused initial values on three let variables in test (b), and eslint flagged them with no-useless-assignment; I removed the initial values and re-ran eslint clean."
+   ],
+   "fix": [
+    "nothing to report"
+   ],
+   "review": [
+    "First fuzz run called h.restoreWrites() in every mode; it deletes account.json when breakWrites() was never called, which produced 60 false failures. I restricted it to the filewrites mode and reran.",
+    "My first scratch test B assumed a refresh leaves the old pair committed on disk, but step 7 removes it. I rebuilt it from a snapshot taken before step 7's first tombstone.",
+    "The fuzz's vaultop/tombstone cases failed because the SpyVault rejects before the real vault marks the entry tombstoned, which the real vault cannot do. I classified them as harness artifacts, not defects."
+   ]
+  },
+  "fix": {
+   "score": true,
+   "candidateGreen": true,
+   "guardRed": true,
+   "acceptedPinGreen": true,
+   "scopeOk": true,
+   "lint": "ok",
+   "committedWithMap": true,
+   "commits": 1,
+   "srcDiffLines": 17,
+   "candidateTests": {
+    "passed": 89,
+    "failed": 0,
+    "total": 89
+   },
+   "guardRemoved": {
+    "passed": 87,
+    "failed": 2,
+    "total": 89
+   },
+   "acceptedPin": {
+    "passed": 91,
+    "failed": 0,
+    "total": 91
+   }
+  },
+  "review": {
+   "verdict": "FIX",
+   "findings": [
+    [
+     "R-1",
+     "S3",
+     "A sign-in whose commit fails and whose rollback write succeeds (replace step 5, src/main/github-account-store.ts:143-147) discards the new refs with discard(staged), which only calls retire() and igno"
+    ],
+    [
+     "R-2",
+     "S3",
+     "open() (:76-79) treats a valid account file that failed with an I/O error (EBUSY, EACCES) as 'no account': disk=null, live=null, startupWrite=false. Nothing remembers that the file was unreadable. The"
+    ],
+    [
+     "R-3",
+     "S4",
+     "finishStartup (:111) and open() (:81-87) forget the file's retiredRefs, and the foreign pair after a client-ID change, without checking that the tombstone persist reached disk. When a failing vault di"
+    ],
+    [
+     "R-4",
+     "S4",
+     "Vault-level, not a store defect. When the vault index persist fails inside saveStaged, the .bin file is already written and its ref is never returned. replace() catches the failure with staged=[] and "
+    ]
+   ],
+   "checked": 10
+  },
+  "review-grade": {
+   "result": "PASS",
+   "r11Found": true,
+   "r11CauseNamed": true,
+   "r11Severity": "S3",
+   "r13Found": true,
+   "r13CauseNamed": true,
+   "r13Severity": "S3",
+   "falseBlocking": 0,
+   "copiedFromHistory": false,
+   "others": [
+    {
+     "id": "R-3",
+     "severity": "S4",
+     "classification": "true",
+     "why": "S4, so it does not count toward falseBlocking. Scratch tests B and B2 fail as the candidate says (REDACTION_UNAVAILABLE, 2 index entries left), but only with a reconcile rejection swallowed, which the candidate itself says the current wiring does not do. It is a real but conditional contract gap."
+    },
+    {
+     "id": "R-4",
+     "severity": "S4",
+     "classification": "true",
+     "why": "S4, so it does not count toward falseBlocking. Scratch test F fails with the 3-vs-2 .bin listing it describes. The defect sits in the vault's saveStaged rather than in the store, and the candidate labels it that way."
+    }
+   ],
+   "notes": "The candidate found both ground-truth S3 defects at the right severity and named the right cause for each. R-1 says the step-5 rollback writes before.retiredRefs and then discard(staged), so a new ref that already reached the index as committed is no longer named in the file. R-2 says before = this.disk = null after an I/O-unreadable open(), so the sign-in writes over the file without reading it. Its fixes match the accepted ones (name the staged refs in the rollback's retiredRefs; re-read the f"
+  },
+  "usage": {
+   "pin": {
+    "label": "pin:sonnet-high",
+    "model": "claude-sonnet-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 119783,
+    "ms": 56307,
+    "ts": null,
+    "startedAt": 1792279642423
+   },
+   "fix": {
+    "label": "fix:sonnet-high",
+    "model": "claude-sonnet-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 124739,
+    "ms": 113343,
+    "ts": null,
+    "startedAt": 1792280512102
+   },
+   "review": {
+    "label": "review:sonnet-high",
+    "model": "claude-sonnet-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 182356,
+    "ms": 390740,
+    "ts": null,
+    "startedAt": 1792281848699
+   },
+   "grade": {
+    "label": "grade:sonnet-high",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 99000,
+    "ms": 21939,
+    "ts": null,
+    "startedAt": 1792286229431
+   }
+  }
+ },
+ "sonnet-xhigh": {
+  "profile": "sonnet-xhigh",
+  "review-only": true,
+  "pin": null,
+  "fix": null,
+  "review": {
+   "verdict": "FIX",
+   "findings": [
+    [
+     "R-1",
+     "S3",
+     "src/main/github-account-store.ts:147 (replace step 5, the sign-in rollback). The rollback writes the previous account back with before.retiredRefs and does not name the new staged refs anywhere, altho"
+    ],
+    [
+     "R-2",
+     "S3",
+     "Same root cause as R-1, with the vault index failing (the 'failing vault index' path). In replace step 5, discard(staged) at line 147 ignores a failed removal. vault.remove() unlinks the .bin BEFORE i"
+    ],
+    [
+     "R-3",
+     "S3",
+     "src/main/github-account-store.ts:76-80 and 131-140 (open() and the later writers). When the account file cannot be read (errno such as EBUSY), open() leaves this.disk = null and live = null and delibe"
+    ],
+    [
+     "R-4",
+     "S3",
+     "src/main/github-account-store.ts:89-95. With an unreadable account file, open() reads as no account and references() returns []. The startup reconcile then runs with an incomplete reference set and de"
+    ],
+    [
+     "R-5",
+     "S4",
+     "src/main/github-account-store.ts:246 (committed()) with finishStartup:101-108. A rejecting or false vault.has is read as 'not committed', so a transient fault at startup tombstones both refs of a vali"
+    ],
+    [
+     "R-6",
+     "S4",
+     "Outside the reviewed file: src/main/vault.ts:81-93 (saveStaged). When the index persist fails, the .bin is already written and the entry is only in memory, and the ref is never returned. replace step "
+    ]
+   ],
+   "checked": 14
+  },
+  "self-reported-mistakes": {
+   "review": [
+    "I ran ls on the shared scratchpad directory, which printed the names of many earlier files (including ones that look like fixes or ground truth for this calibration). I did not open, read or use any of them. I then put all my own files in a private subfolder, scratchpad/cal2-sonnet-xhigh. My earlier `mv` of head.txt into the scratchpad root may have overwritten a pre-existing head.txt there, which I could not check.",
+    "My first S-4 scratch test expected 'no account' for crash cuts taken before any tombstone persist had landed. That was wrong, because the account legitimately stands then. I corrected it to accept either outcome and to require that the outcome stays 'none' once the clear is on disk.",
+    "In tests/zz-scratch-d.test.ts I called h.restoreWrites() in no-fault scenarios, which deletes account.json. That produced false failures until I guarded the call.",
+    "My fuzz snapshot helper first copied a mid-fault account.json directory (EISDIR). It also failed the vault index before saveStaged, producing unindexed .bin noise, which is the vault-level observation R-6 and not a store defect. I fixed the helper and kept R-6 as S4.",
+    "My first sign-out-after-unreadable-file test (C1b) overstated the case, because a user who sees 'signed out' has nothing to sign out of. I kept it only as supporting evidence under R-3.",
+    "console.log output from a passing vitest test was swallowed, so I wrote debug output to a file in my scratch folder instead."
+   ]
+  },
+  "review-grade": {
+   "result": "PASS",
+   "r11Found": true,
+   "r11CauseNamed": true,
+   "r11Severity": "S3",
+   "r13Found": true,
+   "r13CauseNamed": true,
+   "r13Severity": "S3",
+   "falseBlocking": 0,
+   "copiedFromHistory": false,
+   "others": [
+    {
+     "id": "R-4",
+     "severity": "S3",
+     "classification": "true",
+     "why": "Confirmed in the code: when open() hits an errno read failure (lines 76-80), live and references() stay empty. The reconcile (vault.ts:112) then deletes the staged pair that a crash between the step-4 file write and step-5 commit left referenced. The next readable start's finishStartup (101-103) drops that pair, and open() tombstones the old pair from retiredRefs, so the account is lost. The scratch test C1c fails as stated (expected [] to deeply equal [ ...(2) ]). This is a double fault (a crash plus a transient I/O error), and the R13 fix, which only re-reads in replace(), does not cover it."
+    }
+   ],
+   "notes": "The review is strong. R-1 and R-2 together cover all three U2-R11 cases (the crash orphan, the REDACTION_UNAVAILABLE case on a failing index, and the failed removal). R-1 names the cause at step 5's before.retiredRefs write, and its proposed fix (cap([...before.retiredRefs, ...staged]) followed by the step-7 pattern) matches the accepted one. Nothing shows the candidate copied it from history: the scratch tests cite only ids already present at HEAD. R-3 is U2-R13 with the cause named (before = t"
+  },
+  "usage": {
+   "pin": null,
+   "fix": null,
+   "review": {
+    "label": "review:sonnet-xhigh",
+    "model": "claude-sonnet-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 327759,
+    "ms": 2296489,
+    "ts": null,
+    "startedAt": 1792283401954
+   },
+   "grade": {
+    "label": "grade:sonnet-xhigh",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 112192,
+    "ms": 45218,
+    "ts": null,
+    "startedAt": 1792286524807
+   }
+  }
+ },
+ "opus-medium": {
+  "profile": "opus-medium",
+  "review-only": false,
+  "pin": {
+   "score": true,
+   "redAtHead": true,
+   "greenWithFix": true,
+   "srcClean": true,
+   "lint": "ok",
+   "committed": true,
+   "atHead": {
+    "passed": 0,
+    "failed": 2,
+    "total": 2
+   },
+   "withAcceptedFix": {
+    "passed": 2,
+    "failed": 0,
+    "total": 2
+   }
+  },
+  "self-reported-mistakes": {
+   "pin": [
+    "nothing to report"
+   ],
+   "fix": [
+    "nothing to report"
+   ],
+   "review": [
+    "nothing to report"
+   ]
+  },
+  "fix": {
+   "score": true,
+   "candidateGreen": true,
+   "guardRed": true,
+   "acceptedPinGreen": true,
+   "scopeOk": true,
+   "lint": "ok",
+   "committedWithMap": true,
+   "commits": 1,
+   "srcDiffLines": 20,
+   "candidateTests": {
+    "passed": 89,
+    "failed": 0,
+    "total": 89
+   },
+   "guardRemoved": {
+    "passed": 87,
+    "failed": 2,
+    "total": 89
+   },
+   "acceptedPin": {
+    "passed": 91,
+    "failed": 0,
+    "total": 91
+   }
+  },
+  "review": {
+   "verdict": "FIX",
+   "findings": [
+    [
+     "R-1",
+     "S2",
+     "src/main/github-account-store.ts:147 (with :245 discard and :240-241 removeTombstoned). A sign-in's commit can fail after its first commit has already landed on the vault index. The rollback write the"
+    ],
+    [
+     "R-2",
+     "S2",
+     "src/main/github-account-store.ts:79 together with :131/:140. When open() cannot read the file (an I/O error such as EBUSY, the U2-R9 path), disk stays null for the whole session. A later sign-in's ste"
+    ],
+    [
+     "R-3",
+     "S2",
+     "src/main/github-account-store.ts:186-188, the same unreadable-open state as R-1. A sign-out (clear(() => true)) with live null and disk null finds no refs, so it returns 'durable' and writes nothing. "
+    ]
+   ],
+   "checked": 14
+  },
+  "review-grade": {
+   "result": "FAIL",
+   "r11Found": true,
+   "r11CauseNamed": true,
+   "r11Severity": "S2",
+   "r13Found": true,
+   "r13CauseNamed": true,
+   "r13Severity": "S2",
+   "falseBlocking": 1,
+   "copiedFromHistory": false,
+   "others": [
+    {
+     "id": "R-3",
+     "severity": "S2",
+     "classification": "false",
+     "why": "The scratch test is red as described: clear(() => true) after an unreadable open returns 'durable' at :188, and the next start signs in. But the test calls store.clear directly. At HEAD a user cannot reach this. After an unreadable open, current() is null and the state is signed-out, and GitHubAccountPanel.tsx:113 shows Sign out only in the signed-in state. The next start signing in with the kept file is the outcome U2-R9 chose on purpose. So no sign-out the user asked for is reported as durable when it was not."
+    }
+   ],
+   "notes": "The review found both ground-truth defects, each with a scratch test that goes red the way the candidate says (I re-ran all three; all fail as claimed). It named their causes, and its fixes closely match the accepted ones. It rated both S2, while the truth rates them S3. The 'checked' list is deep and walks every step of replace, clear, open and finishStartup. It marks the paths it only reasoned about, says which items it did not reproduce, and records the cwd of its baseline run. One extra S2 ("
+  },
+  "usage": {
+   "pin": {
+    "label": "pin:opus-medium",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 115308,
+    "ms": 68626,
+    "ts": null,
+    "startedAt": 1792279666235
+   },
+   "fix": {
+    "label": "fix:opus-medium",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 123461,
+    "ms": 116588,
+    "ts": null,
+    "startedAt": 1792280526189
+   },
+   "review": {
+    "label": "review:opus-medium",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 153636,
+    "ms": 148763,
+    "ts": null,
+    "startedAt": 1792281863093
+   },
+   "grade": {
+    "label": "grade:opus-medium",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 115836,
+    "ms": 57445,
+    "ts": null,
+    "startedAt": 1792286170177
+   }
+  }
+ },
+ "opus-high": {
+  "profile": "opus-high",
+  "review-only": false,
+  "pin": {
+   "score": true,
+   "redAtHead": true,
+   "greenWithFix": true,
+   "srcClean": true,
+   "lint": "ok",
+   "committed": true,
+   "atHead": {
+    "passed": 0,
+    "failed": 2,
+    "total": 2
+   },
+   "withAcceptedFix": {
+    "passed": 2,
+    "failed": 0,
+    "total": 2
+   }
+  },
+  "self-reported-mistakes": {
+   "pin": [
+    "First draft of test (a) used a `let next` that I later narrowed with `next!`. I replaced it with a const and an explicit null guard before the first run, so nothing went wrong in behaviour."
+   ],
+   "fix": [
+    "nothing to report"
+   ],
+   "review": [
+    "ZZ-E first armed failVaultDisk at saveStaged count 10, which is the 4th refresh rather than the 5th. The resulting failure ('expected { account\u2026 } to match object { written: true }') was my test's error, not a defect. I corrected it to count 12, after which the test passed, so it is reported as considered, not reproduced."
+   ]
+  },
+  "fix": {
+   "score": true,
+   "candidateGreen": true,
+   "guardRed": true,
+   "acceptedPinGreen": true,
+   "scopeOk": true,
+   "lint": "ok",
+   "committedWithMap": true,
+   "commits": 1,
+   "srcDiffLines": 15,
+   "candidateTests": {
+    "passed": 89,
+    "failed": 0,
+    "total": 89
+   },
+   "guardRemoved": {
+    "passed": 87,
+    "failed": 2,
+    "total": 89
+   },
+   "acceptedPin": {
+    "passed": 91,
+    "failed": 0,
+    "total": 91
+   }
+  },
+  "review": {
+   "verdict": "FIX",
+   "findings": [
+    [
+     "R-1",
+     "S2",
+     "src/main/github-account-store.ts:143-147 (4.3 step 5 rollback): if a sign-in's refresh-token commit fails after its access commit has landed, the code rolls back by writing the file with only before.a"
+    ],
+    [
+     "R-2",
+     "S2",
+     "src/main/github-account-store.ts:76-79 with 131/140: when open() cannot read the file (an I/O error, U2-R9), it leaves this.disk = null and keeps the valid file on disk. A sign-in later in that sessio"
+    ],
+    [
+     "R-3",
+     "S2",
+     "src/main/github-account-store.ts:185-188: the same unreadable-open state also breaks clear(). With this.disk = null and live = null, `all` is empty, so clearLocked returns 'durable' without writing or"
+    ],
+    [
+     "R-4",
+     "S3",
+     "src/main/github-account-store.ts:143-147 (4.3 step 5, 4.5 crash row 'If the rollback wrote, the previous account stands'): suppose the access commit landed and the refresh commit failed. The rollback "
+    ],
+    [
+     "R-5",
+     "S3",
+     "src/main/github-account-store.ts:76-79,95 (spec 4.4/4.5 gap): when open() cannot read the file, references() returns []. Suppose the file names a pair that is still staged (a crash after the step-4 wr"
+    ]
+   ],
+   "checked": 17
+  },
+  "review-grade": {
+   "result": "PASS",
+   "r11Found": true,
+   "r11CauseNamed": true,
+   "r11Severity": "S2",
+   "r13Found": true,
+   "r13CauseNamed": true,
+   "r13Severity": "S2",
+   "falseBlocking": 0,
+   "copiedFromHistory": false,
+   "others": [
+    {
+     "id": "R-3",
+     "severity": "S2",
+     "classification": "true",
+     "why": "Verified at github-account-store.ts:185-188: with disk = null and live = null, `all` is empty and clearLocked returns 'durable' without writing, while the valid file still names the account. Scratch ZZ-B fails as described: the next start is signed in, which breaks DC-6's 'durable' contract. Same root cause as R13, and the reach is small, since spec 8.x offers Sign out only in the signed-in view. S2 overstates it."
+    },
+    {
+     "id": "R-5",
+     "severity": "S3",
+     "classification": "true",
+     "why": "Verified: when open() cannot read the file, references() returns [], so vault.reconcile (vault.ts:112) deletes the staged pair the file names. The following start then drops the account. Scratch ZZ-C fails as described. It needs a double fault (a crash in the 4.5 row-2 window, then an I/O error at the next start), and the only cost is signing in again, but the U2-R9 promise really does fail here and the accepted R13 fix does not cover it."
+    }
+   ],
+   "notes": "The review found both truth defects with the correct cause. R-1 (failing vault disk leading to REDACTION_UNAVAILABLE) and R-4 (crash after the rollback write leaving a committed orphan) together cover R11's cases (1) and (3). R-2 covers R13 (before = this.disk = null, with no re-read under the lock). Both are rated S2 against the truth's S3. Its R-1 fix matches the accepted one, but that fix is the obvious expression using the existing cap() and does not by itself suggest copying.\n\nAll five fail"
+  },
+  "usage": {
+   "pin": {
+    "label": "pin:opus-high",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 122111,
+    "ms": 92895,
+    "ts": null,
+    "startedAt": 1792279700666
+   },
+   "fix": {
+    "label": "fix:opus-high",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 132019,
+    "ms": 142239,
+    "ts": null,
+    "startedAt": 1792280627388
+   },
+   "review": {
+    "label": "review:opus-high",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 171293,
+    "ms": 316306,
+    "ts": null,
+    "startedAt": 1792282014762
+   },
+   "grade": {
+    "label": "grade:opus-high",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 120579,
+    "ms": 59593,
+    "ts": null,
+    "startedAt": 1792286253466
+   }
+  }
+ },
+ "opus-xhigh": {
+  "profile": "opus-xhigh",
+  "review-only": false,
+  "pin": {
+   "score": true,
+   "redAtHead": true,
+   "greenWithFix": true,
+   "srcClean": true,
+   "lint": "ok",
+   "committed": true,
+   "atHead": {
+    "passed": 0,
+    "failed": 2,
+    "total": 2
+   },
+   "withAcceptedFix": {
+    "passed": 2,
+    "failed": 0,
+    "total": 2
+   }
+  },
+  "self-reported-mistakes": {
+   "pin": [
+    "nothing to report"
+   ],
+   "fix": [
+    "Two Edit anchors ended in a trailing space ('const passes = ' and 'const from = '), and the replacements lost that space, leaving `const passes =(admit` and `const from =kind` in src/main/github-account-store.ts. The change was whitespace only, eslint did not flag it, and I caught it in the diff before committing. I restored the two spaces so both lines match HEAD again, then re-ran green (89 passed), typecheck (exit 0), eslint (exit 0) and both guard removals (2 failed | 87 passed each) on the corrected file."
+   ],
+   "review": [
+    "I first suspected finishStartup's retiredRefs:[] write could orphan refs after a reconcile whose index persist failed. A grep of src/main/index.ts showed the GitHub store is not wired into startup yet, and a reconcile rejection stops startup before finishStartup runs, so I dropped the suspicion without reporting it.",
+    "I first assumed R-2 needed a failing vault index. Working the crash path through showed that a plain crash after the rollback write (commit 2 failed) already leaves a committed orphan, so I added the R2a reproduction and kept R2b as the second variant."
+   ]
+  },
+  "fix": {
+   "score": true,
+   "candidateGreen": true,
+   "guardRed": true,
+   "acceptedPinGreen": true,
+   "scopeOk": true,
+   "lint": "ok",
+   "committedWithMap": true,
+   "commits": 1,
+   "srcDiffLines": 17,
+   "candidateTests": {
+    "passed": 89,
+    "failed": 0,
+    "total": 89
+   },
+   "guardRemoved": {
+    "passed": 87,
+    "failed": 2,
+    "total": 89
+   },
+   "acceptedPin": {
+    "passed": 91,
+    "failed": 0,
+    "total": 91
+   }
+  },
+  "review": {
+   "verdict": "FIX",
+   "findings": [
+    [
+     "R-1",
+     "S2",
+     "After open() fails to read a valid account file (an I/O error such as EBUSY, the U2-R9 path at src/main/github-account-store.ts:76-79), this.disk stays null for the rest of the session. replace() then"
+    ],
+    [
+     "R-2",
+     "S3",
+     "The sign-in rollback at step 5 (src/main/github-account-store.ts:147) writes back before.account with before.retiredRefs, and only then removes the new refs (discard, :245), without ever naming them i"
+    ],
+    [
+     "R-3",
+     "S3",
+     "Suppose a crash lands between the step-4 file write and the commits (spec 4.5 row 2), and the next start cannot read the file because of an I/O error. open() then reports references() = [] (src/main/g"
+    ],
+    [
+     "R-4",
+     "S4",
+     "committed() (src/main/github-account-store.ts:246, used by finishStartup at :101-108) turns a rejected vault.has() into false. finishStartup then drops the live account, tombstones both refs and write"
+    ]
+   ],
+   "checked": 19
+  },
+  "review-grade": {
+   "result": "PASS",
+   "r11Found": true,
+   "r11CauseNamed": true,
+   "r11Severity": "S3",
+   "r13Found": true,
+   "r13CauseNamed": true,
+   "r13Severity": "S2",
+   "falseBlocking": 0,
+   "copiedFromHistory": false,
+   "others": [
+    {
+     "id": "R-3",
+     "severity": "S3",
+     "classification": "true",
+     "why": "Confirmed at :79-80/:95 and vault.ts:112-116: an I/O-unreadable file gives references() = [], so the reconcile deletes the staged pair that the unread file names. The next start then finds those refs gone and finishStartup clears the account. Scratch test R4 fails as claimed (expected [] to deeply equal [ \u2026(2) ]). It needs two faults (a crash, then an I/O error), but it is a real account loss that the ground truth does not cover."
+    }
+   ],
+   "notes": "Strong review. R-2 matches U2-R11 exactly: the step-5 rollback at :147 writes before.retiredRefs without the staged refs. It reproduces all three of the truth's variants (a crash orphan, REDACTION_UNAVAILABLE, and a control in which commit 1 fails), and its fix matches the accepted one, though it could have derived that fix from step 7's rule. R-1 matches U2-R13: before = this.disk is null after an unreadable open(), at :131/:140. R-1 also adds two real consequences of the same cause (rolling ba"
+  },
+  "usage": {
+   "pin": {
+    "label": "pin:opus-xhigh",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 152218,
+    "ms": 257055,
+    "ts": null,
+    "startedAt": 1792279736672
+   },
+   "fix": {
+    "label": "fix:opus-xhigh",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 169745,
+    "ms": 368645,
+    "ts": null,
+    "startedAt": 1792280644622
+   },
+   "review": {
+    "label": "review:opus-xhigh",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 239582,
+    "ms": 831180,
+    "ts": null,
+    "startedAt": 1792282241512
+   },
+   "grade": {
+    "label": "grade:opus-xhigh",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 114646,
+    "ms": 34562,
+    "ts": null,
+    "startedAt": 1792286382107
+   }
+  }
+ },
+ "opus-max": {
+  "profile": "opus-max",
+  "review-only": true,
+  "pin": null,
+  "fix": null,
+  "review": {
+   "verdict": "FIX",
+   "findings": [
+    [
+     "R-1",
+     "S2",
+     "src/main/github-account-store.ts:147 (replace step 5, the sign-in rollback). The rollback write restores before.account and before.retiredRefs, so the new pair is named nowhere while discard() removes"
+    ],
+    [
+     "R-2",
+     "S2",
+     "src/main/github-account-store.ts:76-80 with :131/:140 and :185-188. When open() cannot read a valid file (an errno such as EBUSY: the U2-R9 path), this.disk stays null for the whole session and is nev"
+    ],
+    [
+     "R-3",
+     "S3",
+     "src/main/github-account-store.ts:76-80 and :95. Spec 4.5 says that after a crash between replace()'s step-4 write and its commits, 'the refs are referenced, so the reconcile commits them'. If the next"
+    ],
+    [
+     "R-4",
+     "S3",
+     "src/main/vault.ts:87-91, outside the reviewed file but on replace() step 2's path. saveStaged writes the .bin and adds the in-memory index entry before persist(). When the persist fails, it rejects wi"
+    ],
+    [
+     "R-5",
+     "S4",
+     "src/main/github-account-store.ts:176-177. The clear prologue tombstones only the live account's refs. While a replace is past its step-4 write, the file names a pair the prologue never took. A crash a"
+    ]
+   ],
+   "checked": 20
+  },
+  "self-reported-mistakes": {
+   "review": [
+    "My first fix for R-1 (tombstone the new refs before the rollback write) was wrong: a crash between that tombstone and the write would leave the step-4 file naming the tombstoned new pair with the old pair retired, losing both. I changed the fix to naming the new refs in the rollback write's retiredRefs.",
+    "My first fix for R-5 (also tombstone the file's pair in the clear prologue) was wrong: an app clear would then refuse a concurrent sign-in, against DC-4. I changed the fix to a known-limit note in 4.5."
+   ]
+  },
+  "review-grade": {
+   "result": "PASS",
+   "r11Found": true,
+   "r11CauseNamed": true,
+   "r11Severity": "S2",
+   "r13Found": true,
+   "r13CauseNamed": true,
+   "r13Severity": "S2",
+   "falseBlocking": 0,
+   "copiedFromHistory": false,
+   "others": [
+    {
+     "id": "R-3",
+     "severity": "S3",
+     "classification": "true",
+     "why": "Re-ran C1 and it failed as claimed (current [] instead of the refreshed pair). The mechanism holds at github-account-store.ts:76-95 and vault.ts:112-116: an errno at open() leaves disk null, so references() is [] and the reconcile deletes the staged pair. The next readable start then tombstones the retired old pair and finishStartup writes null. That is a real two-fault account loss, outside R13's same-session overwrite."
+    },
+    {
+     "id": "R-4",
+     "severity": "S3",
+     "classification": "true",
+     "why": "Re-ran D1 and an extra .bin was left. vault.ts:87-91 writes the .bin before persist() and has no cleanup when persist() fails, and the store never learns the ref. initialize() and reconcile() only walk index entries, so if nothing else persists in that session the encrypted file is never deleted. A real leak, though it is in vault.ts, outside the reviewed file."
+    }
+   ],
+   "notes": "The review found both ground-truth defects, R-1 = U2-R11 and R-2 = U2-R13. For each it names the cause at the exact lines, reproduces the failure, and proposes a fix that matches the accepted one. It rated both S2 against the accepted S3, and R-2 also adds a related DC-6 'durable' clear defect. The scratch tests were all re-run here, 15 tests: 11 fail and the 4 controls (E4-E7) pass. Every reported failure reproduced as described: A1/A2, B1/B2, C1, D1 and F1, plus their E diagnostics. G1 also fa"
+  },
+  "usage": {
+   "pin": null,
+   "fix": null,
+   "review": {
+    "label": "review:opus-max",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 306927,
+    "ms": 1378024,
+    "ts": null,
+    "startedAt": 1792284083144
+   },
+   "grade": {
+    "label": "grade:opus-max",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 118702,
+    "ms": 50374,
+    "ts": null,
+    "startedAt": 1792286472351
+   }
+  }
+ },
+ "fable-medium": {
+  "profile": "fable-medium",
+  "review-only": false,
+  "pin": {
+   "score": true,
+   "redAtHead": true,
+   "greenWithFix": true,
+   "srcClean": true,
+   "lint": "ok",
+   "committed": true,
+   "atHead": {
+    "passed": 0,
+    "failed": 2,
+    "total": 2
+   },
+   "withAcceptedFix": {
+    "passed": 2,
+    "failed": 0,
+    "total": 2
+   }
+  },
+  "self-reported-mistakes": {
+   "pin": [
+    "nothing to report"
+   ],
+   "fix": [
+    "First guard-removal attempt put `-q` after `--` in `git stash push`, so git read it as a pathspec and stashed nothing (no tests ran); fixed by moving the flag before `--` and reran, which gave the 2-failed / 89-passed proof reported above.",
+    "First Edit of the test file was refused because the file had not been read with the Read tool in this session; read the target lines and reapplied the same edit."
+   ],
+   "review": [
+    "R-1's first scratch run counted commits from the harness's own sign-in (hooked the 4th commit instead of the sign-in's 2nd), so the failure never armed; fixed the count to 2 and re-ran, the reproduction then failed as predicted."
+   ]
+  },
+  "fix": {
+   "score": true,
+   "candidateGreen": true,
+   "guardRed": true,
+   "acceptedPinGreen": true,
+   "scopeOk": true,
+   "lint": "ok",
+   "committedWithMap": true,
+   "commits": 1,
+   "srcDiffLines": 22,
+   "candidateTests": {
+    "passed": 89,
+    "failed": 0,
+    "total": 89
+   },
+   "guardRemoved": {
+    "passed": 87,
+    "failed": 2,
+    "total": 89
+   },
+   "acceptedPin": {
+    "passed": 91,
+    "failed": 0,
+    "total": 91
+   }
+  },
+  "review": {
+   "verdict": "FIX",
+   "findings": [
+    [
+     "R-1",
+     "S2",
+     "src/main/github-account-store.ts:147 (replace step 5, the sign-in rollback): after the rollback write lands, `discard(staged)` tombstones and removes the new refs 'tolerating errors', and nothing name"
+    ],
+    [
+     "R-2",
+     "S3",
+     "src/main/github-account-store.ts:76-80 and :131-141 (open() + replace step 4): when the file could not be read (an I/O error such as EBUSY, the U2-R9 case), open() leaves `disk = null` and the session"
+    ],
+    [
+     "R-3",
+     "S3",
+     "src/main/github-account-store.ts:174-188 (clear()/clearLocked with disk = null after an unreadable open): `clear(() => true)` with no live account and `disk === null` finds `all.length === 0` and answ"
+    ]
+   ],
+   "checked": 14
+  },
+  "review-grade": {
+   "result": "PASS",
+   "r11Found": true,
+   "r11CauseNamed": true,
+   "r11Severity": "S2",
+   "r13Found": true,
+   "r13CauseNamed": true,
+   "r13Severity": "S3",
+   "falseBlocking": 0,
+   "copiedFromHistory": false,
+   "others": [
+    {
+     "id": "R-3",
+     "severity": "S3",
+     "classification": "true",
+     "why": "Confirmed at github-account-store.ts:184-188. After an I/O-unreadable open(), disk and live are null, so clearLocked finds all=[] and returns 'durable' without writing anything. The candidate's scratch test fails as it predicted: the next start signs in with the old account, which breaks DC-6 ('the next start reads no account'). The accepted R13 fix re-reads only in replace(), so this clear path stays open. The impact is narrow: the shipped panel shows Sign out only while signed in, so this path is reachable only through the github.signOut IPC call while signed out."
+    }
+   ],
+   "notes": "The review is strong. Both ground-truth defects were found, located at the right lines with the right cause, and reproduced red-first by scratch tests that fail as claimed (I re-ran tests/zz-scratch-store-review.test.ts: 3/3 fail on the stated assertions). The candidate rated R11 S2 where ground truth has S3 (the REDACTION_UNAVAILABLE outcome is a defensible reason to rate it higher). Its R-1 fix is a different design from the accepted one, though its alternative matches it, and nothing in its t"
+  },
+  "usage": {
+   "pin": {
+    "label": "pin:fable-medium",
+    "model": "claude-fable-5-1",
+    "effort": null,
+    "state": "done",
+    "tokens": 118845,
+    "ms": 92354,
+    "ts": null,
+    "startedAt": 1792279795407
+   },
+   "fix": {
+    "label": "fix:fable-medium",
+    "model": "claude-fable-5-1",
+    "effort": null,
+    "state": "done",
+    "tokens": 131479,
+    "ms": 189507,
+    "ts": null,
+    "startedAt": 1792280771544
+   },
+   "review": {
+    "label": "review:fable-medium",
+    "model": "claude-fable-5-1",
+    "effort": null,
+    "state": "done",
+    "tokens": 171828,
+    "ms": 450067,
+    "ts": null,
+    "startedAt": 1792282333248
+   },
+   "grade": {
+    "label": "grade:fable-medium",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 122570,
+    "ms": 64948,
+    "ts": null,
+    "startedAt": 1792286315055
+   }
+  }
+ },
+ "fable-high": {
+  "profile": "fable-high",
+  "review-only": false,
+  "pin": {
+   "score": true,
+   "redAtHead": true,
+   "greenWithFix": true,
+   "srcClean": true,
+   "lint": "ok",
+   "committed": true,
+   "atHead": {
+    "passed": 0,
+    "failed": 2,
+    "total": 2
+   },
+   "withAcceptedFix": {
+    "passed": 2,
+    "failed": 0,
+    "total": 2
+   }
+  },
+  "self-reported-mistakes": {
+   "pin": [
+    "nothing to report"
+   ],
+   "fix": [
+    "nothing to report"
+   ],
+   "review": [
+    "My first suspected finding (finishStartup writes retiredRefs: [] for doomed refs whose tombstone persist failed at open()) was wrong: index.ts:183 runs the reconcile unwrapped between open() and finishStartup, so either the reconcile's whole-index persist records the deletion (scratch P-6 consistent) or startup throws before finishStartup; moved to 'checked' as considered, not reproduced.",
+    "My first scratch versions asserted my reading of spec 4.3 step 4 and of the rollback before the restart check, so the observed failures were on those intermediate assertions; I added restart-only variants so each finding's evidence is the expectConsistent failure itself."
+   ]
+  },
+  "fix": {
+   "score": true,
+   "candidateGreen": true,
+   "guardRed": true,
+   "acceptedPinGreen": true,
+   "scopeOk": true,
+   "lint": "ok",
+   "committedWithMap": true,
+   "commits": 1,
+   "srcDiffLines": 20,
+   "candidateTests": {
+    "passed": 89,
+    "failed": 0,
+    "total": 89
+   },
+   "guardRemoved": {
+    "passed": 87,
+    "failed": 2,
+    "total": 89
+   },
+   "acceptedPin": {
+    "passed": 91,
+    "failed": 0,
+    "total": 91
+   }
+  },
+  "review": {
+   "verdict": "FIX",
+   "findings": [
+    [
+     "R-1",
+     "S2",
+     "src/main/github-account-store.ts:76-80 and :131,:140: when open() could not read an existing, valid account.json (an errno such as EBUSY, the U2-R9 case) the store keeps disk = null, and a replace() i"
+    ],
+    [
+     "R-2",
+     "S3",
+     "src/main/github-account-store.ts:147 (replace step 5, the sign-in rollback): the rollback writes before.account with before.retiredRefs and only then discards the staged refs. The rollback file never "
+    ]
+   ],
+   "checked": 21
+  },
+  "review-grade": {
+   "result": "PASS",
+   "r11Found": true,
+   "r11CauseNamed": true,
+   "r11Severity": "S3",
+   "r13Found": true,
+   "r13CauseNamed": true,
+   "r13Severity": "S2",
+   "falseBlocking": 0,
+   "copiedFromHistory": false,
+   "others": [],
+   "notes": "The review found both ground-truth defects, places each cause at the right line, and has nothing extra. R-1 is R13: before = this.disk is null after an errno read at open(), and nothing re-reads the file before step 4. The candidate rated it S2, one level above the accepted S3. R-2 is R11: the step-5 rollback writes before.retiredRefs without the staged refs and only then discards them. It also notes that the shipped crash test fails only the first commit. Its proposed fix matches the accepted f"
+  },
+  "usage": {
+   "pin": {
+    "label": "pin:fable-high",
+    "model": "claude-fable-5-1",
+    "effort": null,
+    "state": "done",
+    "tokens": 123338,
+    "ms": 116884,
+    "ts": null,
+    "startedAt": 1792279889698
+   },
+   "fix": {
+    "label": "fix:fable-high",
+    "model": "claude-fable-5-1",
+    "effort": null,
+    "state": "done",
+    "tokens": 148456,
+    "ms": 317730,
+    "ts": null,
+    "startedAt": 1792280963089
+   },
+   "review": {
+    "label": "review:fable-high",
+    "model": "claude-fable-5-1",
+    "effort": null,
+    "state": "done",
+    "tokens": 196292,
+    "ms": 614640,
+    "ts": null,
+    "startedAt": 1792282785337
+   },
+   "grade": {
+    "label": "grade:fable-high",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 97955,
+    "ms": 17777,
+    "ts": null,
+    "startedAt": 1792286418578
+   }
+  }
+ },
+ "fable-xhigh": {
+  "profile": "fable-xhigh",
+  "review-only": false,
+  "pin": {
+   "score": true,
+   "redAtHead": true,
+   "greenWithFix": true,
+   "srcClean": true,
+   "lint": "ok",
+   "committed": true,
+   "atHead": {
+    "passed": 0,
+    "failed": 2,
+    "total": 2
+   },
+   "withAcceptedFix": {
+    "passed": 2,
+    "failed": 0,
+    "total": 2
+   }
+  },
+  "self-reported-mistakes": {
+   "pin": [
+    "nothing to report"
+   ],
+   "fix": [
+    "nothing to report"
+   ],
+   "review": [
+    "Probe P-K armed failVaultDisk before the sign-in had staged, so saveStaged threw ReplaceFailure (my test's fault, not the store's); I dropped it and kept P-K2, the correct DC-4 shape, which passes.",
+    "I expected probe P-D (a failing vault index during open()) to leave a committed orphan; the on-disk index already carried the refs as tombstoned from the refresh's step 7, so the next start was consistent. I corrected the probe's expectation and moved the case to 'considered, not reproduced'."
+   ]
+  },
+  "fix": {
+   "score": true,
+   "candidateGreen": true,
+   "guardRed": true,
+   "acceptedPinGreen": true,
+   "scopeOk": true,
+   "lint": "ok",
+   "committedWithMap": true,
+   "commits": 1,
+   "srcDiffLines": 16,
+   "candidateTests": {
+    "passed": 89,
+    "failed": 0,
+    "total": 89
+   },
+   "guardRemoved": {
+    "passed": 87,
+    "failed": 2,
+    "total": 89
+   },
+   "acceptedPin": {
+    "passed": 91,
+    "failed": 0,
+    "total": 91
+   }
+  },
+  "review": {
+   "verdict": "FIX",
+   "findings": [
+    [
+     "R-1",
+     "S2",
+     "src/main/github-account-store.ts:147 (replace step 5, a sign-in's rollback) and :244-245 (retire/discard): after a partial commit on a failing vault index (commit(access) landed and persisted; commit("
+    ],
+    [
+     "R-2",
+     "S3",
+     "src/main/github-account-store.ts:76-80 (open) with :131/:140 (replace step 4) and :185-188 (clearLocked): when open() could not read a valid account file (an errno such as EBUSY, U2-R9), this.disk sta"
+    ]
+   ],
+   "checked": 23
+  },
+  "review-grade": {
+   "result": "PASS",
+   "r11Found": true,
+   "r11CauseNamed": true,
+   "r11Severity": "S2",
+   "r13Found": true,
+   "r13CauseNamed": true,
+   "r13Severity": "S3",
+   "falseBlocking": 0,
+   "copiedFromHistory": false,
+   "others": [],
+   "notes": "R-1 is U2-R11's path (1). The rollback at :147 writes `before`, which names neither new ref. discard then unlinks the committed access half, and its index persist fails. I re-ran both scratch tests and both fail as claimed: R-A rejects with REDACTION_UNAVAILABLE, and R-A2 finds 3 index entries where 2 are expected. The finding misses the crash window between the rollback write and discard (path 3). Its fix, a second write listing the refs whose removal failed, is narrower than the accepted fix ("
+  },
+  "usage": {
+   "pin": {
+    "label": "pin:fable-xhigh",
+    "model": "claude-fable-5-1",
+    "effort": null,
+    "state": "done",
+    "tokens": 140504,
+    "ms": 291899,
+    "ts": null,
+    "startedAt": 1792279995721
+   },
+   "fix": {
+    "label": "fix:fable-xhigh",
+    "model": "claude-fable-5-1",
+    "effort": null,
+    "state": "done",
+    "tokens": 160017,
+    "ms": 395385,
+    "ts": null,
+    "startedAt": 1792281015428
+   },
+   "review": {
+    "label": "review:fable-xhigh",
+    "model": "claude-fable-5-1",
+    "effort": null,
+    "state": "done",
+    "tokens": 235680,
+    "ms": 1006104,
+    "ts": null,
+    "startedAt": 1792283074715
+   },
+   "grade": {
+    "label": "grade:fable-xhigh",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 111536,
+    "ms": 32330,
+    "ts": null,
+    "startedAt": 1792286438227
+   }
+  }
+ },
+ "fable-max": {
+  "profile": "fable-max",
+  "review-only": true,
+  "pin": null,
+  "fix": null,
+  "review": {
+   "verdict": "FIX",
+   "findings": [
+    [
+     "R-1",
+     "S2",
+     "src/main/github-account-store.ts:147 (step-5 sign-in rollback) and :245 (discard): the rollback write names only before.account/before.retiredRefs, then tombstones and removes the new refs with errors"
+    ],
+    [
+     "R-2",
+     "S3",
+     "src/main/github-account-store.ts:76-79 sets this.disk = null for a valid file that could not be read (an errno error such as EBUSY, the U2-R9 case), and replace step 4 (:131 before = this.disk, :140 r"
+    ],
+    [
+     "R-3",
+     "S3",
+     "src/main/github-account-store.ts:185-188 (clearLocked): with this.disk === null after an open() that could not read the file and no live account, `all` is empty and clear returns 'durable' having tomb"
+    ]
+   ],
+   "checked": 18
+  },
+  "self-reported-mistakes": {
+   "review": [
+    "My first copy of the harness into tests/zz-scratch-checked.test.ts used `sed -n '1,138p'`, which cut inside the startUnreadable helper so the file did not parse; re-cut at line 146 and re-ran (verified: 10 tests collected).",
+    "C12's first version snapshotted at the clear's first remove without gating the locked part, so the prologue's tombstone persists had not landed and the next start rightly read the account (4.5's 'none of whose writes reached disk' row): the failure was my crash point, not the store; gated the lock as the shipped tests do (verified: C12 passes)."
+   ]
+  },
+  "review-grade": {
+   "result": "PASS",
+   "r11Found": true,
+   "r11CauseNamed": true,
+   "r11Severity": "S2",
+   "r13Found": true,
+   "r13CauseNamed": true,
+   "r13Severity": "S3",
+   "falseBlocking": 0,
+   "copiedFromHistory": false,
+   "others": [
+    {
+     "id": "R-3",
+     "severity": "S3",
+     "classification": "true",
+     "why": "Verified at :174-188: after an EBUSY open() leaves disk = null and live = null, clear(() => true) finds `all` empty and returns 'durable' at :188 without tombstoning or writing anything, while the file still names the account. Spec 3.6 and the docstring at :38 say 'durable' means the next start reads no account, and spec 4.3 says a clear with no live account still proceeds. The scratch R-3 test (EBUSY injected on lstat only during open) fails as the candidate describes: the result is 'durable' and the next start reads the signed-in pair. The accepted U2-R13 fix changes only replace(), so the ground truth does not cover this case."
+    }
+   ],
+   "notes": "Both ground-truth defects were found and their causes located: R-1 is U2-R11 and R-2 is U2-R13. R-1 is rated S2 against the accepted S3. Its fix wording, cap([...before.retiredRefs, ...staged]), matches the accepted fix, but the code's own names lead there, and no commit id or history wording appears in the text or tests. R-3 is an extra true S3 with the same root cause, and the scratch tests check it correctly. The 'checked' list is deep and specific: every step of replace, clear, open and fini"
+  },
+  "usage": {
+   "pin": null,
+   "fix": null,
+   "review": {
+    "label": "review:fable-max",
+    "model": "claude-fable-5-1",
+    "effort": null,
+    "state": "done",
+    "tokens": 229283,
+    "ms": 1092062,
+    "ts": null,
+    "startedAt": 1792285463278
+   },
+   "grade": {
+    "label": "grade:fable-max",
+    "model": "claude-opus-5-5",
+    "effort": null,
+    "state": "done",
+    "tokens": 107746,
+    "ms": 40768,
+    "ts": null,
+    "startedAt": 1792286557248
+   }
+  }
+ }
+}

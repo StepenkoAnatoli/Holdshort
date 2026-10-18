@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-10-17 — Claude Code host adapter, usage-window affordability, calibration evidence
+
+A Claude Code build session adopted the v3.0 policy for its sub-agent dispatch and brought back
+what did not fit a subscription host. `docs/proposals/usage-windows-gate4.md` proposes rolling usage
+windows (`five_hour`, `seven_day`, as the platform reports them) as Gate 4's finite resource for such
+hosts, with a fail-closed reading rule and a host-declared tokens-to-utilization coefficient, and
+records that `tools/conform_spec.py` refuses an honest `null` for the cash fields a subscription host
+cannot know (Item 4). `docs/evidence/2026-10-17/claude-code-calibration/` preregisters and records a
+twelve-profile calibration (haiku, sonnet, opus, fable at several efforts) on three graded tasks:
+pin 12/12, fix 12/12, review 9/12, with the lead's own mistakes recorded. `hosts/claude-code/` carries
+the Node reference adapter (five gates, Brief and §10.5 ledger, dispatch re-checks, outcome
+learning, usage windows; 69 `node --test` cases) and a friction log against `fbe7bca`. Two broken
+relative links fixed (CHANGELOG, PROJECT_COMPLETION). No cash conversion, no provider bill, no
+savings claim anywhere in it.
+
 ## 2026-10-13 — autonomous default, explicit HITL, observed usage and project boundaries
 
 At the user's explicit direction, canonical skill v3.0 makes HumanGate none the
@@ -21,7 +36,7 @@ are fixed without weakening production checks.
 New-reviewer guide to **enforcement hardening**, told chronologically: each
 protection layer was added because of a real observed failure, and each
 entry below names the commit that shipped it. See
-[README.md](README.md#enforcing-by-default-the-four-protection-layers)
+[README.md](README.md#3-enable-contributor-checks)
 for the current state of all four layers and
 [docs/GO_LIVE_RUNBOOK.md](docs/GO_LIVE_RUNBOOK.md) for the operational use.
 

@@ -1,0 +1,18 @@
+{
+ "task-id": "sr-host-rereview1",
+ "outcome": "accepted",
+ "owner-profile": "cc-opus-high",
+ "original-brief-fingerprint": "e2b46f97b082a3b08f33a38263b3c5cbfa44f4cbedac154d4702a6e6c0599f1b",
+ "evidence": {
+  "checks": [
+   {
+    "command": "refute-first re-review",
+    "exit-code": 0,
+    "output-ref": "wf_e4d05eb8-beb rereview N1-N6"
+   }
+  ],
+  "actual-spend": null,
+  "files-touched": [],
+  "notes": "N1-N6 all held, every one confirmed by the next fix round (scratch only); tokens: 226635 (harness count, not a bill)"
+ }
+}

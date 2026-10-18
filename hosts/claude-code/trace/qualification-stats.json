@@ -1,0 +1,373 @@
+{
+  "_comment": "derived by route.mjs rate from ledger.jsonl and the decision files; regenerated on every run, never hand-edited",
+  "calibration": {
+    "profiles": {
+      "cc-fable-high": {
+        "fix": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "pin-tests": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "review": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        }
+      },
+      "cc-fable-max": {
+        "review": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 1,
+          "ungraded": 0
+        }
+      },
+      "cc-fable-medium": {
+        "fix": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "pin-tests": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "review": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        }
+      },
+      "cc-fable-xhigh": {
+        "fix": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "pin-tests": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "review": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        }
+      },
+      "cc-haiku-high": {
+        "fix": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "pin-tests": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "review": {
+          "fail": 2,
+          "partial": 0,
+          "pass": 0,
+          "ungraded": 0
+        }
+      },
+      "cc-haiku-low": {
+        "fix": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "pin-tests": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "review": {
+          "fail": 2,
+          "partial": 0,
+          "pass": 0,
+          "ungraded": 0
+        }
+      },
+      "cc-haiku-medium": {
+        "fix": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "pin-tests": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "review": {
+          "fail": 2,
+          "partial": 0,
+          "pass": 0,
+          "ungraded": 0
+        }
+      },
+      "cc-opus-high": {
+        "fix": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "pin-tests": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "review": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        }
+      },
+      "cc-opus-max": {
+        "review": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 1,
+          "ungraded": 0
+        }
+      },
+      "cc-opus-medium": {
+        "fix": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "pin-tests": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "review": {
+          "fail": 1,
+          "partial": 0,
+          "pass": 1,
+          "ungraded": 0
+        }
+      },
+      "cc-opus-xhigh": {
+        "fix": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "pin-tests": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "review": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        }
+      },
+      "cc-sonnet-high": {
+        "fix": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "pin-tests": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "review": {
+          "fail": 1,
+          "partial": 0,
+          "pass": 1,
+          "ungraded": 0
+        }
+      },
+      "cc-sonnet-low": {
+        "fix": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "pin-tests": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "review": {
+          "fail": 0,
+          "partial": 1,
+          "pass": 1,
+          "ungraded": 0
+        }
+      },
+      "cc-sonnet-medium": {
+        "fix": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "pin-tests": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 2,
+          "ungraded": 0
+        },
+        "review": {
+          "fail": 1,
+          "partial": 0,
+          "pass": 1,
+          "ungraded": 0
+        }
+      },
+      "cc-sonnet-xhigh": {
+        "review": {
+          "fail": 0,
+          "partial": 0,
+          "pass": 1,
+          "ungraded": 0
+        }
+      }
+    },
+    "runs": [
+      {
+        "observations-sha256": "460342423f9c05d271f35939d4e5656508411abf13903c96c2f90a3b25ab3da2",
+        "run": "calibration-1"
+      },
+      {
+        "observations-sha256": "f794c1fd58b742b4e2c6f9e2f9245908912d252b6ca4bf6f5ba6da0533713a24",
+        "run": "calibration-2"
+      }
+    ]
+  },
+  "headroom-proposals": [
+    {
+      "from": 771000,
+      "profile": "cc-opus-high",
+      "task": "sr-policy-3",
+      "to": 848000,
+      "tokens": 847844
+    }
+  ],
+  "ledger-sha256": "993058bdf82261bfc4f54aea0fa4946527c91a683d953a00e9026c415d9bfc7d",
+  "outcome-records": 11,
+  "outcomes-counted": 9,
+  "policy-revision": "host-policy-3",
+  "proposals": [],
+  "stats": {
+    "cc-fable-high": {
+      "review": {
+        "accepted": 1,
+        "blocked": 0,
+        "cancelled": 0,
+        "cost-overrun": 0,
+        "deviations": 1,
+        "escalated": 0,
+        "partial": 0,
+        "verification-failed": 0
+      }
+    },
+    "cc-opus-high": {
+      "build-ui": {
+        "accepted": 2,
+        "blocked": 0,
+        "cancelled": 0,
+        "cost-overrun": 0,
+        "deviations": 0,
+        "escalated": 0,
+        "partial": 0,
+        "verification-failed": 1
+      },
+      "fix": {
+        "accepted": 2,
+        "blocked": 0,
+        "cancelled": 0,
+        "cost-overrun": 0,
+        "deviations": 0,
+        "escalated": 0,
+        "partial": 0,
+        "verification-failed": 0
+      },
+      "review": {
+        "accepted": 3,
+        "blocked": 0,
+        "cancelled": 0,
+        "cost-overrun": 0,
+        "deviations": 0,
+        "escalated": 0,
+        "partial": 0,
+        "verification-failed": 0
+      }
+    }
+  },
+  "usage": {
+    "five_hour": {
+      "considered": 0,
+      "current": 0.05,
+      "max-observed": null,
+      "observed": [],
+      "ratified-at": "2026-10-18T01:23:32Z",
+      "skipped": {
+        "negative-delta": 0,
+        "reset": 1,
+        "spanning": 3,
+        "unknown-tokens": 0,
+        "zero-tokens": 5
+      }
+    },
+    "seven_day": {
+      "considered": 0,
+      "current": 0.015,
+      "max-observed": null,
+      "observed": [],
+      "ratified-at": "2026-10-18T01:23:32Z",
+      "skipped": {
+        "negative-delta": 0,
+        "reset": 0,
+        "spanning": 3,
+        "unknown-tokens": 0,
+        "zero-tokens": 6
+      }
+    }
+  },
+  "usage-proposals": [],
+  "usage-sha256": "073325c463ae216b1b92aa2e4c2e1ddf2268af2860f1fc76d09b43ca423d63f6"
+}
