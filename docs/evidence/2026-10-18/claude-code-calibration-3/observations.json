@@ -107,7 +107,7 @@
      "cluster": "C-1",
      "clusterReal": true,
      "clusterVotes": "3/3",
-     "adjudicated": "true"
+     "adjudicated": true
     }
    ],
    "notes": "The review found both accepted defects and located each cause exactly: getReader outside the try at line 112, and byteLength/Buffer.concat on a non-Uint8Array chunk. It reproduced each one through all three public functions, or the token path, with scratch tests that fail as described when re-run. It over-rated R11 as S1, where the truth is S3. It did not mention the NaN bound that never trips, but it did note that the length check is skipped.\nThe 'checked' list is deep and specific: it gives li"
@@ -273,7 +273,7 @@
      "cluster": "C-1",
      "clusterReal": true,
      "clusterVotes": "3/3",
-     "adjudicated": "true"
+     "adjudicated": true
     },
     {
      "id": "R-4",
@@ -284,7 +284,7 @@
      "cluster": "C-2",
      "clusterReal": true,
      "clusterVotes": "2/3",
-     "adjudicated": "true"
+     "adjudicated": true
     },
     {
      "id": "R-5",
@@ -295,7 +295,7 @@
      "cluster": "C-5",
      "clusterReal": true,
      "clusterVotes": "2/3",
-     "adjudicated": "true"
+     "adjudicated": true
     },
     {
      "id": "R-6",
@@ -306,7 +306,7 @@
      "cluster": "C-4",
      "clusterReal": true,
      "clusterVotes": "2/3",
-     "adjudicated": "true"
+     "adjudicated": true
     }
    ],
    "notes": "The review is strong on the two target defects. Both were found with their causes located (getReader outside the try; byteLength and Buffer.concat on a non-Uint8Array chunk). Each has a failing scratch probe through the public API, and R-2 checks both requestToken and fetchLogin. R-1 does not note that the throw message carries the body text, which is the token-leak half of U1-R11.\nThe 'checked' list is deep and specific, walking the module function by function and pointing to the shipped tests."
@@ -465,7 +465,7 @@
      "cluster": "C-4",
      "clusterReal": true,
      "clusterVotes": "2/3",
-     "adjudicated": "true"
+     "adjudicated": true
     },
     {
      "id": "R-3",
@@ -476,7 +476,7 @@
      "cluster": "C-1",
      "clusterReal": true,
      "clusterVotes": "3/3",
-     "adjudicated": "true"
+     "adjudicated": true
     }
    ],
    "notes": "Strong reproduction discipline. Every finding cites a scratch test I re-ran, and 11 of 14 failed exactly as reported (R-1/R-1b/X-2 for R8, R-2/R-2b/R-2c for R11, R-3/R-3c, R-4). The candidate split R11 into R-1 (S1, the token reaching the rejection message) and R-4 (S2, the bound never tripping). Both name the cause: byteLength of a non-byte chunk, then Buffer.concat. I counted R-4 as part of R11, not as an 'other' finding. R11's severity is inflated: S1 against the accepted S3. The candidate ev"
@@ -622,7 +622,7 @@
      "cluster": "C-3",
      "clusterReal": true,
      "clusterVotes": "3/3",
-     "adjudicated": "true"
+     "adjudicated": true
     }
    ],
    "notes": "Strong review: it found both accepted defects at S3 and located each cause precisely (getReader at :112 outside the try; byteLength NaN, with Buffer.concat at :120 outside the try). It added a control case (a locked body on a 429), and every claim has a scratch test that reproduces it at HEAD; I re-ran them and they give the stated failures. The 'checked' list is deep and specific. One factual error: it says the R-1 and R-2 errors carry only engine messages. The string-chunk run shows the TypeEr"
@@ -772,7 +772,7 @@
      "cluster": "C-2",
      "clusterReal": true,
      "clusterVotes": "2/3",
-     "adjudicated": "true"
+     "adjudicated": true
     },
     {
      "id": "R-4",
@@ -783,7 +783,7 @@
      "cluster": "C-1",
      "clusterReal": true,
      "clusterVotes": "3/3",
-     "adjudicated": "true"
+     "adjudicated": true
     }
    ],
    "notes": "Both accepted findings were found, each with its cause located in readBounded and reproduced by the candidate's own scratch tests: getReader outside the try (R-2 = U1-R8, S3), and an unchecked byteLength plus Buffer.concat on a non-Uint8Array chunk that leaks the token text (R-1 = U1-R11). R-1 was rated S1 against the accepted S3. The fixes it proposes match the accepted fixes in substance, with no reference to commits or later fixes.\nI re-ran the scratch file: 6 tests fail and 2 pass, and each "
@@ -1029,7 +1029,7 @@
      "cluster": "C-3",
      "clusterReal": true,
      "clusterVotes": "3/3",
-     "adjudicated": "true"
+     "adjudicated": true
     }
    ],
    "notes": "The candidate found both accepted defects. R-3 is R8: the cause (getReader at :112, outside the try) is named, and the asymmetry with the cancel paths is shown by B3/B4. R-1 and R-2 together are R11: the cause (byteLength NaN, Buffer.concat at :120, no type check) is named. R11 is filed twice, once as S1 (token in the rejection message) and once as S3 (rejection plus bypassed bound), so its severity is inflated compared with the accepted S3. I reproduced every claimed failure (A1-A6, B1-B2, C1-C"
@@ -1173,7 +1173,7 @@
      "cluster": "C-1",
      "clusterReal": true,
      "clusterVotes": "3/3",
-     "adjudicated": "true"
+     "adjudicated": true
     }
    ],
    "notes": "The review found both truth findings and pinned each cause to the line. R-3 = R8: getReader outside the try, shown with locked and bodyUsed rows through all three calls. R-1, R-2 and R-4 together = R11: string and ArrayBuffer chunks, the NaN bound, and the token in Buffer.concat's message. R11 was graded S1, above the accepted S3, and split into three findings. Reproduction was disciplined. Every claim has a scratch test, and all 8 re-run red as described (cwd /home/user/task5-handoff/wt/cal3-re"
@@ -1319,7 +1319,7 @@
      "cluster": "C-3",
      "clusterReal": true,
      "clusterVotes": "3/3",
-     "adjudicated": "true"
+     "adjudicated": true
     }
    ],
    "notes": "Both accepted defects were found, and each finding names its cause. R-2 is R8: getReader is outside the try, with a test for an already-read body and one for a locked body. R-1 is R11: byteLength on a non-Uint8Array chunk gives NaN, and Buffer.concat then quotes the token. Every claim reproduces: I ran the scratch file and all 6 tests fail as the candidate reported. R11 is rated S1 against S3 in the ground truth, which is an over-call, though the token appearing in a rejection explains why. The "
@@ -1475,7 +1475,7 @@
      "cluster": "C-2",
      "clusterReal": true,
      "clusterVotes": "2/3",
-     "adjudicated": "true"
+     "adjudicated": true
     },
     {
      "id": "R-4",
@@ -1486,7 +1486,7 @@
      "cluster": "C-1",
      "clusterReal": true,
      "clusterVotes": "3/3",
-     "adjudicated": "true"
+     "adjudicated": true
     }
    ],
    "notes": "Strong review. Both ground-truth defects were found with the cause located: R-2 names getReader() at :112 outside the try, and R-1 names the byteLength NaN at :116 and Buffer.concat at :120. R-1 is rated S1, above the accepted S3, because it treats the token-in-error leak as critical. I re-ran the 17 scratch tests and the results match: 14 fail as each finding describes and 3 controls pass.\nReproduction discipline is high. Each finding cites a red scratch test with its observed message. Controls"
@@ -1592,7 +1592,7 @@
      "cluster": "C-1",
      "clusterReal": true,
      "clusterVotes": "3/3",
-     "adjudicated": "true"
+     "adjudicated": true
     },
     {
      "id": "R-4",
@@ -1603,7 +1603,7 @@
      "cluster": "C-2",
      "clusterReal": true,
      "clusterVotes": "2/3",
-     "adjudicated": "true"
+     "adjudicated": true
     }
    ],
    "notes": "Strong review. It found both accepted defects and gave the exact cause and line for each (getReader outside the try, and byteLength/Buffer.concat on a non-Uint8Array chunk). It rated R11 S1, above the accepted S3, because the token leaks into the rejection. It also added two reproduced S3 defects (the read ignores the bounded signal and can spin on empty chunks; an awaited cancel that never settles hangs the call) and a correctly downgraded S4. Reproduction discipline is high. Every claim has a "
@@ -2012,7 +2012,7 @@
      "cluster": "C-3",
      "clusterReal": true,
      "clusterVotes": "3/3",
-     "adjudicated": "true"
+     "adjudicated": true
     }
    ],
    "notes": "Strong review. It found both accepted defects, located each cause precisely (getReader outside the try; missing Uint8Array check plus Buffer.concat outside the try) and reproduced both with red scratch tests across all three entry points. It rated R11 S1 rather than S3 because the token piece appears in the rejection message, and it stated that bound honestly: the token stays inside main because of the bridge's safeError. The 'checked' list is deep and specific to the spec rows (5.1-5.5, rate-li"
