@@ -528,16 +528,28 @@ def legacy_scores(r: Report, obs, lenses: dict, prongs) -> None:
         return
     for p in sorted(set(cells) ^ set(profiles)):
         r.fail(rule, f"profile {p} is in {'observations.json' if p in cells else 'scores.json'} only")
-    rules = {}
-    for c in r.protocol.get("cases") or []:
-        if not isinstance(c, dict) or c.get("id") not in CASES:
+    rules, refused = {}, set()
+    stated = [c for c in (r.protocol.get("cases") if isinstance(r.protocol.get("cases"), list) else []) if isinstance(c, dict) and c.get("id") in CASES]
+    for case in CASES:
+        n = sum(1 for c in stated if c["id"] == case)
+        if n > 1:
+            r.fail(rule, f"legacy run: protocol.json states the {case} case {n} times; which pass rule scores it cannot be read")
+            refused.add(case)
+    for c in stated:
+        if c["id"] in refused:
             continue
         digest = hashlib.sha256(str(c.get("pass_rule")).encode("utf-8")).hexdigest()
         known = LEGACY_RULES.get(digest)
         if known is None or known[0] != c["id"]:
             r.fail(rule, f"legacy run: the {c['id']} pass rule (sha256 {digest[:12]}) is not one this check encodes; a new run is a kit run")
+            refused.add(c["id"])
             continue
         rules[c["id"]] = known[1]
+    # a case scored with no rule behind it is refused, never skipped: dropping or renaming a protocol case must not pass
+    scored = {case for s in profiles.values() if isinstance(s, dict) for case in CASES if s.get(case) is not None}
+    for case in [c for c in CASES if c in scored and c not in rules and c not in refused]:
+        r.fail(rule, f"legacy run: no encoded pass rule for the {case} case, which scores.json scores; protocol.json states none "
+                     "this check encodes, and a new run is a kit run")
     ctx = {"lenses": lenses, "prongs": prongs or []}
     for p in [p for p in cells if p in profiles]:
         s = profiles[p] if isinstance(profiles[p], dict) else {}

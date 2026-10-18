@@ -412,6 +412,42 @@ class LegacyRuns(unittest.TestCase):
         self.assertEqual({rule_of(ln) for ln in fails}, {"scores-derivable"})
         self.assertIn("pin pass rule", fails[0])
 
+    def test_a_scored_case_with_no_encoded_pass_rule_fails(self):
+        # F1: a folder that drops the kit keys is a legacy run; a case it scores under no encoded rule is refused, never
+        # skipped, so a folder cannot pass by dropping its own pass rules
+        kit = self.root / "kit" / FOLDER
+        shutil.copytree(FIXTURES / "pass" / FOLDER, kit)
+
+        def strip(p):
+            for k in ("judging_profile", "relayed_operator_text", "classification", "cases"):
+                p.pop(k, None)
+        edit_json(kit, "protocol.json", strip)
+        # C-1 no longer real: under any rule beta-max's review would not be a PASS, while scores.json still says PASS
+        edit_json(kit, "adjudication.json", lambda a: [ln.update(holds=False) for c in a["clusters"] for ln in c["lenses"]])
+        fails = [ln for ln in self.fails(kit) if rule_of(ln) == "scores-derivable"]
+        for case in ("pin", "fix", "review"):
+            self.assertTrue(any(f"no encoded pass rule for the {case} case" in ln for ln in fails), fails)
+        cases = [
+            (RUN1, lambda p: p.pop("cases"), ("pin", "fix", "review")),
+            (RUN2, lambda p: next(c for c in p["cases"] if c["id"] == "fix").update(id="fix-renamed"), ("fix",)),
+        ]
+        for rel, fn, want in cases:
+            with self.subTest(rel=rel, want=want):
+                folder = self.copy_run(rel)
+                edit_json(folder, "protocol.json", fn)
+                fails = self.fails(folder)
+                self.assertEqual({rule_of(ln) for ln in fails}, {"scores-derivable"}, fails)
+                self.assertEqual(sorted(ln.split("no encoded pass rule for the ", 1)[1].split(" ", 1)[0] for ln in fails), sorted(want), fails)
+
+    def test_a_case_stated_twice_fails(self):
+        # two encoded rules for one case: neither is chosen silently
+        folder = self.copy_run(RUN2)
+        run1_pin = next(c for c in read(ROOT / RUN1 / "protocol.json")["cases"] if c["id"] == "pin")
+        edit_json(folder, "protocol.json", lambda p: p["cases"].append(run1_pin))
+        fails = self.fails(folder)
+        self.assertEqual({rule_of(ln) for ln in fails}, {"scores-derivable"}, fails)
+        self.assertIn("states the pin case 2 times", "\n".join(fails))
+
     def test_run3_flags_and_count_must_agree(self):
         cases = [
             (lambda s: s["profiles"]["haiku-medium"]["review"].update(would_fail_under_three_prong=False), "15 of 15 PASS"),  # the count still says 13
