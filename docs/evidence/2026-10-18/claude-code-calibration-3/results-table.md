@@ -16,4 +16,4 @@
 | fable-xhigh | PASS | PASS | yes | PASS | True/cause | True/cause | 1/0/0 | 0/0 | False | 140242/166060/186589(+110481) |
 | fable-max | - | - | - | PASS | True/cause | True/cause | 0/0/0 | 0/0 | False | -/-/189364(+99730) |
 
-`*` = the cell from the supplementary run wf_dbe29a64-3b2 (amendment A-1); the main-run void cells are kept under `void-cells` in observations.json.
+`*` = the cell from the supplementary run wf_dbe29a64-3b2 (amendment A-1); the main-run void cells are kept in void-cells.json.

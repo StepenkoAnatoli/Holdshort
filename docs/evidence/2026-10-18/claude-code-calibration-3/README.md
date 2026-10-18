@@ -26,9 +26,10 @@ copies of the host's scripts; host-local paths inside).
 
 Run `wf_4e9ef48d-066` finished 2026-10-18T06:44Z: 70 agents (39 items, 15 graders, 1 clustering agent, 15 lenses),
 8,531,566 reported tokens, three agents at a time, 80 minutes; plus the supplementary run `wf_dbe29a64-3b2`
-(amendment A-1: 4 agents, 456,376 tokens, 3 minutes). Scores in [scores.json](scores.json), the full observations
-(void cells included) in [observations.json](observations.json), the table in [results-table.md](results-table.md),
-the clusters and their lens verdicts in [clusters.md](clusters.md).
+(amendment A-1: 4 agents, 456,376 tokens, 3 minutes). Scores in [scores.json](scores.json), the full observations in
+[observations.json](observations.json) (the flat profile map the host adapter's `rate` reads, as in runs 1-2), the void
+cells in [void-cells.json](void-cells.json), the table in [results-table.md](results-table.md), the clusters and their
+lens verdicts in [clusters.md](clusters.md) and [adjudication.json](adjudication.json).
 
 - **pin 11/12 PASS**: `fable-medium` FAIL on an over-specified pin that asserts the injected stream's cancel callback,
   which the rule does not state, so it stays red with the accepted fix (amendment N-1). **fix 12/12 PASS**, every one
