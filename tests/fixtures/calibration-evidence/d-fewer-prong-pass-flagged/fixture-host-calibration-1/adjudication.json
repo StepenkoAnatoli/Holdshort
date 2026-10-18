@@ -1,0 +1,56 @@
+{
+ "run": "run-main-1",
+ "supplementary-run": null,
+ "declared-prongs": [
+  "holds",
+  "reachable"
+ ],
+ "clusters": [
+  {
+   "id": "C-1",
+   "title": "add raises on a non-number b",
+   "claim": "add(1, 'x') raises TypeError at src/mod.py:4; the promise says add never raises",
+   "members": [
+    "beta-max R-3"
+   ],
+   "graderClassifications": [
+    "false"
+   ],
+   "lenses": [
+    {
+     "claim": "C-1",
+     "lens": "reproduce",
+     "holds": true,
+     "reachable": "yes",
+     "severity": "S3",
+     "scratchTest": "tests/zz_adj.py: TypeError",
+     "why": "observed"
+    },
+    {
+     "claim": "C-1",
+     "lens": "reachability",
+     "holds": true,
+     "reachable": "yes",
+     "severity": "S3",
+     "scratchTest": "",
+     "why": "public API, admissible per the promise"
+    },
+    {
+     "claim": "C-1",
+     "lens": "refute",
+     "holds": true,
+     "reachable": "yes",
+     "severity": "S4",
+     "scratchTest": "",
+     "why": "the promise names numbers only"
+    }
+   ],
+   "real": true,
+   "realVotes": "2/3",
+   "threeProngVotes": "0/3",
+   "threeProngReal": false,
+   "declaredRuleReal": true,
+   "declaredRuleDisagrees": false
+  }
+ ]
+}
