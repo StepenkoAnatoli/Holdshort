@@ -40,10 +40,11 @@ require them.
   Each was caught after the run, by reading outputs, and each is a rule a kit
   can carry so that the next host does not rediscover it.
 - Cost: run 2 used 7,872,276 harness tokens over 54 agents (39 cells and 15
-  graders; its cross-candidate adjudication was post hoc and is not in that
-  total); run 3 used 8,531,566 over 70 agents plus 456,376 in a supplementary
-  run, of which graders, clustering and lenses were 38-39% (`#101`,
-  `scores.json` `totals.tokens`). A model added without calibration costs
+  graders, the graders 1,713,036 or 21.8%; its cross-candidate adjudication
+  was post hoc and is not in that total); run 3 used 8,531,566 over 70 agents
+  plus 456,376 in a supplementary run, of which graders, clustering and lenses
+  were 38-39% (`#101`, `scores.json` `totals.tokens`). The preregistered
+  adjudication step roughly doubled the judging share. A model added without calibration costs
   nothing to add and an unknown amount later. This host has no such case:
   every profile in its policy was calibrated or carries a production-derived
   qualification marked as not independent; the ledger case cited by the
