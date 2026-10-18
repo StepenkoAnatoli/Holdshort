@@ -283,10 +283,10 @@
     ]
   },
   "headroom-proposals": [],
-  "ledger-sha256": "0771416c0297d768499f8b1891d49169dd1bd92a47b3f413aa8feb1f9c20120f",
-  "outcome-records": 18,
-  "outcomes-counted": 16,
-  "policy-revision": "host-policy-5",
+  "ledger-sha256": "e414d2f8639e1c8154fd9abeaeb04eff17db004e9e55380ef100a87b5abb0ee0",
+  "outcome-records": 19,
+  "outcomes-counted": 17,
+  "policy-revision": "host-policy-6",
   "proposals": [],
   "stats": {
     "cc-fable-high": {
@@ -336,6 +336,16 @@
         "partial": 0,
         "verification-failed": 1
       },
+      "build-ui@T3": {
+        "accepted": 1,
+        "blocked": 0,
+        "cancelled": 0,
+        "cost-overrun": 0,
+        "deviations": 0,
+        "escalated": 0,
+        "partial": 0,
+        "verification-failed": 0
+      },
       "fix@T1": {
         "accepted": 2,
         "blocked": 0,
@@ -368,7 +378,7 @@
       "skipped": {
         "negative-delta": 0,
         "reset": 5,
-        "spanning": 7,
+        "spanning": 9,
         "unknown-tokens": 0,
         "zero-tokens": 8
       }
@@ -382,12 +392,12 @@
       "skipped": {
         "negative-delta": 0,
         "reset": 2,
-        "spanning": 8,
+        "spanning": 10,
         "unknown-tokens": 0,
         "zero-tokens": 10
       }
     }
   },
   "usage-proposals": [],
-  "usage-sha256": "cff0c5f74aef4268823f496ef75dfcd4bdd4b49209347daf7205d89cea456f36"
+  "usage-sha256": "2023e876128640113592b007b77fff4a0351f863d9c715fc3c420500bbae25c1"
 }

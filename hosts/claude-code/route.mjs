@@ -12,8 +12,8 @@
 //       options: --trace <dir> --policy <file> --now <iso> --deviation <reason>
 // Exit: 0 done (any decided route, blocked included), 2 invalid input, 3 refused, 4 ledger integrity.
 import { createHash } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -46,6 +46,16 @@ const tierRank = (t) => TIERS.indexOf(t) + 1;
 const tiersEnforced = (policy) => policy['difficulty-tiers'] === TIERS_ENFORCED;
 // a qualified-for entry is '<category>' or '<category>@T1|T2|T3' (D2)
 const QUALIFICATION = /^([^\s@]+)(?:@(T[1-3]))?$/;
+// calibration-first evidence (SmartRouter docs/proposals/calibration-first-onboarding.md Item 1, the lead's decisions
+// E1-E7 in briefs/policy6-builder.md). E1: the typed production reference, 'outcome: <task-id> <category>[@T<k>] accepted
+// <YYYY-MM-DD> (<path>)', optionally followed by '; <note>'. <path> is the outcome file the host writes
+// (trace/outcomes/<task>-<seq>.json), relative to the policy file's directory; its form is checked from the policy alone,
+// then it is resolved against the store it names (resolveReference)
+const OUTCOME_REFERENCE = /^outcome: (\S+) ([^\s@]+)(?:@(T([1-9])))? accepted (\S+) \(([^()]+)\)(?:; (.+))?$/;
+const REFERENCE_FORM = "'outcome: <task-id> <category>[@T<k>] accepted <YYYY-MM-DD> (<path>)'";
+// E2: a policy adopts the supported-entry rule with the top-level key "evidence": "typed" (the shape of "difficulty-tiers");
+// absent, free-text evidence is accepted as before
+export const EVIDENCE_TYPED = 'typed';
 function parseQualification(entry) {
   const m = QUALIFICATION.exec(entry);
   return m ? { category: m[1], tier: m[2] ?? null } : null;
@@ -115,13 +125,99 @@ function readJsonFile(path, what) {
 // ---------------------------------------------------------------------------------------------
 // policy
 // ---------------------------------------------------------------------------------------------
+// the directory a policy file's typed references resolve against (E1): the file's own directory, except that a
+// fixture copy under <root>/trace/policies/ (where every revision's goldens are pinned) resolves against <root>, the
+// directory holding that trace; the two directory names are the rule, so <root>/policies/ resolves against itself
+export function policyRoot(path) {
+  const dir = dirname(resolve(path));
+  return basename(dir) === 'policies' && basename(dirname(dir)) === 'trace' ? dirname(dirname(dir)) : dir;
+}
+
 export function loadPolicy(path = DEFAULT_POLICY) {
   const p = readJsonFile(path, 'policy');
-  validatePolicy(p);
+  // typed production references resolve against the policy file's directory, never against --trace (E1)
+  validatePolicy(p, policyRoot(path));
   return p;
 }
 
-function validatePolicy(p) {
+// the form of a typed production reference (E1), from the policy alone: null when the line is well formed, else the reason
+function referenceForm(e, categories) {
+  const m = OUTCOME_REFERENCE.exec(e);
+  if (!m || (m[3] && !TIERS.includes(m[3])) || !/^\d{4}-\d{2}-\d{2}$/.test(m[5])) return { why: `is not ${REFERENCE_FORM}` };
+  const [, task, category, tier, , date, path, note] = m;
+  if (!TASK_ID.test(task)) return { why: `is not ${REFERENCE_FORM} (task-id ${task})` };
+  if (!Object.hasOwn(categories, category)) return { why: `names unknown category '${category}'` };
+  if (Number.isNaN(Date.parse(`${date}T00:00:00Z`)) || new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) !== date) return { why: `date ${date} is not a calendar day` };
+  // relative (an absolute path would not travel with the policy and its trace), '/'-separated, and naming the file the
+  // host writes for this task: the store is the directory that holds outcomes/, the seq finds the outcome record
+  const seq = new RegExp(`(?:^|/)outcomes/${task.replace(/[.]/g, '\\.')}-([1-9]\\d*)\\.json$`).exec(path)?.[1];
+  if (/^([A-Za-z]:)?\//.test(path) || path.includes('\\') || !seq) return { why: `path ${path} must be relative to the policy file's directory and name the outcome file outcomes/${task}-<seq>.json` };
+  return { ref: { task, category, tier: tier ?? null, date, path, note: note ?? '', seq: Number(seq) } };
+}
+
+// whether `path` lies inside the directory `dir`, by its spelling and, when both exist, after symlinks. A reference
+// cannot leave the policy file's directory (E1, sr-policy-6 F1): a store never committed with the policy (a temp
+// trace) could otherwise back a qualification
+function inside(dir, path) {
+  const under = (d, p) => {
+    const r = relative(d, p);
+    return !isAbsolute(r) && r !== '..' && !r.startsWith(`..${sep}`);
+  };
+  if (!under(resolve(dir), resolve(path))) return false;
+  return !(existsSync(dir) && existsSync(path)) || under(realpathSync(dir), realpathSync(path));
+}
+
+// one outcome store (a trace directory: ledger.jsonl, decisions/), read once per validation
+function storeOf(stores, dir) {
+  if (!stores.has(dir)) {
+    try { stores.set(dir, { records: readLedger(dir), catMap: categoryMap(dir) }); } catch (e) { stores.set(dir, { error: e.message }); }
+  }
+  return stores.get(dir);
+}
+
+// E1: resolve a well-formed reference against the store it names, relative to the policy file's directory: null when it
+// resolves, else the reason. The file must lie inside that directory (F1: no '..' out of it, no symlink out of it), be
+// the latest outcome record of its dispatch (F2), be an Outcome of that task, owned by the referencing profile, `accepted`,
+// recorded on the date (its own ts, else its outcome record's), and the task decided in the reference's category; the
+// tier must be the decision's when the decision carries one, and a tier declared on a pre-tier decision must be the
+// host's stated reading ('would be T<k> by the table')
+function resolveReference(ref, pr, baseDir, stores) {
+  const file = resolve(baseDir, ref.path);
+  if (!inside(baseDir, file)) return `${ref.path} leaves the policy file's directory ${baseDir}: a reference names an outcome file under it`;
+  if (!existsSync(file)) return `${ref.path} does not exist (resolved against the policy file's directory ${baseDir})`;
+  let o;
+  try { o = JSON.parse(readFileSync(file, 'utf8')); } catch { return `${ref.path} is not JSON`; }
+  try { validateOutcome(o); } catch (e) { return `${ref.path} is not an Outcome (${e.message})`; }
+  if (o['task-id'] !== ref.task) return `${ref.path} is the outcome of ${o['task-id']}, not ${ref.task}`;
+  if (o.outcome !== 'accepted') return `${ref.path} records outcome ${o.outcome}, not accepted`;
+  if (tupleId(o['owner-profile']) !== pr.id) return `${ref.path} is an outcome of ${tupleId(o['owner-profile'])}, not ${pr.id}`;
+  const dir = dirname(dirname(file));
+  const store = storeOf(stores, dir);
+  if (store.error) return `the outcome store ${dir} is unreadable (${store.error})`;
+  const rec = store.records.find((r) => r.kind === 'outcome' && r['task-id'] === ref.task && r.seq === ref.seq);
+  // one outcome per dispatch (spec-v2 §10.5, decision-trace.md §4), the rule rate counts by (latestOutcomes): a later
+  // outcome record for the same dispatch supersedes this one, whatever its value (F2)
+  const last = rec && latestOutcomes(store.records).find((r) => outcomeKey(r) === outcomeKey(rec));
+  if (last && last !== rec) return `${ref.path} is superseded by outcome record ${ref.task} seq ${last.seq} (${outcomeValue(last) ?? last.detail}) for the same dispatch (seq ${rec['dispatch-seq']})`;
+  const ts = isoMs(o.ts) !== null ? o.ts : rec?.ts;
+  if (isoMs(ts) === null) return `${ref.path} has no recorded time (no ts in the Outcome, no outcome record ${ref.task} seq ${ref.seq} in ${ledgerPath(dir)})`;
+  if (isoOf(isoMs(ts)).slice(0, 10) !== ref.date) return `${ref.path} was recorded ${ts}, not on ${ref.date}`;
+  const m = store.catMap[ref.task];
+  if (!m) return `no decision file for ${ref.task} in ${join(dir, 'decisions')}`;
+  if (m.category !== ref.category) return `${ref.task} was decided as ${m.category}, not ${ref.category}`;
+  // the tier of the decision the outcome's dispatch was made under (as learn() counts it), else the task's latest
+  const disp = rec && store.records.find((r) => r.kind === 'dispatch' && r['task-id'] === ref.task && r.seq === rec['dispatch-seq']);
+  const declared = disp && Object.hasOwn(m.declared, disp['decision-seq']) ? m.declared[disp['decision-seq']] : m.latestDeclared;
+  const tier = ref.tier ?? 'T1';
+  if (declared) {
+    if (declared !== tier) return `${ref.task} was decided at ${declared}, not ${tier}`;
+  } else if (ref.tier && !new RegExp(`(^|[^\\w])would be ${ref.tier} by the table`).test(ref.note)) {
+    return `the decision of ${ref.task} carries no difficulty tier, so the line must say 'would be ${ref.tier} by the table'`;
+  }
+  return null;
+}
+
+function validatePolicy(p, baseDir) {
   const fail = (m) => { throw invalid(`invalid policy: ${m}`); };
   if (!p || typeof p !== 'object') fail('not an object');
   if (!isStr(p.harness?.id)) fail('harness.id missing');
@@ -134,11 +230,15 @@ function validatePolicy(p) {
   if (!p.prices || typeof p.prices !== 'object') fail('prices missing');
   if (!p.categories || typeof p.categories !== 'object') fail('categories missing');
   if (p['difficulty-tiers'] !== undefined && p['difficulty-tiers'] !== TIERS_ENFORCED) fail(`difficulty-tiers must be "${TIERS_ENFORCED}" when present (absent: untiered); got ${JSON.stringify(p['difficulty-tiers'])}`);
+  if (p.evidence !== undefined && p.evidence !== EVIDENCE_TYPED) fail(`evidence must be "${EVIDENCE_TYPED}" when present (absent: free-text evidence accepted); got ${JSON.stringify(p.evidence)}`);
   for (const [id, c] of Object.entries(p.categories)) {
     if (!isStrArray(c.verification) || !isStrArray(c['required-tools']) || !isInt(c['median-tokens'], 1) || !isStr(c.risk)) fail(`category ${id} incomplete`);
   }
   if (!Array.isArray(p.profiles) || p.profiles.length === 0) fail('profiles missing');
   const ids = new Set();
+  const stores = new Map();
+  // per profile, what its typed evidence supports (E2): PASS grade entries and resolved references, by category and tier
+  const supports = new Map();
   for (const pr of p.profiles) {
     if (!isStr(pr.id) || !isStr(pr.model) || !isStr(pr.effort) || !isStr(pr.config) || !isStrArray(pr['qualified-for'])) fail(`profile ${pr.id} incomplete`);
     if (ids.has(pr.id)) fail(`duplicate profile ${pr.id}`);
@@ -154,18 +254,47 @@ function validatePolicy(p) {
       held.set(q.category, c);
     }
     if (pr.evidence !== undefined && !isStrArray(pr.evidence)) fail(`profile ${pr.id} evidence must be an array of strings`);
-    // a calibration grade entry (host-policy-2) is counted by the lead's qualification rules, so its form is fixed
+    // a calibration grade entry (host-policy-2) is counted by the lead's qualification rules, so its form is fixed; a
+    // typed production reference (E1, a line starting 'outcome:') is checked for form, then resolved against its store
+    const typedSupport = [];
+    supports.set(pr.id, typedSupport);
     for (const e of pr.evidence ?? []) {
+      if (e.startsWith('outcome:')) {
+        const { ref, why } = referenceForm(e, p.categories);
+        if (why) fail(`profile ${pr.id} evidence '${e}' ${why}`);
+        const unresolved = resolveReference(ref, pr, baseDir, stores);
+        if (unresolved) fail(`profile ${pr.id} evidence '${e}' cannot be resolved: ${unresolved}`);
+        typedSupport.push({ category: ref.category, tier: tierRank(ref.tier ?? 'T1') });
+        continue;
+      }
       if (!e.startsWith('calibration-')) continue;
       const m = CALIBRATION_ENTRY.exec(e);
       if (!m) fail(`profile ${pr.id} evidence '${e}' is not 'calibration-<n>: <category> PASS|PARTIAL|FAIL (n=<k>)'`);
       if (!Object.hasOwn(p.categories, m[2])) fail(`profile ${pr.id} evidence '${e}' names unknown category '${m[2]}'`);
+      // a PARTIAL or FAIL grade supports nothing (E2); a tierless grade is T1
+      if (m[4] === 'PASS') typedSupport.push({ category: m[2], tier: tierRank(m[3] ?? 'T1') });
     }
   }
   const e = p.economics;
   if (!e || !ids.has(e['lead-direct-profile']) || !isInt(e['direct-max-tokens']) || !isInt(e['delegate-overhead-tokens'])) fail('economics incomplete');
   const lead = p.profiles.find((x) => x.id === e['lead-direct-profile']);
   if (!(p.prices[lead.model]?.output_rate_per_mtok >= 0)) fail('the lead-direct profile has no price; brief overhead cannot be bounded');
+  // E2: under "evidence": "typed" every qualified-for entry needs a PASS grade entry or an accepted reference for its
+  // category at its tier or above (untiered: of its category). The validator counts no passes; the lead's rules do.
+  // E3: the lead-direct profile is exempt - its qualifications are the operator's authorization of the lead's own inline
+  // work, not a capability claim about a delegate (policy finding and friction item 23 of host-policy-6)
+  if (p.evidence === EVIDENCE_TYPED) {
+    const tiered = tiersEnforced(p);
+    for (const pr of p.profiles) {
+      if (pr.id === e['lead-direct-profile']) continue;
+      for (const c of pr['qualified-for']) {
+        const q = parseQualification(c);
+        const k = tiered ? tierRank(q.tier ?? 'T1') : 0;
+        if (supports.get(pr.id).some((s) => s.category === q.category && s.tier >= k)) continue;
+        fail(`profile ${pr.id} qualified-for '${c}' has no typed evidence behind it (a PASS grade entry or an accepted outcome reference for ${q.category}${tiered ? ` at T${Math.max(k, 1)} or above` : ''}; free text supports nothing)`);
+      }
+    }
+  }
   if (p['usage-windows'] !== undefined) validateUsageWindows(p['usage-windows'], fail);
 }
 
@@ -623,10 +752,15 @@ function categoryMap(traceDir) {
     const t = j.decision?.['difficulty-tier'];
     if (t !== undefined && !TIERS.includes(t)) throw new RouterError(4, `decision file ${f}: difficulty-tier ${JSON.stringify(t)} is not T1, T2 or T3`);
     const tier = t ?? 'T1';
-    const entry = (map[j.request.taskId] ??= { tiers: {} });
+    const entry = (map[j.request.taskId] ??= { tiers: {}, declared: {} });
     entry.category = j.request.category;
     entry.tier = tier;
-    if (isInt(j['ledger-seq'], 1)) entry.tiers[j['ledger-seq']] = tier;
+    // the tier as the decision declares it, null for none (E1: a reference's tier is checked against a declared one only)
+    entry.latestDeclared = t ?? null;
+    if (isInt(j['ledger-seq'], 1)) {
+      entry.tiers[j['ledger-seq']] = tier;
+      entry.declared[j['ledger-seq']] = t ?? null;
+    }
   }
   return map;
 }
@@ -641,11 +775,13 @@ function outcomeValue(r) {
 
 // one outcome per dispatch: a later outcome for the same (task, dispatch seq) supersedes the earlier one
 // (spec-v2 §10.5, decision-trace.md §4), so streams count dispatches, not records
+// the dispatch an outcome record answers (a record without dispatch-seq stands alone)
+const outcomeKey = (r) => `${r['task-id']}#${isInt(r['dispatch-seq'], 1) ? r['dispatch-seq'] : `record-${r.seq}`}`;
 function latestOutcomes(records) {
   const latest = new Map();
   for (const r of records) {
     if (r.kind !== 'outcome') continue;
-    const key = `${r['task-id']}#${isInt(r['dispatch-seq'], 1) ? r['dispatch-seq'] : `record-${r.seq}`}`;
+    const key = outcomeKey(r);
     latest.delete(key); // re-inserted at the superseding record's place in ledger order
     latest.set(key, r);
   }
@@ -655,7 +791,7 @@ function latestOutcomes(records) {
 // under an enforced policy the streams are per (profile, category, tier) (D7, proposal 2.3-2.4): stats keys and proposals
 // read '<category>@T<k>'; a profile is qualified at tier k when it holds the category at k or above. Untiered: per
 // (profile, category), as before
-function learn(policy, records, catMap) {
+function learn(policy, records, catMap, reference = () => null) {
   const tiered = tiersEnforced(policy);
   const stats = {};
   const streams = {};
@@ -665,11 +801,13 @@ function learn(policy, records, catMap) {
     const pid = tupleId(r.profile);
     if (!value || !pid) continue;
     const m = catMap[r['task-id']];
-    const entry = typeof m === 'string' ? { category: m, tier: 'T1', tiers: {} } : m;
+    const entry = typeof m === 'string' ? { category: m, tier: 'T1', tiers: {}, declared: {}, latestDeclared: null } : m;
     const cat = entry?.category ?? 'unknown';
     const d = dispatchBySeq.get(`${r['task-id']}#${r['dispatch-seq']}`);
     // the tier of the decision the dispatch was made under, else the task's (a dispatch recorded without decision-seq)
     const tier = (d && entry?.tiers?.[d['decision-seq']]) || entry?.tier || 'T1';
+    // the tier that decision declares, null for none: a typed reference to this outcome carries it, or none (E1, E7)
+    const declared = (d && entry?.declared && Object.hasOwn(entry.declared, d['decision-seq']) ? entry.declared[d['decision-seq']] : entry?.latestDeclared) ?? null;
     const label = tiered && cat !== 'unknown' ? `${cat}@${tier}` : cat;
     stats[pid] ??= {};
     stats[pid][label] ??= { ...Object.fromEntries(OUTCOMES.map((o) => [o, 0])), deviations: 0 };
@@ -678,7 +816,7 @@ function learn(policy, records, catMap) {
     if (d && isDeviation(d)) s.deviations += 1;
     streams[pid] ??= {};
     streams[pid][label] ??= { cat, tier, list: [] };
-    streams[pid][label].list.push({ value, task: r['task-id'], ms: isoMs(r.ts) });
+    streams[pid][label].list.push({ value, task: r['task-id'], ms: isoMs(r.ts), seq: r.seq, declared });
   }
   const proposals = [];
   for (const pid of Object.keys(streams).sort()) {
@@ -701,8 +839,11 @@ function learn(policy, records, catMap) {
         if (hit) proposals.push({ kind: 'demote', profile: pid, category: label, reason: `2 consecutive verification-failed (${hit.join(', ')})` });
         else if (overrun.length) proposals.push({ kind: 'demote', profile: pid, category: label, reason: `cost-overrun (${overrun.join(', ')})` });
       } else {
-        const acc = list.filter((o) => o.value === 'accepted').map((o) => o.task);
-        if (acc.length >= 3) proposals.push({ kind: 'qualify', profile: pid, category: label, reason: `${acc.length} accepted while unqualified (host deviations: ${acc.join(', ')})` });
+        const accepted = list.filter((o) => o.value === 'accepted');
+        const acc = accepted.map((o) => o.task);
+        // E7: the typed references the lead would paste, one per accepted outcome behind the proposal
+        const references = accepted.map((o) => reference(o, cat)).filter(Boolean);
+        if (acc.length >= 3) proposals.push({ kind: 'qualify', profile: pid, category: label, reason: `${acc.length} accepted while unqualified (host deviations: ${acc.join(', ')})`, ...(references.length ? { references } : {}) });
       }
     }
   }
@@ -1474,7 +1615,16 @@ export function rate({ policyPath = DEFAULT_POLICY, traceDir = DEFAULT_TRACE, no
   if (isoMs(now) === null) throw invalid('--now must be ISO-8601');
   const policy = loadPolicy(policyPath);
   const records = readLedger(traceDir);
-  const { stats, proposals } = learn(policy, records, categoryMap(traceDir));
+  // E7: a typed reference to an outcome record, its path relative to the policy file's directory (where E1 resolves it)
+  const policyDir = dirname(resolve(policyPath));
+  // F1: an outcome store outside the policy file's directory cannot be referenced, so nothing is offered to paste
+  const storeInside = inside(policyDir, traceDir);
+  const reference = (o, category) => {
+    if (!storeInside || !isInt(o.seq, 1) || o.ms === null) return null;
+    const path = relative(policyDir, join(resolve(traceDir), 'outcomes', `${o.task}-${o.seq}.json`)).split(sep).join('/');
+    return `outcome: ${o.task} ${category}${o.declared ? `@${o.declared}` : ''} accepted ${isoOf(o.ms).slice(0, 10)} (${path})`;
+  };
+  const { stats, proposals } = learn(policy, records, categoryMap(traceDir), reference);
   const learned = policy['usage-windows'] ? usageLearning(policy['usage-windows'], readUsage(traceDir), records) : null;
   const usageProposals = learned ? learned.proposals : [];
   const calibration = calibrationEvidence(policy, traceDir);
@@ -1498,7 +1648,11 @@ export function rate({ policyPath = DEFAULT_POLICY, traceDir = DEFAULT_TRACE, no
   const flags = expiryFlags(policy, isoMs(now));
   const lines = [`${statsPath} regenerated (${doc['outcomes-counted']} outcomes)`];
   if (calibration) lines.push(...calibration.lines);
-  for (const p of proposals) lines.push(`PROPOSAL ${proposalText(p)}; not applied — the lead ratifies by editing host-policy.json`);
+  const paste = (p) => {
+    if (p.references) return `; typed evidence to paste: ${p.references.map((x) => JSON.stringify(x)).join(', ')}`;
+    return p.kind === 'qualify' && !storeInside ? `; no typed evidence to paste: the outcome store ${resolve(traceDir)} is outside the policy file's directory ${policyDir}, and a reference cannot leave it (E1)` : '';
+  };
+  for (const p of proposals) lines.push(`PROPOSAL ${proposalText(p)}; not applied — the lead ratifies by editing host-policy.json${paste(p)}`);
   for (const h of headroom) lines.push(`PROPOSAL profiles.${h.profile}.headroom-tested: ${h.from} -> ${h.to} (accepted outcome ${h.task} completed ${h.tokens} tokens); not applied — the lead ratifies by editing host-policy.json`);
   for (const p of usageProposals) lines.push(`PROPOSAL usage-windows.windows.${p.window}.utilization-per-mtok: ${p.from} -> ${p.to} (${p.reason}); not applied — the lead ratifies by editing host-policy.json`);
   for (const f of flags) lines.push(`FLAG ${f.profile}: ${f.reason}`);
