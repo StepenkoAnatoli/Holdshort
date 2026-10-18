@@ -140,6 +140,16 @@ class Table(unittest.TestCase):
         self.assertEqual(load_tool().generate(), self.text)
 
 
+class Docs(unittest.TestCase):
+    def test_the_evidence_readme_says_what_the_table_supports_and_does_not(self):
+        text = (ROOT / "docs" / "evidence" / "README.md").read_text(encoding="utf-8")
+        section = text.split("## Qualification table", 1)[1].split("\n## ", 1)[0]
+        for s in load_tool().DOES_NOT_SUPPORT:
+            self.assertIn(s.split(":", 1)[0], section)
+        for words in ("qualification_table.py --check", "PASS (2-prong, would fail)", "PASS (unadjudicated)", "supplementary", "not counted"):
+            self.assertIn(words, section, words)
+
+
 class Gate(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

@@ -479,6 +479,32 @@ class Gate(unittest.TestCase):
             self.assertEqual(cmd[0], sys.executable)
 
 
+class Docs(unittest.TestCase):
+    def test_the_evidence_readme_documents_every_rule_and_both_kinds_of_run(self):
+        text = (ROOT / "docs" / "evidence" / "README.md").read_text(encoding="utf-8")
+        section = text.split("## Calibration evidence check", 1)[1].split("\n## ", 1)[0]
+        for rule in RULES:
+            self.assertIn(f"`{rule}`", section, rule)
+        for words in ("kit run", "legacy run", "LIMIT", "FAIL", "python3 tools/check_calibration_evidence.py", "never edit"):
+            self.assertIn(words, text, words)
+
+    def test_the_kit_readme_names_the_check_a_results_pull_request_must_pass(self):
+        text = (KIT / "README.md").read_text(encoding="utf-8")
+        paragraphs = [p for p in text.split("\n\n") if "check_calibration_evidence.py" in p]
+        self.assertEqual(len(paragraphs), 1, paragraphs)
+        for rule in RULES:
+            self.assertIn(rule, paragraphs[0])
+        self.assertIn("qualification_table.py", paragraphs[0])
+
+    def test_one_changelog_line_names_the_check_and_the_table(self):
+        unreleased = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8").split("## Unreleased", 1)[1].split("\n## ", 1)[0]
+        hits = [ln for ln in unreleased.splitlines() if "check_calibration_evidence.py" in ln]
+        self.assertEqual(len(hits), 1, hits)
+        self.assertIn("qualification_table.py", hits[0])
+        self.assertIn("calibration-first-onboarding", hits[0])
+        self.assertNotIn("tools/calibration/", hits[0])  # the kit's own test allows one Unreleased line naming that path
+
+
 class Discovery(unittest.TestCase):
     def test_default_folders_are_the_calibration_runs_under_docs_evidence(self):
         check = load_check()

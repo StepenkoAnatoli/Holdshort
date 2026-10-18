@@ -85,6 +85,15 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    evidence may be shared (Item 4.2). Qualification stays the host's: the policy edit that grants a category names the
    runs, under the host's own rules.
 
+**The check a results pull request must pass.** Before the request, run `python3 tools/check_calibration_evidence.py
+<evidence folder>` and `python3 tools/qualification_table.py`, then commit the regenerated
+`docs/evidence/qualification-table.md` with the folder. The regression gate runs the check over every calibration
+evidence folder and the table as `--check` on every commit, so the pull request merges only when the folder passes the
+eight rules of proposal Item 4.3: protocol-frozen, prongs-declared, scores-derivable, fewer-prong-pass-flagged,
+pin-category-mapping, judging-profile-named, relayed-chat-statement and no-secrets-or-bodies. A folder this kit builds
+is a kit run, so every rule applies in full; `docs/evidence/README.md` says what each rule asks for and what the table
+supports.
+
 ## The run protocol
 
 The kit enforces these where a file can (the launch step of `run.template.js`, `observations.py`); the rest are the

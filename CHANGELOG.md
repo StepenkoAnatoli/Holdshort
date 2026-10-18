@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Calibration evidence check and qualification table** (`tools/check_calibration_evidence.py`, `tools/qualification_table.py`, docs/proposals/calibration-first-onboarding.md Items 4.3-4.4): the regression gate refuses a calibration results folder that breaks one of eight named rules (calibration runs 1-3 pass as legacy runs with their limitations named), and `docs/evidence/qualification-table.md` is generated over every accepted run, showing fewer-prong, unadjudicated and supplementary PASSes without counting them; `--check` keeps the committed table the generated one; documented in `docs/evidence/README.md`.
 - **Calibration kit** (`tools/calibration/`, docs/proposals/calibration-first-onboarding.md Items 2-4.2): the protocol template, the three-prong classification, the grader, lens and cluster prompts (the lens schema carries `forbidden`), history-less checkouts, mechanical grading from a subject-pack manifest, the observations builder, the workflow template with the relayed-request preamble, the request printer and the subject-pack format; tested by `tools/test_calibration_kit.py` in the regression gate; the shared pack, the evidence check and the qualification table are later units.
 - **CI runs the Claude Code adapter's Node suite.** `.github/workflows/regression-gate.yml` gains the job
   `adapter-tests` (display name `claude-code-adapter-tests`, ubuntu-24.04, `actions/setup-node` pinned by sha,
