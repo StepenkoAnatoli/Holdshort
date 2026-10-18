@@ -1506,6 +1506,11 @@ class Docs(unittest.TestCase):
         run = md_section(text, "How a host runs it")
         for word in ("make-repo.sh", "historyless-checkout.sh", "grade.sh", "manifest.json", "pack_dir", "outside the kit"):
             self.assertIn(word, run, word)
+        # R-2: the guards compare paths with pack_dir only, so step 3 leaves the kit's own trees/ to the host
+        step3 = re.search(r"(?ms)^3\. \*\*Checkouts\*\*.*?(?=^4\. )", run).group(0)
+        for words in ("the guards cover the pack directory only", "`historyless-checkout.sh --pack`", "`run.template.js`",
+                      "the host checks the kit's path itself"):
+            self.assertIn(words.lower(), " ".join(step3.lower().split()), words)
         self.assertIn("T1", md_section(text, "What it does not discriminate"))
         self.assertIn("pack_version", md_section(text, "When it is rewritten"))
 

@@ -53,7 +53,10 @@ Python 3 is the only dependency: no `--link`, nothing to install.
    hash; the run config's `host.pack_dir` is `<pack dir>`, and the protocol records the pack directory it was built in.
 3. **Checkouts**: `bash tools/calibration/historyless-checkout.sh --pack <pack dir> <pack dir>/repo <case base>
    <checkout> <branch>` with the case's base from `manifest.json`, every checkout outside the kit's tree as well as the
-   pack directory (`trees/accepted/` holds the accepted fix).
+   pack directory (`trees/accepted/` holds the accepted fix). The guards cover the pack directory only:
+   `historyless-checkout.sh --pack` and the launch refusal of `run.template.js` compare each path with `pack_dir`,
+   never with this directory in the kit, so a checkout root inside the kit's `trees/` passes both. The host checks the
+   kit's path itself: no checkout root, adjudication checkout or checkout is the kit's checkout, inside it, or holds it.
 4. **Grade**: `bash tools/calibration/grade.sh <pack dir>/manifest.json pin|fix <checkout>`; the run grades the review
    cells. The kit's own test runs exactly this on the accepted pin and fix (PASS) and on wrong ones (FAIL).
 

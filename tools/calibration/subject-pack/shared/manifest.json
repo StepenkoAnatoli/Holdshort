@@ -99,7 +99,7 @@
  },
  "source_hashes": {
   ".gitattributes": "e055833a5f155a84220b48714edac4712d8218aef261ea8472fc5851bfcc7b21",
-  "README.md": "07fea4df1cac0f0d14de02b137144f0f6bed93a42873188a74a56163c658ae71",
+  "README.md": "4c1dae05428a19fe6e537a5f84d14c214c49fe99507d12d1253efefdace38800",
   "make-repo.sh": "df8574e32f0d15d2153cdb4acbde1f5454b37331d230c61abab137b55e9d299a",
   "trees/accepted/.gitignore": "32dae3052f331ee34d628ef535709b301259a45df7c7522c4d35dcf49873f00b",
   "trees/accepted/SPEC.md": "6de907c93c03b576d89be928924aed06d0f066932f1053d2d98a7e8fd19db8a5",
