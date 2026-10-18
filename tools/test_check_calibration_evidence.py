@@ -196,6 +196,14 @@ class KitRuns(unittest.TestCase):
         self.assertIn("notes.md", fails[0])
         self.assertNotIn(key, "\n".join(fails))  # the hit names the file and the pattern, never the value
 
+    def test_a_binary_file_is_not_scanned_as_text(self):
+        # an image's bytes are not UTF-8: scanned as text it would fail closed as unscannable
+        folder = self.copy_pass()
+        (folder / "chart.png").write_bytes(b"\x89PNG\r\n\x1a\n" + bytes(range(256)))
+        p = run_check(folder)
+        self.assertEqual(p.returncode, 0, p.stdout)
+        self.assertEqual(lines(p.stdout, "FAIL"), [], p.stdout)
+
     def test_prompt_bodies_and_transcripts_fail_the_secrets_rule(self):
         for name in ("grader.prompt.md", "transcript-1.txt", "journal.jsonl"):
             with self.subTest(name):
@@ -227,7 +235,23 @@ class KitRuns(unittest.TestCase):
     def test_a_flag_on_a_review_that_passes_on_every_prong_fails_the_flag_rule(self):
         folder = self.copy_pass()
         edit_json(folder, "scores.json", lambda s: s["profiles"]["beta-max"]["review"].update(would_fail_under_three_prong=True))
-        self.assert_fails_only(folder, "fewer-prong-pass-flagged")
+        fails = self.assert_fails_only(folder, "fewer-prong-pass-flagged")
+        # the guard's own message: the stated-count check fires under the same rule and would mask its removal
+        self.assertIn("review:beta-max carries would_fail_under_three_prong: true, yet it passes under all three prongs", "\n".join(fails))
+
+    def test_a_flag_on_a_review_that_is_not_a_pass_fails_the_flag_rule(self):
+        folder = self.copy_pass()
+        edit_json(folder, "scores.json", lambda s: s["profiles"]["beta-max"]["review"].update(result="FAIL", would_fail_under_three_prong=True, **{"pass": False}))
+        fails = [ln for ln in lines(run_check(folder).stdout, "FAIL") if rule_of(ln) == "fewer-prong-pass-flagged"]
+        self.assertIn("review:beta-max carries would_fail_under_three_prong: true on a 'FAIL', not a PASS", "\n".join(fails))
+
+    def test_declared_prongs_must_be_a_list_of_the_classifications_prongs(self):
+        for bad in (["holds", "bogus"], [], "holds"):
+            with self.subTest(bad):
+                folder = self.copy_pass("p" + str(len(str(bad))))
+                edit_json(folder, "protocol.json", lambda p, bad=bad: p["classification"].update(prongs=bad))
+                fails = self.assert_fails_only(folder, "prongs-declared")
+                self.assertIn(f"classification.prongs {bad!r} is not a list of the classification's prongs", "\n".join(fails))
 
     def test_a_review_result_the_declared_prongs_do_not_give_fails_derivable(self):
         folder = self.copy_pass()
@@ -260,6 +284,14 @@ class KitRuns(unittest.TestCase):
         edit_json(folder, "protocol.json", lambda p: p.pop("relayed_operator_text"))
         self.assert_fails_only(folder, "relayed-chat-statement")  # still a kit run: the other kit keys are there
 
+    def test_the_judging_profile_names_its_key_model_and_effort(self):
+        for k in ("key", "model", "effort"):
+            with self.subTest(k):
+                folder = self.copy_pass("j-" + k)
+                edit_json(folder, "protocol.json", lambda p, k=k: p["judging_profile"].update({k: ""}))
+                fails = self.assert_fails_only(folder, "judging-profile-named")
+                self.assertIn(f"judging_profile.{k} not named", "\n".join(fails))
+
     def test_a_missing_judging_profile_in_a_kit_run_fails_its_rule(self):
         folder = self.copy_pass()
         edit_json(folder, "protocol.json", lambda p: p.pop("judging_profile"))
@@ -270,12 +302,13 @@ class KitRuns(unittest.TestCase):
             (lambda p: p.update(status="draft"), "status"),
             (lambda p: p.update(schema_version=0), "schema_version"),
             (lambda p: p.update(frozen_at="{{ISO-8601 UTC time of the freeze commit}}"), "placeholder"),
+            (lambda p: p.update(frozen_at=None), "frozen_at is not recorded"),
             (lambda p: p["accounting"]["rates_per_mtok"].update({"{{model alias}}": {}}), "placeholder"),
             (lambda p: p.update(run_id="run-other"), "run-other"),
         ]
         for fn, needle in cases:
             with self.subTest(needle):
-                folder = self.copy_pass(needle + str(cases.index((fn, needle))))
+                folder = self.copy_pass(f"f{cases.index((fn, needle))}")  # no space: a line's folder is one word
                 edit_json(folder, "protocol.json", fn)
                 fails = self.assert_fails_only(folder, "protocol-frozen")
                 self.assertIn(needle, "\n".join(fails))
@@ -297,6 +330,41 @@ class KitRuns(unittest.TestCase):
                 folder = self.copy_pass(f"s{i}")
                 edit_json(folder, name, fn)
                 self.assert_fails_only(folder, rule)
+
+    def test_each_kit_guard_fails_with_its_own_message(self):
+        # one edit per guard, asserting that guard's own line: a sibling under the same rule cannot mask its removal
+        def others(fn):
+            return lambda o: [fn(x) for x in o["beta-max"]["review-grade"]["others"]]
+        cases = [
+            ("scores.json", lambda s: s.pop("adjudication_schema"), "prongs-declared", "scores.json carries no adjudication_schema"),
+            ("scores.json", lambda s: s["adjudication_schema"].update(prongs_in_classification=["holds"]), "prongs-declared",
+             "scores.json adjudication_schema.prongs_in_classification ['holds'] is not the protocol's"),
+            ("observations.json", lambda o: o.update({"alpha-low": "PASS"}), "scores-derivable", "observations.json is not the flat profile map the kit writes"),
+            ("observations.json", lambda o: o["alpha-low"].pop("pin"), "scores-derivable", "pin:alpha-low is in scores.json only"),
+            ("observations.json", lambda o: o["beta-max"].pop("review-grade"), "scores-derivable", "review:beta-max is in scores.json only"),
+            ("observations.json", others(lambda x: x.update(cluster="C-99")), "scores-derivable", "review:beta-max names cluster 'C-99', which adjudication.json does not hold"),
+        ]
+        for i, (name, fn, rule, needle) in enumerate(cases):
+            with self.subTest(needle):
+                folder = self.copy_pass(f"g{i}")
+                edit_json(folder, name, fn)
+                fails = [ln for ln in lines(run_check(folder).stdout, "FAIL") if rule_of(ln) == rule]
+                self.assertIn(needle, "\n".join(fails))
+
+    def test_a_stated_count_not_in_the_builders_form_fails_the_flag_rule(self):
+        protocol2, run2 = two_prong_run(self.root)
+        folder = self.root / "two" / FOLDER
+        folder.mkdir(parents=True)
+        build_kit_folder(folder, protocol2, run2)
+        edit_json(folder, "scores.json", lambda s: s["totals"]["cells"].update(review="most of them"))
+        fails = self.assert_fails_only(folder, "fewer-prong-pass-flagged")
+        self.assertIn("totals.cells.review 'most of them' is not in the builder's form", "\n".join(fails))
+
+    def test_a_text_file_that_cannot_be_decoded_fails_the_secrets_rule(self):
+        folder = self.copy_pass()
+        (folder / "notes.txt").write_bytes(b"caf\xe9 \xff\xfe\xfd\n")  # neither UTF-8 nor UTF-16: scanned, it fails closed
+        fails = self.assert_fails_only(folder, "no-secrets-or-bodies")
+        self.assertIn("notes.txt: could not be scanned", fails[0])
 
     def test_a_missing_or_unreadable_file_fails_by_name(self):
         for name, rule in (("protocol.json", "protocol-frozen"), ("scores.json", "scores-derivable"),
@@ -412,6 +480,27 @@ class LegacyRuns(unittest.TestCase):
         self.assertEqual({rule_of(ln) for ln in fails}, {"scores-derivable"})
         self.assertIn("pin pass rule", fails[0])
 
+    def test_an_encoded_pass_rule_for_another_case_fails(self):
+        # run 2's pin rule text stated as its fix rule: the rule is encoded, but for the pin case
+        folder = self.copy_run(RUN2)
+        edit_json(folder, "protocol.json", lambda p: next(c for c in p["cases"] if c["id"] == "fix").update(
+            pass_rule=next(c for c in p["cases"] if c["id"] == "pin")["pass_rule"]))
+        fails = self.fails(folder)
+        self.assertIn("legacy run: the fix pass rule (sha256", "\n".join(fails))
+
+    def test_a_legacy_profile_on_one_side_only_fails(self):
+        cases = [
+            ("scores.json", lambda s: s["profiles"].pop("haiku-low"), "profile haiku-low is in observations.json only"),
+            ("observations.json", lambda o: o["profiles"].pop("haiku-low"), "profile haiku-low is in scores.json only"),
+        ]
+        for name, fn, needle in cases:
+            with self.subTest(needle):
+                folder = self.copy_run(RUN1)
+                edit_json(folder, name, fn)
+                fails = self.fails(folder)
+                self.assertEqual({rule_of(ln) for ln in fails}, {"scores-derivable"}, fails)
+                self.assertIn(needle, "\n".join(fails))
+
     def test_a_scored_case_with_no_encoded_pass_rule_fails(self):
         # F1: a folder that drops the kit keys is a legacy run; a case it scores under no encoded rule is refused, never
         # skipped, so a folder cannot pass by dropping its own pass rules
@@ -457,6 +546,19 @@ class LegacyRuns(unittest.TestCase):
             (lambda s: s["profiles"]["fable-medium"]["pin"].update(would_fail_under_three_prong=True) or
              s["profiles"]["haiku-low"]["review"].update(result="FAIL", would_fail_under_three_prong=True),
              "review:haiku-low carries would_fail_under_three_prong: true on a 'FAIL', not a PASS"),
+            (lambda s: s["profiles"]["fable-medium"]["pin"].update(would_fail_under_three_prong=True),
+             "pin:fable-medium carries would_fail_under_three_prong: the flag belongs to review cells only"),
+            (lambda s: s["profiles"]["fable-medium"]["fix"].update(would_fail_under_three_prong=True),
+             "fix:fable-medium carries would_fail_under_three_prong: the flag belongs to review cells only"),
+            (lambda s: s["profiles"]["haiku-medium"]["review"].update(three_prong_false_blocking=0),
+             "review:haiku-medium three_prong_false_blocking 0 is not between 1 and its"),
+            (lambda s: s["profiles"]["haiku-medium"]["review"].update(three_prong_false_blocking=99),
+             "review:haiku-medium three_prong_false_blocking 99 is not between 1 and its"),
+            (lambda s: s["profiles"]["haiku-medium"]["review"].update(three_prong_false_blocking="2"),
+             "review:haiku-medium three_prong_false_blocking '2' is not between 1 and its"),
+            # the lens schema declared complete: no prong is missing, so no PASS can hold only by a missing one
+            (lambda s: s["adjudication_schema"].update(prongs_in_lens_schema=["holds", "reachable", "forbidden"], missing_prong=[]),
+             "review:haiku-medium carries would_fail_under_three_prong: true, yet no prong is missing from the lens schema"),
         ]
         for i, (fn, needle) in enumerate(cases):
             with self.subTest(i):
@@ -483,6 +585,49 @@ class LegacyRuns(unittest.TestCase):
         folder = self.copy_run(RUN3)
         (folder / "adjudication.json").unlink()
         self.assertIn("prongs-declared", {rule_of(ln) for ln in self.fails(folder)})
+
+    def test_each_legacy_guard_fails_with_its_own_message(self):
+        # one edit per guard, asserting that guard's own line: a sibling under the same rule cannot mask its removal
+        def lens(fn):
+            return lambda a: fn(a["adjudications"][0]["lenses"][0])
+        def run3_others(fn):
+            return lambda o: [fn(x) for x in o["haiku-medium"]["review-grade"]["others"]]
+        cases = [
+            (RUN3, "scores.json", lambda s: s.pop("adjudication_schema"), "prongs-declared",
+             "legacy run: adjudication.json is present but scores.json declares no adjudication_schema"),
+            (RUN3, "scores.json", lambda s: s["adjudication_schema"].update(prongs_in_lens_schema=[]), "prongs-declared",
+             "legacy run: scores.json adjudication_schema does not declare both prong sets"),
+            (RUN3, "adjudication.json", lens(lambda x: x.pop("reachable")), "prongs-declared",
+             "legacy run: the lens records carry ['holds'], not the declared lens schema"),
+            (RUN3, "observations.json", run3_others(lambda x: x.update(cluster="C-99")), "scores-derivable",
+             "review:haiku-medium names cluster 'C-99', which adjudication.json does not hold"),
+            (RUN1, "observations.json", lambda o: o["profiles"].update({"haiku-low": "PASS"}), "scores-derivable",
+             "legacy run: observations.json is neither the nested profile map of runs 1-2 nor the flat map of run 3"),
+            (RUN1, "observations.json", lambda o: o["profiles"]["haiku-low"].pop("pin"), "scores-derivable",
+             "pin:haiku-low is in scores.json only"),
+            (RUN1, "scores.json", lambda s: s["profiles"]["sonnet-low"]["review"].update(would_fail_under_three_prong=True), "fewer-prong-pass-flagged",
+             "review:sonnet-low carries would_fail_under_three_prong with no adjudication record behind it"),
+        ]
+        for rel, name, fn, rule, needle in cases:
+            with self.subTest(needle):
+                folder = self.copy_run(rel)
+                edit_json(folder, name, fn)
+                fails = [ln for ln in self.fails(folder) if rule_of(ln) == rule]
+                self.assertIn(needle, "\n".join(fails))
+                shutil.rmtree(folder)
+        for text, needle in (("[]", "adjudication.json is not an object"), ("{not json", "adjudication.json is unreadable or not JSON")):
+            with self.subTest(needle):
+                folder = self.copy_run(RUN3)
+                (folder / "adjudication.json").write_text(text, encoding="utf-8")
+                fails = [ln for ln in self.fails(folder) if rule_of(ln) == "prongs-declared"]
+                self.assertIn(needle, "\n".join(fails))
+
+    def test_a_legacy_run_that_names_no_grader_says_so(self):
+        folder = self.copy_run(RUN1)
+        edit_json(folder, "protocol.json", lambda p: next(c for c in p["cases"] if c["id"] == "review").update(grading="a person"))
+        p = run_check(folder)
+        self.assertEqual(p.returncode, 0, p.stdout)
+        self.assertIn("judging-profile-named: legacy run: no judging_profile and no grader named in protocol.json cases[review].grading", p.stdout)
 
     def test_a_legacy_run_id_must_agree_and_exist(self):
         folder = self.copy_run(RUN1)
