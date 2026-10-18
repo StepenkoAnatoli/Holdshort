@@ -76,6 +76,7 @@ class Report:
         self.flagged: list[str] = []  # profiles whose review PASS is flagged would-fail
         self.unadjudicated: list[str] = []  # profiles whose review PASS rests on no adjudication record
         self.legacy_others: dict = {}  # legacy run: profile -> the review grade's other findings
+        self.bootstrap_judge = False  # kit run judged under the bootstrap limitation (Item 3.3: a caveat in the table)
 
     def fail(self, rule: str, text: str) -> None:
         self.failures.append((rule, text))
@@ -345,6 +346,7 @@ def kit_judging(r: Report) -> None:
     lim = j.get("limitation")
     if isinstance(lim, str) and lim.startswith(BOOTSTRAP) and "{{" not in lim:
         r.limit(rule, f"bootstrap: {lim}")
+        r.bootstrap_judge = True
     else:
         r.fail(rule, f"judging_profile {j.get('key')!r} carries neither its qualification nor the bootstrap limitation line ({BOOTSTRAP!r}, ...)")
 
