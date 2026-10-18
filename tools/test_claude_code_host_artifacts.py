@@ -3,9 +3,10 @@
 
 The adapter itself is Node (route.mjs, run with `node --test hosts/claude-code/route.test.mjs`); this
 repository's Python gate has no Node step (CI runs that suite in its own job, claude-code-adapter-tests), so
-this check covers what Python can: the host policy parses and names the blocks the README documents, every decision file carries a Brief that `tools/conform_spec.py` accepts,
-and the ledger is one JSON object per line with the §10.5 keys and a strictly increasing `seq` per task;
-the optional counters.cash-basis, when present, is "estimate-only" (Item 4).
+this check covers what Python can: the host policy parses and names the blocks the README documents, every
+decision file carries a Brief that `tools/conform_spec.py` accepts, and the ledger is one JSON object per
+line with the §10.5 keys and a strictly increasing `seq` per task; the optional counters.cash-basis, when
+present, is "estimate-only" (Item 4).
 Cash fields are allowed to be null here only because the adapter marks its accounting estimate-only (see
 docs/proposals/usage-windows-gate4.md, Item 4); conform_spec's record check admits a null only beside the
 marker counters.cash-basis = "estimate-only", which ledger lines written before Item 4 do not carry.
