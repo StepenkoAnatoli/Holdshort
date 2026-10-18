@@ -406,14 +406,38 @@ class Scripts(unittest.TestCase):
 
     def test_historyless_checkout_links_only_on_request_and_hides_the_links(self):
         pack, c = make_pack(self.root, self.env)
-        (c["repo"] / "deps").mkdir()
+        deps = self.root / "installed" / "deps"  # installed outside the pack (F2)
+        deps.mkdir(parents=True)
         p = checkout(c["repo"], c["base"], self.root / "plain", self.env)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertFalse((self.root / "plain" / "deps").exists())
-        p = checkout(c["repo"], c["base"], self.root / "linked", self.env, "--link", "deps")
+        p = checkout(c["repo"], c["base"], self.root / "linked", self.env, "--pack", str(pack), "--link", f"deps={deps}")
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertTrue((self.root / "linked" / "deps").is_symlink())
+        self.assertEqual((self.root / "linked" / "deps").resolve(), deps.resolve())
         self.assertEqual(sh(["git", "status", "--porcelain"], self.root / "linked", self.env).stdout.strip(), "")
+
+    def test_historyless_checkout_refuses_a_link_that_reaches_the_pack(self):
+        # F2: a link into the pack (or its repository) hands the candidate a path to the accepted fix
+        pack, c = make_pack(self.root, self.env)
+        (c["repo"] / "node_modules").mkdir()
+        outside = self.root / "outside"
+        outside.mkdir()
+        (outside / "via").symlink_to(c["repo"] / "node_modules")  # outside by name, inside by its real path
+        shares, bare = "holds the accepted fix", "--link takes NAME=DIR"
+        cases = [
+            (shares, "--pack", str(pack), "--link", f"node_modules={c['repo'] / 'node_modules'}"),  # inside the pack
+            (shares, "--link", f"node_modules={c['repo'] / 'node_modules'}"),  # inside SOURCE_REPO, with no --pack
+            (shares, "--pack", str(pack), "--link", f"node_modules={outside / 'via'}"),  # a symlink resolving into the pack
+            (shares, "--pack", str(pack), "--link", f"up={self.root}"),  # a directory holding the pack
+            (bare, "--pack", str(pack), "--link", "node_modules"),  # no directory: the old form linked into SOURCE_REPO
+        ]
+        for i, (reason, *flags) in enumerate(cases):
+            target = self.root / f"refused-{i}"
+            p = checkout(c["repo"], c["base"], target, self.env, *flags)
+            self.assertEqual(p.returncode, 2, f"{flags}: {p.stdout}{p.stderr}")
+            self.assertIn(reason, p.stderr, flags)
+            self.assertFalse(target.exists(), flags)
 
     def test_historyless_checkout_refuses_an_existing_target_and_one_inside_the_pack(self):
         pack, c = make_pack(self.root, self.env)

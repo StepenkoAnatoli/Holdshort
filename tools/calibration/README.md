@@ -44,9 +44,11 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    `python3 -c 'import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], encoding="utf-8", newline="").read().replace("\r\n", "\n").replace("\r", "\n").encode()).hexdigest())' FILE`.
 3. **Checkouts.** One history-less checkout per cell, named `<checkout root>/<run tag>-<case>-<profile>` on branch
    `<run tag>/<case>-<profile>`, plus one checkout of the review base for the lenses:
-   `bash tools/calibration/historyless-checkout.sh --pack <pack dir> [--link <dependency dir>] <pack dir>/<repository> <case base> <checkout> <branch>`.
+   `bash tools/calibration/historyless-checkout.sh --pack <pack dir> [--link <name>=<dependency dir>] <pack dir>/<repository> <case base> <checkout> <branch>`.
    `--pack` refuses a checkout that shares a path with the pack; `--link` makes an installed dependency tree available
-   without letting a candidate commit it.
+   without letting a candidate commit it. Install the dependencies outside the pack: `--link` refuses a directory whose
+   real path is inside the pack or its repository, or holds either, since a link there is a path to the accepted fix.
+   It does not follow symlinks inside the dependency tree; keeping those out of the pack is the host's duty.
 4. **Fill.** Write `run-config.json` = `{"manifest": <manifest.json>, "protocol": <protocol.json without its sources>,
    "host": {...}}` (the host keys are listed in the header of `run.template.js`; the protocol goes in without `sources`
    because the sources record the filled script's hash). Fill the template, hash `run.js` into the protocol's

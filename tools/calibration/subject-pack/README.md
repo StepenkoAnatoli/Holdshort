@@ -16,7 +16,9 @@ git repository (the base trees and the accepted fix are commits in it). Two kind
 A candidate's checkout is a history-less tree of its case's base only (`historyless-checkout.sh`). The accepted fix, the
 ground truth, the manifest and the grader material live outside every candidate's permitted paths: the candidate prompt
 names only the checkout, never the pack; `historyless-checkout.sh --pack`, `grade.sh` and the launch step of
-`run.template.js` refuse a checkout that shares a filesystem path with the pack directory. The fix case gives the
+`run.template.js` refuse a checkout that shares a filesystem path with the pack directory, and
+`historyless-checkout.sh --link` refuses a dependency directory inside the pack or its repository (installed
+dependencies live outside the pack). The fix case gives the
 candidate the finding (its summary, cause and required behaviour), never the accepted change. A shared pack is small by
 construction: it discriminates the bounded T1 shape only, and a host that needs more runs its own pack.
 
@@ -80,7 +82,8 @@ grader to read, so they say what the module must do, never how the accepted fix 
   - `commands.lint`: optional; lints `{files}`, clean on exit 0; null when the pack has no linter.
   - `commands.timeout_seconds`: the limit on each test or lint command.
 - `checkout`: how checkouts are made.
-  - `checkout.links`: dependency trees symlinked from the pack repository into each checkout
-    (`historyless-checkout.sh --link`); grade.sh ignores them.
+  - `checkout.links`: the names under which dependency trees are symlinked into each checkout
+    (`historyless-checkout.sh --link NAME=DIR`); grade.sh ignores them. The trees are installed outside the pack, never
+    in its repository: a link into the pack is a path to the accepted fix, and the script refuses it.
 - `source_hashes`: SHA-256 of every pack file the protocol records, under the protocol's hash convention.
 - `isolation`: the pack's isolation statement, copied into the protocol's privacy line.
