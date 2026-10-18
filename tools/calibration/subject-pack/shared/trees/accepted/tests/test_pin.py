@@ -3,7 +3,8 @@ read_bounded reads no further chunk.
 
 The first row cuts a text chunk inside the UTF-8 bytes of a non-ASCII character: limit 2 falls between the two bytes
 of "é", so the result ends with the first of them. The second reads a stream of two text chunks that fails if it is
-pulled once more: the two chunks reach the limit, so read_bounded never pulls again.
+pulled once more: the second chunk is cut after the first's bytes were taken (two of its three fit, so the cut is at
+the room left, not at the limit), the limit is reached, and read_bounded never pulls again.
 """
 import unittest
 
@@ -20,7 +21,7 @@ class TextCountsAgainstTheLimit(unittest.TestCase):
     def test_rows(self):
         rows = [
             ("héllo", ["héllo"], 2, b"h\xc3"),
-            ("ab, cd, then no more", texts_then_no_more("ab", "cd"), 4, b"abcd"),
+            ("ab, cde, then no more", texts_then_no_more("ab", "cde"), 4, b"abcd"),
         ]
         for name, chunks, limit, want in rows:
             with self.subTest(chunks=name, limit=limit):

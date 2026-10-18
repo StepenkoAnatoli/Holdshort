@@ -1306,12 +1306,16 @@ class SharedPack(unittest.TestCase):
         self.assertEqual((d["redAtHead"], d["srcClean"], d["srcTouched"]), (False, False, ["src/bounded.py"]), d)
         self.assertIs(d["PASS"], False)
 
-    def fix_like_the_accepted_one(self, cand: Path, source: bytes | None = None):
+    TWO_CHUNK_ROWS = ("        self.assertEqual(read_bounded([\"abc\", \"def\"], 4), b\"abcd\")\n"
+                      "        self.assertEqual(read_bounded([b\"ab\", \"cd\\u00e9\", b\"f\"], 4), b\"abcd\")\n")
+    # a candidate's own pin that cuts only one text chunk, and never one after earlier bytes (N-3 of re-review 2)
+    ONE_CHUNK_ROWS = ("        self.assertEqual(read_bounded([\"abcdef\"], 4), b\"abcd\")\n"
+                      "        self.assertEqual(read_bounded([b\"ab\", \"cd\"], 4), b\"abcd\")\n")
+
+    def fix_like_the_accepted_one(self, cand: Path, source: bytes | None = None, rows: str | None = None):
         (cand / "src" / "bounded.py").write_bytes(source if source is not None else self.accepted("src/bounded.py"))
         with (cand / "tests" / "test_bounded.py").open("a", encoding="utf-8") as f:
-            f.write("\n\nclass TextCountsAgainstTheLimit(unittest.TestCase):\n    def test_rows(self):\n"
-                    "        self.assertEqual(read_bounded([\"abc\", \"def\"], 4), b\"abcd\")\n"
-                    "        self.assertEqual(read_bounded([b\"ab\", \"cd\\u00e9\", b\"f\"], 4), b\"abcd\")\n")
+            f.write("\n\nclass TextCountsAgainstTheLimit(unittest.TestCase):\n    def test_rows(self):\n" + (rows or self.TWO_CHUNK_ROWS))
 
     def test_grade_fix_the_accepted_source_with_a_pin_passes(self):
         d = self.grade_cell("fix", self.fix_like_the_accepted_one)
@@ -1353,6 +1357,10 @@ class SharedPack(unittest.TestCase):
                          ("        taken += len(piece)\n        if taken >= limit:\n            break\n", "        taken += len(piece)\n")):
                 self.assertEqual(src.count(a), 1, a)
                 src = src.replace(a, b)
+        elif name == "slicelimit":  # counts a str chunk's bytes and stops, but cuts it at enc[:limit] instead of
+            # enc[:limit - taken], so a text chunk after earlier bytes overflows the limit (N-3 of re-review 2)
+            src = src.replace(text, '            piece = chunk.encode("utf-8", "replace")[:limit]\n            parts.append(piece)\n'
+                                    '            taken += len(piece)\n            if taken >= limit:\n                break\n            continue\n')
         else:  # "trunc": cuts the joined result at the end, so str chunks are still neither counted nor stopped at
             self.assertEqual(src.count("    return join_parts(parts)\n"), 1)
             src = src.replace("    return join_parts(parts)\n", "    return join_parts(parts)[:limit]\n")
@@ -1368,18 +1376,21 @@ class SharedPack(unittest.TestCase):
                   "trunc": "print(read_bounded(['ab', 'cd', 3], 4))",  # reads past limit bytes, into a chunk it rejects
                   "boundary": "print(read_bounded(['\\u00e9\\u00e9', b'x'], 3))",  # 2 bytes, not the 3 SPEC.md cuts at
                   "topcheck": "pulls = []\ndef g():\n    for c in ('ab', 'cd', 'ef'):\n        pulls.append(c)\n        yield c\n"
-                              "print(read_bounded(g(), 4), len(pulls))"}  # pulls 'ef' though 'cd' reached the limit
+                              "print(read_bounded(g(), 4), len(pulls))",  # pulls 'ef' though 'cd' reached the limit
+                  "slicelimit": "print(read_bounded(['abc', 'abc'], 4))"}  # 6 bytes: the second chunk is cut at limit, not at the room left
         for name, probe in probes.items():
             with self.subTest(fix=name):
                 cand = []
-                d = self.grade_cell("fix", lambda c: (cand.append(c), self.fix_like_the_accepted_one(c, self.wrong_fix(name))))
+                rows = self.ONE_CHUNK_ROWS if name == "slicelimit" else None  # its own test cuts one chunk, so only the accepted pin can tell
+                d = self.grade_cell("fix", lambda c: (cand.append(c), self.fix_like_the_accepted_one(c, self.wrong_fix(name), rows)))
                 self.assertEqual((d["candidateGreen"], d["guardRed"], d["scopeOk"], d["lint"]), (True, True, True, "ok"), d)
                 self.assertIs(d["acceptedPinGreen"], False, d)
                 self.assertIs(d["PASS"], False, d)
                 p = subprocess.run(["python3", "-c", "import sys; sys.path.insert(0, '.')\nfrom src.bounded import read_bounded\n" + probe],
                                    cwd=cand[0], env=self.env, capture_output=True, text=True, timeout=60)
                 want = {"chars": p.stdout.strip() == "8", "trunc": "TypeError" in p.stderr,
-                        "boundary": p.stdout.strip() == "b'\\xc3\\xa9'", "topcheck": p.stdout.strip() == "b'abcd' 3"}
+                        "boundary": p.stdout.strip() == "b'\\xc3\\xa9'", "topcheck": p.stdout.strip() == "b'abcd' 3",
+                        "slicelimit": p.stdout.strip() == "b'abcabc'"}
                 self.assertTrue(want[name], p.stdout + p.stderr)
 
     # ---- the workflow template filled with this pack (P5) ------------------------------------------------------------
