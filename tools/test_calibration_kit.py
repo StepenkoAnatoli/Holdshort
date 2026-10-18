@@ -1425,16 +1425,62 @@ class Docs(unittest.TestCase):
         self.assertIn("Isolation", text)
 
     def test_shared_pack_holds_its_trees_and_the_script_that_builds_its_repository(self):
-        self.assertTrue({"README.md", "make-repo.sh", "trees"} <= {f.name for f in PACK.iterdir()})
+        self.assertTrue({"README.md", "make-repo.sh", "manifest.json", "trees"} <= {f.name for f in PACK.iterdir()})
         self.assertEqual(sorted(f.name for f in (PACK / "trees").iterdir()), sorted(TREES))
-        self.assertIn("shared synthetic subject pack", (PACK / "README.md").read_text())
+
+    def test_shared_pack_readme_describes_the_pack(self):
+        text = (PACK / "README.md").read_text()
+        self.assertTrue(text.startswith("<!-- Lineage:"))
+        self.assertNotIn("stub", text.lower())
+        m = json.loads((PACK / "manifest.json").read_text())
+        self.assertIn(f"Version {m['pack_version']}", text)
+        for heading in ("The two defects", "Files", "How a host runs it", "What it does not discriminate", "When it is rewritten"):
+            md_section(text, heading)
+        defects = md_section(text, "The two defects")
+        for f in m["findings"]:
+            self.assertRegex(defects, rf"(?m)^- \*\*{f['id']}\*\* \({f['severity']}", f["id"])
+        for a, b in (("review", "base"), ("base", "accepted")):  # never a fix line (P6: summary and cause only)
+            old_lines = set((PACK / "trees" / a / "src" / "bounded.py").read_text().splitlines())
+            for line in (PACK / "trees" / b / "src" / "bounded.py").read_text().splitlines():
+                if line not in old_lines:
+                    self.assertNotIn(line.strip(), text, f"the README states the fix line {line.strip()!r}")
+        files = md_section(text, "Files")
+        for f in pack_files(PACK):
+            parts = f.split("/")
+            if parts[0] == "trees":
+                self.assertIn(f"`{'/'.join(parts[2:])}`", files, f)
+            else:
+                self.assertIn(f"`{f}`", files, f)
+        for name in TREES:
+            self.assertIn(f"`trees/{name}/`", files, name)
+        run = md_section(text, "How a host runs it")
+        for word in ("make-repo.sh", "historyless-checkout.sh", "grade.sh", "manifest.json", "pack_dir", "outside the kit"):
+            self.assertIn(word, run, word)
+        self.assertIn("T1", md_section(text, "What it does not discriminate"))
+        self.assertIn("pack_version", md_section(text, "When it is rewritten"))
+
+    def test_the_kit_and_format_readmes_name_the_shared_pack(self):
+        kit = self.readme()
+        self.assertNotIn("a stub: the shared synthetic pack", kit)
+        self.assertNotIn("built by its own unit", kit)
+        paragraph = md_section(kit, "The shared pack")
+        for word in ("subject-pack/shared/", "make-repo.sh", "D-1", "D-2", "T1"):
+            self.assertIn(word, paragraph, word)
+        fmt = md_section((KIT / "subject-pack" / "README.md").read_text(), "The shared pack")
+        for word in ("shared/", "make-repo.sh", "manifest.json", "repository"):
+            self.assertIn(word, fmt, word)
 
     def test_changelog_and_readme_name_the_kit(self):
         changelog = (ROOT / "CHANGELOG.md").read_text()
         unreleased = changelog.split("## Unreleased", 1)[1].split("\n## ", 1)[0]
         lines = [ln for ln in unreleased.splitlines() if "tools/calibration/" in ln]
-        self.assertEqual(len(lines), 1)
-        self.assertIn("calibration-first-onboarding", lines[0])
+        self.assertEqual(len(lines), 2)
+        kit = [ln for ln in lines if ln.startswith("- **Calibration kit**")]
+        self.assertEqual(len(kit), 1)
+        self.assertIn("calibration-first-onboarding", kit[0])
+        pack = [ln for ln in lines if ln.startswith("- **Shared synthetic subject pack**")]
+        self.assertEqual(len(pack), 1)
+        self.assertIn("tools/calibration/subject-pack/shared/", pack[0])
         self.assertIn("(tools/calibration/README.md)", (ROOT / "README.md").read_text())
 
 

@@ -11,6 +11,14 @@ git repository (the base trees and the accepted fix are commits in it). Two kind
 - **Host pack**: a real accepted defect pair from the host's own repository, as runs 1-3 used. Its cells qualify the
   profile for the host's own categories and do not compare across hosts.
 
+## The shared pack
+
+The kit ships one shared pack, `shared/` (version 1, its README says what it holds and how a host runs it). It carries
+its base and accepted trees as directories, not as a nested repository, and `shared/make-repo.sh` builds them into the
+pack's git repository with fixed identity, dates and messages, so the commit ids are the ones its `manifest.json`
+names on every host. The host builds that repository outside the kit's tree and copies `manifest.json` beside it, so
+`repository` (`repo`) resolves and the manifest's hash is the same on every host.
+
 ## Isolation
 
 A candidate's checkout is a history-less tree of its case's base only (`historyless-checkout.sh`). The accepted fix, the
