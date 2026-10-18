@@ -1,0 +1,34 @@
+{
+ "task-id": "sr-item4-host",
+ "outcome": "accepted",
+ "owner-profile": "cc-opus-high",
+ "original-brief-fingerprint": "a29f7a563f58bdf76b0f20bf6a64134082bb18de1094e516186a63cf37ca0370",
+ "evidence": {
+  "checks": [
+   {
+    "command": "node --test docs/orchestration/smartrouter/route.test.mjs",
+    "exit-code": 0,
+    "output-ref": "scratchpad/gsi-suite-item4.log on the integration head: fail 0"
+   },
+   {
+    "command": "npx eslint route.mjs route.test.mjs",
+    "exit-code": 0,
+    "output-ref": "exit 0 on the integration head"
+   },
+   {
+    "command": "refute-first review",
+    "exit-code": 0,
+    "output-ref": "wf_7de31948-94f: review FIX (R1 S3 basis validation, R2 S4 commit wording) fixed in 83c280d; re-review ACCEPT"
+   }
+  ],
+  "actual-spend": null,
+  "actual-tokens": 575207,
+  "files-touched": [
+   "docs/orchestration/smartrouter/route.mjs",
+   "docs/orchestration/smartrouter/route.test.mjs",
+   "docs/orchestration/smartrouter/README.md"
+  ],
+  "notes": "integrated on build/github-sign-in (103a5df..83c280d cherry-picked); review FIX (R1 S3, R2 S4) fixed in 83c280d, re-review ACCEPT; the unit's four workflow agents used the recorded harness tokens (not a bill)",
+  "actual-spend-basis": "estimate-only"
+ }
+}

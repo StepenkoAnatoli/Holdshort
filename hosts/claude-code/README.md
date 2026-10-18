@@ -11,7 +11,7 @@ itself. Every output it prints carries `Advisory: recommendation only — no dis
 |---|---|
 | `host-policy.json` | The host's declared inputs: harness, authorization, accounting mode, prices, categories, profiles with qualification evidence, economics constants, opt-ins. Edited only by the lead. Current revision: `host-policy-3`. |
 | `route.mjs` | The adapter: CLI plus named exports. Node built-ins only. |
-| `route.test.mjs` | `node --test` suite, one test per SmartRouter fixture it mirrors, plus the three golden hand-walked decisions. The base tests and the goldens run on `host-policy-1`, the usage-window and host-policy-2 tests on `host-policy-2` (the fixtures below), the live policy on its own tests. CI runs it too, in the `claude-code-adapter-tests` job of `.github/workflows/regression-gate.yml`. |
+| `route.test.mjs` | `node --test` suite, one test per SmartRouter fixture it mirrors, plus the three golden hand-walked decisions. The base tests and the goldens run on `host-policy-1`, the usage-window and host-policy-2 tests on `host-policy-2` (the fixtures below), the live policy on its own tests. |
 | `trace/ledger.jsonl` | The Outcome Ledger: spec-v2 §10.5 records, append-only, never rewritten. |
 | `trace/decisions/<task>-<seq>.json` | One file per decision: the request, input and policy digests, the per-candidate gate walkthrough with reasons, the chosen profile, estimates vs accounting, the Brief. `hand-*.json` are the lead's hand-walked decisions from before the adapter existed. |
 | `trace/policies/host-policy-1.json` | The policy before revision 2, byte-identical to the one the hand-walked decisions and `sr-policy-2-1` were decided under. A test fixture, never edited: the goldens decide against it with `--policy`. It lives apart from `trace/decisions/`, whose `<task>-<seq>.json` names belong to decisions (a fixture there would block a task named `host-policy` at seq 1). `sr-policy-2-1`'s Brief names the fixture's first path, `trace/decisions/host-policy-1.json`; the decision file is a record and is not rewritten. |
@@ -68,7 +68,9 @@ Run every command from the repository root. Node 24 must be on `PATH`.
 5. **Record the outcome** when the unit ends, from observed evidence, never from the agent's self-report:
    `node docs/orchestration/smartrouter/route.mjs outcome <outcome.json>`. This takes a §10.3 Outcome. Its
    `original-brief-fingerprint` must be the decision's, `actual-spend` is `null` in this host, and `owner-profile`
-   is the profile id or its exact identity tuple. Put the unit's total tokens in the additive
+   is the profile id or its exact identity tuple. The adapter adds `actual-spend-basis: "estimate-only"` to the
+   stored copy when the Outcome has none or a `null` one (SmartRouter Item 4). A supplied `"estimate-only"` is kept, and
+   any other basis is refused (exit 2), because upstream `conform_spec.py` refuses it. Put the unit's total tokens in the additive
    `evidence.actual-tokens` (an integer, or `null` when unknown). The outcome record carries it as `tokens`, and
    `rate` uses it to check the usage coefficients.
 6. **Re-route on failure.** Decide again with `previousResult` set to that Outcome. One same-profile repair is
@@ -107,6 +109,7 @@ it, and the fix is to add the missing newline, which changes no record.
 | Lead-direct profile | **enforced**: the lead profile is walked only as `direct`, eligible up to `direct-max-tokens` (Gate 5); `dispatch` refuses it as a delegated worker, `--deviation` or not | `decide`, `dispatch` |
 | Isolation | **enforced as a lower bound**: `worktree+branch` for delegated work; a stronger requirement than the host's capability is denied at Gate 1 | `decide` |
 | Cash | **advisory**: the conservative bound (tokens x output rate) is computed, recorded and printed, never a cap. The Uncertainty line always says `cash: estimate only, no host accounting (subscription); not a strict cap` | `decide` |
+| Cash markers (SmartRouter Item 4) | **written**: Item 4 is accepted upstream (2026-10-18): a `null` cash counter or spend is conformant only beside its `estimate-only` marker. While `host-policy.json`'s `accounting.mode` is `"estimate-only"`, every record the adapter appends carries `counters["cash-basis"]: "estimate-only"` beside its `null` `cash-spent` and `cash-cap`. An Outcome whose `evidence.actual-spend` is `null` and that names no basis (absent or `null`) is stored (`trace/outcomes/<task>-<seq>.json`) with `evidence["actual-spend-basis"]: "estimate-only"`. A supplied `"estimate-only"` is kept, any other basis is refused (exit 2, the only value upstream accepts), a `null` basis is never stored, and a non-null spend gets no marker. The outcome record carries the stored basis as `actual-spend-basis`, beside `tokens`. Decision files and `status` keep the six §10.5 counters. The ledger is append-only, so lines written before the markers stay unmarked, and `conform_spec.py --record` keeps refusing them | `decide`, `dispatch`, `outcome` |
 | Usage windows | **enforced when configured**: fresh reading required; projection against stop-at - lead-reserve in decide and dispatch. Gate 4 fails a candidate with no reading at or before `now`, a reading older than `reading-max-age-minutes`, a window reset since the reading, or a projection over any window's limit, counting the `usage-tokens` of every dispatch the reading does not hold (recorded after it, or in flight from before it). `dispatch` re-checks at its `--now` against the decision's `usage-tokens` and those dispatches (section 'Usage windows') | `decide`, `dispatch` |
 | Unknown price | **enforced, by host choice**: a profile whose model has no price fails Gate 4 (`unknown price for <model>: the bound cannot be computed (no silent zero)`), though cash is not a cap here (friction item 15) | `decide` |
 | Speculative and nested delegation | **off**: speculative needs the opt-in plus `uncertainty: "high"`; a nested opt-in is refused with a note, because this host cannot produce or enforce a NestedBrief (§14) | `decide` |
@@ -599,6 +602,11 @@ Every point where the spec was ambiguous or did not fit a subscription host. Cit
    §10.3 types `evidence.actual-spend` as a number. This host writes `null` for all three and reports cash as an
    estimate on every Uncertainty line. Upstream could add an `accounting: estimate-only` mode that types these
    fields as `number | null` and names the resource that *is* finite here (weekly tokens).
+   **Closed** for the cash fields: SmartRouter accepted Item 4 of `docs/proposals/usage-windows-gate4.md` on
+   2026-10-18 (upstream unit sr-ci-item4). A `null` is conformant beside `counters["cash-basis"]: "estimate-only"`
+   (§10.5) or `evidence["actual-spend-basis"]: "estimate-only"` (§10.3), and the adapter writes both markers
+   (section 'Enforced vs advisory'). Records written before that stay unmarked. The finite resource (the usage
+   windows) is still untyped upstream (item 16).
 2. **What counts as one "original task" across iterative review rounds.** SKILL.md 'Closed feedback loop' and
    spec-v2 §7 allow "at most one same-profile corrective dispatch per original task". brief-and-result.md
    'Attempt, repair and ledger rules' forbids renewing the allowance "by restarting, renaming, changing profiles or
