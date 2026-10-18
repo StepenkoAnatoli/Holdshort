@@ -1,7 +1,7 @@
 {
  "schema_version": 1,
  "status": "run complete; results in observations.json, scores.json, results-table.md and clusters.md; see amendments",
- "run_id": null,
+ "run_id": "wf_4e9ef48d-066",
  "frozen_at": "2026-10-18T05:21:28Z",
  "revision": "5bd473a",
  "revision_note": "SmartRouter main after PR #98; tools/prices-2.json unchanged since run 1",
@@ -264,5 +264,6 @@
   "the supplementary run's review findings were assigned to the main run's clusters by one agent and the main run's lenses did not see them; the one assigned finding (haiku-low R-3 -> C-1) joined a cluster adjudicated real on all three prongs",
   "the ground truth (cal-truth-3.json), the finding text and the prompts are host files recorded here by hash only",
   "the review-only cost comparison is per model (sonnet-xhigh vs sonnet-high, opus-max vs opus-high, fable-max vs fable-high), see README"
- ]
+ ],
+ "run_id_note": "the main run id was recorded in the README by 5533e47 at 05:23Z, one minute before the 05:24Z launch, while this field stayed null at the freeze (0013451); filled here after the independent review of a197b6e (non-blocking note); the README remains the pre-launch record"
 }
