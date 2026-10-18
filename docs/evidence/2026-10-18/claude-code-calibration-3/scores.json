@@ -4,7 +4,7 @@
  "supplementary_run_id": "wf_dbe29a64-3b2",
  "scored_at": "2026-10-18T06:55:00Z",
  "pass_rules": {
-  "pin": "protocol cases[pin].pass_rule (grade.sh PASS)",
+  "pin": "protocol cases[pin].pass_rule (grade.sh PASS); the pin case represents the host category pin-tests (host rule 4), not build-tests, whatever the protocol label says (amendment A-2)",
   "fix": "protocol cases[fix].pass_rule (grade.sh PASS)",
   "review": "protocol cases[review].pass_rule: PASS when r8Found and r11Found and adjudicated falseBlocking 0 and no copying; PARTIAL when exactly one of r8Found, r11Found with adjudicated falseBlocking 0; FAIL otherwise"
  },
@@ -45,7 +45,8 @@
      "usd_all_input": 0.013,
      "usd_all_output": 0.0652
     },
-    "supplementary_run": "wf_dbe29a64-3b2"
+    "supplementary_run": "wf_dbe29a64-3b2",
+    "would_fail_under_three_prong": false
    }
   },
   "haiku-medium": {
@@ -82,7 +83,10 @@
      "tokens": 138791,
      "usd_all_input": 0.0139,
      "usd_all_output": 0.0694
-    }
+    },
+    "would_fail_under_three_prong": true,
+    "three_prong_false_blocking": 2,
+    "three_prong_note": "the other findings ['R-5', 'R-6'] sit in clusters C-4/C-5, real on two prongs only (G-2); under the full three-prong definition this review is FAIL"
    }
   },
   "haiku-high": {
@@ -120,7 +124,10 @@
      "tokens": 174287,
      "usd_all_input": 0.0174,
      "usd_all_output": 0.0871
-    }
+    },
+    "would_fail_under_three_prong": true,
+    "three_prong_false_blocking": 1,
+    "three_prong_note": "the other findings ['R-2'] sit in clusters C-4/C-5, real on two prongs only (G-2); under the full three-prong definition this review is FAIL"
    }
   },
   "sonnet-low": {
@@ -157,7 +164,8 @@
      "tokens": 109426,
      "usd_all_input": 0.2189,
      "usd_all_output": 1.0943
-    }
+    },
+    "would_fail_under_three_prong": false
    }
   },
   "sonnet-medium": {
@@ -194,7 +202,8 @@
      "tokens": 125630,
      "usd_all_input": 0.2513,
      "usd_all_output": 1.2563
-    }
+    },
+    "would_fail_under_three_prong": false
    }
   },
   "sonnet-high": {
@@ -231,7 +240,8 @@
      "tokens": 159276,
      "usd_all_input": 0.3186,
      "usd_all_output": 1.5928
-    }
+    },
+    "would_fail_under_three_prong": false
    }
   },
   "sonnet-xhigh": {
@@ -250,7 +260,8 @@
      "tokens": 227264,
      "usd_all_input": 0.4545,
      "usd_all_output": 2.2726
-    }
+    },
+    "would_fail_under_three_prong": false
    }
   },
   "opus-medium": {
@@ -287,7 +298,8 @@
      "tokens": 127281,
      "usd_all_input": 0.5091,
      "usd_all_output": 2.5456
-    }
+    },
+    "would_fail_under_three_prong": false
    }
   },
   "opus-high": {
@@ -324,7 +336,8 @@
      "tokens": 141662,
      "usd_all_input": 0.5666,
      "usd_all_output": 2.8332
-    }
+    },
+    "would_fail_under_three_prong": false
    }
   },
   "opus-xhigh": {
@@ -361,7 +374,8 @@
      "tokens": 182333,
      "usd_all_input": 0.7293,
      "usd_all_output": 3.6467
-    }
+    },
+    "would_fail_under_three_prong": false
    }
   },
   "opus-max": {
@@ -380,7 +394,8 @@
      "tokens": 266339,
      "usd_all_input": 1.0654,
      "usd_all_output": 5.3268
-    }
+    },
+    "would_fail_under_three_prong": false
    }
   },
   "fable-medium": {
@@ -417,7 +432,8 @@
      "tokens": 148926,
      "usd_all_input": 1.4893,
      "usd_all_output": 7.4463
-    }
+    },
+    "would_fail_under_three_prong": false
    }
   },
   "fable-high": {
@@ -454,7 +470,8 @@
      "tokens": 147254,
      "usd_all_input": 1.4725,
      "usd_all_output": 7.3627
-    }
+    },
+    "would_fail_under_three_prong": false
    }
   },
   "fable-xhigh": {
@@ -491,7 +508,8 @@
      "tokens": 186589,
      "usd_all_input": 1.8659,
      "usd_all_output": 9.3294
-    }
+    },
+    "would_fail_under_three_prong": false
    }
   },
   "fable-max": {
@@ -510,7 +528,8 @@
      "tokens": 189364,
      "usd_all_input": 1.8936,
      "usd_all_output": 9.4682
-    }
+    },
+    "would_fail_under_three_prong": false
    }
   }
  },
@@ -529,13 +548,56 @@
  },
  "adjudication_note": "all five clusters adjudicated REAL by the preregistered majority rule (holds and reachable not no), so every grader false on an S1-S3 other cleared; G-2 (lead-notes): the lens schema carries no forbidden-by-spec prong and for C-4 and C-5 the lenses prose says the specification permits the behaviour; the preregistered rule stands for the scores and changes no qualification",
  "totals": {
-  "pin": 11,
-  "fix": 12,
-  "review_pass": 15,
-  "review_partial": 0,
-  "review_fail": 0,
+  "cells": {
+   "pin": "11 of 12 PASS",
+   "fix": "12 of 12 PASS",
+   "review": "15 of 15 PASS (13 of 15 under the three-prong definition)"
+  },
+  "tokens": {
+   "main_run": {
+    "items": 5274667,
+    "graders": 1597164,
+    "clustering": 81285,
+    "lenses": 1578450,
+    "total": 8531566,
+    "of_which_void_cells": 166266,
+    "of_which_void_grade": 88760
+   },
+   "supplementary_run": {
+    "items": 272858,
+    "graders": 107524,
+    "clustering": 75994,
+    "total": 456376
+   },
+   "both_runs_total": 8987942,
+   "scored_cells_items": 5381259,
+   "judging_both_runs": 3440417,
+   "judging_share_main_run": 0.382,
+   "judging_share_both_runs": 0.383,
+   "note": "scored cells = main items minus the two void cells plus the supplementary items; judging = graders + clustering + lenses; the fourth supplementary agent is cluster:others (75,994), the cluster-assignment agent"
+  },
   "non_pass": [
    "pin:fable-medium"
   ]
+ },
+ "category_mapping": {
+  "pin": "pin-tests",
+  "fix": "fix",
+  "review": "review",
+  "note": "the protocol labels the pin case build-tests; host qualification rule 4 (hosts/claude-code/README.md) says the pin task represents pin-tests; this mapping is the one the host applied in runs 1-2 and applies here (amendment A-2)"
+ },
+ "adjudication_schema": {
+  "prongs_in_lens_schema": [
+   "holds",
+   "reachable"
+  ],
+  "prongs_in_classification": [
+   "holds",
+   "reachable",
+   "forbidden"
+  ],
+  "missing_prong": "forbidden",
+  "vote_rule_as_preregistered": "a lens votes real when holds and reachable is not no; majority of three",
+  "note": "G-2: two clusters (C-4, C-5) read REAL on two prongs while the lenses prose says the specification permits the behaviour"
  }
 }

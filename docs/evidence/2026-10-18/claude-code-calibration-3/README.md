@@ -34,7 +34,8 @@ lens verdicts in [clusters.md](clusters.md) and [adjudication.json](adjudication
 - **pin 11/12 PASS**: `fable-medium` FAIL on an over-specified pin that asserts the injected stream's cancel callback,
   which the rule does not state, so it stays red with the accepted fix (amendment N-1). **fix 12/12 PASS**, every one
   committed with the map through the subject's commit gate.
-- **review 15/15 PASS** under the preregistered rules. Every review found U1-R8 and U1-R11 with their causes
+- **review 15/15 PASS** under the preregistered rules; **13/15 under the full three-prong definition** (G-2 below:
+  `haiku-medium` and `haiku-high` carry `would_fail_under_three_prong: true` in `scores.json`). Every review found U1-R8 and U1-R11 with their causes
   (history-less checkouts: nothing to copy). Five clusters of other S1-S3 findings, all adjudicated REAL by the
   three-lens majority, so every grader `false` cleared. C-1, C-2 and C-3 (the body read and cancel never observe
   the bounded signal) are real on all three prongs in every lens: new S3 findings for the subject module. C-4 and
@@ -44,11 +45,34 @@ lens verdicts in [clusters.md](clusters.md) and [adjudication.json](adjudication
   request that "wins" over the computed task. Two of 39 cells halted on it and were void, then re-run once; both PASS.
   The halts are an observation about instruction-conflict handling (both haiku; four other agents that mentioned the
   message did the task), not a capability grade.
-- **Tokens**: scored cells pin 1,385,282; fix 1,541,115; review 2,454,862; graders, clustering and lenses 3,440,417
-  (opus high). Judging cost 40% of the run. The review-only profiles cost 1.2-1.9x the high profiles' review tokens
-  for the same PASS (sonnet-xhigh 227,264; opus-max 266,339; fable-max 189,364).
+- **Tokens, reconciled run by run** (`scores.json` `totals.tokens`):
+
+  | run | items (cells) | graders | clustering | lenses | total |
+  |-----|---------------|---------|------------|--------|-------|
+  | main `wf_4e9ef48d-066` | 5,274,667 (39 cells, of which the two void cells 166,266) | 1,597,164 (15, of which the void review's grader 88,760) | 81,285 (1) | 1,578,450 (15) | 8,531,566 |
+  | supplementary `wf_dbe29a64-3b2` | 272,858 (2 cells) | 107,524 (1) | 75,994 (1, the cluster-assignment agent) | 0 | 456,376 |
+  | both | 5,547,525 | 1,704,688 | 157,279 | 1,578,450 | 8,987,942 |
+
+  Scored cells (main items minus the void cells, plus the supplementary cells): 5,381,259, of which pin 1,385,282,
+  fix 1,541,115, review 2,454,862. Judging (graders, clustering, lenses): 3,440,417 over both runs, about 38-39% of
+  the total (38.2% of the main run alone). The review-only profiles cost, per model, 1.4x (sonnet-xhigh 227,264 vs
+  sonnet-high 159,276), 1.9x (opus-max 266,339 vs opus-high 141,662) and 1.3x (fable-max 189,364 vs fable-high
+  147,254) the high profile's review tokens for the same PASS.
 - **Usage windows**: about 0.038 (five_hour) and 0.010 (seven_day) per Mtok over the run, lead included; consistent
   with run 2; no clean before or after reading exists for this run (units in flight at both).
+- **Main, void and supplementary**: 39 cells ran in the main run; two (fix:haiku-high, review:haiku-low) are void
+  under A-1 and are kept in `void-cells.json` with their main-run tokens; the two supplementary cells replace them in
+  `observations.json` and `scores.json`, marked with `supplementary_run`. `void-cells.json` also lists the six agents
+  whose structured output mentions the relayed message (the workflow journal itself is host-local and not committed).
+- **Qualification consequences, under the host's rules (hosts/claude-code/README.md, rules 1-4), applied by the host
+  in its policy revision 4, not by this evidence folder.** Negative: `fable-medium`'s pin FAIL blocks `pin-tests` for
+  that profile until two later passes (rule 3, with the pin case read as `pin-tests` per rule 4 and amendment A-2).
+  Positive: this run is the second review pass for `sonnet-high` (after a fail and a pass), `sonnet-xhigh`,
+  `opus-max` and `fable-max` (two passes each), and the second pass for `sonnet-low` with a PARTIAL between (the
+  host's call); `sonnet-medium` and `opus-medium` have one pass after a fail and need another; the three haiku
+  profiles' run-3 review PASSes are one of the two later passes rule 3 needs after their two fails, and two of them are
+  two-prong PASSes (G-2), so no haiku profile gains `review`. Every fix PASS is a further pass for already-qualified
+  profiles. Nothing in this folder changes a policy.
 - **What run 4 changes**: the `forbidden` prong in the lens schema (G-2); no operator chat relayed into workers, or
   the relayed text recorded before the launch (A-1); and, if the difficulty-tiers proposal is accepted, one T3 cell
   per category for the profiles qualified at T1.

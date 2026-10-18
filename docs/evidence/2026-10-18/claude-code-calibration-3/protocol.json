@@ -243,6 +243,13 @@
    "case": "pin",
    "change": "none; a note",
    "reason": "pin:fable-medium FAIL: red at the base and still red with the accepted source because tests/cal-pin.test.ts:78 asserts the injected stream's own cancel() callback fired for each call, which the rule does not state; the accepted fix calls reader.cancel() and the callers cancel the body, yet the source callback is not observed through the Response the candidate's fetcher builds (whether undici propagates a reader cancel to an injected stream's source was not settled and is outside the rule). An over-specified pin blocks a correct fix, which the pass rule exists to catch"
+  },
+  {
+   "id": "A-2",
+   "at": "2026-10-18T07:55:00Z",
+   "case": "pin",
+   "change": "the pin case's category label in this frozen protocol reads build-tests; it represents the host category pin-tests, as host qualification rule 4 says and as runs 1-2 were applied; scores.json carries the mapping (category_mapping) and the proposed evidence check must use it",
+   "reason": "independent review of a197b6e, blocking finding 4: applied literally the fable-medium pin FAIL would be a build-tests fail and not block pin-tests; the host's rule says otherwise, and the mapping was never written down"
   }
  ],
  "supplementary_run_id": "wf_dbe29a64-3b2",
@@ -250,5 +257,12 @@
   "before": "2026-10-18T05:07Z five_hour 0.29 seven_day 0.49 (not clean: X2 units in flight)",
   "after": "2026-10-18T06:43Z five_hour 0.63 seven_day 0.58 (the supplementary run in flight)",
   "note": "+0.34 and +0.09 over about 8.9M delegated tokens plus the lead: about 0.038 and 0.010 per Mtok, consistent with run 2 (0.0343 / 0.0102); the ratified 0.05 / 0.015 stay conservative; no clean reading exists for this run"
- }
+ },
+ "review_notes_2026_10_18": [
+  "the fix pass rule omits typecheck: typecheck is self-reported by the candidate (reported_separately) and not part of grade.sh; a later run adds it to the mechanical grade",
+  "the pin rule does not enforce the two-row count; grade.sh counts failing and passing tests, not rows",
+  "the supplementary run's review findings were assigned to the main run's clusters by one agent and the main run's lenses did not see them; the one assigned finding (haiku-low R-3 -> C-1) joined a cluster adjudicated real on all three prongs",
+  "the ground truth (cal-truth-3.json), the finding text and the prompts are host files recorded here by hash only",
+  "the review-only cost comparison is per model (sonnet-xhigh vs sonnet-high, opus-max vs opus-high, fable-max vs fable-high), see README"
+ ]
 }
