@@ -1330,14 +1330,22 @@ class SharedPack(unittest.TestCase):
         self.assertIs(d["PASS"], False)
 
     def wrong_fix(self, name: str) -> bytes:
-        """base0's source with a fix of D-2 that passes a pin cutting str chunks at an ASCII character and never testing
-        the stop, yet still breaks the promise (R-1 of the sr-pack review)."""
+        """base0's source with a fix of D-2 that passes a pin which never cuts inside a character or never tests the stop,
+        yet still breaks the promise or SPEC.md's result (R-1 of the sr-pack review, N-1 of its re-review)."""
         src = (PACK / "trees" / "base" / "src" / "bounded.py").read_text(encoding="utf-8")
         text = '            parts.append(chunk.encode("utf-8", "replace"))\n            continue\n'
         self.assertEqual(src.count(text), 1)
         if name == "chars":  # counts a str chunk by its characters, not its UTF-8 bytes
             src = src.replace(text, '            piece = chunk[:limit - taken]\n            parts.append(piece.encode("utf-8", "replace"))\n'
                                     '            taken += len(piece)\n            if taken >= limit:\n                break\n            continue\n')
+        elif name == "boundary":  # takes whole characters while they fit and stops at the first that does not, so a
+            # result never ends inside a character, where SPEC.md cuts at limit bytes
+            src = src.replace(text, '            fits, whole = b"", True\n            for ch in chunk:\n'
+                                    '                b = ch.encode("utf-8", "replace")\n'
+                                    '                if taken + len(fits) + len(b) > limit:\n'
+                                    '                    whole = False\n                    break\n'
+                                    '                fits += b\n            parts.append(fits)\n            taken += len(fits)\n'
+                                    '            if not whole or taken >= limit:\n                break\n            continue\n')
         else:  # "trunc": cuts the joined result at the end, so str chunks are still neither counted nor stopped at
             self.assertEqual(src.count("    return join_parts(parts)\n"), 1)
             src = src.replace("    return join_parts(parts)\n", "    return join_parts(parts)[:limit]\n")
@@ -1350,7 +1358,8 @@ class SharedPack(unittest.TestCase):
         self.assertIn("reads no further chunk", rule)
         # each passes its own test and is red with base0's source, so only the accepted pin can tell it from the fix
         probes = {"chars": "print(len(read_bounded(['\\u00e9' * 4], 4)))",  # a non-ASCII text chunk crosses the bound
-                  "trunc": "print(read_bounded(['ab', 'cd', 3], 4))"}  # reads past limit bytes, into a chunk it rejects
+                  "trunc": "print(read_bounded(['ab', 'cd', 3], 4))",  # reads past limit bytes, into a chunk it rejects
+                  "boundary": "print(read_bounded(['\\u00e9\\u00e9', b'x'], 3))"}  # 2 bytes, not the 3 SPEC.md cuts at
         for name, probe in probes.items():
             with self.subTest(fix=name):
                 cand = []
@@ -1360,7 +1369,9 @@ class SharedPack(unittest.TestCase):
                 self.assertIs(d["PASS"], False, d)
                 p = subprocess.run(["python3", "-c", "import sys; sys.path.insert(0, '.')\nfrom src.bounded import read_bounded\n" + probe],
                                    cwd=cand[0], env=self.env, capture_output=True, text=True, timeout=60)
-                self.assertTrue(p.stdout.strip() == "8" if name == "chars" else "TypeError" in p.stderr, p.stdout + p.stderr)
+                want = {"chars": p.stdout.strip() == "8", "trunc": "TypeError" in p.stderr,
+                        "boundary": p.stdout.strip() == "b'\\xc3\\xa9'"}
+                self.assertTrue(want[name], p.stdout + p.stderr)
 
     # ---- the workflow template filled with this pack (P5) ------------------------------------------------------------
     def shared_run_config(self, **host) -> dict:
