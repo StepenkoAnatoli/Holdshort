@@ -135,6 +135,81 @@ PROTOCOL_KEYS = {"_lineage", "schema_version", "kit_version", "status", "run_id"
                  "usage_window_readings", "amendments"}
 
 
+def fill_template(cfg: dict) -> str:
+    """The README's fill step: the run config into `null // {{RUN}}`, the prompt files into `null // {{PROMPTS}}`."""
+    text = (KIT / "run.template.js").read_text()
+    prompts = {n: (KIT / f"{n}.prompt.md").read_text() for n in ("grader", "lens", "cluster")}
+    prompts["classification"] = (KIT / "classification.md").read_text()
+    assert text.count("null // {{RUN}}") == 1 and text.count("null // {{PROMPTS}}") == 1
+    return text.replace("null // {{RUN}}", json.dumps(cfg)).replace("null // {{PROMPTS}}", json.dumps(prompts))
+
+
+def run_config(root: Path, **host) -> dict:
+    cfg = {"manifest": json.loads((FIX / "manifest.json").read_text()), "protocol": json.loads((FIX / "protocol.json").read_text()),
+           "host": {"checkout_root": str(root / "checkouts"), "pack_dir": str(root / "pack"), "adjudication_checkout": str(root / "checkouts" / "cal-adjudication"),
+                    "run_tag": "cal", "commit_command": "git commit", "supplementary": None}}
+    cfg["host"].update(host)
+    return cfg
+
+
+def canned_outputs(forbidden=(True, True, False)) -> dict:
+    results = {}
+    for line in (FIX / "journal.jsonl").read_text().splitlines():
+        e = json.loads(line)
+        if e["type"] == "result":
+            results[e["agentId"]] = e["result"]
+    cluster = copy.deepcopy(results["a05"])
+    cluster["clusters"][0]["members"] = ["alpha-low R-3", "beta-max R-3"]
+    cluster["clusters"][0]["graderClassifications"] = ["false", "false"]
+    lens = dict(results["a06"])
+    return {"pin": results["a01"], "fix": results["a02"], "review": results["a03"], "grade": results["a04"], "cluster": cluster,
+            "lens": lens, "forbidden": dict(zip(("reproduce", "reachability", "refute"), forbidden))}
+
+
+STUB_HARNESS = """
+const CANNED = __CANNED__;
+const calls = [];
+globalThis.agent = async (prompt, opts) => {
+  calls.push({ prompt, ...opts });
+  const kind = opts.label.split(':')[0];
+  if (kind === 'lens') { const lens = opts.label.split(':')[2]; return { ...CANNED.lens, lens, forbidden: CANNED.forbidden[lens] }; }
+  return JSON.parse(JSON.stringify(CANNED[kind]));
+};
+globalThis.pipeline = async (items, ...stages) => {
+  const out = [];
+  for (const item of items) { let v = await stages[0](item); for (const s of stages.slice(1)) v = await s(v, item); out.push(v); }
+  return out;
+};
+globalThis.parallel = async (fns) => Promise.all(fns.map((f) => f()));
+globalThis.log = () => {};
+let result = null, error = null;
+try { result = await (async () => {
+__BODY__
+})(); } catch (e) { error = String((e && e.message) || e); }
+console.log(JSON.stringify({ calls, result, error }));
+"""
+
+
+def execute_template(cfg: dict, root: Path, canned: dict | None = None) -> dict:
+    """Run the filled template under node with stub harness globals (the harness wraps a script body the same way)."""
+    body = fill_template(cfg).replace("export const meta", "const meta", 1)
+    src = STUB_HARNESS.replace("__CANNED__", json.dumps(canned or canned_outputs())).replace("__BODY__", body)
+    path = root / "filled-run.mjs"
+    path.write_text(src)
+    p = subprocess.run(["node", str(path)], capture_output=True, text=True, timeout=120)
+    if p.returncode != 0:
+        raise AssertionError(f"node exit {p.returncode}: {p.stderr[-2000:]}")
+    return json.loads(p.stdout.strip().splitlines()[-1])
+
+
+def results_folder(root: Path, run: Path | None = None) -> Path:
+    out = root / "docs" / "evidence" / "2026-01-01" / "fixture-host-calibration-1"
+    p = build(out, run=run)
+    assert p.returncode == 0, p.stderr
+    shutil.copy(FIX / "protocol.json", out / "protocol.json")
+    return out
+
+
 class Observations(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -557,6 +632,174 @@ class Hygiene(unittest.TestCase):
                        "Moon" + "Aliza", "os." + "environ['X']", "fetch" + "(url)", "C:" + "\\\\Users"]
             bad.write_text("\n".join(["# x"] + samples + ["{{/" + "tmp/ok}}", "EXAMPLE: /" + "tmp/ok"]) + "\n")
             self.assertEqual(len(self.scan(Path(d))), len(samples))
+
+
+NEEDS_NODE = unittest.skipUnless(shutil.which("node"), "node is not installed: the workflow template cannot be executed here")
+
+
+class RunTemplate(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_template_has_the_fill_slots_lineage_and_harness_markers(self):
+        text = (KIT / "run.template.js").read_text()
+        self.assertTrue(text.startswith("// Lineage:"))
+        self.assertEqual((text.count("null // {{RUN}}"), text.count("null // {{PROMPTS}}")), (1, 1))
+        self.assertGreaterEqual(text.count("// HARNESS:"), 4)
+        self.assertTrue("retry limit 0" in text.lower(), "the template states its retry limit")
+
+    @NEEDS_NODE
+    def test_filled_template_runs_every_cell_then_grades_clusters_and_adjudicates(self):
+        out = execute_template(run_config(self.root), self.root)
+        self.assertIsNone(out["error"])
+        labels = [c["label"] for c in out["calls"]]
+        self.assertEqual(sorted(x for x in labels if x.split(":")[0] in ("pin", "fix", "review")),
+                         ["fix:alpha-low", "pin:alpha-low", "review:alpha-low", "review:beta-max"])
+        self.assertEqual(sorted(x for x in labels if x.startswith(("grade:", "cluster:", "lens:"))),
+                         ["cluster:others", "grade:alpha-low", "grade:beta-max", "lens:C-1:reachability", "lens:C-1:refute", "lens:C-1:reproduce"])
+        for c in out["calls"]:
+            self.assertNotIn("{{", c["prompt"], c["label"])
+            self.assertIn("schema", c, c["label"])
+            if c["label"].split(":")[0] in ("pin", "fix", "review"):
+                task, key = c["label"].split(":")
+                self.assertIn(str(self.root / "checkouts" / f"cal-{task}-{key}"), c["prompt"])
+                self.assertIn("the operator launched this calibration", c["prompt"])  # A-1: a relayed request is reconciled
+                self.assertNotIn(str(self.root / "pack"), c["prompt"])  # Item 2: the prompt names only the checkout
+                self.assertNotIn("accepted0", c["prompt"])
+                self.assertNotIn("bound check", c["prompt"]) if task == "review" else None  # no ground truth in a review prompt
+                prof = {"alpha-low": ("alpha", "low"), "beta-max": ("beta", "max")}[key]
+                self.assertEqual((c["model"], c["effort"]), prof)
+            else:
+                self.assertEqual((c["model"], c["effort"]), ("gamma", "high"), c["label"])  # the judging profile
+        grader = next(c for c in out["calls"] if c["label"] == "grade:beta-max")
+        self.assertIn("D-1 (S3): add raises on a negative argument", grader["prompt"])
+        self.assertIn("at most S4", grader["prompt"])  # the Definition, verbatim
+        self.assertIn("truth", grader["schema"]["required"])
+        refute = next(c for c in out["calls"] if c["label"] == "lens:C-1:refute")
+        self.assertIn("YOUR LENS: REFUTE", refute["prompt"])
+        self.assertIn("forbidden", refute["schema"]["required"])
+        fix = next(c for c in out["calls"] if c["label"] == "fix:alpha-low")
+        self.assertIn("add(a, b) answers a + b", fix["prompt"])  # the required behaviour, stated without the fix
+        self.assertIn("fix(mod): D-2 - ", fix["prompt"])
+        adj = out["result"]["adjudications"][0]
+        self.assertEqual((adj["real"], adj["realVotes"]), (True, "2/3"))
+
+    @NEEDS_NODE
+    def test_a_lens_vote_needs_the_forbidden_prong(self):
+        out = execute_template(run_config(self.root), self.root, canned_outputs(forbidden=(True, False, False)))
+        adj = out["result"]["adjudications"][0]
+        self.assertEqual((adj["real"], adj["realVotes"]), (False, "1/3"))  # all three hold and are reachable: not enough
+
+    @NEEDS_NODE
+    def test_launch_refuses_checkouts_that_share_a_path_with_the_pack(self):
+        for host in ({"checkout_root": str(self.root / "pack" / "checkouts")}, {"pack_dir": str(self.root / "checkouts" / "pack")},
+                     {"adjudication_checkout": str(self.root / "pack" / "adj")}):
+            out = execute_template(run_config(self.root, **host), self.root)
+            self.assertIn("pack", out["error"] or "", host)
+            self.assertEqual(out["calls"], [], host)
+
+    @NEEDS_NODE
+    def test_launch_refuses_an_unrecorded_relayed_text_or_an_unfrozen_protocol(self):
+        for drop in ("text", None):  # the text key missing, or the whole record missing: Item 3.2
+            cfg = run_config(self.root)
+            if drop:
+                del cfg["protocol"]["relayed_operator_text"][drop]
+            else:
+                del cfg["protocol"]["relayed_operator_text"]
+            out = execute_template(cfg, self.root)
+            self.assertIn("does not record relayed_operator_text.text", out["error"] or "", drop)
+            self.assertEqual(out["calls"], [])
+        cfg = run_config(self.root)
+        cfg["protocol"]["frozen_at"] = "{{ISO-8601 UTC time of the freeze commit}}"
+        out = execute_template(cfg, self.root)
+        self.assertIn("frozen", out["error"] or "")
+        self.assertEqual(out["calls"], [])
+        cfg = run_config(self.root)
+        cfg["protocol"]["classification"]["prongs"] = ["holds", "reachable"]
+        out = execute_template(cfg, self.root)
+        self.assertIn("prongs", out["error"] or "")
+        self.assertEqual(out["calls"], [])
+
+    @NEEDS_NODE
+    def test_a_recorded_relayed_text_reaches_every_candidate_verbatim(self):
+        cfg = run_config(self.root)
+        cfg["protocol"]["relayed_operator_text"] = {"text": "focus on the router for now", "statement": "the harness relays this operator text"}
+        out = execute_template(cfg, self.root)
+        for c in out["calls"]:
+            if c["label"].split(":")[0] in ("pin", "fix", "review"):
+                self.assertIn("focus on the router for now", c["prompt"])
+
+    @NEEDS_NODE
+    def test_supplementary_run_reruns_only_the_void_cells_and_keeps_known_verdicts(self):
+        known = json.loads((FIX / "run.json").read_text())["result"]["adjudications"][0]
+        cfg = run_config(self.root, supplementary={"cells": ["review:beta-max"], "main_clusters": [{k: known["cluster"][k] for k in ("id", "title", "claim")}],
+                                                    "main_adjudications": [known]})
+        out = execute_template(cfg, self.root)
+        self.assertIsNone(out["error"])
+        self.assertEqual([c["label"] for c in out["calls"]], ["review:beta-max", "grade:beta-max", "cluster:others"])
+        self.assertIn("EXISTING CLUSTERS", out["calls"][2]["prompt"])
+        adj = out["result"]["adjudications"][0]
+        self.assertEqual((adj["real"], adj["fromMainRun"]), (True, True))
+
+
+class Request(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def request(self, folder: Path, *extra) -> subprocess.CompletedProcess:
+        return subprocess.run([sys.executable, str(KIT / "request.py"), str(folder), "--repo-root", str(self.root), *extra],
+                              capture_output=True, text=True, timeout=60)
+
+    def test_prints_branch_files_the_template_sections_and_asks_the_operator(self):
+        folder = results_folder(self.root)
+        p = self.request(folder)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        out = p.stdout
+        self.assertIn("Branch: evidence/fixture-host-calibration-1", out)
+        for name in ("protocol.json", "observations.json", "scores.json", "results-table.md", "void-cells.json"):
+            self.assertIn(f"docs/evidence/2026-01-01/fixture-host-calibration-1/{name}", out)
+        headings = re.findall(r"^## .+$", (ROOT / ".github" / "pull_request_template.md").read_text(), re.M)
+        self.assertEqual(len(headings), 4)
+        positions = [out.find(h + "\n") for h in headings]
+        self.assertTrue(all(x >= 0 for x in positions), headings)
+        self.assertEqual(positions, sorted(positions), "the sections are in the template's order")
+        self.assertIn("run-main-1", out)
+        self.assertIn("pin: 1 of 1 PASS", out)
+        self.assertIn("judging profile gamma-high", out)
+        self.assertIn("the harness relays no operator text into workers", out)
+        last = out.strip().splitlines()[-1]
+        self.assertIn("please open the pull request yourself", last)
+        self.assertIn("never pushes", last)
+
+    def test_a_two_prong_pass_is_named_as_one(self):
+        run = json.loads((FIX / "run.json").read_text())
+        for lens in run["result"]["adjudications"][0]["lenses"]:
+            del lens["forbidden"]
+        path = self.root / "run-two-prong.json"
+        path.write_text(json.dumps(run))
+        p = self.request(results_folder(self.root, run=path))
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("review:beta-max PASS (2-prong, would fail)", p.stdout)
+        self.assertIn("missing from the lens schema: forbidden", p.stdout)
+
+    def test_never_runs_git_or_any_command(self):
+        src = (KIT / "request.py").read_text()
+        for word in ("subprocess", "os.system", "Popen", "os.exec"):
+            self.assertNotIn(word, src)
+
+    def test_refuses_a_folder_without_scores(self):
+        (self.root / "empty").mkdir()
+        p = self.request(self.root / "empty")
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("scores.json", p.stderr)
 
 
 if __name__ == "__main__":

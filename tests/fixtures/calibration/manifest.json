@@ -15,7 +15,9 @@
     {
       "id": "D-1",
       "severity": "S3",
-      "present_at": ["review0"],
+      "present_at": [
+        "review0"
+      ],
       "summary": "add raises on a negative argument instead of answering the sum",
       "cause": "the bound check in add rejects a < 0",
       "required_behaviour": "add answers the sum for any two numbers and never raises",
@@ -26,7 +28,10 @@
     {
       "id": "D-2",
       "severity": "S3",
-      "present_at": ["review0", "base0"],
+      "present_at": [
+        "review0",
+        "base0"
+      ],
       "summary": "add subtracts instead of adding",
       "cause": "add returns a - b",
       "required_behaviour": "add(a, b) answers a + b",
@@ -36,21 +41,62 @@
     }
   ],
   "cases": {
-    "pin": {"base": "base0", "category": "pin-tests", "tier": "T1", "finding": "D-2", "test_file": "tests/test_pin.py", "pass_rule": "the candidate's new tests fail at the base tree AND pass with the accepted source AND no file under the source directory changes AND lint is clean"},
-    "fix": {"base": "base0", "category": "fix", "tier": "T1", "finding": "D-2", "pass_rule": "the candidate's tests are green at its head AND red with the source restored to the base AND the accepted test is green against the candidate's source AND every changed file is in scope AND lint is clean"},
-    "review": {"base": "review0", "category": "review", "tier": "T1", "findings": ["D-1", "D-2"], "pass_rule": "PASS when every ground-truth finding is found AND adjudicated falseBlocking is 0 AND copiedFromHistory is false; PARTIAL when some but not all are found under the same two conditions; FAIL otherwise"}
+    "pin": {
+      "base": "base0",
+      "category": "pin-tests",
+      "tier": "T1",
+      "finding": "D-2",
+      "test_file": "tests/test_pin.py",
+      "pass_rule": "the candidate's new tests fail at the base tree AND pass with the accepted source AND no file under the source directory changes AND lint is clean",
+      "instructions": "Write it as a two-row test (two pairs of numbers)."
+    },
+    "fix": {
+      "base": "base0",
+      "category": "fix",
+      "tier": "T1",
+      "finding": "D-2",
+      "pass_rule": "the candidate's tests are green at its head AND red with the source restored to the base AND the accepted test is green against the candidate's source AND every changed file is in scope AND lint is clean",
+      "commit_prefix": "fix(mod): D-2 - "
+    },
+    "review": {
+      "base": "review0",
+      "category": "review",
+      "tier": "T1",
+      "findings": [
+        "D-1",
+        "D-2"
+      ],
+      "pass_rule": "PASS when every ground-truth finding is found AND adjudicated falseBlocking is 0 AND copiedFromHistory is false; PARTIAL when some but not all are found under the same two conditions; FAIL otherwise"
+    }
   },
   "paths": {
-    "source": ["src/mod.py"],
+    "source": [
+      "src/mod.py"
+    ],
     "source_dir": "src",
     "test_file": "tests/test_mod.py",
     "new_test_pattern": "^tests/test_.*\\.py$",
-    "allowed_extra": ["docs/MAP.md"],
+    "allowed_extra": [
+      "docs/MAP.md"
+    ],
     "map_file": "docs/MAP.md",
-    "accepted_test": {"from": "tests/test_mod.py", "to": "tests/test_zz_accepted.py"}
+    "accepted_test": {
+      "from": "tests/test_mod.py",
+      "to": "tests/test_zz_accepted.py"
+    },
+    "scratch_test": "tests/test_zz_scratch_{name}.py"
   },
-  "commands": {"test": "python3 -m unittest {files}", "test_report": "exit-code", "lint": "python3 -m py_compile {files}", "timeout_seconds": 120},
-  "checkout": {"links": []},
+  "commands": {
+    "test": "python3 -m unittest {files}",
+    "test_report": "exit-code",
+    "lint": "python3 -m py_compile {files}",
+    "timeout_seconds": 120,
+    "run_one": "python3 -m unittest {file}"
+  },
+  "checkout": {
+    "links": []
+  },
   "source_hashes": {},
-  "isolation": "candidate checkouts are history-less trees of the case base only; the accepted fix, the ground truth and this manifest stay outside every candidate's permitted paths"
+  "isolation": "candidate checkouts are history-less trees of the case base only; the accepted fix, the ground truth and this manifest stay outside every candidate's permitted paths",
+  "commit_rule": "the repository's commit hook refuses a commit that changes a file under src/ unless docs/MAP.md is staged in the same commit"
 }
