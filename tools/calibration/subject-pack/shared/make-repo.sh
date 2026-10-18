@@ -67,9 +67,10 @@ ACCEPTED=$(commit "$(tree "$HERE/trees/accepted")" "1767398400 +0000" \
   "fix(bounded): D-2 - a str chunk's bytes count against the limit, with its two-row pin in tests/test_pin.py" "$BASE")
 
 git -C "$REPO" update-ref refs/heads/main "$ACCEPTED"
-git -C "$REPO" tag review0 "$REVIEW"
-git -C "$REPO" tag base0 "$BASE"
-git -C "$REPO" tag accepted0 "$ACCEPTED"
+# the tags are plain refs: `git tag` turns into a signed annotated tag on a host with tag.gpgSign set
+git -C "$REPO" update-ref refs/tags/review0 "$REVIEW"
+git -C "$REPO" update-ref refs/tags/base0 "$BASE"
+git -C "$REPO" update-ref refs/tags/accepted0 "$ACCEPTED"
 git -C "$REPO" -c core.autocrlf=false -c core.eol=lf read-tree -u --reset main
 printf 'review0 %s\nbase0 %s\naccepted0 %s\n' "$REVIEW" "$BASE" "$ACCEPTED"
 

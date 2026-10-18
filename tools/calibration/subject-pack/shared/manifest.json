@@ -11,39 +11,39 @@
   "reference": "SPEC.md (the promise, the chunk kinds, the bound), the docstrings of src/bounded.py, and tests/test_bounded.py with its runner tests/run.py (the shipped harness)"
  },
  "commit_rule": null,
- "accepted_fix": "01e3acbcddb0474d7eda7ce3372eda9f0cfc37e4",
+ "accepted_fix": "4c1664069536293e87afba9027844cae45b6af98",
  "findings": [
   {
    "id": "D-1",
    "severity": "S3",
    "present_at": [
-    "5d5ad12d0cb1b378303d896319739ee9e7126d2c"
+    "9f93403b9cdb1d322962ada924c468af653ed19a"
    ],
    "summary": "read_bounded raises TypeError on a memoryview chunk, a bytes-like chunk its promise says it reads without raising",
    "cause": "chunk_kind does not classify a memoryview as a bytes-like (binary) chunk, so read_bounded takes it for an unsupported chunk and raises",
    "required_behaviour": "a memoryview chunk is read like any other bytes-like chunk: its bytes join the result within the limit, and read_bounded does not raise",
    "found_rule": "a finding says a memoryview chunk makes read_bounded raise (or reject it) instead of reading it",
    "cause_rule": "it locates the cause in chunk_kind's classification, which does not recognise memoryview as bytes-like",
-   "accepted_fix": "7e7b748116bb20b12f8b01f386c44848b384e39a"
+   "accepted_fix": "2b23fc8f2eb167b2a7ac2855b154d50e8ae2af5b"
   },
   {
    "id": "D-2",
    "severity": "S3",
    "present_at": [
-    "5d5ad12d0cb1b378303d896319739ee9e7126d2c",
-    "7e7b748116bb20b12f8b01f386c44848b384e39a"
+    "9f93403b9cdb1d322962ada924c468af653ed19a",
+    "2b23fc8f2eb167b2a7ac2855b154d50e8ae2af5b"
    ],
    "summary": "read_bounded returns more than limit bytes when the stream holds str chunks",
    "cause": "in read_bounded, a str chunk is appended once encoded without being counted against limit or cut to the room left, so neither the bound nor the stop applies to it",
    "required_behaviour": "a str chunk's UTF-8 bytes count against limit like any other chunk's, so the result never exceeds limit bytes whatever mix of str and bytes-like chunks the iterable yields",
    "found_rule": "a finding says str chunks are not counted against limit, so the result can exceed limit bytes",
    "cause_rule": "it locates the cause in read_bounded's handling of str chunks, which bypasses the bound",
-   "accepted_fix": "01e3acbcddb0474d7eda7ce3372eda9f0cfc37e4"
+   "accepted_fix": "4c1664069536293e87afba9027844cae45b6af98"
   }
  ],
  "cases": {
   "pin": {
-   "base": "7e7b748116bb20b12f8b01f386c44848b384e39a",
+   "base": "2b23fc8f2eb167b2a7ac2855b154d50e8ae2af5b",
    "category": "pin-tests",
    "tier": "T1",
    "finding": "D-2",
@@ -52,7 +52,7 @@
    "instructions": "Write it as a two-row test: two chunk streams, each with its limit and the exact bytes read_bounded must return."
   },
   "fix": {
-   "base": "7e7b748116bb20b12f8b01f386c44848b384e39a",
+   "base": "2b23fc8f2eb167b2a7ac2855b154d50e8ae2af5b",
    "category": "fix",
    "tier": "T1",
    "finding": "D-2",
@@ -61,7 +61,7 @@
    "commit_prefix": "fix(bounded): D-2 - "
   },
   "review": {
-   "base": "5d5ad12d0cb1b378303d896319739ee9e7126d2c",
+   "base": "9f93403b9cdb1d322962ada924c468af653ed19a",
    "category": "review",
    "tier": "T1",
    "findings": [
@@ -100,22 +100,22 @@
  "source_hashes": {
   ".gitattributes": "e055833a5f155a84220b48714edac4712d8218aef261ea8472fc5851bfcc7b21",
   "README.md": "07fea4df1cac0f0d14de02b137144f0f6bed93a42873188a74a56163c658ae71",
-  "make-repo.sh": "175392e64ad989ede59d3e2acff45a85875cdc82415681badb9aa040bcfeb8d9",
+  "make-repo.sh": "df8574e32f0d15d2153cdb4acbde1f5454b37331d230c61abab137b55e9d299a",
   "trees/accepted/.gitignore": "32dae3052f331ee34d628ef535709b301259a45df7c7522c4d35dcf49873f00b",
-  "trees/accepted/SPEC.md": "9344bf8f5ab4327aa02f5440ae878aa4e28f899aae22a789ebbbd3be29f7c631",
+  "trees/accepted/SPEC.md": "6de907c93c03b576d89be928924aed06d0f066932f1053d2d98a7e8fd19db8a5",
   "trees/accepted/src/__init__.py": "630f27c1aa4227584b29f5b14457a36c75ab48976f41073b52c5a0192187f011",
   "trees/accepted/src/bounded.py": "a1927f4b1bbd0492c3f711f9295fa0e349bd137758d8df90d1f6ee4849c0073b",
   "trees/accepted/tests/run.py": "fe8d8485c8b636871287b8a80aaa465e343690ad4966c6d1def9eda7d8afc47d",
   "trees/accepted/tests/test_bounded.py": "01a784c4f065211ae7663fe6fbb1edae2208a9eec3b49010aa55408c876c657e",
   "trees/accepted/tests/test_pin.py": "bccb393e88eca76029a5cdad179c979398d52d370013e15e82190365258c003a",
   "trees/base/.gitignore": "32dae3052f331ee34d628ef535709b301259a45df7c7522c4d35dcf49873f00b",
-  "trees/base/SPEC.md": "9344bf8f5ab4327aa02f5440ae878aa4e28f899aae22a789ebbbd3be29f7c631",
+  "trees/base/SPEC.md": "6de907c93c03b576d89be928924aed06d0f066932f1053d2d98a7e8fd19db8a5",
   "trees/base/src/__init__.py": "630f27c1aa4227584b29f5b14457a36c75ab48976f41073b52c5a0192187f011",
   "trees/base/src/bounded.py": "39d9920a1e9a6ce7d1d7431975c94024e3346b18d299154e503623fbaf7fd862",
   "trees/base/tests/run.py": "fe8d8485c8b636871287b8a80aaa465e343690ad4966c6d1def9eda7d8afc47d",
   "trees/base/tests/test_bounded.py": "01a784c4f065211ae7663fe6fbb1edae2208a9eec3b49010aa55408c876c657e",
   "trees/review/.gitignore": "32dae3052f331ee34d628ef535709b301259a45df7c7522c4d35dcf49873f00b",
-  "trees/review/SPEC.md": "9344bf8f5ab4327aa02f5440ae878aa4e28f899aae22a789ebbbd3be29f7c631",
+  "trees/review/SPEC.md": "6de907c93c03b576d89be928924aed06d0f066932f1053d2d98a7e8fd19db8a5",
   "trees/review/src/__init__.py": "630f27c1aa4227584b29f5b14457a36c75ab48976f41073b52c5a0192187f011",
   "trees/review/src/bounded.py": "4e582d678a1e0eae6a5b5500c6b399042e06e5cd4b95cef8c3d8f9303d2a7a24",
   "trees/review/tests/run.py": "fe8d8485c8b636871287b8a80aaa465e343690ad4966c6d1def9eda7d8afc47d",

@@ -1101,17 +1101,19 @@ class SharedPack(unittest.TestCase):
 
     def test_make_repo_ids_do_not_depend_on_the_host(self):
         # a hostile host: its own identity and dates in the environment, a clean filter on every file, CRLF conversion,
-        # signing on, a legacy commit encoding and another default branch; the ids are the same as on a clean one
+        # commit and tag signing on (with a signer that fails), a legacy commit encoding and another default branch; the
+        # build succeeds and the ids are the same as on a clean one
         home = self.root / "hostile"
         home.mkdir()
         (home / "attributes").write_text("* filter=hostile text eol=crlf\n")
         (home / "gitconfig").write_text(
             "[user]\n\tname = h\n\temail = h@localhost\n[init]\n\tdefaultBranch = trunk\n[core]\n\tautocrlf = true\n"
             f"\tattributesFile = {home / 'attributes'}\n[filter \"hostile\"]\n\tclean = sed s/a/b/\n\tsmudge = cat\n"
-            "[i18n]\n\tcommitEncoding = ISO-8859-1\n[commit]\n\tgpgSign = true\n[gpg]\n\tprogram = false\n")
+            "[i18n]\n\tcommitEncoding = ISO-8859-1\n[commit]\n\tgpgSign = true\n[tag]\n\tgpgSign = true\n[gpg]\n\tprogram = false\n")
         env = git_env(home)
         env.update(GIT_AUTHOR_NAME="x", GIT_AUTHOR_EMAIL="x@x", GIT_AUTHOR_DATE="2001-02-03T04:05:06Z",
-                   GIT_COMMITTER_NAME="y", GIT_COMMITTER_EMAIL="y@y", GIT_COMMITTER_DATE="2001-02-03T04:05:06Z", TZ="Asia/Kolkata")
+                   GIT_COMMITTER_NAME="y", GIT_COMMITTER_EMAIL="y@y", GIT_COMMITTER_DATE="2001-02-03T04:05:06Z", TZ="Asia/Kolkata",
+                   GIT_EDITOR="false")  # a step that wants an editor fails here instead of waiting for one
         p, ids = build_shared(self.root / "hostile-pack", env)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertEqual(ids, self.ids)
@@ -1162,6 +1164,21 @@ class SharedPack(unittest.TestCase):
             seen[name] = p.stdout.strip()
         self.assertEqual(seen, {"review": "raised TypeError", "base": "returned b'abcd'", "accepted": "returned b'abcd'"})
 
+
+    def test_the_spec_states_the_edges_of_the_promise_the_accepted_tree_keeps(self):
+        # the edges a review could otherwise report as other findings: the spec says how each behaves, and the accepted
+        # tree behaves so (a released memoryview holds no bytes; a limit of 0 still reads the first chunk, and no more)
+        for name in TREES:
+            spec = (PACK / "trees" / name / "SPEC.md").read_text()
+            self.assertIn("released", spec, name)
+            self.assertIn("with a limit of 0", spec, name)
+        probe = ("import sys; sys.path.insert(0, '.')\nfrom src.bounded import read_bounded\n"
+                 "v = memoryview(b'abc'); v.release()\n"
+                 "try:\n    read_bounded([v], 4)\nexcept ValueError:\n    print('released: ValueError')\n"
+                 "pulled = []\ndef gen():\n    for c in (b'a', b'b'):\n        pulled.append(c)\n        yield c\n"
+                 "print('limit 0:', read_bounded(gen(), 0), len(pulled))\n")
+        p = subprocess.run(["python3", "-c", probe], cwd=self.at("accepted"), env=self.env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(p.stdout.split("\n")[:2], ["released: ValueError", "limit 0: b'' 1"], p.stdout + p.stderr)
 
     # ---- the manifest (P3, P4) and grade.sh on this pack (P5) --------------------------------------------------------
     def manifest(self) -> dict:
