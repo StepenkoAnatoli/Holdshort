@@ -19,8 +19,9 @@
 // after it) by the run config and the null of `const PROMPTS` by the prompt files, record the filled script's hash in
 // the protocol's sources, and never edit it after the freeze. RUN = {
 //   "manifest": the subject pack's manifest.json, verbatim;
-//   "protocol": the frozen protocol.json, verbatim (profiles, review_only_profiles, judging_profile, classification,
-//               relayed_operator_text, frozen_at, retry_limit, runs_per_profile_per_task are read);
+//   "protocol": the frozen protocol.json without its sources (they record this filled script's hash), otherwise
+//               verbatim (profiles, review_only_profiles, judging_profile, classification, relayed_operator_text,
+//               frozen_at, retry_limit, runs_per_profile_per_task are read);
 //   "host": {"checkout_root": the directory holding the candidates' checkouts, made beforehand by
 //            historyless-checkout.sh as <checkout_root>/<run_tag>-<case>-<profile> on branch <run_tag>/<case>-<profile>;
 //            "adjudication_checkout": one history-less checkout of the review base for the lenses (not a candidate's);

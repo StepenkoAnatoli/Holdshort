@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Calibration kit** (`tools/calibration/`, docs/proposals/calibration-first-onboarding.md Items 2-4.2): the protocol template, the three-prong classification, the grader, lens and cluster prompts (the lens schema carries `forbidden`), history-less checkouts, mechanical grading from a subject-pack manifest, the observations builder, the workflow template with the relayed-request preamble, the request printer and the subject-pack format; tested by `tools/test_calibration_kit.py` in the regression gate; the shared pack, the evidence check and the qualification table are later units.
 - **CI runs the Claude Code adapter's Node suite.** `.github/workflows/regression-gate.yml` gains the job
   `adapter-tests` (display name `claude-code-adapter-tests`, ubuntu-24.04, `actions/setup-node` pinned by sha,
   Node 24) running `node --test hosts/claude-code/route.test.mjs` on the workflow's existing triggers. The

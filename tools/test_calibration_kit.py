@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -800,6 +801,78 @@ class Request(unittest.TestCase):
         p = self.request(self.root / "empty")
         self.assertEqual(p.returncode, 2)
         self.assertIn("scores.json", p.stderr)
+
+
+class Docs(unittest.TestCase):
+    def readme(self) -> str:
+        return (KIT / "README.md").read_text()
+
+    def test_every_kit_file_has_a_lineage_header(self):
+        for f in sorted(KIT.rglob("*")):
+            if f.is_file() and "__pycache__" not in f.parts:
+                head = "\n".join(f.read_text().splitlines()[:3])
+                self.assertIn("lineage", head.lower(), f.relative_to(KIT))  # protocol.template.json carries it as its _lineage key
+
+    def test_readme_lists_every_kit_file(self):
+        text = self.readme()
+        for f in sorted(KIT.rglob("*")):
+            if f.is_file() and "__pycache__" not in f.parts and f != KIT / "README.md":
+                self.assertIn(f"`{f.relative_to(KIT).as_posix()}`", text)
+
+    def test_readme_documents_the_observation_keys_the_adapter_reads(self):
+        section = md_section(self.readme(), "observations.json: the flat profile map")
+        for key in sorted(OBSERVATION_KEYS | USAGE_KEYS | {"tier", "score", "result"}):
+            self.assertIn(f"`{key}`", section, key)
+
+    def test_readme_numbers_the_run_protocol_rules(self):
+        section = md_section(self.readme(), "The run protocol")
+        for n in range(1, 6):
+            self.assertRegex(section, rf"(?m)^{n}\. \*\*.+\*\* \(Item 3\.{n}\)")
+
+    def test_readme_walks_the_onboarding_steps(self):
+        section = md_section(self.readme(), "How a host onboards a profile")
+        for step in ("Pack", "Protocol freeze", "Checkouts", "Fill", "Launch", "Grade", "Build", "Results", "Request"):
+            self.assertRegex(section, rf"(?m)^\d+\. \*\*{step}", step)
+
+    def test_readme_fill_command_matches_the_fill(self):
+        steps = md_section(self.readme(), "How a host onboards a profile")
+        blocks = [textwrap.dedent(b) for b in re.findall(r"^([ \t]*```bash\n.*?^[ \t]*```)", steps, re.S | re.M)]
+        block = next((b for b in blocks if "run-config.json > run.js" in b), "")
+        m = re.search(r"^python3 -c '(.*?)' tools/calibration run-config\.json > run\.js$", block, re.S | re.M)
+        self.assertIsNotNone(m, "the fill command")
+        with tempfile.TemporaryDirectory() as d:
+            cfg = run_config(Path(d))
+            (Path(d) / "run-config.json").write_text(json.dumps(cfg))
+            p = subprocess.run([sys.executable, "-c", m.group(1), str(KIT), str(Path(d) / "run-config.json")], capture_output=True, text=True, timeout=60)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertEqual(p.stdout, fill_template(cfg))
+
+    def test_subject_pack_readme_documents_every_manifest_field(self):
+        text = (KIT / "subject-pack" / "README.md").read_text()
+        manifest = json.loads((FIX / "manifest.json").read_text())
+        keys = {k for k in manifest if not k.startswith("_")}
+        for group in ("subject", "paths", "commands", "checkout"):
+            keys |= {f"{group}.{k}" for k in manifest[group]}
+        keys |= {f"findings[].{k}" for k in manifest["findings"][0]}
+        keys |= {f"cases.{c}.{k}" for c in manifest["cases"] for k in manifest["cases"][c]}
+        for k in sorted(keys):
+            self.assertIn(f"`{k}`", text, k)
+        self.assertIn("Isolation", text)
+
+    def test_shared_pack_is_a_stub_naming_the_unit_that_builds_it(self):
+        shared = KIT / "subject-pack" / "shared"
+        self.assertEqual(sorted(f.name for f in shared.iterdir()), ["README.md"])
+        text = (shared / "README.md").read_text()
+        self.assertIn("shared synthetic subject pack", text)
+        self.assertIn("not built here", text)
+
+    def test_changelog_and_readme_name_the_kit(self):
+        changelog = (ROOT / "CHANGELOG.md").read_text()
+        unreleased = changelog.split("## Unreleased", 1)[1].split("\n## ", 1)[0]
+        lines = [ln for ln in unreleased.splitlines() if "tools/calibration/" in ln]
+        self.assertEqual(len(lines), 1)
+        self.assertIn("calibration-first-onboarding", lines[0])
+        self.assertIn("(tools/calibration/README.md)", (ROOT / "README.md").read_text())
 
 
 if __name__ == "__main__":
