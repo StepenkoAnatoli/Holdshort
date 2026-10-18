@@ -174,6 +174,12 @@ def template_schema_version() -> int:
     return int(json.loads(TEMPLATE.read_text(encoding="utf-8")).get("schema_version") or 0)
 
 
+def template_statuses() -> tuple[str, ...]:
+    """The template's two status values ("{{frozen | run complete; ...}}"): a kit run's status is one of them exactly."""
+    raw = json.loads(TEMPLATE.read_text(encoding="utf-8")).get("status") or ""
+    return tuple(s.strip() for s in raw.strip().removeprefix("{{").removesuffix("}}").split(" | "))
+
+
 def kit_keys(protocol: dict) -> list[str]:
     present = []
     if isinstance(protocol.get("classification"), dict) and "prongs" in protocol["classification"]:
@@ -266,8 +272,8 @@ def kit_protocol_frozen(r: Report) -> None:
     if sv is None or sv < template_schema_version():
         r.fail(rule, f"schema_version {p.get('schema_version')!r} is below the kit template's {template_schema_version()}")
     status = p.get("status")
-    if not (isinstance(status, str) and (status == "frozen" or status.startswith("run complete"))):
-        r.fail(rule, f"status {status!r} is neither frozen nor run complete")
+    if status not in template_statuses():
+        r.fail(rule, f"status {status!r} is not one of the template's two values ({' | '.join(map(repr, template_statuses()))})")
     if not filled(p.get("run_id")):
         r.fail(rule, "run_id is not recorded")
     elif r.scores and r.scores.get("run_id") != p.get("run_id"):

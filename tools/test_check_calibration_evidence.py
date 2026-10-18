@@ -316,6 +316,22 @@ class KitRuns(unittest.TestCase):
         edit_json(folder, "protocol.json", lambda p: p.update(status="run complete; results in observations.json, scores.json, results-table.md and clusters.md; see amendments"))
         self.assertEqual(run_check(folder).returncode, 0)
 
+    def test_status_is_one_of_the_templates_two_values_exactly(self):
+        # F4: the template offers "frozen" and one run-complete line; a status that only begins like one is neither
+        template = read(KIT / "protocol.template.json")["status"].strip("{}")
+        frozen, complete = template.split(" | ")
+        for status in (frozen, complete):
+            with self.subTest(status):
+                folder = self.copy_pass("ok" + str(len(status)))
+                edit_json(folder, "protocol.json", lambda p, status=status: p.update(status=status))
+                self.assertEqual(run_check(folder).returncode, 0)
+        for i, status in enumerate(("run complete; but never frozen", "run complete", "frozen ", "Frozen", complete + " and more")):
+            with self.subTest(status):
+                folder = self.copy_pass(f"st{i}")
+                edit_json(folder, "protocol.json", lambda p, status=status: p.update(status=status))
+                fails = self.assert_fails_only(folder, "protocol-frozen")
+                self.assertIn(f"status {status!r} is not one of the template's two values", fails[0])
+
     def test_scores_that_disagree_with_the_records_fail(self):
         cases = [
             ("scores.json", lambda s: s["profiles"]["beta-max"]["review"].update(result="PARTIAL", **{"pass": False}), "scores-derivable"),
