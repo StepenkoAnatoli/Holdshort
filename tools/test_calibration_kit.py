@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -110,6 +111,28 @@ def grade(manifest: Path, task: str, cand: Path, env: dict) -> tuple[int, dict, 
     except ValueError:
         doc = {}
     return p.returncode, doc, p.stdout + p.stderr
+
+
+def md_section(text: str, heading: str) -> str:
+    """The body of a '## <heading>' section of a kit markdown file (run.template.js reads the prompts the same way)."""
+    m = re.search(r"^## " + re.escape(heading) + r"[ \t]*\n(.*?)(?=^## |\Z)", text, re.M | re.S)
+    if not m:
+        raise AssertionError(f"no '## {heading}' section")
+    return m.group(1).strip()
+
+
+def md_schema(text: str) -> dict:
+    body = md_section(text, "Output schema")
+    m = re.search(r"```json\n(.*?)\n```", body, re.S)
+    if not m:
+        raise AssertionError("no fenced json block under '## Output schema'")
+    return json.loads(m.group(1))
+
+
+PROTOCOL_KEYS = {"_lineage", "schema_version", "kit_version", "status", "run_id", "frozen_at", "revision", "host", "subject_pack", "profiles",
+                 "review_only_profiles", "runs_per_profile_per_task", "retry_limit", "cases", "sources", "source_hash_convention", "metrics",
+                 "accounting", "timing", "privacy", "limits", "classification", "judging_profile", "relayed_operator_text",
+                 "usage_window_readings", "amendments"}
 
 
 class Observations(unittest.TestCase):
@@ -419,6 +442,121 @@ class Scripts(unittest.TestCase):
         code, d, out = grade(pack / "manifest.json", "fix", self.root / "missing", self.env)
         self.assertEqual(code, 3, out)
         self.assertIn("error", d)
+
+
+class TemplateAndPrompts(unittest.TestCase):
+    def test_protocol_template_parses_and_carries_every_key(self):
+        doc = json.loads((KIT / "protocol.template.json").read_text())
+        self.assertEqual(set(doc), PROTOCOL_KEYS)
+        self.assertIn("run 3", doc["_lineage"])
+        self.assertIsNone(doc["run_id"], "the run id is recorded at the launch, never before")
+        self.assertEqual(doc["amendments"], [])
+        self.assertEqual((doc["runs_per_profile_per_task"], doc["retry_limit"]), (1, 0))
+        self.assertEqual([c["id"] for c in doc["cases"]], ["pin", "fix", "review"])
+        for c in doc["cases"]:
+            self.assertTrue({"id", "category", "tier", "base", "grading", "pass_rule"} <= set(c), c["id"])
+        self.assertEqual(doc["cases"][0]["category"], "pin-tests")  # the host category, not a protocol label (run 3 A-2)
+        self.assertIn("CRLF", doc["source_hash_convention"])
+        self.assertEqual(doc["classification"]["prongs"], ["holds", "reachable", "forbidden"])
+        jp = doc["judging_profile"]
+        self.assertTrue({"key", "model", "effort", "qualification", "limitation"} <= set(jp))
+        self.assertIn("judging profile not independently qualified", jp["limitation"])
+        rot = doc["relayed_operator_text"]
+        self.assertIsNone(rot["text"])
+        self.assertIn("relays no operator text", rot["statement"])
+        self.assertTrue({"mode", "prices_source", "rates_per_mtok", "statement"} <= set(doc["accounting"]))
+        self.assertTrue({"pack", "pack_version", "kind", "manifest_sha256"} <= set(doc["subject_pack"]))
+        self.assertTrue({"before", "after"} <= set(doc["usage_window_readings"]))
+
+    def test_the_fixture_protocol_is_a_filled_template(self):
+        tpl = json.loads((KIT / "protocol.template.json").read_text())
+        filled = json.loads((FIX / "protocol.json").read_text())
+        self.assertEqual(set(filled) - {"_comment"}, set(tpl) - {"_lineage"})
+        for key in ("subject_pack", "accounting", "classification", "judging_profile", "usage_window_readings"):
+            self.assertEqual(set(filled[key]), set(tpl[key]), key)
+        self.assertNotIn("{{", json.dumps(filled), "a placeholder left in a filled protocol")
+
+    def test_classification_names_three_prongs_the_s4_rule_and_the_rules_runs_produced(self):
+        text = (KIT / "classification.md").read_text()
+        definition = md_section(text, "Definition")
+        for word in ("holds at HEAD", "reachable", "admissible", "forbids"):
+            self.assertIn(word, definition)
+        self.assertIn("at most S4", definition)
+        rules = md_section(text, "Rules the runs produced")
+        self.assertIn("G-1", rules)
+        self.assertIn("G-2", rules)
+
+    def test_prompts_carry_their_output_schema_and_placeholders(self):
+        for name, required in (("grader", {"truth", "others", "falseBlocking", "copiedFromHistory", "notes"}),
+                               ("lens", {"claim", "lens", "holds", "reachable", "forbidden", "severity", "scratchTest", "why"}),
+                               ("cluster", {"clusters"})):
+            text = (KIT / f"{name}.prompt.md").read_text()
+            self.assertTrue(text.startswith("<!-- Lineage:"), name)
+            schema = md_schema(text)
+            self.assertEqual(schema["type"], "object", name)
+            self.assertEqual(set(schema["required"]), required, name)
+            used = set(re.findall(r"\{\{([a-z_]+)\}\}", md_section(text, "Prompt")))
+            self.assertTrue(used, f"{name}: no {{{{placeholder}}}} in the prompt")
+            documented = set(re.findall(r"^- `\{\{([a-z_]+)\}\}`", md_section(text, "Placeholders"), re.M))
+            self.assertEqual(used - documented, set(), f"{name}: placeholders used but not documented")
+
+    def test_lens_votes_real_only_on_all_three_prongs(self):
+        text = (KIT / "lens.prompt.md").read_text()
+        schema = md_schema(text)
+        self.assertEqual(schema["properties"]["forbidden"]["type"], "boolean")
+        self.assertIn("forbidden", schema["required"])
+        self.assertIn("a lens votes real only when holds is true, reachable is not no, and forbidden is true", md_section(text, "Vote rule"))
+        for lens in ("reproduce", "reachability", "refute"):
+            self.assertTrue(md_section(text, f"Lens: {lens}"), lens)
+        self.assertIn("{{classification}}", md_section(text, "Prompt"))
+        self.assertIn("{{classification}}", md_section((KIT / "grader.prompt.md").read_text(), "Prompt"))
+
+    def test_cluster_prompt_has_the_assignment_variant(self):
+        text = (KIT / "cluster.prompt.md").read_text()
+        self.assertIn("{{existing_clusters}}", md_section(text, "Assignment prompt"))
+
+
+# K3: no provider call, no credential, no host path, no session or run id anywhere in the kit.
+HYGIENE = [
+    ("an absolute host path", re.compile(r"(?<![\w.~$}{-])/(?:home|tmp|root|Users|var|opt|mnt|srv|versions|private)/")),
+    ("a Windows drive path", re.compile(r"\b[A-Za-z]:\\\\")),
+    ("a session id", re.compile(r"session_")),
+    ("a 32-hex id", re.compile(r"\b[0-9a-f]{32}\b")),
+    ("a workflow run id", re.compile(r"\bwf_[0-9a-f]{6,}")),
+    ("a MoonAliza name", re.compile(r"(?i)moonaliza|github-oauth")),
+    ("an environment read", re.compile(r"os\.environ|getenv|process\.env|\$\{?[A-Z_]*(?:KEY|TOKEN|SECRET)")),
+    ("a provider call", re.compile(r"(?i)urllib|http\.client|import requests|api\.anthropic|api\.openai|fetch\(")),
+]
+
+
+class Hygiene(unittest.TestCase):
+    def scan(self, root: Path):
+        hits = []
+        for f in sorted(root.rglob("*")):
+            if not f.is_file() or "__pycache__" in f.parts:
+                continue  # a bytecode cache is not kit content (and is git-ignored)
+            for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+                if n == 1 and line.startswith("#!"):
+                    continue  # the interpreter line
+                if "EXAMPLE:" in line:
+                    continue  # an example clearly marked as one
+                bare = re.sub(r"\{\{[^}]*\}\}", "", line)  # a {{placeholder}} may name anything
+                for what, rx in HYGIENE:
+                    if rx.search(bare):
+                        hits.append(f"{f.relative_to(root)}:{n}: {what}: {line.strip()[:120]}")
+        return hits
+
+    def test_the_kit_has_no_host_path_session_id_key_or_provider_call(self):
+        self.assertTrue(KIT.is_dir())
+        self.assertEqual(self.scan(KIT), [])
+
+    def test_the_scan_catches_each_kind(self):
+        with tempfile.TemporaryDirectory() as d:
+            bad = Path(d) / "bad.md"
+            samples = ["see /" + "home/user/x", "id session" + "_01ABC", "run " + "a" * 32, "run " + "wf_" + "4e9ef48d-066",
+                       "Moon" + "Aliza", "os." + "environ['X']", "fetch" + "(url)", "C:" + "\\\\Users"]
+            bad.write_text("\n".join(["# x"] + samples + ["{{/" + "tmp/ok}}", "EXAMPLE: /" + "tmp/ok"]) + "\n")
+            self.assertEqual(len(self.scan(Path(d))), len(samples))
 
 
 if __name__ == "__main__":
