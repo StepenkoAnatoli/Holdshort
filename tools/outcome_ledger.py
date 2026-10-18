@@ -9,7 +9,8 @@ re-routing `PreviousResult` is always shaped the way §8.5/§10.3 promises.
 
 Schema (required): task-id (non-empty string), outcome (one of accepted |
 verification-failed | partial | cost-overrun | cancelled | blocked | escalated),
-evidence {checks [{command, exit-code, output-ref}], actual-spend (number),
+evidence {checks [{command, exit-code, output-ref}], actual-spend (number, or null
+beside actual-spend-basis "estimate-only": Item 4),
 files-touched [string], notes (string)}, owner-profile (non-empty string).
 Optional, preserved verbatim: original-brief-fingerprint, class (the breaker's
 class tag — recording it here keeps the eval projection derivable from this
@@ -75,8 +76,14 @@ def validate(entry: dict) -> dict:
         if not isinstance(c["output-ref"], str):
             raise FailClosed("check output-ref must be a string")
     spend = ev["actual-spend"]
+    # Item 4 (docs/proposals/usage-windows-gate4.md): an estimate-only host has no bill, so a null spend is admitted only
+    # beside the marker; an unmarked null keeps the refusal below, and any other marker value is refused.
+    basis = ev.get("actual-spend-basis")
+    if "actual-spend-basis" in ev and basis != "estimate-only":
+        raise FailClosed('evidence actual-spend-basis must be "estimate-only" when present')
     try:
-        valid_spend = type(spend) in (int, float) and math.isfinite(spend) and spend >= 0
+        valid_spend = (spend is None and basis == "estimate-only") or (
+            type(spend) in (int, float) and math.isfinite(spend) and spend >= 0)
     except OverflowError:
         valid_spend = False
     if not valid_spend:
