@@ -595,6 +595,7 @@ class TemplateAndPrompts(unittest.TestCase):
 # K3: no provider call, no credential, no host path, no session or run id anywhere in the kit.
 HYGIENE = [
     ("an absolute host path", re.compile(r"(?<![\w.~$}{-])/(?:home|tmp|root|Users|var|opt|mnt|srv|versions|private)/")),
+    ("a /home/ or /tmp/ string", re.compile(r"/home/|/tmp/")),
     ("a Windows drive path", re.compile(r"\b[A-Za-z]:\\\\")),
     ("a session id", re.compile(r"session_")),
     ("a 32-hex id", re.compile(r"\b[0-9a-f]{32}\b")),
@@ -620,6 +621,7 @@ class Hygiene(unittest.TestCase):
                 for what, rx in HYGIENE:
                     if rx.search(bare):
                         hits.append(f"{f.relative_to(root)}:{n}: {what}: {line.strip()[:120]}")
+                        break  # one hit per line: the first rule it breaks
         return hits
 
     def test_the_kit_has_no_host_path_session_id_key_or_provider_call(self):
@@ -629,7 +631,7 @@ class Hygiene(unittest.TestCase):
     def test_the_scan_catches_each_kind(self):
         with tempfile.TemporaryDirectory() as d:
             bad = Path(d) / "bad.md"
-            samples = ["see /" + "home/user/x", "id session" + "_01ABC", "run " + "a" * 32, "run " + "wf_" + "4e9ef48d-066",
+            samples = ["see /" + "home/user/x", "cache x/" + "tmp/y", "id session" + "_01ABC", "run " + "a" * 32, "run " + "wf_" + "4e9ef48d-066",
                        "Moon" + "Aliza", "os." + "environ['X']", "fetch" + "(url)", "C:" + "\\\\Users"]
             bad.write_text("\n".join(["# x"] + samples + ["{{/" + "tmp/ok}}", "EXAMPLE: /" + "tmp/ok"]) + "\n")
             self.assertEqual(len(self.scan(Path(d))), len(samples))
@@ -873,6 +875,18 @@ class Docs(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         self.assertIn("calibration-first-onboarding", lines[0])
         self.assertIn("(tools/calibration/README.md)", (ROOT / "README.md").read_text())
+
+
+class Gate(unittest.TestCase):
+    def test_registered_in_the_regression_gate_after_the_host_artifacts(self):
+        spec = importlib.util.spec_from_file_location("run_regression", ROOT / "tools" / "run_regression.py")
+        gate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gate)
+        names = [name for name, _ in gate.CHECKS]
+        self.assertIn("test_calibration_kit", names)
+        i = names.index("test_claude_code_host_artifacts")
+        self.assertEqual(names[i + 1], "test_calibration_kit")
+        self.assertEqual(gate.CHECKS[i + 1][1][1:], ["tools/test_calibration_kit.py"])
 
 
 if __name__ == "__main__":
