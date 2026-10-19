@@ -229,7 +229,7 @@ def main(argv=None) -> int:
         print(f"qualification_table: {shown} is the generated table")
         return 0
     a.table.parent.mkdir(parents=True, exist_ok=True)
-    a.table.write_text(text, encoding="utf-8")
+    a.table.write_text(text, encoding="utf-8", newline="\n")
     print(f"qualification_table: written {shown}")
     return 0
 
