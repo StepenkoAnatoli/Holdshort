@@ -1,0 +1,46 @@
+{
+ "task-id": "sr-policy-6",
+ "outcome": "accepted",
+ "owner-profile": "cc-opus-high",
+ "original-brief-fingerprint": "741e97f587f75b1ad4c7e995545e51c070ecf6487271a04a452e84e08ce7447a",
+ "evidence": {
+  "checks": [
+   {
+    "command": "node --check docs/orchestration/smartrouter/route.mjs",
+    "exit-code": 0,
+    "output-ref": "exit 0 at every unit commit and on the integration head (lead's run)"
+   },
+   {
+    "command": "npx eslint docs/orchestration/smartrouter/route.mjs docs/orchestration/smartrouter/route.test.mjs",
+    "exit-code": 0,
+    "output-ref": "exit 0 (unit report and the lead's run)"
+   },
+   {
+    "command": "node --test docs/orchestration/smartrouter/route.test.mjs",
+    "exit-code": 0,
+    "output-ref": "red-first per deliverable with guard-removal proofs (reports/sr-policy-6-1.md, 43 proofs; fix round 8 more); 119/119 at base 145f78e, 135 at 1a4224a, 140/140 at 5860969 and after the rebase onto d488c79 (scratchpad/route-test-p6.log)"
+   },
+   {
+    "command": "node --test docs/orchestration/smartrouter/route.test.mjs (whole file)",
+    "exit-code": 0,
+    "output-ref": "the 119 base tests stay green; host-policy-1..4 goldens unchanged; the host-policy-5 assertions pinned to trace/policies/host-policy-5.json (byte-identical to the policy at 145f78e); all 12 typed references resolve against the committed store (reviewer re-derived each)"
+   },
+   {
+    "command": "refute-first review",
+    "exit-code": 0,
+    "output-ref": "wf_2168e10f-2db: review FIX (F1 S2 a reference path could leave the policy directory; F2 S2 a superseded acceptance still resolved), fix round 1 (f497ba7, 5860969 pre-rebase), re-review ACCEPT"
+   }
+  ],
+  "actual-spend": null,
+  "actual-tokens": 965306,
+  "files-touched": [
+   "docs/orchestration/smartrouter/host-policy.json",
+   "docs/orchestration/smartrouter/route.mjs",
+   "docs/orchestration/smartrouter/route.test.mjs",
+   "docs/orchestration/smartrouter/README.md",
+   "docs/orchestration/smartrouter/trace/policies/host-policy-5.json"
+  ],
+  "notes": "integrated by rebase onto d488c79 then fast-forward (eight unit commits ending 66ee3fc) plus the lead's fixture-root commit 58a08f2 (policyRoot: a fixture under <root>/trace/policies/ resolves against <root>, from the builder's note). Four workflow agents, 965306 harness tokens (not a bill). Revision 6: evidence typed; cc-opus-high keeps build-ui@T3, review@T1, fix@T2, pin-tests on 10 typed references; cc-fable-high review@T1 (one reference) and bare fix; dropped for want of outcome rows: cc-opus-high build-core@T3, build-tests@T3, research-collect@T2; cc-fable-high fix@T2 (to bare fix); cc-haiku-low docs-mechanical. Consequence: build-core, build-tests, research-collect and docs-mechanical above 15000 tokens are blocked until a host-pack calibration cell qualifies a delegate (run 4). seven_day 0.74 -> 0.75 over the unit.",
+  "actual-spend-basis": "estimate-only"
+ }
+}

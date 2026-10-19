@@ -9,15 +9,17 @@ itself. Every output it prints carries `Advisory: recommendation only — no dis
 
 | File | What it is |
 |---|---|
-| `host-policy.json` | The host's declared inputs: harness, authorization, accounting mode, prices, categories, profiles with qualification evidence, economics constants, opt-ins. Edited only by the lead. Current revision: `host-policy-4`. |
+| `host-policy.json` | The host's declared inputs: harness, authorization, accounting mode, prices, categories, profiles with qualification evidence, economics constants, opt-ins. Edited only by the lead. Current revision: `host-policy-6` (calibration-first evidence: every qualification backed by a typed evidence entry, section 'Calibration-first evidence'; difficulty tiers enforced since `host-policy-5`, section 'Difficulty tiers'). |
 | `route.mjs` | The adapter: CLI plus named exports. Node built-ins only. |
-| `route.test.mjs` | `node --test` suite, one test per SmartRouter fixture it mirrors, plus the three golden hand-walked decisions. The base tests and the goldens run on `host-policy-1`, the usage-window and host-policy-2 tests on `host-policy-2`, the host-policy-3 tests on `host-policy-3` (the fixtures below), the live policy on its own tests. |
+| `route.test.mjs` | `node --test` suite, one test per SmartRouter fixture it mirrors, plus the three golden hand-walked decisions. The base tests and the goldens run on `host-policy-1`, the usage-window and host-policy-2 tests on `host-policy-2`, the host-policy-3 tests on `host-policy-3`, the host-policy-4 tests on `host-policy-4`, the host-policy-5 tests on `host-policy-5` (the fixtures below), the live policy on its own tests. Since host-policy-6 the tests write the live policy's derivatives beside a copy of the committed store, because its typed references resolve against the policy file's directory. |
 | `trace/ledger.jsonl` | The Outcome Ledger: spec-v2 §10.5 records, append-only, never rewritten. |
 | `trace/decisions/<task>-<seq>.json` | One file per decision: the request, input and policy digests, the per-candidate gate walkthrough with reasons, the chosen profile, estimates vs accounting, the Brief. `hand-*.json` are the lead's hand-walked decisions from before the adapter existed. |
 | `trace/policies/host-policy-1.json` | The policy before revision 2, byte-identical to the one the hand-walked decisions and `sr-policy-2-1` were decided under. A test fixture, never edited: the goldens decide against it with `--policy`. It lives apart from `trace/decisions/`, whose `<task>-<seq>.json` names belong to decisions (a fixture there would block a task named `host-policy` at seq 1). `sr-policy-2-1`'s Brief names the fixture's first path, `trace/decisions/host-policy-1.json`; the decision file is a record and is not rewritten. |
 | `trace/policies/host-policy-2.json` | The policy before revision 3, byte-identical to the one the `sr-policy-3` decisions were bound to (sha256 `71e47f17...`). A test fixture, never edited: the host-policy-2 assertions and the usage-window tests run on it. |
 | `trace/policies/host-policy-3.json` | The policy before revision 4, byte-identical to the one the `sr-policy-4` decisions were bound to (sha256 `43fc8d9a...`). A test fixture, never edited: the host-policy-3 assertions (its table, validation and routing, revision 3's routing consequence, its usage tests, `committed policy (ii)`) run on it, and the tests that read the ledger for it stop at its freeze instant (2026-10-18T09:07:43Z). |
-| `trace/outcomes/<task>-<seq>.json` | The §10.3 Outcome objects that outcome records point at. |
+| `trace/policies/host-policy-4.json` | The policy before revision 5 (untiered), byte-identical to the one the `sr-policy-5` decision was bound to (sha256 `36094c90...`). A test fixture, never edited: the host-policy-4 assertions (its table, its routing, run 3's routing consequence, its rate tests) and the tiers tests' enforced derivatives run on it; the tests that read the ledger for it stop at its freeze instant (2026-10-18T18:56:28.087Z). |
+| `trace/policies/host-policy-5.json` | The policy before revision 6 (tiered, free-text production evidence), byte-identical to the one the `sr-policy-6` decisions were bound to (sha256 `47b14000...`). A test fixture, never edited: the host-policy-5 assertions (its table, its routing, the tiers section's routing consequence, its rate and dispatch tests) run on it. It carries no typed reference, so it loads from `trace/policies/`. |
+| `trace/outcomes/<task>-<seq>.json` | The §10.3 Outcome objects that outcome records point at. Since host-policy-6 also the outcome store the policy's typed production references resolve against (section 'Calibration-first evidence'). |
 | `trace/calibration-<n>/` | A graded calibration run: `observations.json` (per profile: the pin, fix and review grades and the tokens used), `results-table.md`, the lead's notes. Evidence for the qualification rules, read by `rate`, never written to the ledger. |
 | `trace/usage.jsonl` | The usage readings (the subscription's five-hour and seven-day windows) pasted by the lead with `route.mjs usage`. Append-only, never rewritten, separate from the ledger. |
 | `trace/qualification-stats.json` | Derived by `rate`. Regenerated on every run, never hand-edited. |
@@ -40,7 +42,9 @@ Run every command from the repository root. Node 24 must be on `PATH`.
    final**: change the inputs (scope, checks, data classes) and decide again; never dispatch around it. When no
    candidate is eligible the route is `blocked`, even if a profile outside `candidates` would pass: the
    Uncertainty line names it as a hint (`not among candidates: ...`), and only a fresh decision that lists it can
-   route to it. The adapter never emits `recommend-escalation` (friction item 13).
+   route to it. The adapter never emits `recommend-escalation` (friction item 13). Under host-policy-5 **declare the
+   request's `difficultyTier`** by the rubric in 'Difficulty tiers': an undeclared tier reads T3 for `build-core`,
+   `review` and `fix` and T2 for every other category, and several categories have no delegate qualified there.
 2. **Put the Brief in the builder's prompt** verbatim. The JSON after `Brief:` is the contract. Use the profile's
    model and effort exactly as the `Profile:` tuple says.
 3. **Record the dispatch before launching:**
@@ -84,12 +88,12 @@ Request fields: `taskId`, `objective`, `category`, `unit`, `permittedEffects`, `
 (default: the category's), `needsVision`, `dataClasses` (at least one), `projectStop` ({redSuite, gateOff, researchGateFailing}),
 `previousResult`, `deadline`, `now` (both ISO-8601; `now` is injected for determinism), `candidates` (default: every
 profile; it also bounds who may review), `allowDirect` (default true), `hostOptIns`. Three optional additions are accepted: `uncertainty: "high"`
-(the only way to reach `speculative`, and only with the host opt-in) and `requiredIsolation` (a lower bound on the
-§6 lattice). Every command takes `--trace <dir>` and `--policy <file>`. `dispatch`, `outcome`, `rate` and `usage`
+(the only way to reach `speculative`, and only with the host opt-in; it also raises the difficulty floor to T3), `requiredIsolation` (a lower bound on the
+§6 lattice) and `difficultyTier` (`"T1" | "T2" | "T3"`, section 'Difficulty tiers'). Every command takes `--trace <dir>` and `--policy <file>`. `dispatch`, `outcome`, `rate` and `usage`
 also take `--now <iso>`. `dispatch` requires `--project-stop <json>` and takes `--deviation <reason>`.
 
 Exit codes: 0 done; 2 invalid input, including a `now` earlier than the task's latest ledger event (the task clock
-is monotonic) and a usage reading `usage` refuses; 3 refused; 4 ledger integrity (an unparseable or non-§10.5 line,
+is monotonic), a `difficultyTier` below the floor under an enforced policy, and a usage reading `usage` refuses; 3 refused; 4 ledger integrity (an unparseable or non-§10.5 line,
 a seq gap, or a last line with no trailing newline; the same for an unparseable or unterminated `usage.jsonl`).
 The adapter refuses to append to a ledger it cannot read; it never skips a line. When writing a
 ledger line by hand, end it with a newline: the adapter refuses an unterminated last line rather than append onto
@@ -101,6 +105,7 @@ it, and the fix is to add the missing newline, which changes no record.
 |---|---|---|
 | Permissions, data classes, project stops | **enforced**: Gate 1 denies before anything else; a forbidden data class never reaches Gate 2. A request that declares no data class is invalid (exit 2): every dispatch transmits at least the objective and sources. `dispatch` re-walks Gate 1 with the project-stop state the lead passes as `--project-stop` (required), never with the snapshot taken at decide time | `decide`, `dispatch` |
 | Capability qualification and fingerprint freshness | **enforced**: declared `qualified-for`, `qualified-at`, `expires`, `headroom-tested`; equality with `expires` is expiry | `decide` |
+| Difficulty tier (host-policy-5) | **enforced** under `"difficulty-tiers": "enforced"`: a declared `difficultyTier` below the mechanical floor is exit 2; Gate 2 passes a profile only at the request's tier or above; the required reviewer is walked at `review@T1`; the tier is printed (`DifficultyTier`) and recorded on the decision, the Brief and the ledger decision record, so `dispatch`'s recheck binds it. Whether the declared tier is honest is **the lead's duty** (the rubric in 'Difficulty tiers') | `decide`, `dispatch`, lead |
 | Verification prerequisites | **enforced**: every category check must be named in `acceptanceChecks`; a required review needs a reviewer drawn from the request's `candidates` (never the lead-direct profile) that passes Gate 1 and Gate 2 for the `review` category, with headroom checked against the review median, and has a price. The decision file lists each would-be reviewer's first failing gate under `review-candidates` | `decide` |
 | Call slots (6 per task) | **enforced**: `used + 1 <= limit` in `decide` and again in `dispatch` | `decide`, `dispatch` |
 | Same-profile repairs (1 per task) | **enforced**: counted from the ledger by identity (harness, provider, model, effort, config); renaming a profile in the policy does not reset them | `decide`, `dispatch` |
@@ -117,14 +122,407 @@ it, and the fix is to add the missing newline, which changes no record.
 | Speculative shared budget | **enforced** when opted in: the decision record stores the set's `shared-budget.calls` as `speculative-calls`; `dispatch` refuses once the decision has that many dispatches, and refuses any profile outside the set, `--deviation` or not (spec-v2 §8.4) | `decide`, `dispatch` |
 | Counters across task-id renames | **the lead's duty**: the adapter keys every counter by `taskId`, so a renamed task would start from zero. Never rename a task to get slots back (spec-v2 §11.9) | lead |
 
+## Difficulty tiers (host-policy-5)
+
+Host-policy-5 adopts SmartRouter's difficulty-tiers proposal (`docs/proposals/difficulty-tiers.md` on SmartRouter
+main, PR #100, merged 2026-10-18 by the operator): Items 1-3 and 5 in the adapter and the policy. Item 4 (calibration
+run 4, the T3 cells) is a later unit. The proposal is the specification; where it leaves a choice the lead's
+decisions D1-D9 bind (section 'How the tiers proposal was applied'). The proposal's own status line still reads "draft
+proposal, not normative" and says that until an independent review accepts it "hosts MUST NOT emit or require" its
+fields; its review record shows revision 2 as `pending delta review`. This host emits and requires them anyway, on the
+operator's decision to merge PR #100 without the delta review and the lead's D1-D9 (policy finding 7, friction item
+22). A policy turns the rules on with the top-level
+key `"difficulty-tiers": "enforced"`; any other value is invalid (exit 2), and without the key a policy is untiered
+and the adapter behaves exactly as before: no `DifficultyTier` line, no `difficulty-tier` field, Gate 2 per category.
+One exception: `rate` splits a calibration observation that carries a tier under any policy (D8, below).
+The fixtures host-policy-1..4 are untiered, so every golden and every assertion on them is unchanged.
+
+**The tier scale** (proposal Item 1, quoted). "Three tiers, the same names for every category, with **predicates per
+category**: 'edit set' is meaningful for the building categories only, so each category defines its own T1 and T3
+tests and T2 is what is neither. A tier is a property of the **request**, declared by the host and recorded. It is not
+an estimate of tokens and not a price."
+
+| Category | T1 (all hold) | T3 (any holds) |
+|----------|---------------|----------------|
+| `fix`, `build-core`, `build-ui`, `build-tests` | the edit set (`permitted-effects` minus the architecture map) is at most two files in one module; the cause, or the rule, is named in the request; the acceptance checks run on an existing harness | the edit set spans more than three files or more than one seam; the cause is unknown; the acceptance checks need a new harness; the edit set includes the code that handles credentials, persistence, concurrency or an external service (the data class alone does not trigger it); `uncertainty` is `high` |
+| `pin-tests` | one rule, one existing harness, one test file | the rule spans two modules, or the harness does not exist (a fake, a recorder, a process boundary) |
+| `review` | one module against its own specification section, with the shipped tests as the harness for reproductions | two or more modules and their seam, where a finding can exist only in the interaction; or no shipped harness for reproductions; or the specification is incomplete and the review must say what it would have to say |
+| `research-collect` | the unknowns are enumerated and each names its owning page; the budget is under ten pages | an unknown with no known owning page; a contradiction between primary sources to resolve; a budget over thirty pages |
+| `docs-mechanical` | always T1 | never |
+
+"T2 is a request that is neither T1 nor T3 in its category."
+
+**The request declares its tier; the adapter enforces a floor** (D3, proposal Item 1 rules 1-2). The request carries
+`difficultyTier: "T1" | "T2" | "T3"` (any other value is exit 2, under any policy). The floor: `T3` when
+`uncertainty` is `"high"` or the edit set has more than three entries; `T2` when it has exactly three; `T1`
+otherwise; `docs-mechanical` is always `T1`. The edit set is `permittedEffects` without the entries ending in
+`ARCHITECTURE.md`. The floor reads only those structural fields: the rest of the predicates (a named cause, an
+existing harness, one seam) are the lead's to judge. A declared tier below the floor is an invalid request, naming
+both and the reason:
+
+```
+route.mjs: invalid request: difficultyTier T1 is below the floor T3 (edit set of 5 files, more than three); a declared tier above the floor is accepted as given, one below it never
+```
+
+A declared tier at or above the floor is accepted as given: the host may know the task is harder than it looks, never
+easier. An undeclared tier reads as the proposal's default, `T3` for a high-risk category (`build-core`, `review`,
+`fix`) and `T2` for every other one, raised to the floor if the floor is higher. Under an untiered policy a
+`difficultyTier` is checked for form only (no floor), and the Uncertainty line then carries `difficulty tiers: not
+enforced by this policy`; nothing else changes.
+
+**Gate 2 reads the tier** (D4, proposal Item 3). A profile passes for the request's category only when it holds the
+category at the request's tier or above: a qualification at tier k covers every lower tier, and a bare entry reads
+`@T1`. The reason names both, `<id> not qualified for <category>@<tier> (holds <category>@T<j>)`; a profile holding
+nothing of the category keeps `<id> not qualified for <category>`. Nothing else in the gates changes. An empty
+eligible set at the request's tier stays `blocked` (no new route, no `recommend-escalation`), and the existing hint
+(`not among candidates: ... would pass all five gates`, the decision's `eligible-outside-candidates`) names a profile
+outside the candidates that would pass (friction item 21).
+
+**The required reviewer is walked at `review@T1`** (D5). The reviewer of a `build-*` or `fix` unit is chosen as
+before, with Gates 1-2 for the `review` category at the review median. Under an enforced policy that walk requires
+`review@T1`, whatever the unit's tier: the review of a unit is its own request when the lead dispatches it, with its
+own declared tier. The alternative, walking the reviewer at the unit's tier, would block every T2 and T3 unit until a
+`review@T2` or higher profile exists; the lead set it aside. The review the lead dispatches declares its own tier, and
+under host-policy-5 a review above T1 has no delegate (below).
+
+**Printed and recorded** (D6, proposal Item 1 rule 3). Under an enforced policy the decision text carries
+`DifficultyTier: T<k>` directly after the unchanged `Difficulty` line (its enum stays `trivial | moderate |
+high-or-ambiguous`), and `difficulty-tier` is recorded on the decision file's `decision`, on the Brief (additive,
+spec-v2 §13; `conform_spec.check_brief` checks required keys only) and on the ledger decision record (additive, as
+`usage-tokens` is). The Brief's field is inside its fingerprint, so `dispatch`'s pre-dispatch recheck binds the tier:
+a decision made under host-policy-5 dispatches as decided. A decision taken under an untiered revision cannot be
+dispatched under an enforced one: its recomputed Brief gains `difficulty-tier`, and `dispatch` refuses with `the
+Brief changed since decision seq N; decide again (changed: difficulty-tier)`, even where the route is unchanged. Decide
+such a task again. The ledger held no pending decision when host-policy-5 landed: at the base commit (`69b8e3f`)
+every task's latest decision was blocked or followed by a dispatch (`sr-policy-3` seq 2 is a delegate decision with
+no dispatch, superseded by seq 3, and `dispatch` acts only on a task's latest decision); the suite asserts it on the
+ledger frozen at that commit.
+
+**The learning loop and `rate`** (D7, D8). Under an enforced policy the outcome streams are per (profile, category,
+tier): `qualification-stats.json` keys read `fix@T1`, the demotion proposal `demote <profile> from <category>@T<k>:
+...` and the qualify proposal `qualify <profile> for <category>@T<k>: ...`. An outcome counts at the tier of the
+decision its dispatch was made under; a decision without a tier (every one before host-policy-5) counts at `T1`. A
+calibration observation's task object (`pin`, `fix`, `review`) may carry `"tier": "T2" | "T3"` (run 4 will); its
+`CALIBRATION` line then reads `<category>@T<k>` and counts apart. Runs 1-3 carry none and print as before. The split
+applies under any policy, tiered or not: an observation's tier is a fact of the cell, not of the policy, so under an
+untiered policy a tiered observation also prints `<category>@T<k>` and is not counted in the bare line. Before
+host-policy-5 such an observation counted in the bare line; no committed trace holds one, so no untiered output
+changes (the lead may gate the split on an enforced policy instead, if D1 is read as overriding D8).
+
+**The lead's declaration rubric.** Before declaring T1, the lead checks, per category (a request that fails a T1 check
+is T2, and one that meets any T3 test in the table is T3):
+- `fix`, `build-core`, `build-ui`, `build-tests`: the edit set is at most two files in one module; the objective names the cause or the rule; every acceptance check runs on a harness that already exists; the edit set holds no credential, persistence, concurrency or external-service code; `uncertainty` is not `high`.
+- `pin-tests`: one rule, one test file, a harness that already exists (no new fake, recorder or process boundary).
+- `review`: one module, reviewed against its own specification section, with the shipped tests as the harness for reproductions.
+- `research-collect`: every unknown is enumerated with the page that owns it, and the budget is under ten pages.
+- `docs-mechanical`: always T1, and declared: an undeclared request reads T2, which no delegate holds.
+
+A request whose tier turned out wrong is a lesson for this rubric, recorded in the lead's notes, never an edit to the
+ledger (proposal 'Non-goals').
+
+**The re-declaration table** (D9, proposal Item 2 rule 2). Bare entries read `@T1`. That is the honest reading of the
+calibration-derived qualifications, whose cells are T1 by the table above; for the production-derived ones
+(`cc-opus-high`, `cc-fable-high`, `cc-fable-xhigh`) it would narrow them, so host-policy-5 re-declares each at the tier
+of the units that produced it, as Item 1 would have declared them ("would be T<k> by the table": they were not declared
+at the time, and they are sizing information, never calibration evidence). The three re-declared profiles take
+`qualified-at` 2026-10-18 and keep the reviewer `host-declared (lead), not independent`.
+
+| profile | entry | evidence line (in addition to the lines the profile already carries) |
+|---|---|---|
+| `cc-opus-high` | `build-core@T3` | `build-core@T3: pre-adapter units U1-U5 of github-sign-in (28 builds, RUN.md), multi-file units with new harnesses, would be T3 by the table; host-declared (lead), not independent` |
+| `cc-opus-high` | `build-ui@T3` | `build-ui@T3: accepted outcomes sr-policy-2 seq 3, sr-policy-3 seq 5, sr-policy-4 seq 4 (five files), sr-ci-item4 seq 3 (nine files), would be T3 by the table` |
+| `cc-opus-high` | `build-tests@T3` | `build-tests@T3: pre-adapter test units of U1-U5 (RUN.md), new harnesses (fakes, recorders), would be T3 by the table; host-declared (lead), not independent` |
+| `cc-opus-high` | `review@T1` | `review@T1: accepted outcomes sr-host-review seq 3, sr-host-rereview1 seq 3, sr-host-rereview2 seq 3 (one module against gates.md with the shipped tests), would be T1 by the table; calibration-1..3 review PASS` |
+| `cc-opus-high` | `fix@T2` | `fix@T2: accepted outcomes sr-host-fix1 seq 4, sr-host-fix2 seq 4 (three files, one module, cause named by the findings, existing harness), would be T2 by the table; two passes at T2 (rule 2.3)` |
+| `cc-opus-high` | `research-collect@T2` | `research-collect@T2: 26 research runs this session (RUN.md), 20-page budgets with enumerated unknowns, would be T2 by the table (budget over ten pages); host-declared (lead), not independent` |
+| `cc-opus-high` | `pin-tests` (bare) | unchanged (calibration-derived) |
+| `cc-fable-high` | `fix@T2` | `fix@T2: U5 fix rounds 3 and 4 (wf_1fcbe585-d1e, wf_7f80ebc5-5a8; src/main/github-signin.ts, its tests and fixtures: three files, cause named by the findings), would be T2 by the table; host-declared (lead), not independent` |
+| `cc-fable-high` | `review@T1` | `review@T1: U5 review and re-review rounds (wf_1fcbe585-d1e) and accepted outcome gsi-u5-rereview4 seq 3 (one module with the shipped tests), would be T1 by the table; calibration-1..3 review PASS` |
+| `cc-fable-high` | `pin-tests` (bare) | unchanged |
+| `cc-fable-xhigh` | every category it holds, `@T3` (`build-core@T3`, `build-ui@T3`, `build-tests@T3`, `review@T3`, `fix@T3`, `docs-mechanical@T3`, `research-collect@T3`, `pin-tests@T3`) | one line per entry: `<category>@T3: the lead-direct profile integrates every unit of every tier and fixes inline (U1-R11 d4c4bdb, U2-R15 d37652e); host-declared (lead), not independent; eligible only below direct-max-tokens` |
+| `cc-haiku-high` | `fix` (bare) | the added line `fix-x2-1 seq 3 accepted (five files, src/main and tests), would be T3 by the table: one pass at T3, not a qualification (rule 2.3)` |
+| every other profile | unchanged, bare | nothing added |
+
+**The routing consequence** (host-policy-5). `decide` on the live policy (feature-off derivative, as the tests use;
+the model id elided) prints, for a `fix` of 193000 tokens declared `T1`:
+
+```
+Difficulty:        high-or-ambiguous
+DifficultyTier:    T1
+Route:             delegate
+Profile:           (cc-haiku-high, claude-code-workflow-subagent, anthropic, <model>, high, workflow-subagent/structured-output@1)
+Reservations:      $3.19 conservative all-in bound, estimate only (work $0.10 + review $2.09 + brief overhead $1.00)
+```
+
+The same as host-policy-4: `cc-haiku-high` holds `fix` bare (T1), and the required reviewer `cc-sonnet-xhigh` holds
+`review` bare (T1). Declared `T2`, only the `fix@T2` holders pass, and `cc-opus-high` is the cheaper:
+
+```
+Difficulty:        high-or-ambiguous
+DifficultyTier:    T2
+Route:             delegate
+Profile:           (cc-opus-high, claude-code-workflow-subagent, anthropic, <model>, high, workflow-subagent/structured-output@1)
+Reservations:      $6.95 conservative all-in bound, estimate only (work $3.86 + review $2.09 + brief overhead $1.00)
+Gate walk (per candidate):
+  cc-fable-xhigh   direct    gate 5: direct unsuitable: 193000 tokens > direct-max-tokens 15000
+  cc-fable-max     delegate  gate 2: cc-fable-max not qualified for fix
+  cc-fable-high    delegate  eligible, all-in $12.74
+  cc-fable-medium  delegate  gate 2: cc-fable-medium not qualified for fix@T2 (holds fix@T1); context: 193000 tokens not below headroom-tested 172000 on cc-fable-medium
+  cc-opus-max      delegate  gate 2: cc-opus-max not qualified for fix
+  cc-opus-xhigh    delegate  gate 2: cc-opus-xhigh not qualified for fix@T2 (holds fix@T1)
+  cc-opus-high     delegate  eligible, all-in $6.95
+  cc-opus-medium   delegate  gate 2: cc-opus-medium not qualified for fix@T2 (holds fix@T1); context: 193000 tokens not below headroom-tested 154000 on cc-opus-medium
+  cc-sonnet-xhigh  delegate  gate 2: cc-sonnet-xhigh not qualified for fix
+  cc-sonnet-high   delegate  gate 2: cc-sonnet-high not qualified for fix@T2 (holds fix@T1); context: 193000 tokens not below headroom-tested 183000 on cc-sonnet-high
+  cc-sonnet-medium delegate  gate 2: cc-sonnet-medium not qualified for fix@T2 (holds fix@T1); context: 193000 tokens not below headroom-tested 128000 on cc-sonnet-medium
+  cc-sonnet-low    delegate  gate 2: cc-sonnet-low not qualified for fix@T2 (holds fix@T1); context: 193000 tokens not below headroom-tested 114000 on cc-sonnet-low
+  cc-haiku-high    delegate  gate 2: cc-haiku-high not qualified for fix@T2 (holds fix@T1)
+  cc-haiku-medium  delegate  gate 2: cc-haiku-medium not qualified for fix@T2 (holds fix@T1); context: 193000 tokens not below headroom-tested 183000 on cc-haiku-medium
+  cc-haiku-low     delegate  gate 2: cc-haiku-low not qualified for fix; context: 193000 tokens not below headroom-tested 175000 on cc-haiku-low
+```
+
+Undeclared, a `fix` reads `T3` (a high-risk category). No delegate holds `fix@T3`; `cc-fable-xhigh` does, as the
+lead-direct profile, eligible only below `direct-max-tokens`, so it fails Gate 5:
+
+```
+Difficulty:        high-or-ambiguous
+DifficultyTier:    T3
+Route:             blocked
+Profile:           none — blocked
+Reservations:      unknown/blocked
+Gate walk (first failing gate and reason per candidate):
+  cc-fable-xhigh   direct    gate 5: direct unsuitable: 193000 tokens > direct-max-tokens 15000
+  cc-fable-max     delegate  gate 2: cc-fable-max not qualified for fix
+  cc-fable-high    delegate  gate 2: cc-fable-high not qualified for fix@T3 (holds fix@T2)
+  cc-fable-medium  delegate  gate 2: cc-fable-medium not qualified for fix@T3 (holds fix@T1); context: 193000 tokens not below headroom-tested 172000 on cc-fable-medium
+  cc-opus-max      delegate  gate 2: cc-opus-max not qualified for fix
+  cc-opus-xhigh    delegate  gate 2: cc-opus-xhigh not qualified for fix@T3 (holds fix@T1)
+  cc-opus-high     delegate  gate 2: cc-opus-high not qualified for fix@T3 (holds fix@T2)
+  cc-opus-medium   delegate  gate 2: cc-opus-medium not qualified for fix@T3 (holds fix@T1); context: 193000 tokens not below headroom-tested 154000 on cc-opus-medium
+  cc-sonnet-xhigh  delegate  gate 2: cc-sonnet-xhigh not qualified for fix
+  cc-sonnet-high   delegate  gate 2: cc-sonnet-high not qualified for fix@T3 (holds fix@T1); context: 193000 tokens not below headroom-tested 183000 on cc-sonnet-high
+  cc-sonnet-medium delegate  gate 2: cc-sonnet-medium not qualified for fix@T3 (holds fix@T1); context: 193000 tokens not below headroom-tested 128000 on cc-sonnet-medium
+  cc-sonnet-low    delegate  gate 2: cc-sonnet-low not qualified for fix@T3 (holds fix@T1); context: 193000 tokens not below headroom-tested 114000 on cc-sonnet-low
+  cc-haiku-high    delegate  gate 2: cc-haiku-high not qualified for fix@T3 (holds fix@T1)
+  cc-haiku-medium  delegate  gate 2: cc-haiku-medium not qualified for fix@T3 (holds fix@T1); context: 193000 tokens not below headroom-tested 183000 on cc-haiku-medium
+  cc-haiku-low     delegate  gate 2: cc-haiku-low not qualified for fix; context: 193000 tokens not below headroom-tested 175000 on cc-haiku-low
+```
+
+A `fix` whose `permittedEffects` hold five files has the floor `T3`, so declaring it `T1` is the invalid request quoted
+above. A `review` of 209000 tokens declared `T1` routes as under host-policy-4:
+
+```
+Difficulty:        high-or-ambiguous
+DifficultyTier:    T1
+Route:             delegate
+Profile:           (cc-sonnet-xhigh, claude-code-workflow-subagent, anthropic, <model>, xhigh, workflow-subagent/structured-output@1)
+Reservations:      $3.09 conservative all-in bound, estimate only (work $2.09 + review $0.00 + brief overhead $1.00)
+```
+
+Undeclared, a `review` reads `T3`, which only the lead-direct profile holds: blocked, every delegate failing Gate 2
+with `<id> not qualified for review@T3 (holds review@T1)` or `not qualified for review`:
+
+```
+Difficulty:        high-or-ambiguous
+DifficultyTier:    T3
+Route:             blocked
+Profile:           none — blocked
+Reservations:      unknown/blocked
+```
+
+A `build-ui` request of 250000 tokens, undeclared, reads `T2` (normal risk); `cc-opus-high` holds `build-ui@T3`:
+
+```
+Difficulty:        moderate
+DifficultyTier:    T2
+Route:             delegate
+Profile:           (cc-opus-high, claude-code-workflow-subagent, anthropic, <model>, high, workflow-subagent/structured-output@1)
+Reservations:      $8.09 conservative all-in bound, estimate only (work $5.00 + review $2.09 + brief overhead $1.00)
+```
+
+A `docs-mechanical` request declared `T3` is above its `T1` floor, so it is accepted as declared. The only
+`docs-mechanical@T3` holder is `cc-fable-xhigh`, direct only: at the 92000-token median the route is blocked
+(`cc-haiku-low not qualified for docs-mechanical@T3 (holds docs-mechanical@T1)`); at 15000 tokens or fewer it is
+`direct` to the lead.
+
+```
+Difficulty:        trivial
+DifficultyTier:    T3
+Route:             blocked
+Profile:           none — blocked
+Reservations:      unknown/blocked
+```
+
+So under host-policy-5 a T1 request routes as under host-policy-4, a `fix` or `research-collect` request at T2, and a
+`build-*` request at T2 or T3, goes to `cc-opus-high`; a `fix`, `review`, `pin-tests` or `research-collect` request at
+T3, and a `review`, `pin-tests` or `docs-mechanical` request at T2, is blocked until a calibration run qualifies a
+profile there (run 4 adds T3 cells, not T2: a T2 request then routes to the cheapest profile qualified at T3). The default matters: an undeclared `pin-tests` or
+`docs-mechanical` request reads `T2`, and every holder of those categories is bare (T1), so it is blocked; declared
+`T1` it routes to `cc-haiku-low` as before. The lead declares every request's tier.
+
+## Calibration-first evidence (host-policy-6)
+
+Host-policy-6 adopts Item 1 of SmartRouter's calibration-first onboarding proposal
+(`docs/proposals/calibration-first-onboarding.md` on SmartRouter main, PR #102, merged 2026-10-18 by the operator): no
+hand-declared qualification. Every `qualified-for` entry is backed by a typed evidence entry, and the adapter's
+validator resolves typed production references against the outcome store. Items 2-4 (the kit under one path, the
+shared subject pack, the evidence-folder CI check and the generated qualification table) are upstream units that
+follow. The proposal is the specification; where it leaves a choice the lead's decisions E1-E7 bind (section 'How
+the onboarding proposal was applied'). Revision 5's difficulty tiers stay in force: the proposal's Item 1.4 says the
+two proposals' re-declarations are one revision when both land; here they are two consecutive revisions, and this one
+rewrites revision 5's production-derived entries into the typed form or drops them.
+
+Like the tiers proposal, this one still opens with its draft status:
+
+> Status: **draft proposal, not normative; revision 2 after the independent review of 2026-10-18 (Request Changes on c53cd77).** Nothing in `skills/` is amended by this document. If accepted after independent review (plan §15), the items below would become one additional host-policy validation rule, one new tools path holding the calibration kit, one evidence-folder contract with a CI check, and an additive host-policy field; until then hosts MUST NOT emit or require them.
+
+and its review record ends with `| 1-5 (revision 2) | pending delta review | — | — |`. This host requires typed
+evidence anyway, on the operator's decision to merge PR #102 and the lead's E1-E7 (policy finding 2 of host-policy-6;
+friction item 22 applies to this proposal as it did to the tiers one).
+
+**Two typed evidence forms** (E1). A profile's `evidence` may carry:
+
+- (a) the **grade entry**, as before: `calibration-<n>: <category>[@T<k>] PASS|PARTIAL|FAIL (n=<k>)`, a tierless
+  entry read `@T1`;
+- (b) the **typed production reference**: `outcome: <task-id> <category>[@T<k>] accepted <ISO date> (<path>)`,
+  optionally followed by `; <note>`. `<path>` is the outcome file the host writes, `trace/outcomes/<task>-<seq>.json`,
+  relative to the policy file's directory, never to `--trace`, so a test's temp trace does not interfere and an
+  upstream copy of the policy with its trace resolves. The path **cannot leave the policy file's directory**: a `..`
+  that climbs out of it (`../x/trace/outcomes/...`, `trace/../../x/trace/outcomes/...`) or a symlink that points out
+  of it is refused (exit 2, `<path> leaves the policy file's directory <dir>`), whether or not the file is there, so
+  a store that is never committed with the policy, such as a temp trace, cannot back a qualification (sr-policy-6 fix
+  round 1, F1); a `..` that stays inside is only a spelling. `<ISO date>` is a day, `YYYY-MM-DD`.
+
+Any evidence line that starts `outcome:` is checked for form from the policy alone (the literal `accepted`, a tier
+T1-T3, a category the policy has, a calendar day, a relative `/`-separated path naming `outcomes/<task-id>-<seq>.json`)
+and then **resolved**: the file must lie inside the policy file's directory (F1), exist, parse as a §10.3 Outcome of
+that task, be `accepted`, be owned by the referencing profile, be the **latest outcome record of its dispatch** (one
+outcome per dispatch, spec-v2 §10.5 and decision-trace.md §4, the rule `rate` counts by: a later outcome record for
+the same dispatch supersedes it whatever its value, and the reference is refused as `<path> is superseded by outcome
+record <task> seq <n> (<value>) for the same dispatch (seq <d>)`; F2), have been recorded on that day (the Outcome's own `ts`, else its outcome record `<task> seq
+<seq>` in the store's `ledger.jsonl`; this host's Outcomes carry no `ts`), and the task must have been decided in that
+category (its decision file under the store's `decisions/`, as `categoryMap()` reads it). The tier on a reference is
+the host's declaration: when the task's decision carries `difficulty-tier` the two must match; when it does not (every
+decision before revision 5) any declared tier is accepted, and the line must then say `would be T<k> by the table`.
+A bare reference reads T1. An unresolvable reference is an invalid policy: exit 2, the reason naming the profile and
+the entry, from every command (`decide`, `dispatch`, `outcome`, `status`, `rate`, `usage`; E7).
+
+**Supported entries** (E2). Under a policy that carries the top-level key `"evidence": "typed"` (the adopting switch,
+in the shape of revision 5's `"difficulty-tiers"`; any other value is exit 2; absent, the old behaviour, so the
+fixtures host-policy-1..5 load unchanged), every `qualified-for` entry `<category>[@T<k>]` (bare reads `@T1` under an
+enforced-tiers policy, else untiered) needs at least one supporting evidence entry: a grade entry with PASS for that
+category at tier >= k (a tierless grade entry is T1), or a production reference for it at tier >= k. A PARTIAL or FAIL
+grade entry supports nothing. The validator still counts no passes (the lead's rules do); an entry with nothing typed
+behind it is exit 2 naming the profile and the entry: `invalid policy: profile <id> qualified-for '<entry>' has no
+typed evidence behind it (a PASS grade entry or an accepted outcome reference for <category> at T<k> or above; free
+text supports nothing)`. Extra references that support no entry are allowed: they are the record. A new profile with
+no evidence is valid only as `qualified-for: []` (the proposal's onboarding state: present, priced, unroutable).
+
+**The lead-direct profile is exempt** (E3) from E2 (`economics.lead-direct-profile`, `cc-fable-xhigh`): its
+qualifications are the operator's authorization of the lead's own inline work, not a capability claim about a
+delegate, and dropping them would make `direct` unroutable for every bounded task. Its typed lines, if it had any,
+would still be resolved. The proposal has no exemption clause (policy finding 3, friction item 23).
+
+**Free text stays as prose** (E4). The existing free-text evidence lines ("302 completed dispatches ...",
+"sr-policy-2 outcome accepted ...", revision 5's re-declaration lines) are kept as the record, but free text supports
+nothing. Revision 6 rewrites each production-derived entry of revision 5 into form (b) where the outcome store holds
+the outcome, and drops the entry where it does not (the proposal's Item 1.1 last sentence); the line of a dropped entry
+stays as prose with the suffix `; entry dropped in host-policy-6 (no outcome row to reference)`.
+
+**Revision 6** (E5) is revision 5 plus `"evidence": "typed"` and this table. Every changed profile carries
+`qualified-at: 2026-10-18`.
+
+| profile | entry | action |
+|---|---|---|
+| `cc-opus-high` | `build-ui@T3` | kept; references (each against a decision without a tier): `outcome: sr-policy-2 build-ui@T3 accepted 2026-10-17 (trace/outcomes/sr-policy-2-3.json); would be T3 by the table (five permitted files; the decision predates revision 5 and carries no tier)`<br>`outcome: sr-policy-3 build-ui@T3 accepted 2026-10-18 (trace/outcomes/sr-policy-3-5.json); would be T3 by the table (five permitted files; the decision predates revision 5 and carries no tier)`<br>`outcome: sr-policy-4 build-ui@T3 accepted 2026-10-18 (trace/outcomes/sr-policy-4-4.json); would be T3 by the table (five permitted files; the decision predates revision 5 and carries no tier)`<br>`outcome: sr-ci-item4 build-ui@T3 accepted 2026-10-18 (trace/outcomes/sr-ci-item4-3.json); would be T3 by the table (nine permitted files; the decision predates revision 5 and carries no tier)`<br>`outcome: sr-policy-5 build-ui@T3 accepted 2026-10-18 (trace/outcomes/sr-policy-5-3.json); would be T3 by the table (six permitted files; the decision predates revision 5 and carries no tier)` |
+| `cc-opus-high` | `review@T1` | kept (also supported by the calibration-1..3 review PASS, T1); references: `outcome: sr-host-review review@T1 accepted 2026-10-17 (trace/outcomes/sr-host-review-3.json); would be T1 by the table (one module against gates.md with the shipped tests; the decision predates revision 5 and carries no tier)`<br>`outcome: sr-host-rereview1 review@T1 accepted 2026-10-17 (trace/outcomes/sr-host-rereview1-3.json); would be T1 by the table (one module against gates.md with the shipped tests; the decision predates revision 5 and carries no tier)`<br>`outcome: sr-host-rereview2 review@T1 accepted 2026-10-17 (trace/outcomes/sr-host-rereview2-3.json); would be T1 by the table (one module against gates.md with the shipped tests; the decision predates revision 5 and carries no tier)` |
+| `cc-opus-high` | `fix@T2` | kept; references: `outcome: sr-host-fix1 fix@T2 accepted 2026-10-17 (trace/outcomes/sr-host-fix1-4.json); would be T2 by the table (three files, one module, cause named by the findings; the decision predates revision 5 and carries no tier)`<br>`outcome: sr-host-fix2 fix@T2 accepted 2026-10-17 (trace/outcomes/sr-host-fix2-4.json); would be T2 by the table (three files, one module, cause named by the findings; the decision predates revision 5 and carries no tier)` |
+| `cc-opus-high` | `pin-tests` | kept (the calibration grade entries) |
+| `cc-opus-high` | `build-core@T3`, `build-tests@T3`, `research-collect@T2` | **dropped**: the units behind them (U1-U5, the research runs) predate the adapter and have no outcome rows; the revision-5 lines stay as prose with the dropped suffix |
+| `cc-fable-high` | `review@T1` | kept; reference `outcome: gsi-u5-rereview4 review@T1 accepted 2026-10-17 (trace/outcomes/gsi-u5-rereview4-3.json); would be T1 by the table (one module with the shipped tests; the decision predates revision 5 and carries no tier)`, plus the calibration grade entries |
+| `cc-fable-high` | `fix@T2` | **dropped to bare `fix`** (the calibration fix PASS x3 support `fix@T1`); the U5 fix-round line stays as prose with the dropped suffix |
+| `cc-fable-high` | `pin-tests` | kept |
+| `cc-fable-xhigh` | all | unchanged (E3) |
+| `cc-haiku-high` | `fix`, `pin-tests` | kept (grade entries); the fix-x2-1 line rewritten in place as `outcome: fix-x2-1 fix@T3 accepted 2026-10-18 (trace/outcomes/fix-x2-1-3.json); would be T3 by the table: one pass at T3, not a qualification` |
+| `cc-haiku-low` | `docs-mechanical` | **dropped**: the "one completed mechanical extraction dispatch" has no outcome row (its line stays as prose with the dropped suffix); `pin-tests` kept |
+| every other profile | unchanged | calibration-derived: the validator finds every entry supported by its own PASS grade entries (asserted entry by entry) |
+
+The "would be" notes give each decision's permitted-file count (`sr-policy-5`'s request named six files). Every
+reference resolves against the committed store as it stands: `loadPolicy` on `host-policy.json` succeeds.
+
+**Routing consequence** (E6). Under revision 6 no delegate holds `build-core`, `build-tests`, `research-collect` or
+`docs-mechanical`. A request in those categories above `direct-max-tokens` (15000) is **blocked**: every delegate
+fails Gate 2 with `<id> not qualified for <category>`, and the lead-direct profile fails Gate 5 on
+`direct unsuitable: <n> tokens > direct-max-tokens 15000`; at 15000 tokens or fewer the lead takes it inline
+(`direct`). A default `build-core` request (316000 tokens, undeclared, read `T3`):
+
+```
+Difficulty:        high-or-ambiguous
+DifficultyTier:    T3
+Route:             blocked
+Profile:           none — blocked
+Reservations:      unknown/blocked
+```
+
+```
+Gate walk (first failing gate and reason per candidate):
+  cc-fable-xhigh   direct    gate 5: direct unsuitable: 316000 tokens > direct-max-tokens 15000
+  cc-fable-max     delegate  gate 2: cc-fable-max not qualified for build-core; context: 316000 tokens not below headroom-tested 230000 on cc-fable-max
+  cc-fable-high    delegate  gate 2: cc-fable-high not qualified for build-core
+  cc-fable-medium  delegate  gate 2: cc-fable-medium not qualified for build-core; context: 316000 tokens not below headroom-tested 172000 on cc-fable-medium
+  cc-opus-max      delegate  gate 2: cc-opus-max not qualified for build-core; context: 316000 tokens not below headroom-tested 307000 on cc-opus-max
+  cc-opus-xhigh    delegate  gate 2: cc-opus-xhigh not qualified for build-core; context: 316000 tokens not below headroom-tested 246000 on cc-opus-xhigh
+  cc-opus-high     delegate  gate 2: cc-opus-high not qualified for build-core
+  cc-opus-medium   delegate  gate 2: cc-opus-medium not qualified for build-core; context: 316000 tokens not below headroom-tested 154000 on cc-opus-medium
+  cc-sonnet-xhigh  delegate  gate 2: cc-sonnet-xhigh not qualified for build-core
+  cc-sonnet-high   delegate  gate 2: cc-sonnet-high not qualified for build-core; context: 316000 tokens not below headroom-tested 183000 on cc-sonnet-high
+  cc-sonnet-medium delegate  gate 2: cc-sonnet-medium not qualified for build-core; context: 316000 tokens not below headroom-tested 128000 on cc-sonnet-medium
+  cc-sonnet-low    delegate  gate 2: cc-sonnet-low not qualified for build-core; context: 316000 tokens not below headroom-tested 114000 on cc-sonnet-low
+  cc-haiku-high    delegate  gate 2: cc-haiku-high not qualified for build-core
+  cc-haiku-medium  delegate  gate 2: cc-haiku-medium not qualified for build-core; context: 316000 tokens not below headroom-tested 183000 on cc-haiku-medium
+  cc-haiku-low     delegate  gate 2: cc-haiku-low not qualified for build-core; context: 316000 tokens not below headroom-tested 175000 on cc-haiku-low
+```
+
+A `docs-mechanical` request declared `T1` (92000 tokens), which revision 5 routed to `cc-haiku-low` at $1.05:
+
+```
+Difficulty:        trivial
+DifficultyTier:    T1
+Route:             blocked
+Profile:           none — blocked
+Reservations:      unknown/blocked
+```
+
+A `build-tests` (250000) or `research-collect` (232000) request is blocked the same way, read `T2`. The remedy is
+calibration, not production: **Run 4 gains one T1 host-pack cell for each of `build-core`, `build-tests`,
+`research-collect` and `docs-mechanical`**, so that a profile can be qualified for them on graded evidence (one pass
+for a normal-risk category, two for `build-core`, rule 2) and the lead ratifies it with the grade entries. Until then
+those units are blocked or done by the lead inline; the consequence for the build run (RUN.md) is the lead's to
+report. `fix` at T1 and T2, `review` at T1, `build-ui` undeclared and `pin-tests` at T1 route as under revision 5:
+`cc-haiku-high` ($3.1865), `cc-opus-high` ($6.95), `cc-sonnet-xhigh` ($3.09), `cc-opus-high` ($8.09) and
+`cc-haiku-low` ($1.06). A `fix` declared `T2` now has one eligible profile, because `cc-fable-high` holds a bare `fix`:
+
+```
+Difficulty:        high-or-ambiguous
+DifficultyTier:    T2
+Route:             delegate
+Profile:           (cc-opus-high, claude-code-workflow-subagent, anthropic, <model>, high, workflow-subagent/structured-output@1)
+Reservations:      $6.95 conservative all-in bound, estimate only (work $3.86 + review $2.09 + brief overhead $1.00)
+```
+
+with `cc-fable-high` failing Gate 2 on `cc-fable-high not qualified for fix@T2 (holds fix@T1)`.
+
 ## Qualification table
 
 Status of every row: **host-declared, reviewer: lead, expires 2027-01-15**. The seven profiles whose qualifications
 host-policy-4 adds or removes carry the reviewer `host-declared (lead) from calibration-1, calibration-2 and
 calibration-3 grades` and `qualified-at` 2026-10-18. The other profiles whose qualifications host-policy-3 added or
 changed keep `host-declared (lead) from calibration-1 and calibration-2 grades`; `cc-opus-high`, `cc-fable-high` and
-`cc-fable-xhigh` keep their production qualifications, `qualified-at` and reviewer (`host-declared (lead), not
-independent`). Every profile gains the entries of each run. None of this is an independent review. Qualification is declared by the host, never inferred from price
+`cc-fable-xhigh` keep their production qualifications and reviewer (`host-declared (lead), not independent`);
+host-policy-5 re-declares those qualifications at the tier of the units that produced them, with `qualified-at`
+2026-10-18 (section 'Difficulty tiers'). Host-policy-6 requires typed evidence behind every entry of every profile but
+the lead-direct one: each production-derived entry is backed by typed references to accepted outcomes in the store, or
+dropped (section 'Calibration-first evidence'). Every profile gains the entries of each run. None of this is an independent review. Qualification is declared by the host, never inferred from price
 or label (gates.md, 'Qualification, freshness and pre-dispatch binding').
 
 ### Qualification rules (the lead's, from host-policy-2)
@@ -138,6 +536,22 @@ or label (gates.md, 'Qualification, freshness and pre-dispatch binding').
 4. The pin task (a bounded red-first pin, no source change) represents the normal-risk category `pin-tests` (median
    120000 tokens; verification: lint, the new tests green, guard-removal proof, the lead reads the diff), not
    `build-tests`: units of that size are 250000-token engine journeys the pin does not represent.
+5. **Per (category, tier)** (host-policy-5; SmartRouter `docs/proposals/difficulty-tiers.md` Item 2 rules 3-5,
+   quoted). Rules 1-4 apply at each tier, and a bare entry reads `@T1`:
+   > 3. The two-pass rule applies per (category, tier): a high-risk category needs two independent passes **at that
+   > tier** (calibration cells of that tier, or an accepted production outcome whose request carried that tier).
+   >
+   > 4. A calibration FAIL or a `verification-failed` outcome at tier k is a fail for tier k and every higher tier of
+   > the category, and blocks them until two later passes at that tier; lower tiers keep their standing. The learning
+   > loop's demotion proposal (two consecutive `verification-failed` outcomes) moves from (profile, category) to
+   > (profile, category, tier).
+   >
+   > 5. The return path after a block is **calibration, never production**: the two later passes come from kit cells
+   > at that tier (or an accepted outcome at that tier on another host policy that still routes there). Production
+   > routing on this host cannot grant them, because Gate 2 no longer routes the pair; so there is no deadlock, only a
+   > cost: a blocked pair stays blocked until a calibration run includes it. The host's one same-profile repair
+   > (R01-R03) is unaffected: it runs under the original allowance before any outcome is recorded and is not a fresh
+   > decision.
 
 So calibration run 1 (`trace/calibration-1/`, workflow run `wf_052c5f34-973`: twelve profiles, three graded tasks)
 qualifies every pin PASS for `pin-tests`, and nothing else: one `fix` or `review` PASS is one pass of a high-risk
@@ -185,7 +599,7 @@ the cell representative in kind. The size difference is held by three things: th
 after two consecutive `verification-failed` outcomes.
 
 **The routing consequence (host-policy-3; host-policy-4 moves the reviewer, below).** A default `fix` request (193000 tokens) fits only the fix-qualified profiles whose
-headroom admits it: `cc-haiku-high` (726k), `cc-opus-xhigh` (246k), `cc-opus-high` (848k), `cc-fable-high` (352k)
+headroom admits it: `cc-haiku-high` (726k), `cc-opus-xhigh` (246k), `cc-opus-high` (1030k), `cc-fable-high` (352k)
 (and the lead, whose direct path stops at 15k). Every other fix-qualified profile fails Gate 2 on its headroom. Each
 delegate carries the same required review at `cc-opus-high` ($4.18 for the 209000-token review median) and $1.00 of
 brief overhead, so the cheapest worker wins: **a default `fix` request now routes to `cc-haiku-high`**. `decide` on
@@ -284,7 +698,8 @@ and `cc-haiku-medium`'s 183k does not admit it, so the cheapest eligible worker 
 does change smaller fixes: a fix estimated below 175000 tokens, which host-policy-3 sent to `cc-haiku-low`, now goes
 to `cc-haiku-medium`, the cheapest fix-qualified profile whose 183k headroom admits it (a 150000-token fix:
 `cc-haiku-medium`, reviewer `cc-sonnet-xhigh`; pinned in the host-policy-4 routing test). `decide` on
-that request with the live policy (feature-off derivative, as the tests use) prints:
+that request with host-policy-4 (since revision 5 the `trace/policies/host-policy-4.json` fixture's feature-off
+derivative, as the tests use) prints:
 
 ```
 Route:             delegate
@@ -350,7 +765,151 @@ Restricted to their own candidates, the demoted, blocked and one-later-pass prof
 `review` limited to `cc-haiku-low`, `cc-haiku-medium`, `cc-haiku-high`, `cc-sonnet-medium` and `cc-opus-medium`; a
 `fix` limited to `cc-haiku-low`; a `pin-tests` request limited to `cc-fable-medium`.
 
-### The table (host-policy-4, generated from `host-policy.json`)
+### How the tiers proposal was applied (host-policy-5)
+
+Unit sr-policy-5 applied SmartRouter's difficulty-tiers proposal (section 'Difficulty tiers') under the lead's
+decisions, which bind where the proposal leaves a choice:
+
+- **D1.** Tiering is explicit per policy: `"difficulty-tiers": "enforced"` turns it on, any other value is exit 2, and
+  absent means untiered, which behaves exactly as before. The fixtures host-policy-1..4 stay untiered; revision 5 is
+  enforced.
+- **D2.** A `qualified-for` entry is `<category>` or `<category>@T1|T2|T3`; a bare entry reads `@T1`; one entry per
+  category on a profile (bare and tiered, or two tiers, is exit 2). The grade entry gains the optional tier,
+  `calibration-<n>: <category>[@T<k>] PASS|PARTIAL|FAIL (n=<k>)`, tierless read `@T1`. Both forms load under an
+  untiered policy too: the form is checked, the tier ignored.
+- **D3.** The request's optional `difficultyTier`, the mechanical floor (uncertainty high or more than three files:
+  T3; exactly three: T2; docs-mechanical always T1), a declared tier below it exit 2, the undeclared default T3 for a
+  high-risk category and T2 otherwise, raised to the floor; untiered: form only, and the not-enforced clause.
+- **D4.** Gate 2 reads the tier, with the reason `<id> not qualified for <category>@<tier> (holds <category>@T<j>)`;
+  nothing else in the gates changes; the empty set stays `blocked`, the existing outside-candidates hint names who
+  would pass.
+- **D5.** The required reviewer is walked at `review@T1`.
+- **D6.** `DifficultyTier` printed after `Difficulty`; `difficulty-tier` on the decision, the Brief and the ledger
+  decision record; the dispatch recheck round-trips it; no pending decision at the base commit.
+- **D7.** `categoryMap()` returns the category and the tier per task (a decision without one: T1); `learn()` keys its
+  streams by (profile, category, tier); the proposals and the stats keys carry `@T<k>`; untiered output unchanged.
+  One step past the per-task wording, by the builder's choice: an outcome counts at the tier of the decision its
+  dispatch was made under, so a failed T1 dispatch followed by a raised-tier decision of the same task stays a T1
+  failure (policy finding 3 below).
+- **D8.** `rate`: the CALIBRATION lines of runs 1-3 keep their format; a task carrying `tier` T2 or T3 counts and
+  prints apart as `<category>@T<k>`. The split applies under any policy, untiered included (D8 is unconditional; D1's
+  "exactly as before" holds for every committed observation, none of which carries a tier).
+- **D9.** Revision 5 is revision 4 plus the key and the re-declaration table; calibration-derived entries stay bare;
+  headroom, categories, economics, prices, usage windows, harness, authorization, isolation and accounting untouched.
+
+### How the onboarding proposal was applied (host-policy-6)
+
+Unit sr-policy-6 applied Item 1 of SmartRouter's calibration-first onboarding proposal (section 'Calibration-first
+evidence') under the lead's decisions, which bind where the proposal leaves a choice:
+
+- **E1.** Two typed evidence forms: the grade entry (as before) and the typed production reference
+  `outcome: <task-id> <category>[@T<k>] accepted <ISO date> (<path>)`, the path relative to the policy file's directory,
+  never to `--trace` (the proposal names the `--trace` store; E1 overrides it). Checked for form from the policy alone,
+  then resolved: exists, an Outcome of that task, `accepted`, recorded that day (the Outcome's `ts`, else its outcome
+  record), decided in that category (`categoryMap()`), the tier equal to a tiered decision's, or any tier with
+  `would be T<k> by the table` against a pre-tier decision. One check beyond E1's list, by the builder's choice: the
+  Outcome's `owner-profile` must be the referencing profile (policy finding 4). One from fix round 1 (F2): the
+  outcome record must be the latest of its dispatch, as `rate` counts it. Unresolvable: exit 2 naming the entry.
+- **E2.** `"evidence": "typed"` adopts the supported-entry rule: every `qualified-for` entry needs a PASS grade entry
+  or an accepted reference for its category at its tier or above (untiered: of its category); PARTIAL and FAIL support
+  nothing; extra references are allowed. Absent, the old behaviour; the fixtures host-policy-1..5 load unchanged.
+- **E3.** The lead-direct profile is exempt from E2 (not from E1).
+- **E4.** Free text stays as prose and supports nothing; revision 6 rewrites production-derived entries into references
+  where the store holds the outcome and drops them where it does not, the dropped entries' lines suffixed.
+- **E5.** Revision 6 is revision 5 plus the key and the lead's table (section 'Calibration-first evidence'); nothing else
+  changes. One addition by the builder's choice: `cc-haiku-low`'s mechanical-extraction line, the prose behind the
+  dropped `docs-mechanical`, carries the dropped suffix too.
+- **E6.** No delegate holds `build-core`, `build-tests`, `research-collect` or `docs-mechanical`; such a request above
+  `direct-max-tokens` is blocked until run 4's T1 host-pack cells qualify a profile; `fix` at T1 and T2, `review` at T1,
+  `build-ui` undeclared and `pin-tests` at T1 route as under revision 5 (asserted with `decide`).
+- **E7.** `status`, `rate`, `decide` and `dispatch` (and `outcome`, `usage`) load the policy through `loadPolicy`, so
+  they all validate; no new command or flag. A `qualify` proposal's `PROPOSAL` line now ends with
+  `; typed evidence to paste: "<line>", ...`: one typed reference per accepted outcome behind it (the decision's tier
+  when it declares one, else bare), JSON strings ready for the `evidence` array, resolvable as pasted; the stats file
+  carries them as `references`. When the outcome store (`--trace`) is outside the policy file's directory, no
+  reference to it could resolve (E1, F1), so the line ends instead with `; no typed evidence to paste: the outcome
+  store <dir> is outside the policy file's directory <dir>, and a reference cannot leave it (E1)` and the proposal
+  carries no `references`.
+
+### The table (host-policy-6, generated from `host-policy.json`)
+
+| Profile | Effort | Qualified for | Headroom tested | calibration-1 pin / fix / review | calibration-2 pin / fix / review | calibration-3 pin / fix / review | Typed references | Basis |
+|---|---|---|---|---|---|---|---|---|
+| `cc-fable-xhigh` | xhigh, **direct only** (the lead), up to 15k tokens | build-core@T3, build-ui@T3, build-tests@T3, review@T3, fix@T3, docs-mechanical@T3, research-collect@T3, pin-tests@T3 | 460k | PASS / PASS / PASS | PASS / PASS / PASS | PASS / PASS / PASS | - | session runs (host-policy-1) + calibration-1, -2, -3; every entry @T3 (host-policy-5); exempt from the typed-evidence rule (E3: the lead's own inline work) |
+| `cc-fable-max` | max | review | 230k | - / - / - | - / - / PASS | - / - / PASS | - | calibration-2 + calibration-3 review only: two passes |
+| `cc-fable-high` | high | review@T1, fix, pin-tests | 352k | PASS / PASS / PASS | PASS / PASS / PASS | PASS / PASS / PASS | gsi-u5-rereview4 review@T1 | calibration-1, -2, -3; host-policy-6: `fix@T2` dropped to bare `fix` (the U5 fix rounds have no outcome row), `review@T1` backed by the gsi-u5-rereview4 outcome and the calibration PASSes |
+| `cc-fable-medium` | medium | review, fix | 172k | PASS / PASS / PASS | PASS / PASS / PASS | FAIL / PASS / PASS | - | calibration-1, -2, -3; `pin-tests` blocked by the run-3 pin FAIL until two later passes (rule 3) |
+| `cc-opus-max` | max | review | 307k | - / - / - | - / - / PASS | - / - / PASS | - | calibration-2 + calibration-3 review only: two passes |
+| `cc-opus-xhigh` | xhigh | review, fix, pin-tests | 246k | PASS / PASS / PASS | PASS / PASS / PASS | PASS / PASS / PASS | - | calibration-1, -2, -3 |
+| `cc-opus-high` | high | build-ui@T3, review@T1, fix@T2, pin-tests | 1030k | PASS / PASS / PASS | PASS / PASS / PASS | PASS / PASS / PASS | sr-policy-2 build-ui@T3, sr-policy-3 build-ui@T3, sr-policy-4 build-ui@T3, sr-ci-item4 build-ui@T3, sr-policy-5 build-ui@T3, sr-host-review review@T1, sr-host-rereview1 review@T1, sr-host-rereview2 review@T1, sr-host-fix1 fix@T2, sr-host-fix2 fix@T2 | calibration-1, -2, -3; headroom from the accepted sr-policy-5 outcome (1029194 tokens); host-policy-6: `build-ui@T3`, `review@T1`, `fix@T2` backed by accepted outcomes; `build-core@T3`, `build-tests@T3`, `research-collect@T2` dropped (pre-adapter units, no outcome row) |
+| `cc-opus-medium` | medium | fix, pin-tests | 154k | PASS / PASS / PASS | PASS / PASS / FAIL | PASS / PASS / PASS | - | calibration-1, -2, -3; review: PASS, FAIL, PASS - one of the two later passes rule 3 needs (G-1 recorded, not applied) |
+| `cc-sonnet-xhigh` | xhigh | review | 328k | - / - / - | - / - / PASS | - / - / PASS | - | calibration-2 + calibration-3 review only: two passes |
+| `cc-sonnet-high` | high | review, fix, pin-tests | 183k | PASS / PASS / FAIL | PASS / PASS / PASS | PASS / PASS / PASS | - | calibration-1, -2, -3; review: FAIL, PASS, PASS - two passes after the fail |
+| `cc-sonnet-medium` | medium | fix, pin-tests | 128k | PASS / PASS / PASS | PASS / PASS / FAIL | PASS / PASS / PASS | - | calibration-1, -2, -3; review: PASS, FAIL, PASS - one of the two later passes rule 3 needs |
+| `cc-sonnet-low` | low | review, fix, pin-tests | 114k | PASS / PASS / PASS | PASS / PASS / PARTIAL | PASS / PASS / PASS | - | calibration-1, -2, -3; review: PASS, PARTIAL, PASS - two passes |
+| `cc-haiku-high` | high, no vision | fix, pin-tests | 726k | PASS / PASS / FAIL | PASS / PASS / FAIL | PASS / PASS / PASS | fix-x2-1 fix@T3 | calibration-1, -2, -3; headroom from the accepted fix-x2-1 outcome (725422 tokens); review: FAIL, FAIL, PASS - one of two later passes; the fix-x2-1 reference is one pass at T3, not a qualification |
+| `cc-haiku-medium` | medium, no vision | fix, pin-tests | 183k | PASS / PASS / FAIL | PASS / PASS / FAIL | PASS / PASS / PASS | - | calibration-1, -2, -3; review: FAIL, FAIL, PASS - one of two later passes |
+| `cc-haiku-low` | low, no vision | pin-tests | 175k | PASS / PASS / FAIL | PASS / PASS / FAIL | PASS / PASS / PASS | - | calibration-1, -2, -3; `fix` demoted 2026-10-18 (two consecutive verification-failed outcomes); host-policy-6: `docs-mechanical` dropped (the mechanical extraction dispatch has no outcome row); review: FAIL, FAIL, PASS |
+
+Every delegate entry above is backed by typed evidence: a PASS grade entry at its tier, or a typed reference (the
+"Typed references" column, `<task> <category>@<tier>`). With the current prices and host-policy-6 the adapter routes,
+at the request's declared tier, `build-ui` (any tier) to `cc-opus-high`, `review` at T1 to `cc-sonnet-xhigh`, `fix` at
+T1 to `cc-haiku-high` and at T2 to `cc-opus-high` (its only holder at T2), and `pin-tests` at T1 to `cc-haiku-low`; a
+`build-core`, `build-tests`, `research-collect` or `docs-mechanical` request above 15k tokens is blocked (no delegate
+holds them; section 'Calibration-first evidence'), as are the T2 and T3 requests revision 5 blocked. Work of at most
+15k tokens goes direct to the lead.
+
+### The table (host-policy-5, history: the `trace/policies/host-policy-5.json` fixture)
+
+Revision 5's table, kept as the record of what revision 6 rewrote or dropped (its test reads the fixture).
+
+| Profile | Effort | Qualified for | Headroom tested | calibration-1 pin / fix / review | calibration-2 pin / fix / review | calibration-3 pin / fix / review | Basis |
+|---|---|---|---|---|---|---|---|
+| `cc-fable-xhigh` | xhigh, **direct only** (the lead), up to 15k tokens | build-core@T3, build-ui@T3, build-tests@T3, review@T3, fix@T3, docs-mechanical@T3, research-collect@T3, pin-tests@T3 | 460k | PASS / PASS / PASS | PASS / PASS / PASS | PASS / PASS / PASS | session runs (host-policy-1) + calibration-1, -2, -3; host-policy-5: every entry re-declared @T3 (the lead integrates every unit of every tier, direct only) |
+| `cc-fable-max` | max | review | 230k | - / - / - | - / - / PASS | - / - / PASS | calibration-2 + calibration-3 review only: two passes (review new in host-policy-4) |
+| `cc-fable-high` | high | review@T1, fix@T2, pin-tests | 352k | PASS / PASS / PASS | PASS / PASS / PASS | PASS / PASS / PASS | session runs (host-policy-1) + calibration-1, -2, -3; host-policy-5: fix @T2, review @T1 re-declared from the U5 rounds |
+| `cc-fable-medium` | medium | review, fix | 172k | PASS / PASS / PASS | PASS / PASS / PASS | FAIL / PASS / PASS | calibration-1, -2, -3; `pin-tests` blocked by the run-3 pin FAIL until two later passes (rule 3) |
+| `cc-opus-max` | max | review | 307k | - / - / - | - / - / PASS | - / - / PASS | calibration-2 + calibration-3 review only: two passes (review new in host-policy-4) |
+| `cc-opus-xhigh` | xhigh | review, fix, pin-tests | 246k | PASS / PASS / PASS | PASS / PASS / PASS | PASS / PASS / PASS | calibration-1, -2, -3 |
+| `cc-opus-high` | high | build-core@T3, build-ui@T3, build-tests@T3, review@T1, fix@T2, research-collect@T2, pin-tests | 1030k | PASS / PASS / PASS | PASS / PASS / PASS | PASS / PASS / PASS | session runs (host-policy-1) + calibration-1, -2, -3; headroom from the accepted sr-policy-3 outcome (847844 tokens); host-policy-5: build-core, build-ui, build-tests @T3, fix and research-collect @T2, review @T1 re-declared from the production units |
+| `cc-opus-medium` | medium | fix, pin-tests | 154k | PASS / PASS / PASS | PASS / PASS / FAIL | PASS / PASS / PASS | calibration-1, -2, -3; review: PASS, FAIL, PASS - one of the two later passes rule 3 needs (G-1 recorded, not applied) |
+| `cc-sonnet-xhigh` | xhigh | review | 328k | - / - / - | - / - / PASS | - / - / PASS | calibration-2 + calibration-3 review only: two passes (review new in host-policy-4) |
+| `cc-sonnet-high` | high | review, fix, pin-tests | 183k | PASS / PASS / FAIL | PASS / PASS / PASS | PASS / PASS / PASS | calibration-1, -2, -3; review: FAIL, PASS, PASS - two passes after the fail (review new in host-policy-4) |
+| `cc-sonnet-medium` | medium | fix, pin-tests | 128k | PASS / PASS / PASS | PASS / PASS / FAIL | PASS / PASS / PASS | calibration-1, -2, -3; review: PASS, FAIL, PASS - one of the two later passes rule 3 needs |
+| `cc-sonnet-low` | low | review, fix, pin-tests | 114k | PASS / PASS / PASS | PASS / PASS / PARTIAL | PASS / PASS / PASS | calibration-1, -2, -3; review: PASS, PARTIAL, PASS - two passes (review new in host-policy-4) |
+| `cc-haiku-high` | high, no vision | fix, pin-tests | 726k | PASS / PASS / FAIL | PASS / PASS / FAIL | PASS / PASS / PASS | calibration-1, -2, -3; headroom from the accepted fix-x2-1 outcome (725422 tokens); review: FAIL, FAIL, PASS - one of two later passes; host-policy-5: fix-x2-1 recorded as one pass at T3, not a qualification |
+| `cc-haiku-medium` | medium, no vision | fix, pin-tests | 183k | PASS / PASS / FAIL | PASS / PASS / FAIL | PASS / PASS / PASS | calibration-1, -2, -3; review: FAIL, FAIL, PASS - one of two later passes |
+| `cc-haiku-low` | low, no vision | docs-mechanical, pin-tests | 175k | PASS / PASS / FAIL | PASS / PASS / FAIL | PASS / PASS / PASS | session runs (host-policy-1) + calibration-1, -2, -3; `fix` demoted 2026-10-18 (two consecutive verification-failed outcomes); review: FAIL, FAIL, PASS |
+
+The session runs behind the host-policy-1 rows: `cc-fable-xhigh`, the lead's own direct fixes and integration units;
+`cc-fable-high`, workflow runs `wf_1fcbe585-d1e` (U5 review 3, fix 3, re-review 3) and `wf_7f80ebc5-5a8` (U5 fix 4);
+`cc-opus-high`, 302 completed dispatches (28 builds, 130 reviews, 39 fix rounds, 26 research runs), every unit at
+ACCEPT within three fix rounds; `cc-haiku-low`, one mechanical extraction dispatch (91k tokens). Host-policy-3 adds
+the four profiles the lead listed (`cc-opus-xhigh` and the review-only `cc-sonnet-xhigh`, `cc-opus-max`,
+`cc-fable-max`), each with its siblings' config, tools, vision and context-tested. The exact model ids live in
+`host-policy.json`. The `Profile:` line prints the full identity tuple
+`(id, harness, provider, model, effort, config)`.
+
+With the current prices, host-policy-5 (the fixture) routes, at the request's declared tier, `build-core`,
+`build-ui`, `build-tests` (any tier) and `research-collect` (T1, T2) to `cc-opus-high` (no calibrated profile is
+qualified for any of them), `review` at T1 to `cc-sonnet-xhigh` (`cc-sonnet-low` and `cc-sonnet-high` are qualified
+but their headroom is below the 209000-token review median), `fix` at T1 to `cc-haiku-high` and at T2 to
+`cc-opus-high`, and `docs-mechanical` and `pin-tests` at T1 to `cc-haiku-low`; a `review`, `pin-tests` or
+`docs-mechanical` request at T2 or T3 and a `fix` or `research-collect` request at T3 are blocked (a
+`docs-mechanical` request at T3 goes direct to the lead at 15k tokens or fewer; section 'Difficulty tiers'). Under host-policy-4 the same categories routed the same way without a tier. The required reviewer of every `build-*` and `fix` delegate is `cc-sonnet-xhigh` ($2.09 at the review
+median; it was `cc-opus-high`, $4.18, through host-policy-3). Work of at most 15k tokens goes direct to the lead.
+
+**`pin-tests` routes to the cheapest qualified profile, `cc-haiku-low`.** A pin declared T1 at the default size (120000 tokens) has an
+output-rate bound of $0.06 there (120000 x the output rate / 1e6), plus $1.00 of brief overhead at the lead's rate:
+$1.06 all-in. No reviewer is added, because `pin-tests` names no review: every pin is verified mechanically (red before
+the fix, green with it, the guard-removal proof, lint) and the lead reads the diff. The three profiles of that model
+share the $1.06 bound, so Gate 5 ranks equal bounds by the lower output rate, then the **lower effort**, then the id:
+calibration-1 measured fewer tokens at the lower effort for every model on every task (12 model-task pairs).
+`cc-sonnet-low` (114k) is qualified, but its headroom is below a default pin, so a pin that size fails it at Gate 2.
+
+### The table (host-policy-4, history: the `trace/policies/host-policy-4.json` fixture)
+
+Revision 4's table, untiered, kept as the record of what revision 5 re-declared (its test reads the fixture).
 
 | Profile | Effort | Qualified for | Headroom tested | calibration-1 pin / fix / review | calibration-2 pin / fix / review | calibration-3 pin / fix / review | Basis |
 |---|---|---|---|---|---|---|---|
@@ -369,30 +928,6 @@ Restricted to their own candidates, the demoted, blocked and one-later-pass prof
 | `cc-haiku-high` | high, no vision | fix, pin-tests | 726k | PASS / PASS / FAIL | PASS / PASS / FAIL | PASS / PASS / PASS | calibration-1, -2, -3; headroom from the accepted fix-x2-1 outcome (725422 tokens); review: FAIL, FAIL, PASS - one of two later passes |
 | `cc-haiku-medium` | medium, no vision | fix, pin-tests | 183k | PASS / PASS / FAIL | PASS / PASS / FAIL | PASS / PASS / PASS | calibration-1, -2, -3; review: FAIL, FAIL, PASS - one of two later passes |
 | `cc-haiku-low` | low, no vision | docs-mechanical, pin-tests | 175k | PASS / PASS / FAIL | PASS / PASS / FAIL | PASS / PASS / PASS | session runs (host-policy-1) + calibration-1, -2, -3; `fix` demoted 2026-10-18 (two consecutive verification-failed outcomes); review: FAIL, FAIL, PASS |
-
-The session runs behind the host-policy-1 rows: `cc-fable-xhigh`, the lead's own direct fixes and integration units;
-`cc-fable-high`, workflow runs `wf_1fcbe585-d1e` (U5 review 3, fix 3, re-review 3) and `wf_7f80ebc5-5a8` (U5 fix 4);
-`cc-opus-high`, 302 completed dispatches (28 builds, 130 reviews, 39 fix rounds, 26 research runs), every unit at
-ACCEPT within three fix rounds; `cc-haiku-low`, one mechanical extraction dispatch (91k tokens). Host-policy-3 adds
-the four profiles the lead listed (`cc-opus-xhigh` and the review-only `cc-sonnet-xhigh`, `cc-opus-max`,
-`cc-fable-max`), each with its siblings' config, tools, vision and context-tested. The exact model ids live in
-`host-policy.json`. The `Profile:` line prints the full identity tuple
-`(id, harness, provider, model, effort, config)`.
-
-With the current prices (host-policy-4) the adapter routes `build-core`, `build-ui`, `build-tests` and
-`research-collect` to `cc-opus-high` (no calibrated profile is qualified for any of them), `review` to
-`cc-sonnet-xhigh` (above; `cc-sonnet-low` and `cc-sonnet-high` are qualified but their headroom is below the
-209000-token review median), `fix` to `cc-haiku-high` (above), and `docs-mechanical` and `pin-tests` to
-`cc-haiku-low`. The required reviewer of every `build-*` and `fix` delegate is `cc-sonnet-xhigh` ($2.09 at the review
-median; it was `cc-opus-high`, $4.18, through host-policy-3). Work of at most 15k tokens goes direct to the lead.
-
-**`pin-tests` routes to the cheapest qualified profile, `cc-haiku-low`.** A default pin (120000 tokens) has an
-output-rate bound of $0.06 there (120000 x the output rate / 1e6), plus $1.00 of brief overhead at the lead's rate:
-$1.06 all-in. No reviewer is added, because `pin-tests` names no review: every pin is verified mechanically (red before
-the fix, green with it, the guard-removal proof, lint) and the lead reads the diff. The three profiles of that model
-share the $1.06 bound, so Gate 5 ranks equal bounds by the lower output rate, then the **lower effort**, then the id:
-calibration-1 measured fewer tokens at the lower effort for every model on every task (12 model-task pairs).
-`cc-sonnet-low` (114k) is qualified, but its headroom is below a default pin, so a pin that size fails it at Gate 2.
 
 ### How to add evidence
 
@@ -413,13 +948,19 @@ calibration-1 measured fewer tokens at the lower effort for every model on every
    proposal**; such outcomes appear only if the lead records out-of-band runs in the ledger by hand, as dispatch
    records marked `deviation: true`.
 3. The lead applies the qualification rules above and ratifies by editing `host-policy.json`: add the category to
-   `qualified-for`, append the run ids and the `calibration-<n>: <category> PASS|PARTIAL|FAIL (n=<k>)` entries to `evidence`,
-   set `qualified-at` to the ratification date, and set `expires` (at most three months out). Bump
+   `qualified-for` (under host-policy-5 at its tier, `<category>@T<k>`; bare reads `@T1`), append the run ids and the
+   `calibration-<n>: <category>[@T<k>] PASS|PARTIAL|FAIL (n=<k>)` entries to `evidence` (under host-policy-6 a
+   production outcome goes in as a typed reference, `outcome: <task-id> <category>[@T<k>] accepted <YYYY-MM-DD>
+   (trace/outcomes/<task>-<seq>.json)`, the line `rate` prints with a qualify proposal; free text supports nothing,
+   section 'Calibration-first evidence'), set `qualified-at` to the ratification date, and set `expires` (at most three months out). Bump
    `policy-revision`. The decision files bind every decision to the policy digest, so old decisions stay readable.
    A decision not yet dispatched is rechecked against the edited policy at `dispatch`, so a demotion or a
    revocation takes effect on pending decisions too. When a revision changes what the goldens or the base tests
    assume, freeze the previous policy as `trace/policies/host-policy-<n>.json` and keep them on it (never in
-   `trace/decisions/`, whose file names belong to decisions).
+   `trace/decisions/`, whose file names belong to decisions). A policy with typed references loads from
+   `trace/policies/` too: a fixture under `<root>/trace/policies/` resolves its references against `<root>`, the
+   directory holding that trace (`policyRoot`, the lead's integration fix of policy finding 5 of host-policy-6); the
+   two directory names are the rule, and a copy anywhere else resolves against its own directory.
 4. A profile with `qualified-at: null` or a past `expires` fails Gate 2 until this is done.
 
 ## The learning loop
@@ -427,7 +968,8 @@ calibration-1 measured fewer tokens at the lower effort for every model on every
 `outcome` records go in, `rate` turns them into proposals, and the lead edits the policy. The adapter never
 writes the policy.
 
-- `rate` aggregates outcomes per (profile, category): accepted, verification-failed, partial, cost-overrun,
+- `rate` aggregates outcomes per (profile, category), and under an enforced policy (host-policy-5) per (profile,
+  category, tier), the stats keys and proposals reading `<category>@T<k>` (section 'Difficulty tiers'): accepted, verification-failed, partial, cost-overrun,
   cancelled, blocked, escalated, plus how many came from host deviations. It counts **one outcome per dispatch**:
   a later outcome record for the same dispatch supersedes the earlier one (spec-v2 §10.5, decision-trace.md §4),
   so recording a correction never double-counts. It writes `trace/qualification-stats.json`
@@ -437,7 +979,11 @@ writes the policy.
   since its `qualified-at`, or after any `cost-overrun`.
 - It proposes **qualification** after three `accepted` outcomes in a category the profile is not qualified for.
   `dispatch` refuses such runs, so these outcomes can only come from runs the lead recorded by hand (see 'How to
-  add evidence').
+  add evidence'). The `PROPOSAL` line ends with the typed references the lead would paste, one per accepted outcome
+  (host-policy-6, E7):
+  `PROPOSAL qualify <id> for <category>[@T<k>]: 3 accepted while unqualified (host deviations: ...); not applied — the lead ratifies by editing host-policy.json; typed evidence to paste: "outcome: <task> <category>[@T<k>] accepted <YYYY-MM-DD> (<path>)", ...`.
+  With `--trace` outside the policy file's directory there is nothing to paste: the line ends with
+  `; no typed evidence to paste: the outcome store <dir> is outside the policy file's directory <dir>, and a reference cannot leave it (E1)`.
 - It proposes a **`headroom-tested` raise** when an accepted outcome (the latest per dispatch) completed more tokens
   than its profile's current value:
   `PROPOSAL profiles.<id>.headroom-tested: <current> -> <tokens rounded up to the next thousand> (accepted outcome <task> completed <tokens> tokens); not applied — the lead ratifies by editing host-policy.json`.
@@ -652,6 +1198,105 @@ the three-in-a-row downward rule, so a ratified downward change is not followed 
 older history (re-review finding SW-5). Ratify by editing the coefficient and `ratified-at` together. Pairs
 of readings with a unit in flight at either reading are skipped as `spanning` (SW-8): a unit's tokens are
 recorded whole at its outcome, so such a pair cannot say what they cost.
+
+## Policy findings (host-policy-6)
+
+Found while building revision 6 (unit sr-policy-6). The lead decides.
+
+1. **The proposal was not at the path the brief names.** `/home/user/smartrouter` is still checked out at `5bd473a`
+   (PR #98), where `docs/proposals/calibration-first-onboarding.md` does not exist. It was read from SmartRouter main as
+   merged (`7f7fc75`, which contains PR #102's merge `bb3fa6c`), through the read-only main worktree of that repository
+   (`git show origin/main:` gives the same bytes); nothing was copied but the passages this README quotes.
+2. **The proposal still says hosts MUST NOT emit or require its form.** Its status line (quoted in section
+   'Calibration-first evidence') is unchanged by the merge, and its review record ends with `pending delta review`, as
+   the tiers proposal's did (host-policy-5 policy finding 7, friction item 22). Host-policy-6 requires the typed form
+   on the operator's merge of PR #102 and the lead's E1-E7. The exposure is bounded the same way: the rule applies only
+   under `"evidence": "typed"`, and deleting that key returns the host to free-text evidence with no code change (the
+   `outcome:` lines would still be checked and resolved, E1 being unconditional; they all resolve).
+3. **The lead-direct exemption has no clause upstream** (E3, friction item 23). Without it `cc-fable-xhigh`'s eight
+   `@T3` entries, held on the lead's integration record and T1 calibration grades, would be refused, and `direct`
+   would become unroutable for every bounded task.
+4. **One check beyond E1: the Outcome's `owner-profile` must be the referencing profile.** E1 lists the task, the
+   outcome, the date and the category; without the owner a profile could cite another profile's accepted outcome as
+   its own capability evidence. Every reference of the lead's table satisfies it. The lead may drop the check.
+5. **A host-policy-6 fixture will not load from `trace/policies/`.** Each revision so far froze its predecessor as
+   `trace/policies/host-policy-<n>.json` and decided the old assertions on it. Under E1 the references resolve against
+   the policy file's directory, so `trace/policies/host-policy-6.json` would look for
+   `trace/policies/trace/outcomes/...` and be refused (exit 2). The revision that freezes host-policy-6 has to write the
+   fixture's test derivatives beside a copy of the store, as these tests do for the live policy (`LIVE_OFF_DIR`), or
+   the lead decides another resolution base for fixtures. Nothing in this revision needs it. **Resolved at
+   integration (lead):** `policyRoot` resolves a policy under `<root>/trace/policies/` against `<root>`; the test
+   "E1 (fixture root)" pins it, so the revision that freezes host-policy-6 pins its assertions as every revision did.
+6. **Four categories have no delegate** (E6). `build-core`, `build-tests`, `research-collect` and `docs-mechanical`
+   requests above 15000 tokens are blocked until run 4's host-pack cells qualify a profile; the github-sign-in run's
+   remaining build units in those categories are affected (the RUN.md consequence is the lead's).
+7. **The references depend on the ledger beside the outcomes.** This host's Outcomes carry no `ts` (§10.3 has none),
+   so a reference's day is its outcome record's, read from `ledger.jsonl` next to `outcomes/`; an outcome file copied
+   without its ledger is unresolvable. The day is the UTC day of the record's `ts`.
+8. **A pre-tier reference's tier is the host's word.** Every reference in the table points at a decision made before
+   revision 5, so E1 accepts any declared tier there with the "would be" note: `build-ui@T3` rests on the lead's reading
+   of five- to nine-file units, not on a recorded tier. A reference against a tiered decision is checked.
+9. **The notes count permitted files.** The "would be" notes give each decision's `permittedEffects` count; the
+   brief's table says "five and nine files", but `sr-policy-5`'s request named six (its outcome touched five).
+10. **The policy's `_comment` still describes evidence as run ids or calibration grade entries.** E5 defines revision
+    6 as revision 5 plus the key and the table, so the comment was left as it was; it does not mention the typed
+    reference.
+
+## Policy findings (host-policy-5)
+
+Found while building revision 5 (unit sr-policy-5). The lead decides.
+
+1. **The proposal was not at the path the brief names.** `/home/user/smartrouter` is checked out at `5bd473a` (PR #98),
+   where `docs/proposals/difficulty-tiers.md` does not exist. The proposal was read from SmartRouter main as merged
+   (`7f7fc75`, which contains PR #100, `2e30291`), with `git show` in that same repository; nothing was copied but the
+   passages the brief asks to quote.
+2. **The undeclared default blocks two categories outright.** D3's default reads T2 for every normal- and low-risk
+   category, and every `pin-tests` and `docs-mechanical` holder is bare (T1), so an undeclared pin or docs request is
+   `blocked`; so is an undeclared `review` or `fix` (T3), which only the lead-direct profile holds. Declared T1 they
+   route as before. This is the rule as written (the proposal's default is "conservative because a tier the host did
+   not think about is the case the Context describes"), but it makes the declaration mandatory in practice for four
+   of eight categories.
+3. **The learning loop reads the tier of the dispatch's own decision.** D7 says per task; Item 3 has the lead raise a
+   tier and decide the same task again after a `verification-failed` outcome, and a per-task tier would then count the
+   first, failed dispatch at the raised tier, hiding a demotion of the lower one. `learn()` reads the dispatch's
+   `decision-seq` and that decision file's tier, falling back to the task's for a dispatch recorded without one (the
+   hand-walked records). Pinned by a test; the lead may revert to the per-task reading.
+4. **Every pre-revision outcome counts at T1.** By D7 a decision without a tier counts at T1, so `rate` on the
+   committed ledger under host-policy-5 shows `cc-opus-high build-ui@T1`, `fix@T1`, `review@T1` (15 outcomes, no
+   proposals), while the re-declaration reads those units as T2 or T3. Under rule 5 a fail at T1 is a fail at every
+   tier, so the T1 label is the stricter reading of old failures. The three re-declared profiles' `qualified-at`
+   moved to 2026-10-18, so their earlier outcomes no longer enter their learning streams.
+5. **The `cc-fable-xhigh` lines carry no "would be T<k> by the table".** The table gives that line whole; the lead's
+   integration work is not tiered unit by unit. It includes `docs-mechanical@T3`, which Item 1 says is "never" T3; a
+   declared T3 above the floor is accepted (D3), so the entry routes such a request to the lead below
+   `direct-max-tokens`.
+6. **A review above T1 has no delegate.** No calibrated profile holds `review@T2` or above, and the production
+   reviews re-declared are T1. Every T2 or T3 review request the lead dispatches is blocked until run 4 (or a later
+   run) qualifies one; the required reviewer of a unit is unaffected (D5).
+7. **The proposal says hosts MUST NOT emit or require its fields until a delta review accepts it; host-policy-5 emits and requires them.**
+   The merged text (SmartRouter `7f7fc75`; the file is unchanged since PR #100's merge commit `2e30291`, and the same
+   on `origin/main`) opens:
+
+   > Status: **draft proposal, not normative; revision 2 after the independent review of 2026-10-18 (Request Changes
+   > on 987a4e3).** Nothing in `skills/` is amended by this document. If accepted after independent review (plan
+   > §15), the items below would become one additional Gate 2 rule, an additive host-policy qualification form,
+   > additive §9/§10 fields under the §13 "additive unknown fields remain ignorable" rule, and one
+   > calibration-protocol change for the host under `hosts/claude-code/`; until then hosts MUST NOT emit or require
+   > them.
+
+   Its review record ends with the row `| 1-5 (revision 2) | pending delta review | — | — |`, and no later commit
+   changes the status. Under D6 host-policy-5 emits `DifficultyTier` and `difficulty-tier` (the decision, the §10.1
+   Brief, the §10.5 ledger decision record), and under D3 and D4 it requires the tier (the floor refusal, Gate 2 by
+   tier). The basis is a decision, not the text: the operator chose on 2026-10-18 to merge PR #100 (with #101 and
+   #102) into main without the delta review (the github-sign-in run ledger, `RUN.md`, commit `b8e1a1d`, as relayed by
+   the originating session), and the lead's brief for this unit adopts the merged text as the specification with
+   D1-D9 binding where it leaves a choice. Two things limit the exposure. The fields are additive under §13, so a
+   reader that ignores unknown fields is not broken. And the rules apply only under `"difficulty-tiers": "enforced"`:
+   deleting that key from `host-policy.json` returns the host to per-category routing with no code change (D1, D2:
+   the tiered entries still load). With the key removed, a default `fix`, `review`, `pin-tests` and
+   `docs-mechanical`, a `build-ui` at 250000 and a `fix` declared T2 route as host-policy-4 routes them (probed in
+   fix round 1). A decision taken under the enforced revision would then be refused at dispatch (`the route changed` where the untiered route picks another profile, as for a fix declared T2; `changed: difficulty-tier` where it picks the same one), the mirror of the pending-decision note. Until the delta review is recorded, host-policy-5 runs
+   ahead of the specification it cites. Whether to keep the key on until then is the lead's call.
 
 ## Policy findings (host-policy-4)
 
@@ -892,3 +1537,41 @@ Every point where the spec was ambiguous or did not fit a subscription host. Cit
     The preregistered score stands and no qualification changes (host-policy-4), but under the full definition two
     reviews would be FAIL. The adjudication schema needs `forbidden`, with a real vote only on all three prongs (run 4
     adds it).
+21. **The proposal's Item 3 "names it" clause is the existing `eligible-outside-candidates` hint, and the reviewer-tier question (D5) is not addressed by the proposal.**
+    Item 3 asks for the reason `no profile qualified for
+    <category>@<tier>` and, when a profile qualified at a higher tier exists, `cheapest profile qualified at
+    <category>@<tier+k>: <id>`. This host already names a profile outside the candidates that would pass all five
+    gates (`not among candidates: ...`, the decision's `eligible-outside-candidates`), so it keeps that hint and adds
+    no reason text (D4); inside the candidates a higher-tier holder is eligible and simply routed. The proposal is
+    silent on the required reviewer of a tiered unit: Gate 3's reviewer is drawn at the review median, and nothing
+    says at which tier. This host walks it at `review@T1` (D5), because the review is its own request when the lead
+    dispatches it. Upstream could state the reviewer's tier, and say whether "names it" means a profile outside the
+    candidates, a higher-tier profile inside them, or both.
+22. **A merged proposal still says hosts MUST NOT emit or require its fields.** PR #100 put
+    `docs/proposals/difficulty-tiers.md` on main with its status line unchanged ("draft proposal, not normative; ...
+    until then hosts MUST NOT emit or require them") and its review record ending in
+    `| 1-5 (revision 2) | pending delta review | — | — |`. A merge is the operator's act, but the text has no state
+    between "draft, not normative" and "accepted", so a host that adopts a merged proposal on the operator's word (this
+    one, host-policy-5, policy finding 7) contradicts the text it cites, and nothing in SmartRouter tells a reader
+    that the merge was a decision to adopt. Upstream could update the status line when a proposal is merged or
+    reviewed, or say that a merged but unreviewed proposal may be adopted by a host behind a policy switch.
+23. **The proposal has no clause for the lead's own profile.** Item 1.1 says "a profile may enter a host policy
+    with any `qualified-for`, but every category it names MUST be supported by an evidence entry", with no exception.
+    The lead-direct profile's qualifications are not a capability claim about a delegate: they are the operator's
+    authorization of the lead's inline work, routed only below `direct-max-tokens`. A host that applies the rule to
+    that profile either fabricates evidence or makes `direct` unroutable. This host exempts it (E3, policy finding 3
+    of host-policy-6). Upstream could add an exemption clause for the lead-direct profile, or give the lead's direct
+    route its own rule (an authorization entry instead of a qualification).
+24. **The proposal's `outcome:` form carries no tier.** Item 1.1 (b) is `outcome: <task-id> <category> accepted
+    <ISO date> (<outcome store path>)`. The difficulty-tiers proposal (Item 2.2, rule 2.3) makes qualification per
+    (category, tier) and counts "an accepted production outcome whose request carried that tier", which a tierless
+    reference cannot express. This host added `[@T<k>]` to the form, the same optional suffix the grade entry gained,
+    checked against the decision's `difficulty-tier` when it has one and accepted with a "would be T<k> by the table"
+    note when it does not. Upstream could state the tier in the form (and say whether a pre-tier outcome may carry a
+    declared tier).
+25. **Where the outcome store is, relative to a policy copy.** Item 1.1 resolves references against "the outcome store
+    (the `--trace` directory the adapter already takes)", and lets a validation run without a store check form only.
+    This host resolves against the policy file's directory instead (E1): a test's temporary `--trace` must not change
+    whether a policy is valid, and an upstream copy of the policy beside its trace resolves as it does here. The cost is
+    finding 5 above (a frozen fixture moves away from its store). Upstream could say which base a reference's path is
+    relative to, and whether "form only" is allowed when a store exists but is not given.
