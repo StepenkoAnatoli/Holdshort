@@ -51,7 +51,7 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    It does not follow symlinks inside the dependency tree; keeping those out of the pack is the host's duty.
 4. **Fill.** Write `run-config.json` = `{"manifest": <manifest.json>, "protocol": <protocol.json without its sources>,
    "host": {...}}` (the host keys are listed in the header of `run.template.js`; the protocol goes in without `sources`
-   because the sources record the filled script's hash). Fill the template, hash `run.js` into the protocol's
+   because the sources record the filled script's hash). Every host path in it (`checkout_root`, `adjudication_checkout`, `pack_dir`) is absolute and already resolved: the launch step compares the strings and follows no symlink and no `..`, so a relative path, or one that resolves elsewhere after the launch, is outside its guard (the checkout script resolves real paths where the checkouts are made). Fill the template, hash `run.js` into the protocol's
    `sources`, and commit the evidence folder: that commit is the freeze.
 
    ```bash
