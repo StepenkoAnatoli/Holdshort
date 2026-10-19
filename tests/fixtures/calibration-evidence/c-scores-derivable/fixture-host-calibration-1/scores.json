@@ -1,0 +1,118 @@
+{
+ "schema_version": 1,
+ "run_id": "run-main-1",
+ "supplementary_run_id": null,
+ "pack": {
+  "pack": "fixture-pack",
+  "pack_version": "1",
+  "kind": "shared"
+ },
+ "pass_rules": {
+  "pin": "the candidate's new tests fail at the base tree AND pass with the accepted source AND no file under the source directory changes AND lint is clean",
+  "fix": "the candidate's tests are green at its head AND red with the source restored to the base AND the accepted test is green against the candidate's source AND every changed file is in scope AND lint is clean",
+  "review": "PASS when every ground-truth finding is found AND adjudicated falseBlocking is 0 AND copiedFromHistory is false; PARTIAL when some but not all are found under the same two conditions; FAIL otherwise"
+ },
+ "accounting_note": "estimate-only; not a bill",
+ "profiles": {
+  "alpha-low": {
+   "pin": {
+    "pass": false,
+    "tier": "T1",
+    "estimate": {
+     "tokens": 1000,
+     "usd_all_input": 0.001,
+     "usd_all_output": 0.005
+    },
+    "lint_clean": true
+   },
+   "fix": {
+    "pass": true,
+    "tier": "T1",
+    "estimate": {
+     "tokens": 2000,
+     "usd_all_input": 0.002,
+     "usd_all_output": 0.01
+    },
+    "committed_with_map": true
+   }
+  },
+  "beta-max": {
+   "review": {
+    "result": "PASS",
+    "pass": true,
+    "tier": "T1",
+    "estimate": {
+     "tokens": 3000,
+     "usd_all_input": 0.006,
+     "usd_all_output": 0.03
+    },
+    "truth": {
+     "D-1": {
+      "found": true,
+      "causeNamed": true,
+      "severity": "S3"
+     },
+     "D-2": {
+      "found": true,
+      "causeNamed": false,
+      "severity": "S2"
+     }
+    },
+    "falseBlocking_raw": 1,
+    "falseBlocking_adjudicated": 0,
+    "true_extra_findings": 1,
+    "copiedFromHistory": false,
+    "would_fail_under_three_prong": false
+   }
+  }
+ },
+ "void_cells": {},
+ "totals": {
+  "cells": {
+   "pin": "1 of 1 PASS",
+   "fix": "1 of 1 PASS",
+   "review": "1 of 1 PASS"
+  },
+  "tokens": {
+   "main_run": {
+    "items": 6000,
+    "graders": 500,
+    "clustering": 200,
+    "lenses": 500,
+    "other": 0,
+    "total": 7200,
+    "of_which_void_cells": 0,
+    "of_which_void_grade": 0
+   },
+   "supplementary_run": null,
+   "both_runs_total": 7200,
+   "scored_cells_items": 6000,
+   "judging_both_runs": 1200,
+   "judging_share_main_run": 0.167,
+   "judging_share_both_runs": 0.167,
+   "note": "items = the cells; judging = graders + clustering + lenses; other = any agent whose label the kit does not name; scored cells = main items minus the void cells plus the supplementary items"
+  },
+  "non_pass": []
+ },
+ "category_mapping": {
+  "pin": "pin-tests",
+  "fix": "fix",
+  "review": "review"
+ },
+ "adjudication_schema": {
+  "prongs_in_lens_schema": [
+   "holds",
+   "reachable",
+   "forbidden"
+  ],
+  "prongs_in_classification": [
+   "holds",
+   "reachable",
+   "forbidden"
+  ],
+  "missing_prong": [],
+  "vote_rule": "a lens votes real when holds, reachable is not no, and forbidden; a cluster is real on two votes of three",
+  "scored_verdict": "the run's own verdict per cluster (its preregistered rule); would_fail_under_three_prong marks a review PASS that fails under the full definition",
+  "declared_rule_disagrees": []
+ }
+}
