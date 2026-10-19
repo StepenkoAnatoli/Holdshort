@@ -448,7 +448,7 @@ def build(a) -> int:
         scores["unclustered_others"] = [{"profile": p, "id": i, "grader": c} for p, i, c in unclustered]
 
     a.out.mkdir(parents=True, exist_ok=True)
-    write = lambda name, doc: (a.out / name).write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    write = lambda name, doc: (a.out / name).write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     write("observations.json", obs)
     write("scores.json", scores)
     write("adjudication.json", {"run": run_id, "supplementary-run": supp_id, "declared-prongs": declared, "clusters": list(merged.values())})
@@ -475,14 +475,14 @@ def build(a) -> int:
         rows.append("| " + " | ".join(cols) + " |")
     rows.append("")
     rows.append("`*` a supplementary-run cell replacing a void one. Review: the run's preregistered result, with the three-prong result beside it when they differ.")
-    (a.out / "results-table.md").write_text("\n".join(rows) + "\n", encoding="utf-8")
+    (a.out / "results-table.md").write_text("\n".join(rows) + "\n", encoding="utf-8", newline="\n")
 
     crow = ["| cluster | title | members | grader says | lenses (holds/reachable/forbidden) | verdict (run's rule) | three prongs |", "|---|---|---|---|---|---|---|"]
     for m in merged.values():
         ls = "; ".join(f"{x.get('lens')}: {'holds' if x.get('holds') else 'no'}/{x.get('reachable')}/{x.get('forbidden', 'absent')}" for x in m["lenses"])
         crow.append(f"| {m['id']} | {str(m['title'])[:90]} | {', '.join(m['members'])} | {', '.join(str(c) for c in m['graderClassifications'])} | {ls} | "
                     f"{'REAL' if m['real'] else 'not real'} ({m['realVotes']}) | {'REAL' if m['threeProngReal'] else 'not real'} ({m['threeProngVotes']}) |")
-    (a.out / "clusters.md").write_text("\n".join(crow) + "\n", encoding="utf-8")
+    (a.out / "clusters.md").write_text("\n".join(crow) + "\n", encoding="utf-8", newline="\n")
 
     cost = ["| profile | task | tokens | ms | est. $ (all-input .. all-output) | result |", "|---|---|---|---|---|---|"]
     for p, o in obs.items():
@@ -500,7 +500,7 @@ def build(a) -> int:
     if supp_t:
         cost.append(f"Supplementary run {supp_id}: items {supp_t['items']:,}; graders {supp_t['graders']:,}; clustering {supp_t['clustering']:,}; lenses {supp_t['lenses']:,}; total {supp_t['total']:,} tokens.")
     cost.append(f"Both runs: {both:,} tokens; judging {tokens['judging_both_runs']:,}. {scores['accounting_note']}")
-    (a.out / "tokens-and-estimates.md").write_text("\n".join(cost) + "\n", encoding="utf-8")
+    (a.out / "tokens-and-estimates.md").write_text("\n".join(cost) + "\n", encoding="utf-8", newline="\n")
 
     for case, text in cells_text.items():
         print(f"{case}: {text}")

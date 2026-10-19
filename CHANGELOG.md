@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **The calibration gate checks run on a Windows host** (`tools/test_calibration_kit.py` and the tests of the evidence
+  check and the qualification table). On Windows 17 of the kit's 79 tests failed, so the pre-commit hook refused every
+  commit there: it read files in the locale's encoding, ran a bare `python3`, wrote a Windows path into a git config
+  value (where `\` is an escape), sorted paths without case and expected a `\` join where the workflow template joins
+  `<checkout_root>/<name>`. It now reads UTF-8, runs the pack's harness with the running interpreter, writes that path
+  with `/`, sorts by name with case and expects the template's join. The two symlink checks skip, naming the reason,
+  on a host that cannot make a symlink (Windows without the privilege or Developer Mode), and the `//abs` spelling of
+  the pack is tried only where paths start with `/`. Behind those, two later checks failed there too:
+  `observations.py` and `qualification_table.py` wrote CRLF line endings on Windows, so their output differed from the
+  committed bytes, and now always write LF; the evidence test put `journal.jsonl` and `JOURNAL.JSONL` cases in one
+  folder on a case-insensitive filesystem, and the table test matched a temporary path in its `\` form where the table
+  prints `/`. Known limit: on such a host Git Bash's `ln -s` copies the directory, so `historyless-checkout.sh --link`
+  leaves a copy, not a link.
 - **Calibration evidence check and qualification table** (`tools/check_calibration_evidence.py`, `tools/qualification_table.py`, docs/proposals/calibration-first-onboarding.md Items 4.3-4.4): the regression gate refuses a calibration results folder that breaks one of eight named rules (calibration runs 1-3 pass as legacy runs with their limitations named), and `docs/evidence/qualification-table.md` is generated over every accepted run, showing fewer-prong, unadjudicated and supplementary PASSes without counting them; `--check` keeps the committed table the generated one; documented in `docs/evidence/README.md`.
 - **Calibration kit** (`tools/calibration/`, docs/proposals/calibration-first-onboarding.md Items 2-4.2): the protocol template, the three-prong classification, the grader, lens and cluster prompts (the lens schema carries `forbidden`), history-less checkouts, mechanical grading from a subject-pack manifest, the observations builder, the workflow template with the relayed-request preamble, the request printer and the subject-pack format; tested by `tools/test_calibration_kit.py` in the regression gate; the shared pack, the evidence check and the qualification table are later units.
 - **Shared synthetic subject pack** (`tools/calibration/subject-pack/shared/`, version 1, proposal Item 2): `src/bounded.py`, a standard-library bounded reader with two seeded S3 defects (D-1, a memoryview chunk rejected against a never-raises promise, review case only; D-2, str chunks skipping the bound, the pin, fix and review cases), its specification, harness and accepted fix as three trees, `make-repo.sh` building the pack repository with fixed commit ids, and `manifest.json` in the kit's pack format; tested in `tools/test_calibration_kit.py` (`SharedPack`), including grade.sh on its pin and fix cells and the workflow template filled with it.

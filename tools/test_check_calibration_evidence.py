@@ -56,8 +56,8 @@ def read(path: Path):
 
 
 def write(path: Path, doc) -> None:
-    # the kit's own form (observations.py): indent 1, UTF-8, one trailing newline
-    path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    # the kit's own form (observations.py): indent 1, UTF-8, one trailing LF
+    path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
 
 
 def two_prong_run(tmp: Path) -> tuple[Path, Path]:
@@ -121,7 +121,7 @@ def build_fixtures(dest: Path) -> None:
         edit_json(f("e-pin-category-mapping"), "scores.json", lambda s: s["category_mapping"].update(pin="build-tests"))
         edit_json(f("f-judging-profile-named"), "protocol.json", lambda p: p["judging_profile"].update(qualification=None, limitation=None))
         edit_json(f("g-relayed-chat-statement"), "protocol.json", lambda p: p["relayed_operator_text"].update(statement=""))
-        (f("h-no-secrets-or-bodies") / "journal.jsonl").write_text('{"type": "launched"}\n', encoding="utf-8")
+        (f("h-no-secrets-or-bodies") / "journal.jsonl").write_text('{"type": "launched"}\n', encoding="utf-8", newline="\n")
 
 
 def tree(root: Path) -> dict:
@@ -206,9 +206,9 @@ class KitRuns(unittest.TestCase):
 
     def test_prompt_bodies_and_transcripts_fail_the_secrets_rule(self):
         # F5: the names in any case (a case-insensitive filesystem holds them under the same name)
-        for name in ("grader.prompt.md", "transcript-1.txt", "journal.jsonl", "Review.PROMPT.md", "Transcript.txt", "JOURNAL.JSONL"):
+        for i, name in enumerate(("grader.prompt.md", "transcript-1.txt", "journal.jsonl", "Review.PROMPT.md", "Transcript.txt", "JOURNAL.JSONL")):
             with self.subTest(name):
-                folder = self.copy_pass(name)
+                folder = self.copy_pass(str(i))  # numbered: there journal.jsonl and JOURNAL.JSONL would be one folder
                 (folder / name).write_text("text\n", encoding="utf-8")
                 fails = self.assert_fails_only(folder, "no-secrets-or-bodies")
                 self.assertIn(name, fails[0])
