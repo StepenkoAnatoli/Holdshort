@@ -283,14 +283,14 @@
     ]
   },
   "headroom-proposals": [],
-  "ledger-sha256": "2a50cd15abe6bad2cf7b51a8d1f9b097b14746373a9392f007d6f85d7fe81818",
-  "outcome-records": 17,
-  "outcomes-counted": 15,
-  "policy-revision": "host-policy-4",
+  "ledger-sha256": "e414d2f8639e1c8154fd9abeaeb04eff17db004e9e55380ef100a87b5abb0ee0",
+  "outcome-records": 19,
+  "outcomes-counted": 17,
+  "policy-revision": "host-policy-6",
   "proposals": [],
   "stats": {
     "cc-fable-high": {
-      "review": {
+      "review@T1": {
         "accepted": 1,
         "blocked": 0,
         "cancelled": 0,
@@ -302,7 +302,7 @@
       }
     },
     "cc-haiku-high": {
-      "fix": {
+      "fix@T1": {
         "accepted": 1,
         "blocked": 0,
         "cancelled": 0,
@@ -314,7 +314,7 @@
       }
     },
     "cc-haiku-low": {
-      "fix": {
+      "fix@T1": {
         "accepted": 0,
         "blocked": 0,
         "cancelled": 0,
@@ -326,8 +326,8 @@
       }
     },
     "cc-opus-high": {
-      "build-ui": {
-        "accepted": 5,
+      "build-ui@T1": {
+        "accepted": 6,
         "blocked": 0,
         "cancelled": 0,
         "cost-overrun": 0,
@@ -336,7 +336,17 @@
         "partial": 0,
         "verification-failed": 1
       },
-      "fix": {
+      "build-ui@T3": {
+        "accepted": 1,
+        "blocked": 0,
+        "cancelled": 0,
+        "cost-overrun": 0,
+        "deviations": 0,
+        "escalated": 0,
+        "partial": 0,
+        "verification-failed": 0
+      },
+      "fix@T1": {
         "accepted": 2,
         "blocked": 0,
         "cancelled": 0,
@@ -346,7 +356,7 @@
         "partial": 0,
         "verification-failed": 0
       },
-      "review": {
+      "review@T1": {
         "accepted": 3,
         "blocked": 0,
         "cancelled": 0,
@@ -367,10 +377,10 @@
       "ratified-at": "2026-10-18T01:23:32Z",
       "skipped": {
         "negative-delta": 0,
-        "reset": 3,
-        "spanning": 7,
+        "reset": 5,
+        "spanning": 9,
         "unknown-tokens": 0,
-        "zero-tokens": 6
+        "zero-tokens": 8
       }
     },
     "seven_day": {
@@ -381,13 +391,13 @@
       "ratified-at": "2026-10-18T01:23:32Z",
       "skipped": {
         "negative-delta": 0,
-        "reset": 1,
-        "spanning": 7,
+        "reset": 2,
+        "spanning": 10,
         "unknown-tokens": 0,
-        "zero-tokens": 8
+        "zero-tokens": 10
       }
     }
   },
   "usage-proposals": [],
-  "usage-sha256": "8158470c28cd5a6bba24e98a1b346eced3b55b3af4a325438571d393395074a7"
+  "usage-sha256": "2023e876128640113592b007b77fff4a0351f863d9c715fc3c420500bbae25c1"
 }
