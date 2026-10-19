@@ -219,6 +219,83 @@ def results_folder(root: Path, run: Path | None = None) -> Path:
     return out
 
 
+# The shared synthetic subject pack (tools/calibration/subject-pack/shared/): its trees, the script that builds its
+# repository, its manifest. The trees are the subject a candidate reads, so they carry no lineage header and are listed
+# by the pack's own README rather than the kit's.
+PACK = KIT / "subject-pack" / "shared"
+TREES = ("review", "base", "accepted")
+
+
+def pack_files(root: Path) -> list[str]:
+    """Every file of a pack directory, relative and with '/', leaving out bytecode caches and a built `repo`."""
+    out = []
+    for f in sorted(root.rglob("*")):
+        rel = f.relative_to(root)
+        if f.is_file() and "__pycache__" not in rel.parts and rel.parts[0] != "repo":
+            out.append(rel.as_posix())
+    return out
+
+
+def in_shared_trees(f: Path) -> bool:
+    return (PACK / "trees") in f.parents
+
+
+def in_shared_pack(f: Path) -> bool:
+    """A pack file other than its README: the pack's README lists it, not the kit's."""
+    return PACK in f.parents and f != PACK / "README.md"
+
+
+def build_shared(dest: Path, env: dict, target: Path | None = None) -> tuple[subprocess.CompletedProcess, dict]:
+    """A copy of the shared pack at dest with its repository built by make-repo.sh (default: `repo` beside the manifest)."""
+    if not dest.exists():
+        shutil.copytree(PACK, dest, ignore=shutil.ignore_patterns("__pycache__", "repo"))
+    target = target or dest / "repo"
+    p = subprocess.run(["bash", str(dest / "make-repo.sh"), str(target)], env=env, capture_output=True, text=True, timeout=120)
+    ids = {}
+    for line in p.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0] in {f"{t}0" for t in TREES}:
+            ids[parts[0]] = parts[1]
+    return p, ids
+
+
+def tree_files(commit_dir_or_repo: Path, env: dict, rev: str | None = None) -> dict[str, bytes]:
+    """The files of a trees/<name> directory, or of commit rev in a repository, as {path: bytes}."""
+    if rev is None:
+        return {f: (commit_dir_or_repo / f).read_bytes() for f in pack_files(commit_dir_or_repo)}
+    names = sh(["git", "ls-tree", "-r", "-z", "--name-only", rev], commit_dir_or_repo, env).stdout.split("\0")
+    return {n: subprocess.run(["git", "-C", str(commit_dir_or_repo), "show", f"{rev}:{n}"], capture_output=True, check=True, env=env).stdout
+            for n in names if n}
+
+
+def run_pack_tests(cand: Path, env: dict, *files: str) -> subprocess.CompletedProcess:
+    """The pack's own test command (manifest commands.test): python3 tests/run.py FILE..."""
+    return subprocess.run(["python3", "tests/run.py", *files], cwd=cand, env=env, capture_output=True, text=True, timeout=120)
+
+
+PROMISE = ("read_bounded accepts any iterable whose items are bytes-like (bytes, bytearray, memoryview) or str (encoded as UTF-8), "
+           "never raises on such input, and never returns more than limit bytes")
+
+
+def text_hash(path: Path) -> str:
+    """The protocol's source hash convention (README step 2): SHA-256 of the UTF-8 text with CRLF and CR read as LF."""
+    import hashlib
+    return hashlib.sha256(path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n").encode()).hexdigest()
+
+
+def strings(v):
+    """Every string in a JSON value, keys included."""
+    if isinstance(v, str):
+        yield v
+    elif isinstance(v, dict):
+        for k, x in v.items():
+            yield k
+            yield from strings(x)
+    elif isinstance(v, list):
+        for x in v:
+            yield from strings(x)
+
+
 class Observations(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -980,20 +1057,417 @@ class Request(unittest.TestCase):
         self.assertIn("scores.json", p.stderr)
 
 
+class SharedPack(unittest.TestCase):
+    """P5: the shared synthetic subject pack builds, behaves and grades as its manifest says."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls.tmp.name)
+        cls.env = git_env(cls.root)
+        cls.pack = cls.root / "pack"
+        cls.built, cls.ids = build_shared(cls.pack, cls.env)
+        cls.repo = cls.pack / "repo"
+        cls.n = 0
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def setUp(self):
+        self.assertEqual(self.built.returncode, 0, self.built.stdout + self.built.stderr)
+
+    def at(self, name: str) -> Path:
+        """A fresh history-less checkout of the pack commit <name>0, outside the pack."""
+        type(self).n += 1
+        target = self.root / "checkouts" / f"{name}-{self.n}"
+        p = checkout(self.repo, self.ids[f"{name}0"], target, self.env, "--pack", str(self.pack))
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        return target
+
+    def test_make_repo_builds_three_commits_holding_the_trees(self):
+        self.assertEqual(sorted(self.ids), ["accepted0", "base0", "review0"], self.built.stdout)
+        g = lambda *a: sh(["git", *a], self.repo, self.env).stdout.strip()
+        self.assertEqual(g("rev-list", "--reverse", "main").split(), [self.ids["review0"], self.ids["base0"], self.ids["accepted0"]])
+        self.assertEqual(g("rev-list", "--max-parents=0", "main"), self.ids["review0"])
+        for name in TREES:
+            rev = self.ids[f"{name}0"]
+            self.assertEqual(g("rev-parse", f"{name}0"), rev, f"the tag {name}0")
+            self.assertEqual(tree_files(self.repo, self.env, rev), tree_files(PACK / "trees" / name, self.env), name)
+            self.assertEqual(g("ls-tree", "-r", "--format=%(objectmode)", rev).split(), ["100644"] * len(tree_files(PACK / "trees" / name, self.env)))
+        self.assertIn("D-1", g("log", "-1", "--format=%B", self.ids["base0"]))
+        self.assertIn("D-2", g("log", "-1", "--format=%B", self.ids["accepted0"]))
+        self.assertEqual(g("status", "--porcelain"), "")
+
+    def test_make_repo_ids_do_not_depend_on_the_host(self):
+        # a hostile host: its own identity and dates in the environment, a clean filter on every file, CRLF conversion,
+        # commit and tag signing on (with a signer that fails), a legacy commit encoding and another default branch; the
+        # build succeeds and the ids are the same as on a clean one
+        home = self.root / "hostile"
+        home.mkdir()
+        (home / "attributes").write_text("* filter=hostile text eol=crlf\n")
+        (home / "gitconfig").write_text(
+            "[user]\n\tname = h\n\temail = h@localhost\n[init]\n\tdefaultBranch = trunk\n[core]\n\tautocrlf = true\n"
+            f"\tattributesFile = {home / 'attributes'}\n[filter \"hostile\"]\n\tclean = sed s/a/b/\n\tsmudge = cat\n"
+            "[i18n]\n\tcommitEncoding = ISO-8859-1\n[commit]\n\tgpgSign = true\n[tag]\n\tgpgSign = true\n[gpg]\n\tprogram = false\n")
+        env = git_env(home)
+        env.update(GIT_AUTHOR_NAME="x", GIT_AUTHOR_EMAIL="x@x", GIT_AUTHOR_DATE="2001-02-03T04:05:06Z",
+                   GIT_COMMITTER_NAME="y", GIT_COMMITTER_EMAIL="y@y", GIT_COMMITTER_DATE="2001-02-03T04:05:06Z", TZ="Asia/Kolkata",
+                   GIT_EDITOR="false")  # a step that wants an editor fails here instead of waiting for one
+        p, ids = build_shared(self.root / "hostile-pack", env)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(ids, self.ids)
+        p, again = build_shared(self.root / "hostile-pack", self.env, self.root / "elsewhere" / "repo")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(again, self.ids, "a second build elsewhere gives the same ids")
+
+    def test_make_repo_refuses_an_existing_target_and_a_bad_call(self):
+        (self.root / "taken").mkdir(exist_ok=True)
+        for args in ([str(self.root / "taken")], [], ["a", "b"]):
+            p = subprocess.run(["bash", str(self.pack / "make-repo.sh"), *args], env=self.env, capture_output=True, text=True, timeout=60)
+            self.assertEqual(p.returncode, 2, f"{args}: {p.stdout}{p.stderr}")
+        self.assertEqual(list((self.root / "taken").iterdir()), [])
+
+    def test_the_shipped_harness_is_green_on_every_tree(self):
+        for name in TREES:
+            p = run_pack_tests(self.at(name), self.env, "tests/test_bounded.py")
+            self.assertEqual(p.returncode, 0, f"{name}: {p.stdout}{p.stderr}")
+            self.assertRegex(p.stderr, r"Ran (?:[89]|1[0-9]) tests", name)
+
+    def test_the_runner_reads_red_on_a_failure_a_broken_file_or_no_test(self):
+        cand = self.at("accepted")
+        (cand / "tests" / "zz_red.py").write_text("import unittest\n\n\nclass R(unittest.TestCase):\n    def test_r(self):\n        self.fail('red')\n")
+        (cand / "tests" / "zz_broken.py").write_text("import nothing_by_this_name\n")
+        (cand / "tests" / "zz_empty.py").write_text("X = 1\n")
+        for f in ("tests/zz_red.py", "tests/zz_broken.py", "tests/zz_empty.py"):
+            self.assertEqual(run_pack_tests(cand, self.env, f).returncode, 1, f)
+        self.assertEqual(run_pack_tests(cand, self.env).returncode, 2)
+        self.assertEqual(run_pack_tests(cand, self.env, "tests/test_bounded.py", "tests/zz_red.py").returncode, 1)
+
+    def test_d2_the_accepted_pin_is_red_at_base_and_review_and_green_at_accepted(self):
+        pin = (PACK / "trees" / "accepted" / "tests" / "test_pin.py").read_bytes()
+        for name, code in (("review", 1), ("base", 1), ("accepted", 0)):
+            cand = self.at(name)
+            (cand / "tests" / "zz_accepted_pin.py").write_bytes(pin)
+            p = run_pack_tests(cand, self.env, "tests/zz_accepted_pin.py")
+            self.assertEqual(p.returncode, code, f"{name}: {p.stdout}{p.stderr}")
+            if code:
+                self.assertIn("AssertionError", p.stderr, name)  # red by the rule, not by a crash
+
+    def test_d1_a_memoryview_chunk_raises_at_review_only(self):
+        probe = ("import sys; sys.path.insert(0, '.')\nfrom src.bounded import read_bounded\n"
+                 "try:\n    print('returned', read_bounded([memoryview(b'abc'), b'def'], 4))\n"
+                 "except Exception as e:\n    print('raised', type(e).__name__)\n")
+        seen = {}
+        for name in TREES:
+            p = subprocess.run(["python3", "-c", probe], cwd=self.at(name), env=self.env, capture_output=True, text=True, timeout=60)
+            seen[name] = p.stdout.strip()
+        self.assertEqual(seen, {"review": "raised TypeError", "base": "returned b'abcd'", "accepted": "returned b'abcd'"})
+
+
+    def test_the_spec_states_the_edges_of_the_promise_the_accepted_tree_keeps(self):
+        # the edges a review could otherwise report as other findings: the spec says how each behaves, and the accepted
+        # tree behaves so (a released memoryview holds no bytes; a limit of 0 still reads the first chunk, and no more)
+        for name in TREES:
+            spec = (PACK / "trees" / name / "SPEC.md").read_text()
+            self.assertIn("released", spec, name)
+            self.assertIn("with a limit of 0", spec, name)
+            none = re.search(r"(?ms)^- \*\*none\*\*:.*?(?=^\S|^- )", spec).group(0)  # R-3: Python calls these bytes-like too
+            for kind in ("`array.array`", "`mmap`"):
+                self.assertIn(kind, none, name)
+        probe = ("import sys; sys.path.insert(0, '.')\nfrom src.bounded import read_bounded\n"
+                 "v = memoryview(b'abc'); v.release()\n"
+                 "try:\n    read_bounded([v], 4)\nexcept ValueError:\n    print('released: ValueError')\n"
+                 "pulled = []\ndef gen():\n    for c in (b'a', b'b'):\n        pulled.append(c)\n        yield c\n"
+                 "print('limit 0:', read_bounded(gen(), 0), len(pulled))\n"
+                 "import array, mmap\nfor c in (array.array('b', [65, 66]), mmap.mmap(-1, 2)):\n"
+                 "    try:\n        read_bounded([c], 4)\n    except TypeError:\n        print(type(c).__name__ + ': TypeError')\n")
+        p = subprocess.run(["python3", "-c", probe], cwd=self.at("accepted"), env=self.env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(p.stdout.split("\n")[:4], ["released: ValueError", "limit 0: b'' 1", "array: TypeError", "mmap: TypeError"], p.stdout + p.stderr)
+
+    # ---- the manifest (P3, P4) and grade.sh on this pack (P5) --------------------------------------------------------
+    def manifest(self) -> dict:
+        return json.loads((PACK / "manifest.json").read_text(encoding="utf-8"))
+
+    def test_the_manifest_carries_the_built_ids(self):
+        m, ids = self.manifest(), self.ids
+        self.assertEqual(m["repository"], "repo")
+        self.assertEqual((m["cases"]["review"]["base"], m["cases"]["pin"]["base"], m["cases"]["fix"]["base"], m["accepted_fix"]),
+                         (ids["review0"], ids["base0"], ids["base0"], ids["accepted0"]))
+        truth = {f["id"]: f for f in m["findings"]}
+        self.assertEqual(sorted(truth), ["D-1", "D-2"])
+        self.assertEqual((truth["D-1"]["present_at"], truth["D-1"]["accepted_fix"]), ([ids["review0"]], ids["base0"]))
+        self.assertEqual((truth["D-2"]["present_at"], truth["D-2"]["accepted_fix"]), ([ids["review0"], ids["base0"]], ids["accepted0"]))
+        self.assertIn("make-repo: the ids equal manifest.json's", self.built.stderr)
+
+    def test_make_repo_fails_when_the_ids_differ_from_the_manifest(self):
+        dest = self.root / "changed-pack"
+        shutil.copytree(PACK, dest, ignore=shutil.ignore_patterns("__pycache__", "repo"))
+        with (dest / "trees" / "base" / "SPEC.md").open("a", encoding="utf-8") as f:
+            f.write("\nchanged\n")
+        p, ids = build_shared(dest, self.env)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("differ from manifest.json", p.stderr)
+        self.assertIn("cases.pin.base", p.stderr)
+        self.assertNotIn("cases.review.base", p.stderr)  # review0 is built from trees/review, which did not change
+
+    def test_the_manifest_carries_every_field_of_the_format(self):
+        m, fixture = self.manifest(), json.loads((FIX / "manifest.json").read_text())
+        # every field the format documents (subject-pack/README.md), optional ones included, is present
+        section = md_section((KIT / "subject-pack" / "README.md").read_text(), "manifest.json")
+        fields = set(re.findall(r"^\s*- `([a-z_.\[\]]+)`", section, re.M))
+        for line in re.findall(r"^\s*- (`cases\.pin\.[a-z_]+`.*?):", section, re.M):  # "`cases.pin.x`, `cases.fix.x`: ..."
+            fields |= set(re.findall(r"`([a-z_.]+)`", line))
+        self.assertGreater(len(fields), 40, fields)
+        for field in sorted(fields):
+            node = m
+            for part in field.replace("[]", "").split("."):
+                node = node[0] if isinstance(node, list) else node
+                self.assertIn(part, node, field)
+                node = node[part]
+        keys = lambda d: {k for k in d if not k.startswith("_")}
+        self.assertEqual(keys(m), keys(fixture))
+        for f in m["findings"]:
+            self.assertEqual(keys(f), keys(fixture["findings"][0]), f["id"])
+            self.assertEqual(f["severity"], "S3", f["id"])
+        for case in ("pin", "fix", "review"):
+            self.assertTrue(keys(fixture["cases"][case]) <= keys(m["cases"][case]), case)
+            self.assertEqual(m["cases"][case]["tier"], "T1", case)
+            self.assertEqual(m["cases"][case]["pass_rule"], fixture["cases"][case]["pass_rule"], case)  # the kit's rule shapes
+            self.assertEqual(m["cases"][case]["category"], fixture["cases"][case]["category"], case)
+        self.assertEqual((m["kind"], m["pack_version"]), ("shared", "1"))
+        self.assertEqual((m["cases"]["pin"]["finding"], m["cases"]["fix"]["finding"], m["cases"]["review"]["findings"]), ("D-2", "D-2", ["D-1", "D-2"]))
+        self.assertIn("two-row", m["cases"]["pin"]["instructions"])
+        self.assertTrue(m["cases"]["fix"]["commit_prefix"].startswith("fix(bounded): D-2"))
+        for name in ("read_bounded", "chunk_kind", "join_parts"):
+            self.assertIn(name, m["cases"]["review"]["scope"])
+        paths = m["paths"]
+        self.assertEqual((paths["source"], paths["source_dir"], paths["test_file"], paths["new_test_pattern"], paths["accepted_test"], paths["scratch_test"]),
+                         (["src/bounded.py"], "src", "tests/test_bounded.py", "^tests/test_pin.*\\.py$",
+                          {"from": "tests/test_pin.py", "to": "tests/zz_accepted_pin.py"}, "tests/scratch_{name}.py"))
+        self.assertRegex(m["cases"]["pin"]["test_file"], paths["new_test_pattern"])
+        self.assertNotRegex(paths["accepted_test"]["to"], paths["new_test_pattern"])
+        self.assertEqual(m["commands"], {"test": "python3 tests/run.py {files}", "test_report": "exit-code", "run_one": "python3 tests/run.py {file}",
+                                         "lint": "python3 -m py_compile {files}", "timeout_seconds": 120})
+        self.assertEqual(m["checkout"], {"links": []})
+        self.assertEqual(m["subject"]["module"], "src/bounded.py")
+        self.assertEqual(m["subject"]["promise"], PROMISE)
+        for name in TREES:  # the module states the promise the manifest names
+            doc = " ".join((PACK / "trees" / name / "src" / "bounded.py").read_text().split('"""')[1].split())
+            self.assertIn(PROMISE, doc, name)
+        self.assertIn("history-less", m["isolation"])
+
+    def test_no_manifest_text_states_an_accepted_fix(self):
+        m = self.manifest()
+        text = "\n".join(strings({k: v for k, v in m.items() if k != "source_hashes"}))
+        g = lambda *a: sh(["git", *a], self.repo, self.env).stdout
+        for a, b in (("review0", "base0"), ("base0", "accepted0")):
+            added = [ln[1:].strip() for ln in g("diff", a, b, "--", "src/bounded.py").splitlines() if ln.startswith("+") and not ln.startswith("+++")]
+            self.assertTrue(added, (a, b))
+            for line in added:
+                self.assertNotIn(line, text, f"the manifest states the fix line {line!r}")
+
+    def test_source_hashes_cover_every_pack_file(self):
+        hashes = self.manifest()["source_hashes"]
+        self.assertEqual(sorted(hashes), [f for f in pack_files(PACK) if f != "manifest.json"])
+        for f, h in hashes.items():
+            self.assertEqual(h, text_hash(PACK / f), f)
+
+    def grade_cell(self, task: str, prepare) -> dict:
+        cand = self.at("base")
+        prepare(cand)
+        commit_all(cand, self.env, f"fix(bounded): D-2 - {task} cell" if task == "fix" else "test(bounded): pin")
+        code, d, out = grade(self.pack / "manifest.json", task, cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertIs(d["restored"], True, out)
+        self.assertFalse((cand / "tests" / "zz_accepted_pin.py").exists())
+        return d
+
+    def accepted(self, path: str) -> bytes:
+        return (PACK / "trees" / "accepted" / path).read_bytes()
+
+    def test_grade_pin_the_accepted_pin_passes(self):
+        d = self.grade_cell("pin", lambda c: (c / "tests" / "test_pin.py").write_bytes(self.accepted("tests/test_pin.py")))
+        self.assertEqual(d["testFiles"], ["tests/test_pin.py"])
+        self.assertEqual((d["redAtHead"], d["greenWithFix"], d["srcClean"], d["lint"], d["committed"]), (True, True, True, "ok", True), d)
+        self.assertIs(d["PASS"], True)
+
+    def test_grade_pin_a_wrong_pin_fails(self):
+        weak = ("import unittest\nfrom src.bounded import read_bounded\n\n\nclass P(unittest.TestCase):\n    def test_text(self):\n"
+                "        self.assertEqual(read_bounded([\"ab\"], 4), b\"ab\")\n")
+        d = self.grade_cell("pin", lambda c: (c / "tests" / "test_pin.py").write_text(weak))  # green at the base: not the rule
+        self.assertEqual((d["redAtHead"], d["greenWithFix"]), (False, True), d)
+        self.assertIs(d["PASS"], False)
+
+        def pin_and_fix(c):  # the rule, but the source fixed too: a pin cell changes nothing under src/
+            (c / "tests" / "test_pin.py").write_bytes(self.accepted("tests/test_pin.py"))
+            (c / "src" / "bounded.py").write_bytes(self.accepted("src/bounded.py"))
+        d = self.grade_cell("pin", pin_and_fix)
+        self.assertEqual((d["redAtHead"], d["srcClean"], d["srcTouched"]), (False, False, ["src/bounded.py"]), d)
+        self.assertIs(d["PASS"], False)
+
+    TWO_CHUNK_ROWS = ("        self.assertEqual(read_bounded([\"abc\", \"def\"], 4), b\"abcd\")\n"
+                      "        self.assertEqual(read_bounded([b\"ab\", \"cd\\u00e9\", b\"f\"], 4), b\"abcd\")\n")
+    # a candidate's own pin that cuts only one text chunk, and never one after earlier bytes (N-3 of re-review 2)
+    ONE_CHUNK_ROWS = ("        self.assertEqual(read_bounded([\"abcdef\"], 4), b\"abcd\")\n"
+                      "        self.assertEqual(read_bounded([b\"ab\", \"cd\"], 4), b\"abcd\")\n")
+
+    def fix_like_the_accepted_one(self, cand: Path, source: bytes | None = None, rows: str | None = None):
+        (cand / "src" / "bounded.py").write_bytes(source if source is not None else self.accepted("src/bounded.py"))
+        with (cand / "tests" / "test_bounded.py").open("a", encoding="utf-8") as f:
+            f.write("\n\nclass TextCountsAgainstTheLimit(unittest.TestCase):\n    def test_rows(self):\n" + (rows or self.TWO_CHUNK_ROWS))
+
+    def test_grade_fix_the_accepted_source_with_a_pin_passes(self):
+        d = self.grade_cell("fix", self.fix_like_the_accepted_one)
+        self.assertEqual((d["candidateGreen"], d["guardRed"], d["acceptedPinGreen"], d["scopeOk"], d["lint"]), (True, True, True, True, "ok"), d)
+        self.assertEqual((d["srcDiffLines"], d["committedWithMap"], d["outOfScope"]), (3, None, []), d)
+        self.assertIs(d["PASS"], True)
+
+    def test_grade_fix_a_scope_breaking_fix_fails(self):
+        def and_the_spec(c):
+            self.fix_like_the_accepted_one(c)
+            with (c / "SPEC.md").open("a", encoding="utf-8") as f:
+                f.write("\nA str chunk counts too.\n")
+        d = self.grade_cell("fix", and_the_spec)
+        self.assertEqual((d["candidateGreen"], d["guardRed"], d["acceptedPinGreen"]), (True, True, True), d)
+        self.assertEqual((d["scopeOk"], d["outOfScope"]), (False, ["SPEC.md"]), d)
+        self.assertIs(d["PASS"], False)
+
+    def wrong_fix(self, name: str) -> bytes:
+        """base0's source with a fix of D-2 that passes a pin which never cuts inside a character or never tests the stop,
+        yet still breaks the promise or SPEC.md's result (R-1 of the sr-pack review, N-1 and N-2 of its re-review)."""
+        src = (PACK / "trees" / "base" / "src" / "bounded.py").read_text(encoding="utf-8")
+        text = '            parts.append(chunk.encode("utf-8", "replace"))\n            continue\n'
+        self.assertEqual(src.count(text), 1)
+        if name == "chars":  # counts a str chunk by its characters, not its UTF-8 bytes
+            src = src.replace(text, '            piece = chunk[:limit - taken]\n            parts.append(piece.encode("utf-8", "replace"))\n'
+                                    '            taken += len(piece)\n            if taken >= limit:\n                break\n            continue\n')
+        elif name == "boundary":  # takes whole characters while they fit and stops at the first that does not, so a
+            # result never ends inside a character, where SPEC.md cuts at limit bytes
+            src = src.replace(text, '            fits, whole = b"", True\n            for ch in chunk:\n'
+                                    '                b = ch.encode("utf-8", "replace")\n'
+                                    '                if taken + len(fits) + len(b) > limit:\n'
+                                    '                    whole = False\n                    break\n'
+                                    '                fits += b\n            parts.append(fits)\n            taken += len(fits)\n'
+                                    '            if not whole or taken >= limit:\n                break\n            continue\n')
+        elif name == "topcheck":  # counts a str chunk's bytes, but tests the bound at the top of the loop, so it pulls
+            # one chunk past limit bytes and drops it, where SPEC.md says no further chunk is read
+            src = src.replace(text, '            chunk = chunk.encode("utf-8", "replace")\n')
+            for a, b in (("    for chunk in chunks:\n", "    for chunk in chunks:\n        if taken >= limit:\n            break\n"),
+                         ("        taken += len(piece)\n        if taken >= limit:\n            break\n", "        taken += len(piece)\n")):
+                self.assertEqual(src.count(a), 1, a)
+                src = src.replace(a, b)
+        elif name == "slicelimit":  # counts a str chunk's bytes and stops, but cuts it at enc[:limit] instead of
+            # enc[:limit - taken], so a text chunk after earlier bytes overflows the limit (N-3 of re-review 2)
+            src = src.replace(text, '            piece = chunk.encode("utf-8", "replace")[:limit]\n            parts.append(piece)\n'
+                                    '            taken += len(piece)\n            if taken >= limit:\n                break\n            continue\n')
+        else:  # "trunc": cuts the joined result at the end, so str chunks are still neither counted nor stopped at
+            self.assertEqual(src.count("    return join_parts(parts)\n"), 1)
+            src = src.replace("    return join_parts(parts)\n", "    return join_parts(parts)[:limit]\n")
+        return src.encode("utf-8")
+
+    def test_grade_fix_wrong_fixes_of_d2_fail_on_the_accepted_pin(self):
+        # the pin case's rule names both halves the accepted pin tests: the UTF-8 bytes count, and the stop
+        rule = {f["id"]: f for f in self.manifest()["findings"]}["D-2"]["required_behaviour"]
+        self.assertIn("UTF-8 bytes count against limit", rule)
+        self.assertIn("reads no further chunk", rule)
+        # each passes its own test and is red with base0's source, so only the accepted pin can tell it from the fix
+        probes = {"chars": "print(len(read_bounded(['\\u00e9' * 4], 4)))",  # a non-ASCII text chunk crosses the bound
+                  "trunc": "print(read_bounded(['ab', 'cd', 3], 4))",  # reads past limit bytes, into a chunk it rejects
+                  "boundary": "print(read_bounded(['\\u00e9\\u00e9', b'x'], 3))",  # 2 bytes, not the 3 SPEC.md cuts at
+                  "topcheck": "pulls = []\ndef g():\n    for c in ('ab', 'cd', 'ef'):\n        pulls.append(c)\n        yield c\n"
+                              "print(read_bounded(g(), 4), len(pulls))",  # pulls 'ef' though 'cd' reached the limit
+                  "slicelimit": "print(read_bounded(['abc', 'abc'], 4))"}  # 6 bytes: the second chunk is cut at limit, not at the room left
+        for name, probe in probes.items():
+            with self.subTest(fix=name):
+                cand = []
+                rows = self.ONE_CHUNK_ROWS if name == "slicelimit" else None  # its own test cuts one chunk, so only the accepted pin can tell
+                d = self.grade_cell("fix", lambda c: (cand.append(c), self.fix_like_the_accepted_one(c, self.wrong_fix(name), rows)))
+                self.assertEqual((d["candidateGreen"], d["guardRed"], d["scopeOk"], d["lint"]), (True, True, True, "ok"), d)
+                self.assertIs(d["acceptedPinGreen"], False, d)
+                self.assertIs(d["PASS"], False, d)
+                p = subprocess.run(["python3", "-c", "import sys; sys.path.insert(0, '.')\nfrom src.bounded import read_bounded\n" + probe],
+                                   cwd=cand[0], env=self.env, capture_output=True, text=True, timeout=60)
+                want = {"chars": p.stdout.strip() == "8", "trunc": "TypeError" in p.stderr,
+                        "boundary": p.stdout.strip() == "b'\\xc3\\xa9'", "topcheck": p.stdout.strip() == "b'abcd' 3",
+                        "slicelimit": p.stdout.strip() == "b'abcabc'"}
+                self.assertTrue(want[name], p.stdout + p.stderr)
+
+    # ---- the workflow template filled with this pack (P5) ------------------------------------------------------------
+    def shared_run_config(self, **host) -> dict:
+        co = self.root / "launch" / "checkouts"
+        cfg = run_config(self.root / "launch", **{"pack_dir": str(self.pack), "checkout_root": str(co),
+                                                   "adjudication_checkout": str(co / "cal-adjudication"), **host})
+        cfg["manifest"] = self.manifest()
+        return cfg
+
+    @NEEDS_NODE
+    def test_the_workflow_template_launches_on_this_pack(self):
+        m = self.manifest()
+        out = execute_template(self.shared_run_config(), self.root)
+        self.assertIsNone(out["error"])
+        labels = sorted(c["label"] for c in out["calls"])
+        self.assertEqual([x for x in labels if x.split(":")[0] in ("pin", "fix", "review")],
+                         ["fix:alpha-low", "pin:alpha-low", "review:alpha-low", "review:beta-max"])
+        truth = {f["id"]: f for f in m["findings"]}
+        for c in out["calls"]:
+            self.assertNotIn("{{", c["prompt"], c["label"])
+            task = c["label"].split(":")[0]
+            if task not in ("pin", "fix", "review"):
+                continue
+            prompt = c["prompt"]
+            self.assertIn(str(self.root / "launch" / "checkouts" / f"cal-{c['label'].replace(':', '-')}"), prompt)
+            self.assertIn(m["subject"]["promise"], prompt)
+            self.assertIn("python3 tests/run.py <file>", prompt)
+            for secret in (str(self.pack), "trees/", "make-repo", "zz_accepted_pin", self.ids["accepted0"], self.ids["base0"], self.ids["review0"]):
+                self.assertNotIn(secret, prompt, f"{c['label']} names {secret}")  # Item 2: the prompt names only the checkout
+            if task == "review":
+                self.assertIn(m["cases"]["review"]["scope"], prompt)
+                for f in truth.values():  # no ground truth in a review prompt
+                    for field in ("summary", "cause", "required_behaviour"):
+                        self.assertNotIn(f[field], prompt, f"{f['id']}.{field}")
+        pin = next(c["prompt"] for c in out["calls"] if c["label"] == "pin:alpha-low")
+        self.assertIn("NEW file tests/test_pin.py", pin)
+        self.assertIn(truth["D-2"]["required_behaviour"], pin)
+        self.assertIn(m["cases"]["pin"]["instructions"], pin)
+        self.assertNotIn(truth["D-1"]["summary"], pin)
+        fix = next(c["prompt"] for c in out["calls"] if c["label"] == "fix:alpha-low")
+        for field in ("summary", "cause", "required_behaviour"):
+            self.assertIn(truth["D-2"][field], fix, field)
+        self.assertIn("'fix(bounded): D-2 - '", fix)
+        self.assertIn("python3 -m py_compile src/bounded.py tests/test_bounded.py", fix)
+        self.assertNotIn(truth["D-1"]["summary"], fix)
+        grader = next(c["prompt"] for c in out["calls"] if c["label"] == "grade:beta-max")
+        for f in truth.values():
+            self.assertIn(f"{f['id']} (S3): {f['summary']}", grader)
+
+    @NEEDS_NODE
+    def test_the_launch_refusals_hold_on_this_pack(self):
+        for host in ({"checkout_root": str(self.pack / "checkouts")}, {"adjudication_checkout": str(self.pack / "repo" / "adj")},
+                     {"pack_dir": str(self.root / "launch" / "checkouts" / "pack")}):
+            out = execute_template(self.shared_run_config(**host), self.root)
+            self.assertIn("shares a filesystem path with the pack directory", out["error"] or "", host)
+            self.assertEqual(out["calls"], [], host)
+        cfg = self.shared_run_config()
+        cfg["protocol"]["frozen_at"] = "{{ISO-8601 UTC time of the freeze commit}}"
+        out = execute_template(cfg, self.root)
+        self.assertIn("frozen", out["error"] or "")
+        self.assertEqual(out["calls"], [])
+
 class Docs(unittest.TestCase):
     def readme(self) -> str:
         return (KIT / "README.md").read_text()
 
     def test_every_kit_file_has_a_lineage_header(self):
         for f in sorted(KIT.rglob("*")):
-            if f.is_file() and "__pycache__" not in f.parts:
+            if f.is_file() and "__pycache__" not in f.parts and not in_shared_trees(f):  # the subject a candidate reads
                 head = "\n".join(f.read_text().splitlines()[:3])
                 self.assertIn("lineage", head.lower(), f.relative_to(KIT))  # protocol.template.json carries it as its _lineage key
 
     def test_readme_lists_every_kit_file(self):
         text = self.readme()
         for f in sorted(KIT.rglob("*")):
-            if f.is_file() and "__pycache__" not in f.parts and f != KIT / "README.md":
+            if f.is_file() and "__pycache__" not in f.parts and f != KIT / "README.md" and not in_shared_pack(f):
                 self.assertIn(f"`{f.relative_to(KIT).as_posix()}`", text)
 
     def test_readme_documents_the_observation_keys_the_adapter_reads(self):
@@ -1036,19 +1510,68 @@ class Docs(unittest.TestCase):
             self.assertIn(f"`{k}`", text, k)
         self.assertIn("Isolation", text)
 
-    def test_shared_pack_is_a_stub_naming_the_unit_that_builds_it(self):
-        shared = KIT / "subject-pack" / "shared"
-        self.assertEqual(sorted(f.name for f in shared.iterdir()), ["README.md"])
-        text = (shared / "README.md").read_text()
-        self.assertIn("shared synthetic subject pack", text)
-        self.assertIn("not built here", text)
+    def test_shared_pack_holds_its_trees_and_the_script_that_builds_its_repository(self):
+        self.assertTrue({"README.md", "make-repo.sh", "manifest.json", "trees"} <= {f.name for f in PACK.iterdir()})
+        self.assertEqual(sorted(f.name for f in (PACK / "trees").iterdir()), sorted(TREES))
+
+    def test_shared_pack_readme_describes_the_pack(self):
+        text = (PACK / "README.md").read_text()
+        self.assertTrue(text.startswith("<!-- Lineage:"))
+        self.assertNotIn("stub", text.lower())
+        m = json.loads((PACK / "manifest.json").read_text())
+        self.assertIn(f"Version {m['pack_version']}", text)
+        for heading in ("The two defects", "Files", "How a host runs it", "What it does not discriminate", "When it is rewritten"):
+            md_section(text, heading)
+        defects = md_section(text, "The two defects")
+        for f in m["findings"]:
+            self.assertRegex(defects, rf"(?m)^- \*\*{f['id']}\*\* \({f['severity']}", f["id"])
+        for a, b in (("review", "base"), ("base", "accepted")):  # never a fix line (P6: summary and cause only)
+            old_lines = set((PACK / "trees" / a / "src" / "bounded.py").read_text().splitlines())
+            for line in (PACK / "trees" / b / "src" / "bounded.py").read_text().splitlines():
+                if line not in old_lines:
+                    self.assertNotIn(line.strip(), text, f"the README states the fix line {line.strip()!r}")
+        files = md_section(text, "Files")
+        for f in pack_files(PACK):
+            parts = f.split("/")
+            if parts[0] == "trees":
+                self.assertIn(f"`{'/'.join(parts[2:])}`", files, f)
+            else:
+                self.assertIn(f"`{f}`", files, f)
+        for name in TREES:
+            self.assertIn(f"`trees/{name}/`", files, name)
+        run = md_section(text, "How a host runs it")
+        for word in ("make-repo.sh", "historyless-checkout.sh", "grade.sh", "manifest.json", "pack_dir", "outside the kit"):
+            self.assertIn(word, run, word)
+        # R-2: the guards compare paths with pack_dir only, so step 3 leaves the kit's own trees/ to the host
+        step3 = re.search(r"(?ms)^3\. \*\*Checkouts\*\*.*?(?=^4\. )", run).group(0)
+        for words in ("the guards cover the pack directory only", "`historyless-checkout.sh --pack`", "`run.template.js`",
+                      "the host checks the kit's path itself"):
+            self.assertIn(words.lower(), " ".join(step3.lower().split()), words)
+        self.assertIn("T1", md_section(text, "What it does not discriminate"))
+        self.assertIn("pack_version", md_section(text, "When it is rewritten"))
+
+    def test_the_kit_and_format_readmes_name_the_shared_pack(self):
+        kit = self.readme()
+        self.assertNotIn("a stub: the shared synthetic pack", kit)
+        self.assertNotIn("built by its own unit", kit)
+        paragraph = md_section(kit, "The shared pack")
+        for word in ("subject-pack/shared/", "make-repo.sh", "D-1", "D-2", "T1"):
+            self.assertIn(word, paragraph, word)
+        fmt = md_section((KIT / "subject-pack" / "README.md").read_text(), "The shared pack")
+        for word in ("shared/", "make-repo.sh", "manifest.json", "repository"):
+            self.assertIn(word, fmt, word)
 
     def test_changelog_and_readme_name_the_kit(self):
         changelog = (ROOT / "CHANGELOG.md").read_text()
         unreleased = changelog.split("## Unreleased", 1)[1].split("\n## ", 1)[0]
         lines = [ln for ln in unreleased.splitlines() if "tools/calibration/" in ln]
-        self.assertEqual(len(lines), 1)
-        self.assertIn("calibration-first-onboarding", lines[0])
+        self.assertEqual(len(lines), 2)
+        kit = [ln for ln in lines if ln.startswith("- **Calibration kit**")]
+        self.assertEqual(len(kit), 1)
+        self.assertIn("calibration-first-onboarding", kit[0])
+        pack = [ln for ln in lines if ln.startswith("- **Shared synthetic subject pack**")]
+        self.assertEqual(len(pack), 1)
+        self.assertIn("tools/calibration/subject-pack/shared/", pack[0])
         self.assertIn("(tools/calibration/README.md)", (ROOT / "README.md").read_text())
 
 

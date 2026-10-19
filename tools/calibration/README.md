@@ -27,15 +27,15 @@ and the kit's own test fails on a host path, a session id or a run id anywhere u
 | `run.template.js` | the workflow: cells per profile and case, the preamble that reconciles a relayed operator request, pipelined grading, clustering, three lenses per cluster, majority; harness-specific lines marked `// HARNESS:` | the main and supplementary workflow scripts |
 | `request.py` | prints the branch, the files and the pull-request body in this repository's template, and asks the operator to open it | the results pull request of run 3 |
 | `subject-pack/README.md` | the format of a subject pack (`manifest.json`) | the subject sections of runs 1-3's protocols |
-| `subject-pack/shared/README.md` | a stub: the shared synthetic pack is built by its own unit | - |
+| `subject-pack/shared/README.md` | the shared synthetic pack (version 1): its README lists the pack's files (`manifest.json`, `make-repo.sh`, the trees) | proposal Item 2 |
 
 ## How a host onboards a profile
 
 The folder `docs/evidence/<date>/<host>-calibration-<n>/` is the run's evidence folder (proposal Item 4.1). The pack,
 the checkouts, the grades and the harness files stay outside it and outside every candidate's paths.
 
-1. **Pack.** Choose the subject pack: the shared synthetic pack (Item 2; built by its own unit, see
-   `subject-pack/shared/README.md`) and, if the host wants its own categories qualified on its own code, a host pack.
+1. **Pack.** Choose the subject pack: the shared synthetic pack (Item 2; `subject-pack/shared/`, built by its
+   `make-repo.sh` as its README says) and, if the host wants its own categories qualified on its own code, a host pack.
    Each is a directory holding `manifest.json` in the format of `subject-pack/README.md` and the pack's git repository.
 2. **Protocol freeze.** Copy `protocol.template.json` to the evidence folder as `protocol.json`, fill every
    `{{placeholder}}` and delete `_lineage`; write the folder's `README.md` with the frozen sections (what the run is,
@@ -93,6 +93,16 @@ eight rules of proposal Item 4.3: protocol-frozen, prongs-declared, scores-deriv
 pin-category-mapping, judging-profile-named, relayed-chat-statement and no-secrets-or-bodies. A folder this kit builds
 is a kit run, so every rule applies in full; `docs/evidence/README.md` says what each rule asks for and what the table
 supports.
+
+## The shared pack
+
+`subject-pack/shared/` is the shared synthetic subject pack every host runs (proposal Item 2), version 1: a
+standard-library Python module, `src/bounded.py`, whose `read_bounded` promises never to raise on bytes-like or str
+chunks and never to return more than `limit` bytes, with two seeded S3 defects: D-1, a rejection of a memoryview chunk
+(review case only), and D-2, a bound skipped on str chunks (the pin, fix and review cases). The pack ships its three
+trees as directories; `make-repo.sh` builds them into the pack repository with the commit ids `manifest.json` carries,
+outside the kit's tree, and the host copies the manifest beside it. It discriminates the T1 shape only, and it is
+rewritten as a new version when it leaks; its README says how a host builds and runs it.
 
 ## The run protocol
 
@@ -161,6 +171,7 @@ the missing ones, the vote rule, the clusters where the run's verdict and the de
   in the protocol makes any change to it visible.
 - `grade.sh` reads two test-report modes: `exit-code` (green is exit 0; a crash reads red, so a counting report is
   better) and `vitest-json` (run 3's). Another runner writes vitest's three counters or uses `exit-code`.
-- The shared synthetic pack, the evidence check in the regression gate and the qualification table (proposal Items 2
-  "shared pack", 4.3 and 4.4) are separate units; this kit defines the pack format and the results layout they rely on.
+- The evidence check in the regression gate and the qualification table (proposal Items 4.3 and 4.4) are separate
+  units; this kit defines the pack format and the results layout they rely on. The shared pack (Item 2) is
+  `subject-pack/shared/`, version 1, and qualifies the T1 shape only.
 - Python 3.12 is the repository's CI version; the kit uses nothing newer than 3.11.
