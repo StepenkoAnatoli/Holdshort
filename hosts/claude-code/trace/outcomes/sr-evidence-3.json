@@ -1,0 +1,51 @@
+{
+ "task-id": "sr-evidence",
+ "outcome": "accepted",
+ "owner-profile": "cc-opus-high",
+ "original-brief-fingerprint": "aeb4439c8540b0662256c58e93c3f5a02e0e062c3e897ab576d64fd0d49a7d15",
+ "evidence": {
+  "checks": [
+   {
+    "command": "python3 -m py_compile tools/check_calibration_evidence.py tools/qualification_table.py tools/test_check_calibration_evidence.py tools/test_qualification_table.py",
+    "exit-code": 0,
+    "output-ref": "exit 0 on every unit commit and on the lead's N4 commit"
+   },
+   {
+    "command": "python3 tools/check_secrets.py",
+    "exit-code": 0,
+    "output-ref": "clean on every commit; the check's own secrets rule green on the three real folders (reports/sr-evidence-rereview-2.md)"
+   },
+   {
+    "command": "python3 tools/test_check_calibration_evidence.py; python3 tools/test_qualification_table.py",
+    "exit-code": 0,
+    "output-ref": "51 and 20 tests OK; red-first per deliverable with guard proofs (reports/sr-evidence-1.md; fix rounds: every fail/limit site silenced in turn turns a suite red, 0 survivors of 93; the lead's N4: 1 red, 1 guard proof)"
+   },
+   {
+    "command": "python3 tools/run_regression.py",
+    "exit-code": 0,
+    "output-ref": "REGRESSION GATE: all checks PASS through the pre-commit hook on every landed commit (the hook refused two of the lead's cuts, as it should)"
+   },
+   {
+    "command": "refute-first review",
+    "exit-code": 0,
+    "output-ref": "wf_799c944d-ef8: review FIX (F1 S2, F2 S3, F3-F6 S4), fix round 1, re-review FIX (N1 S2, N2 S3, N3 S4), fix round 2, re-review FIX with N4 S3 left (legacy leniency reached any folder without kit keys), fixed by the lead at integration; no finding open"
+   }
+  ],
+  "actual-spend": null,
+  "actual-tokens": 1491793,
+  "files-touched": [
+   "tools/check_calibration_evidence.py",
+   "tools/test_check_calibration_evidence.py",
+   "tools/qualification_table.py",
+   "tools/test_qualification_table.py",
+   "tools/run_regression.py",
+   "tests/fixtures/calibration-evidence/**",
+   "docs/evidence/qualification-table.md",
+   "docs/evidence/README.md",
+   "tools/calibration/README.md",
+   "CHANGELOG.md"
+  ],
+  "notes": "SmartRouter branch tools/calibration-evidence-check (fifteen unit commits plus the lead's N4), stacked on tools/calibration-kit; draft PR to follow. Six workflow agents, 1491793 harness tokens (not a bill): the largest unit so far, three review rounds each finding a class of hole in the legacy classification (F1, N1, N4). The three real folders pass with 14 named limitations; the table has 39 rows with 2 + 17 caveated PASSes not counted.",
+  "actual-spend-basis": "estimate-only"
+ }
+}

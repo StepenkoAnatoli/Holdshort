@@ -1,0 +1,47 @@
+{
+ "task-id": "sr-kit",
+ "outcome": "accepted",
+ "owner-profile": "cc-opus-high",
+ "original-brief-fingerprint": "189b516b34d9c9b73128b7a1556cff550c6683c38abd347cc749caecbd462b72",
+ "evidence": {
+  "checks": [
+   {
+    "command": "python3 -m py_compile tools/calibration/*.py tools/test_calibration_kit.py; bash -n tools/calibration/grade.sh tools/calibration/historyless-checkout.sh",
+    "exit-code": 0,
+    "output-ref": "exit 0 on every unit commit and on 229aa1f (lead's run)"
+   },
+   {
+    "command": "python3 tools/check_secrets.py; the K3 hygiene assertion in tools/test_calibration_kit.py",
+    "exit-code": 0,
+    "output-ref": "clean on every commit; the reviewer's hygiene greps empty (reports/sr-kit-rereview-2.md)"
+   },
+   {
+    "command": "python3 tools/test_calibration_kit.py",
+    "exit-code": 0,
+    "output-ref": "57 tests OK on Python 3.12 and 3.11; red-first per deliverable with guard-removal proofs (reports/sr-kit-1.md, -fix-1.md, -fix-2.md; the lead's N3 commit 229aa1f: 3 red, 2 guard proofs)"
+   },
+   {
+    "command": "python3 tools/run_regression.py",
+    "exit-code": 0,
+    "output-ref": "REGRESSION GATE: all checks PASS through the pre-commit hook on every commit, 229aa1f included"
+   },
+   {
+    "command": "refute-first review",
+    "exit-code": 0,
+    "output-ref": "wf_2f45f911-b10: review FIX (F1 S2, F2 S2, F3 S3), fix round 1, re-review FIX (N1 S3, N2 S4), fix round 2, re-review FIX with one S4 left (N3), which the lead fixed at integration; no S1-S3 open"
+   }
+  ],
+  "actual-spend": null,
+  "actual-tokens": 1262204,
+  "files-touched": [
+   "tools/calibration/** (SmartRouter)",
+   "tools/test_calibration_kit.py",
+   "tools/run_regression.py",
+   "tests/fixtures/calibration/**",
+   "CHANGELOG.md",
+   "README.md"
+  ],
+  "notes": "SmartRouter branch tools/calibration-kit at 229aa1f (eleven unit commits plus the lead's N3), draft PR opened. Six workflow agents, 1262204 harness tokens (not a bill): the unit spent both fix rounds and ended with one S4 open, closed by the lead. run.template.js has run only under the stub harness; run 4 stage 4a is its first real run.",
+  "actual-spend-basis": "estimate-only"
+ }
+}
