@@ -1,0 +1,67 @@
+{
+  "taskId": "sr-kit-cases",
+  "objective": "Kit extension in SmartRouter tools/calibration/ (docs/orchestration/2026-10-19-calibration-run-4/briefs/run4-kit-cases-builder.md): a category on each calibration task object, mutants for a pin case, a gate-graded case kind, a null judging profile when no review case exists; observations.py, grade.sh, run.template.js, tests and fixtures, docs lines; runs 1-3 rebuild byte-identically.",
+  "category": "build-ui",
+  "unit": "sr-kit-cases",
+  "estimatedTokens": 600000,
+  "difficultyTier": "T3",
+  "permittedEffects": [
+    "tools/calibration/grade.sh",
+    "tools/calibration/observations.py",
+    "tools/calibration/run.template.js",
+    "tools/calibration/README.md",
+    "tools/calibration/subject-pack/README.md",
+    "tools/test_calibration_kit.py",
+    "tests/fixtures/calibration/**",
+    "CHANGELOG.md",
+    "docs/orchestration/2026-10-19-calibration-run-4/reports/sr-kit-cases-*.md"
+  ],
+  "sources": [
+    "docs/orchestration/2026-10-19-calibration-run-4/briefs/run4-kit-cases-builder.md",
+    "docs/orchestration/2026-10-19-calibration-run-4/briefs/run4-plan.md",
+    "docs/orchestration/2026-10-19-calibration-run-4/briefs/conventions.md",
+    "tools/calibration/ (SmartRouter main, 311c36f or the head the launch names; #106-#108 merged)",
+    "tools/check_calibration_evidence.py rule e (SmartRouter #108, merged)"
+  ],
+  "nonGoals": [
+    "no push",
+    "no host code, no provider calls, keys, absolute host paths or session ids in committed files",
+    "no change outside the permitted paths",
+    "never --no-verify; never unwire the pre-commit hook"
+  ],
+  "acceptanceChecks": [
+    {
+      "command": "the unit's typecheck as the brief names it",
+      "expect": "typecheck: exit 0"
+    },
+    {
+      "command": "python3 tools/check_secrets.py and the K3 hygiene assertion, or npx eslint for the adapter",
+      "expect": "lint: exit 0, no absolute path, session id or run id in committed files"
+    },
+    {
+      "command": "the unit's test suite as the brief names it",
+      "expect": "unit tests red-first then green, guard-removal proofs"
+    },
+    {
+      "command": "python3 tools/run_regression.py (SmartRouter) or node --test route.test.mjs plus the artifacts and conform_spec checks (adapter)",
+      "expect": "full-suite comparison vs baseline: every existing check green, also through the pre-commit hook"
+    },
+    {
+      "command": "refute-first review",
+      "expect": "ACCEPT after at most two fix rounds (refute-first review)"
+    }
+  ],
+  "needsVision": false,
+  "dataClasses": [
+    "repo-code",
+    "run-docs"
+  ],
+  "projectStop": {
+    "redSuite": false,
+    "gateOff": false,
+    "researchGateFailing": false
+  },
+  "previousResult": null,
+  "deadline": "{{dispatch time + 8h, ISO-8601}}",
+  "now": "{{dispatch time, ISO-8601}}"
+}

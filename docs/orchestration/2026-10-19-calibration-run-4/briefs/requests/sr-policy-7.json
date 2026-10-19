@@ -1,0 +1,64 @@
+{
+  "taskId": "sr-policy-7",
+  "objective": "Host policy revision 7 in SmartRouter hosts/claude-code/ (docs/orchestration/2026-10-19-calibration-run-4/briefs/policy7-builder.md): rate reads a calibration task object's category and the gate task; revision 6 frozen as a fixture; no routing change; tests red-first; README section.",
+  "category": "build-ui",
+  "unit": "sr-policy-7",
+  "estimatedTokens": 400000,
+  "difficultyTier": "T3",
+  "permittedEffects": [
+    "hosts/claude-code/route.mjs",
+    "hosts/claude-code/route.test.mjs",
+    "hosts/claude-code/host-policy.json",
+    "hosts/claude-code/README.md",
+    "hosts/claude-code/trace/policies/host-policy-6.json",
+    "docs/orchestration/2026-10-19-calibration-run-4/reports/sr-policy-7-*.md"
+  ],
+  "sources": [
+    "docs/orchestration/2026-10-19-calibration-run-4/briefs/policy7-builder.md",
+    "docs/orchestration/2026-10-19-calibration-run-4/briefs/run4-plan.md",
+    "docs/orchestration/2026-10-19-calibration-run-4/briefs/conventions.md",
+    "hosts/claude-code/README.md sections for revisions 5 and 6",
+    "tools/calibration/observations.py after sr-kit-cases"
+  ],
+  "nonGoals": [
+    "no push",
+    "no host code, no provider calls, keys, absolute host paths or session ids in committed files",
+    "no change outside the permitted paths",
+    "never --no-verify; never unwire the pre-commit hook"
+  ],
+  "acceptanceChecks": [
+    {
+      "command": "the unit's typecheck as the brief names it",
+      "expect": "typecheck: exit 0"
+    },
+    {
+      "command": "python3 tools/check_secrets.py and the K3 hygiene assertion, or npx eslint for the adapter",
+      "expect": "lint: exit 0, no absolute path, session id or run id in committed files"
+    },
+    {
+      "command": "the unit's test suite as the brief names it",
+      "expect": "unit tests red-first then green, guard-removal proofs"
+    },
+    {
+      "command": "python3 tools/run_regression.py (SmartRouter) or node --test route.test.mjs plus the artifacts and conform_spec checks (adapter)",
+      "expect": "full-suite comparison vs baseline: every existing check green, also through the pre-commit hook"
+    },
+    {
+      "command": "refute-first review",
+      "expect": "ACCEPT after at most two fix rounds (refute-first review)"
+    }
+  ],
+  "needsVision": false,
+  "dataClasses": [
+    "repo-code",
+    "run-docs"
+  ],
+  "projectStop": {
+    "redSuite": false,
+    "gateOff": false,
+    "researchGateFailing": false
+  },
+  "previousResult": null,
+  "deadline": "{{dispatch time + 8h, ISO-8601}}",
+  "now": "{{dispatch time, ISO-8601}}"
+}

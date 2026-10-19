@@ -1,0 +1,63 @@
+{
+  "taskId": "sr-packs-t1",
+  "objective": "Four T1 host packs in SmartRouter tools/calibration/subject-pack/host/moonaliza-t1-*/ (docs/orchestration/2026-10-19-calibration-run-4/briefs/run4-packs-t1-builder.md): build-core (U2-R7, fix-shaped), build-tests (wire module, pin-shaped with three mutants), research-collect (electron-fuses project, gate-graded), docs-mechanical (five-part report checker, gate-graded); wrong-answer matrices first; make-repo.sh per pack; tests; docs lines.",
+  "category": "build-ui",
+  "unit": "sr-packs-t1",
+  "estimatedTokens": 700000,
+  "difficultyTier": "T3",
+  "permittedEffects": [
+    "tools/calibration/subject-pack/host/moonaliza-t1-*/**",
+    "tools/test_calibration_kit.py",
+    "tools/calibration/subject-pack/README.md",
+    "CHANGELOG.md",
+    "docs/orchestration/2026-10-19-calibration-run-4/reports/sr-packs-t1-*.md"
+  ],
+  "sources": [
+    "docs/orchestration/2026-10-19-calibration-run-4/briefs/run4-packs-t1-builder.md",
+    "docs/orchestration/2026-10-19-calibration-run-4/briefs/run4-plan.md",
+    "docs/orchestration/2026-10-19-calibration-run-4/briefs/conventions.md",
+    "tools/calibration/ after sr-kit-cases",
+    "MoonAliza build/github-sign-in, read only: 18a6d21, src/main/github-oauth.ts at 01a8604, docs/research/2026-10-03-electron-fuses"
+  ],
+  "nonGoals": [
+    "no push",
+    "no host code, no provider calls, keys, absolute host paths or session ids in committed files",
+    "no change outside the permitted paths",
+    "never --no-verify; never unwire the pre-commit hook"
+  ],
+  "acceptanceChecks": [
+    {
+      "command": "the unit's typecheck as the brief names it",
+      "expect": "typecheck: exit 0"
+    },
+    {
+      "command": "python3 tools/check_secrets.py and the K3 hygiene assertion, or npx eslint for the adapter",
+      "expect": "lint: exit 0, no absolute path, session id or run id in committed files"
+    },
+    {
+      "command": "the unit's test suite as the brief names it",
+      "expect": "unit tests red-first then green, guard-removal proofs"
+    },
+    {
+      "command": "python3 tools/run_regression.py (SmartRouter) or node --test route.test.mjs plus the artifacts and conform_spec checks (adapter)",
+      "expect": "full-suite comparison vs baseline: every existing check green, also through the pre-commit hook"
+    },
+    {
+      "command": "refute-first review",
+      "expect": "ACCEPT after at most two fix rounds (refute-first review)"
+    }
+  ],
+  "needsVision": false,
+  "dataClasses": [
+    "repo-code",
+    "run-docs"
+  ],
+  "projectStop": {
+    "redSuite": false,
+    "gateOff": false,
+    "researchGateFailing": false
+  },
+  "previousResult": null,
+  "deadline": "{{dispatch time + 8h, ISO-8601}}",
+  "now": "{{dispatch time, ISO-8601}}"
+}
