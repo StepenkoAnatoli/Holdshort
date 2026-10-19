@@ -1,0 +1,192 @@
+{
+ "alpha-low": {
+  "profile": "alpha-low",
+  "review-only": false,
+  "pin": {
+   "score": true,
+   "tier": "T1",
+   "redAtHead": true,
+   "greenWithFix": true,
+   "srcClean": true,
+   "lint": "ok",
+   "committed": true,
+   "atHead": {
+    "passed": null,
+    "failed": null,
+    "total": null,
+    "exit": 1
+   },
+   "withAcceptedFix": {
+    "passed": null,
+    "failed": null,
+    "total": null,
+    "exit": 0
+   }
+  },
+  "fix": {
+   "score": true,
+   "tier": "T1",
+   "candidateGreen": true,
+   "guardRed": true,
+   "acceptedPinGreen": true,
+   "scopeOk": true,
+   "lint": "ok",
+   "committedWithMap": true,
+   "commits": 1,
+   "srcDiffLines": 2,
+   "candidateTests": {
+    "passed": null,
+    "failed": null,
+    "total": null,
+    "exit": 0
+   },
+   "guardRemoved": {
+    "passed": null,
+    "failed": null,
+    "total": null,
+    "exit": 1
+   },
+   "acceptedPin": {
+    "passed": null,
+    "failed": null,
+    "total": null,
+    "exit": 0
+   }
+  },
+  "review": null,
+  "review-grade": null,
+  "self-reported-mistakes": {
+   "pin": [
+    "nothing to report"
+   ],
+   "fix": [
+    "first draft edited the wrong function; reverted and redone"
+   ],
+   "review": null
+  },
+  "harness-retries": {
+   "pin": 1,
+   "fix": 0,
+   "review": 0
+  },
+  "usage": {
+   "pin": {
+    "label": "pin:alpha-low",
+    "model": "model-alpha-1",
+    "effort": null,
+    "state": "done",
+    "tokens": 1000,
+    "ms": 60000,
+    "run": "run-main-1"
+   },
+   "fix": {
+    "label": "fix:alpha-low",
+    "model": "model-alpha-1",
+    "effort": null,
+    "state": "done",
+    "tokens": 2000,
+    "ms": 90000,
+    "run": "run-main-1"
+   },
+   "review": null,
+   "grade": null
+  }
+ },
+ "beta-max": {
+  "profile": "beta-max",
+  "review-only": true,
+  "pin": null,
+  "fix": null,
+  "review": {
+   "verdict": "FIX",
+   "findings": [
+    [
+     "R-1",
+     "S3",
+     "add raises on a negative argument (src/mod.py:3)"
+    ],
+    [
+     "R-2",
+     "S2",
+     "add answers a - b (src/mod.py:4)"
+    ],
+    [
+     "R-3",
+     "S3",
+     "add accepts a string for b and raises TypeError (src/mod.py:4)"
+    ]
+   ],
+   "checked": 2
+  },
+  "review-grade": {
+   "result": "PASS",
+   "tier": "T1",
+   "rawFalseBlocking": 1,
+   "adjudicatedFalseBlocking": 0,
+   "threeProngFalseBlocking": 1,
+   "threeProngResult": "FAIL",
+   "truth": {
+    "D-1": {
+     "found": true,
+     "causeNamed": true,
+     "severity": "S3"
+    },
+    "D-2": {
+     "found": true,
+     "causeNamed": false,
+     "severity": "S2"
+    }
+   },
+   "copiedFromHistory": false,
+   "others": [
+    {
+     "id": "R-3",
+     "severity": "S3",
+     "classification": "false",
+     "mechanism": "src/mod.py:add - no type check on b",
+     "why": "a string is not a number, so the promise does not cover it",
+     "cluster": "C-1",
+     "clusterReal": true,
+     "clusterVotes": "2/3",
+     "clusterThreeProngReal": false,
+     "adjudicated": true
+    }
+   ],
+   "notes": "both found; one other finding the grader reads as outside the promise"
+  },
+  "self-reported-mistakes": {
+   "pin": null,
+   "fix": null,
+   "review": [
+    "nothing to report"
+   ]
+  },
+  "harness-retries": {
+   "pin": 0,
+   "fix": 0,
+   "review": 0
+  },
+  "usage": {
+   "pin": null,
+   "fix": null,
+   "review": {
+    "label": "review:beta-max",
+    "model": "model-beta-1",
+    "effort": null,
+    "state": "done",
+    "tokens": 3000,
+    "ms": 120000,
+    "run": "run-main-1"
+   },
+   "grade": {
+    "label": "grade:beta-max",
+    "model": "model-gamma-1",
+    "effort": null,
+    "state": "done",
+    "tokens": 500,
+    "ms": 30000,
+    "run": "run-main-1"
+   }
+  }
+ }
+}

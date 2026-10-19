@@ -1,0 +1,261 @@
+{
+ "_comment": "Synthetic workflow run file for tools/test_calibration_kit.py (format: the header of tools/calibration/observations.py).",
+ "runId": "run-main-1",
+ "status": "completed",
+ "totalTokens": 7200,
+ "workflowProgress": [
+  {
+   "type": "workflow_phase",
+   "index": 1,
+   "title": "Pin"
+  },
+  {
+   "type": "workflow_phase",
+   "index": 2,
+   "title": "Fix"
+  },
+  {
+   "type": "workflow_phase",
+   "index": 3,
+   "title": "Review"
+  },
+  {
+   "type": "workflow_phase",
+   "index": 4,
+   "title": "Grade"
+  },
+  {
+   "type": "workflow_phase",
+   "index": 5,
+   "title": "Cluster"
+  },
+  {
+   "type": "workflow_phase",
+   "index": 6,
+   "title": "Adjudicate"
+  },
+  {
+   "type": "workflow_agent",
+   "index": 1,
+   "label": "pin:alpha-low",
+   "agentId": "a01",
+   "model": "model-alpha-1",
+   "state": "done",
+   "tokens": 1000,
+   "durationMs": 60000,
+   "attempt": 2
+  },
+  {
+   "type": "workflow_agent",
+   "index": 2,
+   "label": "fix:alpha-low",
+   "agentId": "a02",
+   "model": "model-alpha-1",
+   "state": "done",
+   "tokens": 2000,
+   "durationMs": 90000,
+   "attempt": 1
+  },
+  {
+   "type": "workflow_agent",
+   "index": 3,
+   "label": "review:beta-max",
+   "agentId": "a03",
+   "model": "model-beta-1",
+   "state": "done",
+   "tokens": 3000,
+   "durationMs": 120000,
+   "attempt": 1
+  },
+  {
+   "type": "workflow_agent",
+   "index": 4,
+   "label": "grade:beta-max",
+   "agentId": "a04",
+   "model": "model-gamma-1",
+   "state": "done",
+   "tokens": 500,
+   "durationMs": 30000,
+   "attempt": 1
+  },
+  {
+   "type": "workflow_agent",
+   "index": 5,
+   "label": "cluster:others",
+   "agentId": "a05",
+   "model": "model-gamma-1",
+   "state": "done",
+   "tokens": 200,
+   "durationMs": 20000,
+   "attempt": 1
+  },
+  {
+   "type": "workflow_agent",
+   "index": 6,
+   "label": "lens:C-1:reproduce",
+   "agentId": "a06",
+   "model": "model-gamma-1",
+   "state": "done",
+   "tokens": 100,
+   "durationMs": 10000,
+   "attempt": 1
+  },
+  {
+   "type": "workflow_agent",
+   "index": 7,
+   "label": "lens:C-1:reachability",
+   "agentId": "a07",
+   "model": "model-gamma-1",
+   "state": "done",
+   "tokens": 150,
+   "durationMs": 11000,
+   "attempt": 1
+  },
+  {
+   "type": "workflow_agent",
+   "index": 8,
+   "label": "lens:C-1:refute",
+   "agentId": "a08",
+   "model": "model-gamma-1",
+   "state": "done",
+   "tokens": 250,
+   "durationMs": 12000,
+   "attempt": 1
+  }
+ ],
+ "result": {
+  "results": [
+   {
+    "item": {
+     "task": "review",
+     "key": "beta-max"
+    },
+    "out": {
+     "verdict": "FIX",
+     "findings": [
+      {
+       "id": "R-1",
+       "severity": "S3",
+       "problem": "add raises on a negative argument (src/mod.py:3)",
+       "evidence": "test_negative: ValueError raised",
+       "fix": "drop the bound check"
+      },
+      {
+       "id": "R-2",
+       "severity": "S2",
+       "problem": "add answers a - b (src/mod.py:4)",
+       "evidence": "test_sum: -1 != 5",
+       "fix": "return a + b"
+      },
+      {
+       "id": "R-3",
+       "severity": "S3",
+       "problem": "add accepts a string for b and raises TypeError (src/mod.py:4)",
+       "evidence": "test_str: TypeError",
+       "fix": "check the type"
+      }
+     ],
+     "checked": [
+      "the docstring promise",
+      "the bound check"
+     ],
+     "mistakes": [
+      "nothing to report"
+     ]
+    },
+    "grade": {
+     "truth": [
+      {
+       "id": "D-1",
+       "found": true,
+       "causeNamed": true,
+       "severity": "S3"
+      },
+      {
+       "id": "D-2",
+       "found": true,
+       "causeNamed": false,
+       "severity": "S2"
+      }
+     ],
+     "others": [
+      {
+       "id": "R-3",
+       "severity": "S3",
+       "classification": "false",
+       "mechanism": "src/mod.py:add - no type check on b",
+       "why": "a string is not a number, so the promise does not cover it"
+      }
+     ],
+     "falseBlocking": 1,
+     "copiedFromHistory": false,
+     "notes": "both found; one other finding the grader reads as outside the promise"
+    }
+   }
+  ],
+  "clusters": {
+   "clusters": [
+    {
+     "id": "C-1",
+     "title": "add raises on a non-number b",
+     "claim": "add(1, 'x') raises TypeError at src/mod.py:4; the promise says add never raises",
+     "members": [
+      "beta-max R-3"
+     ],
+     "graderClassifications": [
+      "false"
+     ]
+    }
+   ]
+  },
+  "adjudications": [
+   {
+    "cluster": {
+     "id": "C-1",
+     "title": "add raises on a non-number b",
+     "claim": "add(1, 'x') raises TypeError at src/mod.py:4; the promise says add never raises",
+     "members": [
+      "beta-max R-3"
+     ],
+     "graderClassifications": [
+      "false"
+     ]
+    },
+    "lenses": [
+     {
+      "claim": "C-1",
+      "lens": "reproduce",
+      "holds": true,
+      "reachable": "yes",
+      "forbidden": true,
+      "severity": "S3",
+      "scratchTest": "tests/zz_adj.py: TypeError",
+      "why": "observed"
+     },
+     {
+      "claim": "C-1",
+      "lens": "reachability",
+      "holds": true,
+      "reachable": "yes",
+      "forbidden": true,
+      "severity": "S3",
+      "scratchTest": "",
+      "why": "public API, admissible per the promise"
+     },
+     {
+      "claim": "C-1",
+      "lens": "refute",
+      "holds": true,
+      "reachable": "yes",
+      "forbidden": false,
+      "severity": "S4",
+      "scratchTest": "",
+      "why": "the promise names numbers only"
+     }
+    ],
+    "real": true,
+    "realVotes": "2/3"
+   }
+  ]
+ }
+}

@@ -1,0 +1,112 @@
+{
+  "_comment": "Synthetic frozen protocol for tools/test_calibration_kit.py, filled from tools/calibration/protocol.template.json.",
+  "schema_version": 1,
+  "kit_version": "1",
+  "status": "frozen",
+  "run_id": "run-main-1",
+  "frozen_at": "2026-01-01T00:00:00Z",
+  "revision": "0000000",
+  "host": "fixture host",
+  "subject_pack": {
+    "pack": "fixture-pack",
+    "pack_version": "1",
+    "kind": "shared",
+    "manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "profiles": [
+    {
+      "key": "alpha-low",
+      "model": "alpha",
+      "effort": "low"
+    }
+  ],
+  "review_only_profiles": [
+    {
+      "key": "beta-max",
+      "model": "beta",
+      "effort": "max"
+    }
+  ],
+  "runs_per_profile_per_task": 1,
+  "retry_limit": 0,
+  "cases": [
+    {
+      "id": "pin",
+      "category": "pin-tests",
+      "tier": "T1",
+      "base": "base0",
+      "grading": "mechanical (grade.sh pin)",
+      "pass_rule": "see the manifest"
+    },
+    {
+      "id": "fix",
+      "category": "fix",
+      "tier": "T1",
+      "base": "base0",
+      "grading": "mechanical (grade.sh fix)",
+      "pass_rule": "see the manifest"
+    },
+    {
+      "id": "review",
+      "category": "review",
+      "tier": "T1",
+      "base": "review0",
+      "grading": "grader agent, clustering, three lenses",
+      "pass_rule": "see the manifest"
+    }
+  ],
+  "sources": {
+    "manifest.json": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "source_hash_convention": "SHA-256 of UTF-8 text with CRLF/CR normalized to LF",
+  "metrics": [
+    "pass per case"
+  ],
+  "accounting": {
+    "mode": "estimate-only",
+    "prices_source": "fixture rates",
+    "rates_per_mtok": {
+      "alpha": {
+        "input": 1.0,
+        "output": 5.0
+      },
+      "beta": {
+        "input": 2.0,
+        "output": 10.0
+      }
+    },
+    "statement": "estimate-only; not a bill"
+  },
+  "timing": "host-observed wall time per agent",
+  "privacy": "synthetic",
+  "limits": [
+    "one run per profile",
+    "synthetic fixture"
+  ],
+  "classification": {
+    "prongs": [
+      "holds",
+      "reachable",
+      "forbidden"
+    ],
+    "document": "tools/calibration/classification.md",
+    "lens_schema": "tools/calibration/lens.prompt.md"
+  },
+  "judging_profile": {
+    "key": "gamma-high",
+    "model": "gamma",
+    "effort": "high",
+    "qualification": "qualified for review by the fixture host's policy revision 1",
+    "limitation": null
+  },
+  "relayed_operator_text": {
+    "text": null,
+    "statement": "the harness relays no operator text into workers",
+    "_fill": "nothing relayed"
+  },
+  "usage_window_readings": {
+    "before": null,
+    "after": null
+  },
+  "amendments": []
+}
