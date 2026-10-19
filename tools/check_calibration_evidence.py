@@ -498,6 +498,7 @@ def _review(found: tuple, false_blocking):
         if all(hits) and ok:
             return "PASS"
         return "PARTIAL" if len(found) > 1 and sum(hits) == 1 and ok else "FAIL"
+    grade.adjudicated = false_blocking is _adjudicated_false_blocking  # whether a review grade under it rests on a record
     return grade
 
 
@@ -612,7 +613,7 @@ def legacy_scores(r: Report, obs, lenses: dict, prongs) -> None:
         return
     for p in sorted(set(cells) ^ set(profiles)):
         r.fail(rule, f"profile {p} is in {'observations.json' if p in cells else 'scores.json'} only")
-    rules, refused = {}, set()
+    rules, refused, digests = {}, set(), {}
     stated = [c for c in (r.protocol.get("cases") if isinstance(r.protocol.get("cases"), list) else []) if isinstance(c, dict) and c.get("id") in CASES]
     for case in CASES:
         n = sum(1 for c in stated if c["id"] == case)
@@ -628,9 +629,15 @@ def legacy_scores(r: Report, obs, lenses: dict, prongs) -> None:
             r.fail(rule, f"legacy run: the {c['id']} pass rule (sha256 {digest[:12]}) is not one this check encodes; a new run is a kit run")
             refused.add(c["id"])
             continue
-        rules[c["id"]] = known[1]
+        rules[c["id"]], digests[c["id"]] = known[1], digest
     # a case scored with no rule behind it is refused, never skipped: dropping or renaming a protocol case must not pass
     scored = {case for s in profiles.values() if isinstance(s, dict) for case in CASES if s.get(case) is not None}
+    # only run 3's adjudicated rule rests a review grade on the adjudication record: under runs 1-2's rules a declared
+    # record would be named as the grades' basis while the grader's falseBlocking decided them (N1)
+    if prongs is not None and "review" in scored and "review" in rules and not rules["review"].adjudicated:
+        r.fail(rule, f"legacy run: scores.json declares an adjudication_schema, yet the review pass rule (sha256 {digests['review'][:12]}) "
+                     "counts the grader's falseBlocking and does not apply the adjudication record; only run 3's adjudicated rule "
+                     "rests a review grade on one")
     for case in [c for c in CASES if c in scored and c not in rules and c not in refused]:
         r.fail(rule, f"legacy run: no encoded pass rule for the {case} case, which scores.json scores; protocol.json states none "
                      "this check encodes, and a new run is a kit run")

@@ -411,6 +411,7 @@ class KitRuns(unittest.TestCase):
 RUN1 = "docs/evidence/2026-10-17/claude-code-calibration"
 RUN2 = "docs/evidence/2026-10-17/claude-code-calibration-2"
 RUN3 = "docs/evidence/2026-10-18/claude-code-calibration-3"
+PRONGS3 = ("holds", "reachable", "forbidden")
 PIN_LIMIT = ("pin-category-mapping: legacy run: scores.json records no category_mapping; the protocol labels the pin case build-tests; "
              "the table reads it as pin-tests under the host's rule 4 (run 3 amendment A-2)")
 JUDGE_LIMIT = ("judging-profile-named: legacy run: no judging_profile; the grader opus-high is named in protocol.json cases[review].grading; "
@@ -602,6 +603,38 @@ class LegacyRuns(unittest.TestCase):
         folder = self.copy_run(RUN3)
         (folder / "adjudication.json").unlink()
         self.assertIn("prongs-declared", {rule_of(ln) for ln in self.fails(folder)})
+
+    def test_a_review_rule_that_ignores_a_declared_adjudication_record_fails(self):
+        # N1: runs 1-2's review rules count the grader's falseBlocking; a folder that also declares an adjudication_schema
+        # and adjudication.json must not have its review PASSes counted as resting on a record the rule never applied
+        def declare(s):
+            s["adjudication_schema"] = {"prongs_in_lens_schema": list(PRONGS3), "prongs_in_classification": list(PRONGS3), "missing_prong": []}
+
+        def record(folder: Path) -> None:
+            write(folder / "adjudication.json", {"clusters": [{"id": "C-9", "lenses": [dict(holds=False, reachable="no", forbidden=False)] * 3}]})
+
+        def blocking_other(profile):
+            # an S2 finding in C-9: false blocking under the record (no lens reads it real), so under it the review FAILs
+            return lambda o: o["profiles"][profile]["review"]["grade"].setdefault("others", []).append(
+                {"id": "R-9", "severity": "S2", "classification": "false", "cluster": "C-9"})
+        cases = [(RUN2, "sonnet-high", True), (RUN2, "sonnet-high", False), (RUN1, "sonnet-low", True)]
+        for rel, profile, add in cases:
+            with self.subTest(rel=rel, added_finding=add):
+                folder = self.copy_run(rel)
+                edit_json(folder, "scores.json", declare)
+                record(folder)
+                if add:
+                    edit_json(folder, "observations.json", blocking_other(profile))
+                fails = self.fails(folder)
+                self.assertEqual({rule_of(ln) for ln in fails}, {"scores-derivable"}, fails)
+                self.assertEqual(len(fails), 1, fails)
+                self.assertIn("scores.json declares an adjudication_schema, yet the review pass rule (sha256 ", fails[0])
+                self.assertIn("does not apply the adjudication record; only run 3's adjudicated rule rests a review grade on one", fails[0])
+                table = subprocess.run([sys.executable, str(ROOT / "tools" / "qualification_table.py"), "--table", str(self.root / "t.md"), str(folder)],
+                                       capture_output=True, text=True, timeout=120)
+                self.assertEqual(table.returncode, 1, table.stdout)
+                self.assertIn("refused: the evidence check fails; nothing written", table.stdout)
+                self.assertFalse((self.root / "t.md").exists())
 
     def test_each_legacy_guard_fails_with_its_own_message(self):
         # one edit per guard, asserting that guard's own line: a sibling under the same rule cannot mask its removal
