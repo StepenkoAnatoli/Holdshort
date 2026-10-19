@@ -402,7 +402,11 @@ class KitRuns(unittest.TestCase):
         self.assertIn("not a directory", p.stdout)
 
     def test_output_is_one_line_per_failure_and_a_summary(self):
-        p = run_check(FIXTURES / "pass" / FOLDER, FIXTURES / "a-protocol-frozen" / FOLDER)
+        # the failing folder as another run, the host's run 2: two folders of one run would also fail as one run held twice (N2)
+        second = self.root / "fixture-host-calibration-2"
+        shutil.copytree(FIXTURES / "a-protocol-frozen" / FOLDER, second)
+        edit_json(second, "scores.json", lambda s: s.update(run_id="run-main-2"))
+        p = run_check(FIXTURES / "pass" / FOLDER, second)
         self.assertEqual(p.returncode, 1)
         self.assertEqual(len(lines(p.stdout, "FAIL")), 1, p.stdout)
         self.assertRegex(p.stdout.splitlines()[-1], r"^check_calibration_evidence: 2 folder\(s\), 1 failure\(s\), 0 limitation\(s\)$")
@@ -671,6 +675,47 @@ class LegacyRuns(unittest.TestCase):
                 (folder / "adjudication.json").write_text(text, encoding="utf-8")
                 fails = [ln for ln in self.fails(folder) if rule_of(ln) == "prongs-declared"]
                 self.assertIn(needle, "\n".join(fails))
+
+    def test_one_run_is_one_folder_across_the_folders_checked(self):
+        # N2: a run copied into a second docs/evidence/<date>/ folder, or a second folder for a host's run number, would be
+        # counted twice by the table; each folder of the pair fails protocol-frozen, naming the other
+        run_id = read(ROOT / RUN2 / "protocol.json")["run_id"]
+
+        def place(date: str, name: str, new_id: str | None = None) -> Path:
+            out = self.root / "ev" / date / name
+            shutil.copytree(ROOT / RUN2, out)
+            if new_id:
+                for f in ("protocol.json", "scores.json"):
+                    edit_json(out, f, lambda d: d.update(run_id=new_id))
+            return out
+        same_id = f"run_id {run_id!r} is also the run id of "
+        same_number = "claude-code run 2 is also the folder "
+        cases = [
+            ("a copy under a second date", ("2026-10-17", "claude-code-calibration-2", None), ("2026-10-20", "claude-code-calibration-2", None), (same_id, same_number)),
+            ("the same run id under another number", ("2026-10-17", "claude-code-calibration-2", None), ("2026-10-17", "claude-code-calibration-5", None), (same_id,)),
+            ("the same number under another run id", ("2026-10-17", "claude-code-calibration-2", None), ("2026-10-20", "claude-code-calibration-2", "wf_other-run"), (same_number,)),
+            # no suffix is run 1, as -calibration-1 is
+            ("run 1 in both name forms", ("2026-10-17", "claude-code-calibration", "wf_one"), ("2026-10-20", "claude-code-calibration-1", "wf_other-run"),
+             ("claude-code run 1 is also the folder ",)),
+        ]
+        for i, (what, a, b, needles) in enumerate(cases):
+            with self.subTest(what):
+                if (self.root / "ev").exists():
+                    shutil.rmtree(self.root / "ev")
+                first, second = place(*a), place(*b)
+                p = run_check(first, second)
+                self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+                fails = lines(p.stdout, "FAIL")
+                self.assertEqual({rule_of(ln) for ln in fails}, {"protocol-frozen"}, fails)
+                self.assertEqual(len(fails), 2 * len(needles), fails)
+                for folder, other in ((first, second), (second, first)):
+                    mine = [ln for ln in fails if ln.split(" ", 2)[1] == folder.as_posix()]
+                    self.assertEqual(sorted(ln.split(": ", 1)[1].split(other.as_posix(), 1)[0] for ln in mine), sorted(needles), mine)
+                # each folder alone passes: the refusal is the pair's
+                for folder in (first, second):
+                    self.assertEqual(run_check(folder).returncode, 0)
+        p = run_check()  # the real folders: three runs, three ids, three numbers
+        self.assertEqual(lines(p.stdout, "FAIL"), [])
 
     def test_a_legacy_run_that_names_no_grader_says_so(self):
         folder = self.copy_run(RUN1)

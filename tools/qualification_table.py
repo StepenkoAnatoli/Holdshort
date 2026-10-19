@@ -208,7 +208,7 @@ def main(argv=None) -> int:
     ap.add_argument("--table", type=Path, default=TABLE)
     ap.add_argument("folders", nargs="*", type=Path)
     a = ap.parse_args(argv)
-    reports = [CHECK.check_folder(f) for f in (a.folders or CHECK.discover())]
+    reports = CHECK.check_folders(a.folders or CHECK.discover())
     failed = [(r, rule, text) for r in reports for rule, text in r.failures]
     if failed:
         for r, rule, text in failed:

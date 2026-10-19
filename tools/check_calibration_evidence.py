@@ -802,6 +802,24 @@ def check_folder(folder: Path) -> Report:
     return r
 
 
+def check_folders(folders) -> list[Report]:
+    """Every folder's own verdict, then one across them: a run is one folder, or the table would count it twice (N2)."""
+    reports = [check_folder(f) for f in folders]
+    by_id, by_number = {}, {}
+    for r in reports:
+        if filled(r.protocol.get("run_id")):  # a folder without one, or with scores.json disagreeing, fails on its own
+            by_id.setdefault(r.protocol["run_id"], []).append(r)
+        m = FOLDER_NAME.match(r.folder.name)
+        if m:
+            by_number.setdefault((m.group("host"), int(m.group("n") or 1)), []).append(r)
+    for groups, said in ((by_id, lambda k: f"run_id {k!r} is also the run id of "), (by_number, lambda k: f"{k[0]} run {k[1]} is also the folder ")):
+        for key, rs in groups.items():
+            for r in rs if len(rs) > 1 else []:
+                others = ", ".join(label(o.folder) for o in rs if o is not r)
+                r.fail("protocol-frozen", f"{said(key)}{others}; one run is one evidence folder, and the table would count it twice")
+    return reports
+
+
 def run_key(folder: Path):
     m = FOLDER_NAME.match(folder.name)
     return (folder.parent.name, m.group("host") if m else folder.name, int(m.group("n") or 1) if m else 0, folder.name)
@@ -819,7 +837,7 @@ def main(argv=None) -> int:
         print(__doc__)
         return 0
     folders = [Path(a) for a in args] if args else discover()
-    reports = [check_folder(f) for f in folders]
+    reports = check_folders(folders)
     n_fail = n_limit = 0
     for r in reports:
         for rule, text in r.limits:

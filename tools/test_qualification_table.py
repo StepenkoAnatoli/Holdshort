@@ -189,6 +189,18 @@ class Gate(unittest.TestCase):
         self.assertIn("refused", p.stdout)
         self.assertFalse(out.exists())
 
+    def test_it_refuses_a_run_held_in_two_folders(self):
+        # N2: two copies of run 2 would be two "run 2" columns and a pass counted twice
+        copies = [self.root / date / "claude-code-calibration-2" for date in ("2026-10-17", "2026-10-20")]
+        for c in copies:
+            shutil.copytree(ROOT / RUNS[1], c)
+        out = self.root / "out.md"
+        p = run_tool("--table", str(out), *map(str, copies))
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertEqual(len([ln for ln in p.stdout.splitlines() if ln.startswith("FAIL ") and " protocol-frozen: " in ln]), 4, p.stdout)
+        self.assertIn("refused: the evidence check fails; nothing written", p.stdout)
+        self.assertFalse(out.exists())
+
     def test_a_kit_run_gets_its_own_host_section_and_counts_its_passes(self):
         out = self.root / "out.md"
         p = run_tool("--table", str(out), str(FIXTURES / "pass" / "fixture-host-calibration-1"))
