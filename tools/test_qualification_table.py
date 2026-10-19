@@ -216,7 +216,7 @@ class Gate(unittest.TestCase):
                 p = run_tool("--table", str(out), str(folder))
                 self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
                 self.assertNotIn("Traceback", p.stderr)
-                self.assertEqual(out.read_text(encoding="utf-8").replace(str(folder), "tests/fixtures/calibration-evidence/pass/fixture-host-calibration-1"), want)
+                self.assertEqual(out.read_text(encoding="utf-8").replace(folder.as_posix(), "tests/fixtures/calibration-evidence/pass/fixture-host-calibration-1"), want)
 
     def test_a_kit_run_gets_its_own_host_section_and_counts_its_passes(self):
         out = self.root / "out.md"

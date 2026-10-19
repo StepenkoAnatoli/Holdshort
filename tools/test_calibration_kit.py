@@ -95,7 +95,7 @@ def make_pack(root: Path, env: dict, report: str = "exit-code") -> tuple[Path, d
     if report == "vitest-json":
         test_cmd = ("if python3 -m unittest {files}; then echo '{\"numPassedTests\": 1, \"numFailedTests\": 0, \"numTotalTests\": 1}' > {report}; "
                     "else echo '{\"numPassedTests\": 0, \"numFailedTests\": 1, \"numTotalTests\": 1}' > {report}; fi")
-    manifest = json.loads((FIX / "manifest.json").read_text())
+    manifest = json.loads((FIX / "manifest.json").read_text(encoding="utf-8"))
     manifest.update(accepted_fix=accepted, commands={"test": test_cmd, "test_report": report, "lint": "python3 -m py_compile {files}", "timeout_seconds": 120})
     for case in ("pin", "fix"):
         manifest["cases"][case]["base"] = base
@@ -146,15 +146,15 @@ PROTOCOL_KEYS = {"_lineage", "schema_version", "kit_version", "status", "run_id"
 
 def fill_template(cfg: dict) -> str:
     """The README's fill step: the run config into `null // {{RUN}}`, the prompt files into `null // {{PROMPTS}}`."""
-    text = (KIT / "run.template.js").read_text()
-    prompts = {n: (KIT / f"{n}.prompt.md").read_text() for n in ("grader", "lens", "cluster")}
-    prompts["classification"] = (KIT / "classification.md").read_text()
+    text = (KIT / "run.template.js").read_text(encoding="utf-8")
+    prompts = {n: (KIT / f"{n}.prompt.md").read_text(encoding="utf-8") for n in ("grader", "lens", "cluster")}
+    prompts["classification"] = (KIT / "classification.md").read_text(encoding="utf-8")
     assert text.count("null // {{RUN}}") == 1 and text.count("null // {{PROMPTS}}") == 1
     return text.replace("null // {{RUN}}", json.dumps(cfg)).replace("null // {{PROMPTS}}", json.dumps(prompts))
 
 
 def run_config(root: Path, **host) -> dict:
-    cfg = {"manifest": json.loads((FIX / "manifest.json").read_text()), "protocol": json.loads((FIX / "protocol.json").read_text()),
+    cfg = {"manifest": json.loads((FIX / "manifest.json").read_text(encoding="utf-8")), "protocol": json.loads((FIX / "protocol.json").read_text(encoding="utf-8")),
            "host": {"checkout_root": str(root / "checkouts"), "pack_dir": str(root / "pack"), "adjudication_checkout": str(root / "checkouts" / "cal-adjudication"),
                     "run_tag": "cal", "commit_command": "git commit", "supplementary": None}}
     cfg["host"].update(host)
@@ -163,7 +163,7 @@ def run_config(root: Path, **host) -> dict:
 
 def canned_outputs(forbidden=(True, True, False)) -> dict:
     results = {}
-    for line in (FIX / "journal.jsonl").read_text().splitlines():
+    for line in (FIX / "journal.jsonl").read_text(encoding="utf-8").splitlines():
         e = json.loads(line)
         if e["type"] == "result":
             results[e["agentId"]] = e["result"]
@@ -229,7 +229,7 @@ TREES = ("review", "base", "accepted")
 def pack_files(root: Path) -> list[str]:
     """Every file of a pack directory, relative and with '/', leaving out bytecode caches and a built `repo`."""
     out = []
-    for f in sorted(root.rglob("*")):
+    for f in sorted(root.rglob("*"), key=lambda f: f.relative_to(root).parts):  # by name, with case, on every host
         rel = f.relative_to(root)
         if f.is_file() and "__pycache__" not in rel.parts and rel.parts[0] != "repo":
             out.append(rel.as_posix())
@@ -269,8 +269,8 @@ def tree_files(commit_dir_or_repo: Path, env: dict, rev: str | None = None) -> d
 
 
 def run_pack_tests(cand: Path, env: dict, *files: str) -> subprocess.CompletedProcess:
-    """The pack's own test command (manifest commands.test): python3 tests/run.py FILE..."""
-    return subprocess.run(["python3", "tests/run.py", *files], cwd=cand, env=env, capture_output=True, text=True, timeout=120)
+    """The pack's own test command (manifest commands.test: python3 tests/run.py FILE...), run with this interpreter."""
+    return subprocess.run([sys.executable, "tests/run.py", *files], cwd=cand, env=env, capture_output=True, text=True, timeout=120)
 
 
 PROMISE = ("read_bounded accepts any iterable whose items are bytes-like (bytes, bytearray, memoryview) or str (encoded as UTF-8), "
@@ -307,7 +307,7 @@ class Observations(unittest.TestCase):
     def built(self, *extra, run=None):
         p = build(self.out, *extra, run=run)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        return json.loads((self.out / "observations.json").read_text()), json.loads((self.out / "scores.json").read_text())
+        return json.loads((self.out / "observations.json").read_text(encoding="utf-8")), json.loads((self.out / "scores.json").read_text(encoding="utf-8"))
 
     def test_flat_profile_map_the_adapter_reads(self):
         obs, _ = self.built()
@@ -340,7 +340,7 @@ class Observations(unittest.TestCase):
     def test_scores_totals_sum_and_carry_the_schema(self):
         _, s = self.built()
         self.assertTrue(SCORES_KEYS <= set(s), SCORES_KEYS - set(s))
-        run = json.loads((FIX / "run.json").read_text())
+        run = json.loads((FIX / "run.json").read_text(encoding="utf-8"))
         agent_tokens = sum(e["tokens"] for e in run["workflowProgress"] if e["type"] == "workflow_agent")
         m = s["totals"]["tokens"]["main_run"]
         self.assertEqual((m["items"], m["graders"], m["clustering"], m["lenses"], m["other"]), (6000, 500, 200, 500, 0))
@@ -363,13 +363,13 @@ class Observations(unittest.TestCase):
         self.built()
         for name in ("observations.json", "scores.json", "results-table.md", "clusters.md", "tokens-and-estimates.md", "adjudication.json", "void-cells.json"):
             self.assertTrue((self.out / name).is_file(), name)
-        table = (self.out / "results-table.md").read_text()
+        table = (self.out / "results-table.md").read_text(encoding="utf-8")
         self.assertIn("| alpha-low | PASS | PASS | yes | - |", table)
-        self.assertIn("| C-1 |", (self.out / "clusters.md").read_text())
-        self.assertIn("7,200", (self.out / "tokens-and-estimates.md").read_text())
+        self.assertIn("| C-1 |", (self.out / "clusters.md").read_text(encoding="utf-8"))
+        self.assertIn("7,200", (self.out / "tokens-and-estimates.md").read_text(encoding="utf-8"))
 
     def test_a_lens_record_without_forbidden_cannot_carry_a_three_prong_pass(self):
-        run = json.loads((FIX / "run.json").read_text())
+        run = json.loads((FIX / "run.json").read_text(encoding="utf-8"))
         for lens in run["result"]["adjudications"][0]["lenses"]:
             del lens["forbidden"]  # run 3's lens schema (G-2): two prongs only
         path = Path(self.tmp.name) / "run-two-prong.json"
@@ -383,7 +383,7 @@ class Observations(unittest.TestCase):
         self.assertEqual(s["totals"]["cells"]["review"], "1 of 1 PASS (0 of 1 under the three-prong definition)")
 
     def test_three_prong_vote_needs_forbidden_on_a_majority(self):
-        run = json.loads((FIX / "run.json").read_text())
+        run = json.loads((FIX / "run.json").read_text(encoding="utf-8"))
         run["result"]["adjudications"][0]["lenses"][1]["forbidden"] = False  # now one lens of three says forbidden
         path = Path(self.tmp.name) / "run-one-forbidden.json"
         path.write_text(json.dumps(run))
@@ -392,7 +392,7 @@ class Observations(unittest.TestCase):
 
     def test_void_cell_replaced_by_the_supplementary_run(self):
         tmp = Path(self.tmp.name)
-        fix_result = json.loads((FIX / "journal.jsonl").read_text().splitlines()[-7])["result"]
+        fix_result = json.loads((FIX / "journal.jsonl").read_text(encoding="utf-8").splitlines()[-7])["result"]
         (tmp / "j2.jsonl").write_text("\n".join(json.dumps(e) for e in [
             {"type": "launched"}, {"type": "started", "agentId": "b01", "key": "b01", "label": "fix:alpha-low", "phase": "Fix"},
             {"type": "result", "agentId": "b01", "key": "b01", "result": fix_result}]) + "\n")
@@ -402,7 +402,7 @@ class Observations(unittest.TestCase):
         obs, s = self.built("--void", "fix:alpha-low", "--supplementary", str(tmp / "j2.jsonl"), str(tmp / "r2.json"))
         self.assertEqual(obs["alpha-low"]["usage"]["fix"]["run"], "run-supp-1")
         self.assertEqual(obs["alpha-low"]["usage"]["fix"]["tokens"], 1800)
-        void = json.loads((self.out / "void-cells.json").read_text())
+        void = json.loads((self.out / "void-cells.json").read_text(encoding="utf-8"))
         self.assertEqual(void["void-cells"]["fix:alpha-low"]["main-run"]["usage"]["tokens"], 2000)
         t = s["totals"]["tokens"]
         self.assertEqual(t["main_run"]["of_which_void_cells"], 2000)
@@ -450,6 +450,26 @@ class Observations(unittest.TestCase):
         self.assertEqual(mod.review_result({**g, "truth": truth(True)}, 0, ["D-1", "D-2"]), "PARTIAL")
 
 
+def makes_links(make) -> bool:
+    """Whether make(link, target) leaves a symlink on this host: Windows needs a privilege (or Developer Mode) for one,
+    and without it Git Bash's `ln -s` copies the target instead."""
+    with tempfile.TemporaryDirectory() as d:
+        link, target = Path(d) / "link", Path(d) / "target"
+        target.mkdir()
+        try:
+            make(link, target)
+        except OSError:
+            return False
+        return link.is_symlink()
+
+
+NEEDS_PY_LINKS = unittest.skipUnless(makes_links(lambda link, target: link.symlink_to(target)),
+                                     "this host cannot make a symlink (Windows without the privilege or Developer Mode)")
+NEEDS_SH_LINKS = unittest.skipUnless(
+    makes_links(lambda link, target: subprocess.run(["bash", "-c", 'ln -s "$1" "$2"', "ln", str(target), str(link)], capture_output=True, timeout=60)),
+    "bash's ln -s makes no symlink on this host (Git Bash without the privilege copies the directory)")
+
+
 class Scripts(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -481,6 +501,7 @@ class Scripts(unittest.TestCase):
         for sha in (c["accepted"], c["base"], base2):  # no commit of the source is an object here
             self.assertNotEqual(sh(["git", "cat-file", "-e", sha], target, self.env, check=False).returncode, 0, sha)
 
+    @NEEDS_SH_LINKS
     def test_historyless_checkout_links_only_on_request_and_hides_the_links(self):
         pack, c = make_pack(self.root, self.env)
         deps = self.root / "installed" / "deps"  # installed outside the pack (F2)
@@ -498,20 +519,17 @@ class Scripts(unittest.TestCase):
         # F2: a link into the pack (or its repository) hands the candidate a path to the accepted fix
         pack, c = make_pack(self.root, self.env)
         (c["repo"] / "node_modules").mkdir()
-        outside = self.root / "outside"
-        outside.mkdir()
-        (outside / "via").symlink_to(c["repo"] / "node_modules")  # outside by name, inside by its real path
         shares, bare = "holds the accepted fix", "--link takes NAME=DIR"
         cases = [
             (shares, "--pack", str(pack), "--link", f"node_modules={c['repo'] / 'node_modules'}"),  # inside the pack
             (shares, "--link", f"node_modules={c['repo'] / 'node_modules'}"),  # inside SOURCE_REPO, with no --pack
-            (shares, "--pack", str(pack), "--link", f"node_modules={outside / 'via'}"),  # a symlink resolving into the pack
             (shares, "--pack", str(pack), "--link", f"up={self.root}"),  # a directory holding the pack
             (shares, "--pack", str(pack), "--link", "node_modules=/"),  # N2: the root holds everything, the pack too
             (shares, "--link", "node_modules=/"),  # N2: and SOURCE_REPO, with no --pack
             (shares, "--pack", str(pack), "--link", "node_modules=//"),  # N3: bash keeps a leading '//' from pwd -P; it is the root
             (shares, "--link", "node_modules=//"),  # N3: and with no --pack
-            (shares, "--pack", "/" + str(pack), "--link", f"node_modules={pack / 'repo'}"),  # N3: the pack spelled //abs/... still holds the link
+            *([(shares, "--pack", "/" + str(pack), "--link", f"node_modules={pack / 'repo'}")]  # N3: the pack spelled //abs/... still holds the link
+              if str(pack).startswith("/") else []),  # (a Windows path has no //abs spelling: there '//' starts a UNC name)
             (bare, "--pack", str(pack), "--link", "node_modules"),  # no directory: the old form linked into SOURCE_REPO
         ]
         for i, (reason, *flags) in enumerate(cases):
@@ -520,6 +538,19 @@ class Scripts(unittest.TestCase):
             self.assertEqual(p.returncode, 2, f"{flags}: {p.stdout}{p.stderr}")
             self.assertIn(reason, p.stderr, flags)
             self.assertFalse(target.exists(), flags)
+
+    @NEEDS_PY_LINKS
+    def test_historyless_checkout_refuses_a_symlink_that_resolves_into_the_pack(self):
+        pack, c = make_pack(self.root, self.env)
+        (c["repo"] / "node_modules").mkdir()
+        outside = self.root / "outside"
+        outside.mkdir()
+        (outside / "via").symlink_to(c["repo"] / "node_modules")  # outside by name, inside by its real path
+        target = self.root / "refused"
+        p = checkout(c["repo"], c["base"], target, self.env, "--pack", str(pack), "--link", f"node_modules={outside / 'via'}")
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn("holds the accepted fix", p.stderr)
+        self.assertFalse(target.exists())
 
     def test_historyless_checkout_refuses_an_existing_target_and_one_inside_the_pack(self):
         pack, c = make_pack(self.root, self.env)
@@ -595,7 +626,7 @@ class Scripts(unittest.TestCase):
         self.assertEqual(d["testFiles"], ["tests/test_pin.py"])
         self.assertEqual((d["redAtHead"], d["greenWithFix"], d["srcClean"], d["lint"], d["committed"]), (True, True, True, "ok", True), out)
         self.assertIs(d["PASS"], True)
-        self.assertEqual((cand / "src" / "mod.py").read_text(), "def add(a, b):\n    return a - b\n")
+        self.assertEqual((cand / "src" / "mod.py").read_text(encoding="utf-8"), "def add(a, b):\n    return a - b\n")
 
     def test_grade_pin_source_touching_candidate_fails(self):
         pack, c = make_pack(self.root, self.env)
@@ -664,7 +695,7 @@ class Scripts(unittest.TestCase):
         # original mtime is back after the grade.
         pack, c = make_pack(self.root, self.env)
         log = self.root / "mtimes.log"
-        m = json.loads((pack / "manifest.json").read_text())
+        m = json.loads((pack / "manifest.json").read_text(encoding="utf-8"))
         m["commands"]["test"] = (f"python3 -c \"import os; print(os.stat('src/mod.py').st_mtime_ns)\" >> {shlex.quote(str(log))}; "
                                  + m["commands"]["test"])
         (pack / "manifest.json").write_text(json.dumps(m, indent=1))
@@ -680,7 +711,7 @@ class Scripts(unittest.TestCase):
             log.write_text("")
             code, d, out = grade(pack / "manifest.json", task, cand, self.env)
             self.assertEqual(code, 0, out)
-            seen = [int(x) for x in log.read_text().split()]
+            seen = [int(x) for x in log.read_text(encoding="utf-8").split()]
             self.assertEqual(len(seen), 3 if task == "fix" else 2, out)
             for i, a in enumerate(seen):
                 for b in seen[i + 1:]:
@@ -704,7 +735,7 @@ class Scripts(unittest.TestCase):
 
 class TemplateAndPrompts(unittest.TestCase):
     def test_protocol_template_parses_and_carries_every_key(self):
-        doc = json.loads((KIT / "protocol.template.json").read_text())
+        doc = json.loads((KIT / "protocol.template.json").read_text(encoding="utf-8"))
         self.assertEqual(set(doc), PROTOCOL_KEYS)
         self.assertIn("run 3", doc["_lineage"])
         self.assertIsNone(doc["run_id"], "the run id is recorded at the launch, never before")
@@ -727,15 +758,15 @@ class TemplateAndPrompts(unittest.TestCase):
         self.assertTrue({"before", "after"} <= set(doc["usage_window_readings"]))
 
     def test_the_fixture_protocol_is_a_filled_template(self):
-        tpl = json.loads((KIT / "protocol.template.json").read_text())
-        filled = json.loads((FIX / "protocol.json").read_text())
+        tpl = json.loads((KIT / "protocol.template.json").read_text(encoding="utf-8"))
+        filled = json.loads((FIX / "protocol.json").read_text(encoding="utf-8"))
         self.assertEqual(set(filled) - {"_comment"}, set(tpl) - {"_lineage"})
         for key in ("subject_pack", "accounting", "classification", "judging_profile", "usage_window_readings"):
             self.assertEqual(set(filled[key]), set(tpl[key]), key)
         self.assertNotIn("{{", json.dumps(filled), "a placeholder left in a filled protocol")
 
     def test_classification_names_three_prongs_the_s4_rule_and_the_rules_runs_produced(self):
-        text = (KIT / "classification.md").read_text()
+        text = (KIT / "classification.md").read_text(encoding="utf-8")
         definition = md_section(text, "Definition")
         for word in ("holds at HEAD", "reachable", "admissible", "forbids"):
             self.assertIn(word, definition)
@@ -748,7 +779,7 @@ class TemplateAndPrompts(unittest.TestCase):
         for name, required in (("grader", {"truth", "others", "falseBlocking", "copiedFromHistory", "notes"}),
                                ("lens", {"claim", "lens", "holds", "reachable", "forbidden", "severity", "scratchTest", "why"}),
                                ("cluster", {"clusters"})):
-            text = (KIT / f"{name}.prompt.md").read_text()
+            text = (KIT / f"{name}.prompt.md").read_text(encoding="utf-8")
             self.assertTrue(text.startswith("<!-- Lineage:"), name)
             schema = md_schema(text)
             self.assertEqual(schema["type"], "object", name)
@@ -759,7 +790,7 @@ class TemplateAndPrompts(unittest.TestCase):
             self.assertEqual(used - documented, set(), f"{name}: placeholders used but not documented")
 
     def test_lens_votes_real_only_on_all_three_prongs(self):
-        text = (KIT / "lens.prompt.md").read_text()
+        text = (KIT / "lens.prompt.md").read_text(encoding="utf-8")
         schema = md_schema(text)
         self.assertEqual(schema["properties"]["forbidden"]["type"], "boolean")
         self.assertIn("forbidden", schema["required"])
@@ -767,10 +798,10 @@ class TemplateAndPrompts(unittest.TestCase):
         for lens in ("reproduce", "reachability", "refute"):
             self.assertTrue(md_section(text, f"Lens: {lens}"), lens)
         self.assertIn("{{classification}}", md_section(text, "Prompt"))
-        self.assertIn("{{classification}}", md_section((KIT / "grader.prompt.md").read_text(), "Prompt"))
+        self.assertIn("{{classification}}", md_section((KIT / "grader.prompt.md").read_text(encoding="utf-8"), "Prompt"))
 
     def test_cluster_prompt_has_the_assignment_variant(self):
-        text = (KIT / "cluster.prompt.md").read_text()
+        text = (KIT / "cluster.prompt.md").read_text(encoding="utf-8")
         self.assertIn("{{existing_clusters}}", md_section(text, "Assignment prompt"))
 
 
@@ -831,7 +862,7 @@ class RunTemplate(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_template_has_the_fill_slots_lineage_and_harness_markers(self):
-        text = (KIT / "run.template.js").read_text()
+        text = (KIT / "run.template.js").read_text(encoding="utf-8")
         self.assertTrue(text.startswith("// Lineage:"))
         self.assertEqual((text.count("null // {{RUN}}"), text.count("null // {{PROMPTS}}")), (1, 1))
         self.assertGreaterEqual(text.count("// HARNESS:"), 4)
@@ -851,7 +882,7 @@ class RunTemplate(unittest.TestCase):
             self.assertIn("schema", c, c["label"])
             if c["label"].split(":")[0] in ("pin", "fix", "review"):
                 task, key = c["label"].split(":")
-                self.assertIn(str(self.root / "checkouts" / f"cal-{task}-{key}"), c["prompt"])
+                self.assertIn(f"{self.root / 'checkouts'}/cal-{task}-{key}", c["prompt"])  # <checkout_root>/<name>, as the template joins it
                 self.assertIn("the operator launched this calibration", c["prompt"])  # A-1: a relayed request is reconciled
                 self.assertNotIn(str(self.root / "pack"), c["prompt"])  # Item 2: the prompt names only the checkout
                 self.assertNotIn("accepted0", c["prompt"])
@@ -920,7 +951,7 @@ class RunTemplate(unittest.TestCase):
     @NEEDS_NODE
     def test_launch_treats_a_placeholder_qualification_as_unset(self):
         # F3: the template ships qualification and limitation as {{...}} strings; neither is a qualification or the line
-        tmpl = json.loads((KIT / "protocol.template.json").read_text())["judging_profile"]
+        tmpl = json.loads((KIT / "protocol.template.json").read_text(encoding="utf-8"))["judging_profile"]
         for lim in (tmpl["limitation"], None):
             out = self.launch(lambda p: p["judging_profile"].update(qualification=tmpl["qualification"], limitation=lim))
             self.assertIn("neither its qualification nor the bootstrap limitation line", out["error"] or "", lim)
@@ -947,7 +978,7 @@ class RunTemplate(unittest.TestCase):
     @NEEDS_NODE
     def test_launch_refuses_any_placeholder_left_in_the_protocol(self):
         # F3: "fill every placeholder" - a {{...}} anywhere in the protocol stops the launch, and the error names where
-        tmpl = json.loads((KIT / "protocol.template.json").read_text())
+        tmpl = json.loads((KIT / "protocol.template.json").read_text(encoding="utf-8"))
         out = self.launch(lambda p: p.update(profiles=tmpl["profiles"]))
         self.assertIn("unfilled placeholder at protocol.profiles[0].key", out["error"] or "")
         self.assertEqual(out["calls"], [])
@@ -990,7 +1021,7 @@ class RunTemplate(unittest.TestCase):
 
     @NEEDS_NODE
     def test_supplementary_run_reruns_only_the_void_cells_and_keeps_known_verdicts(self):
-        known = json.loads((FIX / "run.json").read_text())["result"]["adjudications"][0]
+        known = json.loads((FIX / "run.json").read_text(encoding="utf-8"))["result"]["adjudications"][0]
         cfg = run_config(self.root, supplementary={"cells": ["review:beta-max"], "main_clusters": [{k: known["cluster"][k] for k in ("id", "title", "claim")}],
                                                     "main_adjudications": [known]})
         out = execute_template(cfg, self.root)
@@ -1021,7 +1052,7 @@ class Request(unittest.TestCase):
         self.assertIn("Branch: evidence/fixture-host-calibration-1", out)
         for name in ("protocol.json", "observations.json", "scores.json", "results-table.md", "void-cells.json"):
             self.assertIn(f"docs/evidence/2026-01-01/fixture-host-calibration-1/{name}", out)
-        headings = re.findall(r"^## .+$", (ROOT / ".github" / "pull_request_template.md").read_text(), re.M)
+        headings = re.findall(r"^## .+$", (ROOT / ".github" / "pull_request_template.md").read_text(encoding="utf-8"), re.M)
         self.assertEqual(len(headings), 4)
         positions = [out.find(h + "\n") for h in headings]
         self.assertTrue(all(x >= 0 for x in positions), headings)
@@ -1035,7 +1066,7 @@ class Request(unittest.TestCase):
         self.assertIn("never pushes", last)
 
     def test_a_two_prong_pass_is_named_as_one(self):
-        run = json.loads((FIX / "run.json").read_text())
+        run = json.loads((FIX / "run.json").read_text(encoding="utf-8"))
         for lens in run["result"]["adjudications"][0]["lenses"]:
             del lens["forbidden"]
         path = self.root / "run-two-prong.json"
@@ -1046,7 +1077,7 @@ class Request(unittest.TestCase):
         self.assertIn("missing from the lens schema: forbidden", p.stdout)
 
     def test_never_runs_git_or_any_command(self):
-        src = (KIT / "request.py").read_text()
+        src = (KIT / "request.py").read_text(encoding="utf-8")
         for word in ("subprocess", "os.system", "Popen", "os.exec"):
             self.assertNotIn(word, src)
 
@@ -1108,7 +1139,7 @@ class SharedPack(unittest.TestCase):
         (home / "attributes").write_text("* filter=hostile text eol=crlf\n")
         (home / "gitconfig").write_text(
             "[user]\n\tname = h\n\temail = h@localhost\n[init]\n\tdefaultBranch = trunk\n[core]\n\tautocrlf = true\n"
-            f"\tattributesFile = {home / 'attributes'}\n[filter \"hostile\"]\n\tclean = sed s/a/b/\n\tsmudge = cat\n"
+            f"\tattributesFile = {(home / 'attributes').as_posix()}\n[filter \"hostile\"]\n\tclean = sed s/a/b/\n\tsmudge = cat\n"
             "[i18n]\n\tcommitEncoding = ISO-8859-1\n[commit]\n\tgpgSign = true\n[tag]\n\tgpgSign = true\n[gpg]\n\tprogram = false\n")
         env = git_env(home)
         env.update(GIT_AUTHOR_NAME="x", GIT_AUTHOR_EMAIL="x@x", GIT_AUTHOR_DATE="2001-02-03T04:05:06Z",
@@ -1160,7 +1191,7 @@ class SharedPack(unittest.TestCase):
                  "except Exception as e:\n    print('raised', type(e).__name__)\n")
         seen = {}
         for name in TREES:
-            p = subprocess.run(["python3", "-c", probe], cwd=self.at(name), env=self.env, capture_output=True, text=True, timeout=60)
+            p = subprocess.run([sys.executable, "-c", probe], cwd=self.at(name), env=self.env, capture_output=True, text=True, timeout=60)
             seen[name] = p.stdout.strip()
         self.assertEqual(seen, {"review": "raised TypeError", "base": "returned b'abcd'", "accepted": "returned b'abcd'"})
 
@@ -1169,7 +1200,7 @@ class SharedPack(unittest.TestCase):
         # the edges a review could otherwise report as other findings: the spec says how each behaves, and the accepted
         # tree behaves so (a released memoryview holds no bytes; a limit of 0 still reads the first chunk, and no more)
         for name in TREES:
-            spec = (PACK / "trees" / name / "SPEC.md").read_text()
+            spec = (PACK / "trees" / name / "SPEC.md").read_text(encoding="utf-8")
             self.assertIn("released", spec, name)
             self.assertIn("with a limit of 0", spec, name)
             none = re.search(r"(?ms)^- \*\*none\*\*:.*?(?=^\S|^- )", spec).group(0)  # R-3: Python calls these bytes-like too
@@ -1182,7 +1213,7 @@ class SharedPack(unittest.TestCase):
                  "print('limit 0:', read_bounded(gen(), 0), len(pulled))\n"
                  "import array, mmap\nfor c in (array.array('b', [65, 66]), mmap.mmap(-1, 2)):\n"
                  "    try:\n        read_bounded([c], 4)\n    except TypeError:\n        print(type(c).__name__ + ': TypeError')\n")
-        p = subprocess.run(["python3", "-c", probe], cwd=self.at("accepted"), env=self.env, capture_output=True, text=True, timeout=60)
+        p = subprocess.run([sys.executable, "-c", probe], cwd=self.at("accepted"), env=self.env, capture_output=True, text=True, timeout=60)
         self.assertEqual(p.stdout.split("\n")[:4], ["released: ValueError", "limit 0: b'' 1", "array: TypeError", "mmap: TypeError"], p.stdout + p.stderr)
 
     # ---- the manifest (P3, P4) and grade.sh on this pack (P5) --------------------------------------------------------
@@ -1212,9 +1243,9 @@ class SharedPack(unittest.TestCase):
         self.assertNotIn("cases.review.base", p.stderr)  # review0 is built from trees/review, which did not change
 
     def test_the_manifest_carries_every_field_of_the_format(self):
-        m, fixture = self.manifest(), json.loads((FIX / "manifest.json").read_text())
+        m, fixture = self.manifest(), json.loads((FIX / "manifest.json").read_text(encoding="utf-8"))
         # every field the format documents (subject-pack/README.md), optional ones included, is present
-        section = md_section((KIT / "subject-pack" / "README.md").read_text(), "manifest.json")
+        section = md_section((KIT / "subject-pack" / "README.md").read_text(encoding="utf-8"), "manifest.json")
         fields = set(re.findall(r"^\s*- `([a-z_.\[\]]+)`", section, re.M))
         for line in re.findall(r"^\s*- (`cases\.pin\.[a-z_]+`.*?):", section, re.M):  # "`cases.pin.x`, `cases.fix.x`: ..."
             fields |= set(re.findall(r"`([a-z_.]+)`", line))
@@ -1253,7 +1284,7 @@ class SharedPack(unittest.TestCase):
         self.assertEqual(m["subject"]["module"], "src/bounded.py")
         self.assertEqual(m["subject"]["promise"], PROMISE)
         for name in TREES:  # the module states the promise the manifest names
-            doc = " ".join((PACK / "trees" / name / "src" / "bounded.py").read_text().split('"""')[1].split())
+            doc = " ".join((PACK / "trees" / name / "src" / "bounded.py").read_text(encoding="utf-8").split('"""')[1].split())
             self.assertIn(PROMISE, doc, name)
         self.assertIn("history-less", m["isolation"])
 
@@ -1386,7 +1417,7 @@ class SharedPack(unittest.TestCase):
                 self.assertEqual((d["candidateGreen"], d["guardRed"], d["scopeOk"], d["lint"]), (True, True, True, "ok"), d)
                 self.assertIs(d["acceptedPinGreen"], False, d)
                 self.assertIs(d["PASS"], False, d)
-                p = subprocess.run(["python3", "-c", "import sys; sys.path.insert(0, '.')\nfrom src.bounded import read_bounded\n" + probe],
+                p = subprocess.run([sys.executable, "-c", "import sys; sys.path.insert(0, '.')\nfrom src.bounded import read_bounded\n" + probe],
                                    cwd=cand[0], env=self.env, capture_output=True, text=True, timeout=60)
                 want = {"chars": p.stdout.strip() == "8", "trunc": "TypeError" in p.stderr,
                         "boundary": p.stdout.strip() == "b'\\xc3\\xa9'", "topcheck": p.stdout.strip() == "b'abcd' 3",
@@ -1416,7 +1447,7 @@ class SharedPack(unittest.TestCase):
             if task not in ("pin", "fix", "review"):
                 continue
             prompt = c["prompt"]
-            self.assertIn(str(self.root / "launch" / "checkouts" / f"cal-{c['label'].replace(':', '-')}"), prompt)
+            self.assertIn(f"{self.root / 'launch' / 'checkouts'}/cal-{c['label'].replace(':', '-')}", prompt)
             self.assertIn(m["subject"]["promise"], prompt)
             self.assertIn("python3 tests/run.py <file>", prompt)
             for secret in (str(self.pack), "trees/", "make-repo", "zz_accepted_pin", self.ids["accepted0"], self.ids["base0"], self.ids["review0"]):
@@ -1456,12 +1487,12 @@ class SharedPack(unittest.TestCase):
 
 class Docs(unittest.TestCase):
     def readme(self) -> str:
-        return (KIT / "README.md").read_text()
+        return (KIT / "README.md").read_text(encoding="utf-8")
 
     def test_every_kit_file_has_a_lineage_header(self):
         for f in sorted(KIT.rglob("*")):
             if f.is_file() and "__pycache__" not in f.parts and not in_shared_trees(f):  # the subject a candidate reads
-                head = "\n".join(f.read_text().splitlines()[:3])
+                head = "\n".join(f.read_text(encoding="utf-8").splitlines()[:3])
                 self.assertIn("lineage", head.lower(), f.relative_to(KIT))  # protocol.template.json carries it as its _lineage key
 
     def test_readme_lists_every_kit_file(self):
@@ -1499,8 +1530,8 @@ class Docs(unittest.TestCase):
             self.assertEqual(p.stdout, fill_template(cfg))
 
     def test_subject_pack_readme_documents_every_manifest_field(self):
-        text = (KIT / "subject-pack" / "README.md").read_text()
-        manifest = json.loads((FIX / "manifest.json").read_text())
+        text = (KIT / "subject-pack" / "README.md").read_text(encoding="utf-8")
+        manifest = json.loads((FIX / "manifest.json").read_text(encoding="utf-8"))
         keys = {k for k in manifest if not k.startswith("_")}
         for group in ("subject", "paths", "commands", "checkout"):
             keys |= {f"{group}.{k}" for k in manifest[group]}
@@ -1515,10 +1546,10 @@ class Docs(unittest.TestCase):
         self.assertEqual(sorted(f.name for f in (PACK / "trees").iterdir()), sorted(TREES))
 
     def test_shared_pack_readme_describes_the_pack(self):
-        text = (PACK / "README.md").read_text()
+        text = (PACK / "README.md").read_text(encoding="utf-8")
         self.assertTrue(text.startswith("<!-- Lineage:"))
         self.assertNotIn("stub", text.lower())
-        m = json.loads((PACK / "manifest.json").read_text())
+        m = json.loads((PACK / "manifest.json").read_text(encoding="utf-8"))
         self.assertIn(f"Version {m['pack_version']}", text)
         for heading in ("The two defects", "Files", "How a host runs it", "What it does not discriminate", "When it is rewritten"):
             md_section(text, heading)
@@ -1526,8 +1557,8 @@ class Docs(unittest.TestCase):
         for f in m["findings"]:
             self.assertRegex(defects, rf"(?m)^- \*\*{f['id']}\*\* \({f['severity']}", f["id"])
         for a, b in (("review", "base"), ("base", "accepted")):  # never a fix line (P6: summary and cause only)
-            old_lines = set((PACK / "trees" / a / "src" / "bounded.py").read_text().splitlines())
-            for line in (PACK / "trees" / b / "src" / "bounded.py").read_text().splitlines():
+            old_lines = set((PACK / "trees" / a / "src" / "bounded.py").read_text(encoding="utf-8").splitlines())
+            for line in (PACK / "trees" / b / "src" / "bounded.py").read_text(encoding="utf-8").splitlines():
                 if line not in old_lines:
                     self.assertNotIn(line.strip(), text, f"the README states the fix line {line.strip()!r}")
         files = md_section(text, "Files")
@@ -1557,12 +1588,12 @@ class Docs(unittest.TestCase):
         paragraph = md_section(kit, "The shared pack")
         for word in ("subject-pack/shared/", "make-repo.sh", "D-1", "D-2", "T1"):
             self.assertIn(word, paragraph, word)
-        fmt = md_section((KIT / "subject-pack" / "README.md").read_text(), "The shared pack")
+        fmt = md_section((KIT / "subject-pack" / "README.md").read_text(encoding="utf-8"), "The shared pack")
         for word in ("shared/", "make-repo.sh", "manifest.json", "repository"):
             self.assertIn(word, fmt, word)
 
     def test_changelog_and_readme_name_the_kit(self):
-        changelog = (ROOT / "CHANGELOG.md").read_text()
+        changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         unreleased = changelog.split("## Unreleased", 1)[1].split("\n## ", 1)[0]
         lines = [ln for ln in unreleased.splitlines() if "tools/calibration/" in ln]
         self.assertEqual(len(lines), 2)
@@ -1572,7 +1603,7 @@ class Docs(unittest.TestCase):
         pack = [ln for ln in lines if ln.startswith("- **Shared synthetic subject pack**")]
         self.assertEqual(len(pack), 1)
         self.assertIn("tools/calibration/subject-pack/shared/", pack[0])
-        self.assertIn("(tools/calibration/README.md)", (ROOT / "README.md").read_text())
+        self.assertIn("(tools/calibration/README.md)", (ROOT / "README.md").read_text(encoding="utf-8"))
 
 
 class Gate(unittest.TestCase):
