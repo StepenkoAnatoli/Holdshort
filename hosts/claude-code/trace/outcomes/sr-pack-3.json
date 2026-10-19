@@ -1,0 +1,46 @@
+{
+ "task-id": "sr-pack",
+ "outcome": "accepted",
+ "owner-profile": "cc-opus-high",
+ "original-brief-fingerprint": "73e952390345a8d7cc8514c2de47faa4afd91b638b0182f9318918a99dbad6ce",
+ "evidence": {
+  "checks": [
+   {
+    "command": "python3 -m py_compile on the pack's Python files; bash -n make-repo.sh",
+    "exit-code": 0,
+    "output-ref": "exit 0 on every unit commit and on the lead's N-3 commit"
+   },
+   {
+    "command": "python3 tools/check_secrets.py; the K3 hygiene assertion",
+    "exit-code": 0,
+    "output-ref": "clean on every commit; the reviewers' hygiene greps empty (reports/sr-pack-rereview-2.md)"
+   },
+   {
+    "command": "python3 tools/test_calibration_kit.py",
+    "exit-code": 0,
+    "output-ref": "79 tests OK; red-first per deliverable with guard-removal proofs (reports/sr-pack-1.md: about 40; fix rounds: 7 and more; the lead's N-3: 1 red, 1 guard proof)"
+   },
+   {
+    "command": "python3 tools/run_regression.py",
+    "exit-code": 0,
+    "output-ref": "REGRESSION GATE: all checks PASS through the pre-commit hook on every commit, the lead's included"
+   },
+   {
+    "command": "refute-first review",
+    "exit-code": 0,
+    "output-ref": "wf_15173ede-7d9: review FIX (R-1 S2, R-2 S4, R-3 S4), fix round 1, re-review FIX (N-1 S3, N-2 S4), fix round 2, re-review FIX with one S2 left (N-3: the pin could not tell a cut at enc[:limit] from enc[:limit - taken]), fixed by the lead at integration with the reviewer's one-token change; no finding open"
+   }
+  ],
+  "actual-spend": null,
+  "actual-tokens": 1110316,
+  "files-touched": [
+   "tools/calibration/subject-pack/shared/** (SmartRouter)",
+   "tools/test_calibration_kit.py",
+   "tools/calibration/README.md",
+   "tools/calibration/subject-pack/README.md",
+   "CHANGELOG.md"
+  ],
+  "notes": "SmartRouter branch tools/calibration-shared-pack (ten unit commits plus the lead's N-3), stacked on tools/calibration-kit; draft PR to follow. Six workflow agents, 1110316 harness tokens (not a bill). The accepted pin went through four strengthenings (R-1, N-1, N-2, N-3), each a wrong fix the previous pin let through: the pack's discriminating power is its pin, and the lead notes that for the host pack's design.",
+  "actual-spend-basis": "estimate-only"
+ }
+}

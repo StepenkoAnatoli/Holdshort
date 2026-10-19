@@ -283,9 +283,9 @@
     ]
   },
   "headroom-proposals": [],
-  "ledger-sha256": "e414d2f8639e1c8154fd9abeaeb04eff17db004e9e55380ef100a87b5abb0ee0",
-  "outcome-records": 19,
-  "outcomes-counted": 17,
+  "ledger-sha256": "db4ffbc7ebe270e516acda009ae5dbbbcf69031a2840e0a23cdb375f5d984f64",
+  "outcome-records": 22,
+  "outcomes-counted": 20,
   "policy-revision": "host-policy-6",
   "proposals": [],
   "stats": {
@@ -337,7 +337,7 @@
         "verification-failed": 1
       },
       "build-ui@T3": {
-        "accepted": 1,
+        "accepted": 4,
         "blocked": 0,
         "cancelled": 0,
         "cost-overrun": 0,
@@ -377,27 +377,35 @@
       "ratified-at": "2026-10-18T01:23:32Z",
       "skipped": {
         "negative-delta": 0,
-        "reset": 5,
-        "spanning": 9,
+        "reset": 6,
+        "spanning": 10,
         "unknown-tokens": 0,
         "zero-tokens": 8
       }
     },
     "seven_day": {
-      "considered": 0,
+      "considered": 1,
       "current": 0.015,
-      "max-observed": null,
-      "observed": [],
+      "max-observed": 0.015372,
+      "observed": [
+        {
+          "coefficient": 0.015372,
+          "delta": 0.04,
+          "from": "2026-10-18T21:59:28Z",
+          "to": "2026-10-19T03:01:34Z",
+          "tokens": 2602109
+        }
+      ],
       "ratified-at": "2026-10-18T01:23:32Z",
       "skipped": {
         "negative-delta": 0,
         "reset": 2,
-        "spanning": 10,
+        "spanning": 11,
         "unknown-tokens": 0,
         "zero-tokens": 10
       }
     }
   },
   "usage-proposals": [],
-  "usage-sha256": "2023e876128640113592b007b77fff4a0351f863d9c715fc3c420500bbae25c1"
+  "usage-sha256": "1afc961ca526a3e64334b3a6f1d8720bb732be1c98aeeeb7c2c3ab9f76a16769"
 }

@@ -599,7 +599,7 @@ the cell representative in kind. The size difference is held by three things: th
 after two consecutive `verification-failed` outcomes.
 
 **The routing consequence (host-policy-3; host-policy-4 moves the reviewer, below).** A default `fix` request (193000 tokens) fits only the fix-qualified profiles whose
-headroom admits it: `cc-haiku-high` (726k), `cc-opus-xhigh` (246k), `cc-opus-high` (1030k), `cc-fable-high` (352k)
+headroom admits it: `cc-haiku-high` (726k), `cc-opus-xhigh` (246k), `cc-opus-high` (1492k), `cc-fable-high` (352k)
 (and the lead, whose direct path stops at 15k). Every other fix-qualified profile fails Gate 2 on its headroom. Each
 delegate carries the same required review at `cc-opus-high` ($4.18 for the 209000-token review median) and $1.00 of
 brief overhead, so the cheapest worker wins: **a default `fix` request now routes to `cc-haiku-high`**. `decide` on
@@ -841,7 +841,7 @@ evidence') under the lead's decisions, which bind where the proposal leaves a ch
 | `cc-fable-medium` | medium | review, fix | 172k | PASS / PASS / PASS | PASS / PASS / PASS | FAIL / PASS / PASS | - | calibration-1, -2, -3; `pin-tests` blocked by the run-3 pin FAIL until two later passes (rule 3) |
 | `cc-opus-max` | max | review | 307k | - / - / - | - / - / PASS | - / - / PASS | - | calibration-2 + calibration-3 review only: two passes |
 | `cc-opus-xhigh` | xhigh | review, fix, pin-tests | 246k | PASS / PASS / PASS | PASS / PASS / PASS | PASS / PASS / PASS | - | calibration-1, -2, -3 |
-| `cc-opus-high` | high | build-ui@T3, review@T1, fix@T2, pin-tests | 1030k | PASS / PASS / PASS | PASS / PASS / PASS | PASS / PASS / PASS | sr-policy-2 build-ui@T3, sr-policy-3 build-ui@T3, sr-policy-4 build-ui@T3, sr-ci-item4 build-ui@T3, sr-policy-5 build-ui@T3, sr-host-review review@T1, sr-host-rereview1 review@T1, sr-host-rereview2 review@T1, sr-host-fix1 fix@T2, sr-host-fix2 fix@T2 | calibration-1, -2, -3; headroom from the accepted sr-policy-5 outcome (1029194 tokens); host-policy-6: `build-ui@T3`, `review@T1`, `fix@T2` backed by accepted outcomes; `build-core@T3`, `build-tests@T3`, `research-collect@T2` dropped (pre-adapter units, no outcome row) |
+| `cc-opus-high` | high | build-ui@T3, review@T1, fix@T2, pin-tests | 1492k | PASS / PASS / PASS | PASS / PASS / PASS | PASS / PASS / PASS | sr-policy-2 build-ui@T3, sr-policy-3 build-ui@T3, sr-policy-4 build-ui@T3, sr-ci-item4 build-ui@T3, sr-policy-5 build-ui@T3, sr-host-review review@T1, sr-host-rereview1 review@T1, sr-host-rereview2 review@T1, sr-host-fix1 fix@T2, sr-host-fix2 fix@T2 | calibration-1, -2, -3; headroom from the accepted sr-policy-5 outcome (1029194 tokens); host-policy-6: `build-ui@T3`, `review@T1`, `fix@T2` backed by accepted outcomes; `build-core@T3`, `build-tests@T3`, `research-collect@T2` dropped (pre-adapter units, no outcome row) |
 | `cc-opus-medium` | medium | fix, pin-tests | 154k | PASS / PASS / PASS | PASS / PASS / FAIL | PASS / PASS / PASS | - | calibration-1, -2, -3; review: PASS, FAIL, PASS - one of the two later passes rule 3 needs (G-1 recorded, not applied) |
 | `cc-sonnet-xhigh` | xhigh | review | 328k | - / - / - | - / - / PASS | - / - / PASS | - | calibration-2 + calibration-3 review only: two passes |
 | `cc-sonnet-high` | high | review, fix, pin-tests | 183k | PASS / PASS / FAIL | PASS / PASS / PASS | PASS / PASS / PASS | - | calibration-1, -2, -3; review: FAIL, PASS, PASS - two passes after the fail |

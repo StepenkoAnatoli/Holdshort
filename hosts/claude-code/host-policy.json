@@ -400,7 +400,7 @@
    "tools": true,
    "vision": true,
    "context-tested": 1000000,
-   "headroom-tested": 1030000,
+   "headroom-tested": 1492000,
    "qualified-for": [
     "build-ui@T3",
     "review@T1",
@@ -439,7 +439,9 @@
     "outcome: sr-host-rereview1 review@T1 accepted 2026-10-17 (trace/outcomes/sr-host-rereview1-3.json); would be T1 by the table (one module against gates.md with the shipped tests; the decision predates revision 5 and carries no tier)",
     "outcome: sr-host-rereview2 review@T1 accepted 2026-10-17 (trace/outcomes/sr-host-rereview2-3.json); would be T1 by the table (one module against gates.md with the shipped tests; the decision predates revision 5 and carries no tier)",
     "outcome: sr-host-fix1 fix@T2 accepted 2026-10-17 (trace/outcomes/sr-host-fix1-4.json); would be T2 by the table (three files, one module, cause named by the findings; the decision predates revision 5 and carries no tier)",
-    "outcome: sr-host-fix2 fix@T2 accepted 2026-10-17 (trace/outcomes/sr-host-fix2-4.json); would be T2 by the table (three files, one module, cause named by the findings; the decision predates revision 5 and carries no tier)"
+    "outcome: sr-host-fix2 fix@T2 accepted 2026-10-17 (trace/outcomes/sr-host-fix2-4.json); would be T2 by the table (three files, one module, cause named by the findings; the decision predates revision 5 and carries no tier)",
+    "sr-kit outcome accepted 2026-10-18T22:00:00Z: 1262204 tokens completed (trace/outcomes/sr-kit-4.json); rate proposed headroom-tested 1030000 -> 1263000, ratified by the lead at integration (largest completed run, rounded up, never lowered)",
+    "sr-evidence outcome accepted 2026-10-19T00:40:00Z: 1491793 tokens completed (trace/outcomes/sr-evidence-3.json); rate proposed headroom-tested 1263000 -> 1492000, ratified by the lead at integration (largest completed run, rounded up, never lowered)"
    ],
    "qualified-at": "2026-10-18",
    "expires": "2027-01-15",
