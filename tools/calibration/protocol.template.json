@@ -1,0 +1,98 @@
+{
+  "_lineage": "Generalises calibration run 3's frozen protocol.json (docs/evidence/2026-10-18/claude-code-calibration-3/): its shape with the values blank. Copy it to the run's evidence folder as protocol.json, fill every {{placeholder}}, hash the sources, commit it (the freeze), and only then launch; run_id is recorded at the launch and amendments are appended after it. Delete this _lineage key in the copy.",
+  "schema_version": 1,
+  "kit_version": "1",
+  "status": "{{frozen | run complete; results in observations.json, scores.json, results-table.md and clusters.md; see amendments}}",
+  "run_id": null,
+  "frozen_at": "{{ISO-8601 UTC time of the freeze commit}}",
+  "revision": "{{this repository's commit the run is bound to}}",
+  "host": "{{host name and how it launches agents, e.g. how many at a time}}",
+  "subject_pack": {
+    "pack": "{{manifest pack}}",
+    "pack_version": "{{manifest pack_version}}",
+    "kind": "{{shared | host}}",
+    "manifest_sha256": "{{SHA-256 of manifest.json under source_hash_convention}}"
+  },
+  "profiles": [
+    {"key": "{{model alias}}-{{effort}}", "model": "{{model alias as the host requests it}}", "effort": "{{effort}}"}
+  ],
+  "review_only_profiles": [],
+  "runs_per_profile_per_task": 1,
+  "retry_limit": 0,
+  "cases": [
+    {
+      "id": "pin",
+      "category": "pin-tests",
+      "tier": "{{T1 | T3}}",
+      "base": "{{manifest cases.pin.base}}",
+      "grading": "mechanical (grade.sh pin)",
+      "pass_rule": "{{manifest cases.pin.pass_rule, verbatim}}"
+    },
+    {
+      "id": "fix",
+      "category": "fix",
+      "tier": "{{T1 | T3}}",
+      "base": "{{manifest cases.fix.base}}",
+      "grading": "mechanical (grade.sh fix)",
+      "pass_rule": "{{manifest cases.fix.pass_rule, verbatim}}",
+      "reported_separately": "committedWithMap"
+    },
+    {
+      "id": "review",
+      "category": "review",
+      "tier": "{{T1 | T3}}",
+      "base": "{{manifest cases.review.base}}",
+      "grading": "grader agent against the manifest's ground truth under classification.md; then one clustering agent and three lenses (reproduce, reachability, refute) per cluster of other S1-S3 findings, majority",
+      "grader_fields": ["truth (found, causeNamed, severity per ground-truth finding)", "others (classification, mechanism)", "falseBlocking", "copiedFromHistory", "notes"],
+      "pass_rule": "{{manifest cases.review.pass_rule, verbatim}}",
+      "pass_rule_set_at": "at the freeze, before the launch"
+    }
+  ],
+  "sources": {
+    "{{path of each source the run uses: the filled run script, the prompts, the manifest, the ground truth, grade.sh, historyless-checkout.sh}}": "{{SHA-256 under source_hash_convention}}"
+  },
+  "source_hash_convention": "SHA-256 of UTF-8 text with CRLF/CR normalized to LF",
+  "metrics": [
+    "pass per case and the grader fields plus PASS/PARTIAL/FAIL (review), with raw and adjudicated falseBlocking",
+    "lint_clean per case",
+    "tokens and wall time per agent from the harness run file",
+    "self-reported mistakes verbatim",
+    "estimated cash per cell, estimate-only",
+    "usage-window movement over the run (readings with nothing in flight before and after)"
+  ],
+  "accounting": {
+    "mode": "estimate-only",
+    "prices_source": "{{the price file and revision the rates come from}}",
+    "rates_per_mtok": {
+      "{{model alias}}": {"input": "{{USD per million input tokens}}", "output": "{{USD per million output tokens}}"}
+    },
+    "statement": "estimate-only: the rates applied to harness-reported tokens as an all-input..all-output range; cache pricing not modelled; not a bill; unknown tokens null"
+  },
+  "timing": "host-observed wall time per agent from the harness run file, including scheduling",
+  "privacy": "{{what the subject is and what is recorded by hash only; no credentials}}",
+  "limits": [
+    "{{every limit the run knows before it starts: the number of ground-truth findings, one run per profile, who judges, the box it runs on}}"
+  ],
+  "classification": {
+    "prongs": ["holds", "reachable", "forbidden"],
+    "document": "tools/calibration/classification.md",
+    "lens_schema": "tools/calibration/lens.prompt.md (it carries all three prongs; a lens votes real only on all three)"
+  },
+  "judging_profile": {
+    "key": "{{the profile the grader, the clustering agent and the lenses run on}}",
+    "model": "{{model alias}}",
+    "effort": "{{effort}}",
+    "qualification": "{{its review qualification in the host policy: revision and evidence, or null in the bootstrap case}}",
+    "limitation": "{{null when qualified; in the bootstrap case (no review-qualified profile yet) exactly: judging profile not independently qualified, host-declared by <reviewer>}}"
+  },
+  "relayed_operator_text": {
+    "text": null,
+    "statement": "the harness relays no operator text into workers",
+    "_fill": "{{if the harness relays operator chat into workers: put the relayed text here verbatim, before the launch, and replace the statement with: the harness relays this operator text into every worker; the candidate preamble reconciles it}}"
+  },
+  "usage_window_readings": {
+    "before": "{{reading with nothing in flight, before the launch, or null with the reason}}",
+    "after": "{{reading with nothing in flight, after the run, or null with the reason}}"
+  },
+  "amendments": []
+}

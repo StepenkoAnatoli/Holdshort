@@ -286,6 +286,7 @@ gaps with replayable evidence. Usage and billed cost remain unknown.
 | Review the gap audit fixes and unresolved limits | [Audit follow-ups](docs/GAP_AUDIT_FOLLOWUPS_2026-10-15.md) |
 | Check the current pilot inputs, recovery fixes, and architecture review | [Pilot readiness review](docs/PILOT_READINESS_REVIEW_2026-10-16.md) |
 | Export and interpret token counters | [Usage telemetry guide](docs/USAGE_TELEMETRY.md) |
+| Calibrate a new model or effort before it enters a host policy | [Calibration kit](tools/calibration/README.md) |
 | Check reservation arithmetic in model answers | [Reservation comparison fixtures](docs/RESERVATION_COMPARISON_FIXTURES.md) |
 | Review the local pilot and its limits | [Pilot report](docs/PHASE4_PILOT_REPORT.md) |
 | Trace milestones and historical releases | [Project completion record](docs/PROJECT_COMPLETION.md) |
