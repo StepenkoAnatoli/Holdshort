@@ -201,6 +201,23 @@ class Gate(unittest.TestCase):
         self.assertIn("refused: the evidence check fails; nothing written", p.stdout)
         self.assertFalse(out.exists())
 
+    def test_a_void_cells_value_that_is_not_an_object_holds_no_void_cell(self):
+        # N3: the check does not read void_cells, so a number, a boolean or null there reaches the table, which renders
+        # the folder as holding no void cell instead of raising
+        want = load_tool().generate([FIXTURES / "pass" / "fixture-host-calibration-1"])
+        for i, value in enumerate((7, True, None)):
+            with self.subTest(value=value):
+                folder = self.root / str(i) / "fixture-host-calibration-1"
+                shutil.copytree(FIXTURES / "pass" / "fixture-host-calibration-1", folder)
+                scores = json.loads((folder / "scores.json").read_text())
+                scores["void_cells"] = value
+                (folder / "scores.json").write_text(json.dumps(scores, indent=1) + "\n")
+                out = self.root / f"out-{i}.md"
+                p = run_tool("--table", str(out), str(folder))
+                self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+                self.assertNotIn("Traceback", p.stderr)
+                self.assertEqual(out.read_text(encoding="utf-8").replace(str(folder), "tests/fixtures/calibration-evidence/pass/fixture-host-calibration-1"), want)
+
     def test_a_kit_run_gets_its_own_host_section_and_counts_its_passes(self):
         out = self.root / "out.md"
         p = run_tool("--table", str(out), str(FIXTURES / "pass" / "fixture-host-calibration-1"))

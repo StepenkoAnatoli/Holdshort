@@ -103,6 +103,12 @@ def profiles_of(r: "Report") -> dict:
     return v if isinstance(v, dict) else {}
 
 
+def cases_of(r: "Report") -> list:
+    """protocol.json cases, or [] when it is not a list (scores-derivable reports that once, for a legacy run)."""
+    v = r.protocol.get("cases")
+    return v if isinstance(v, list) else []
+
+
 def others_of(rg: dict, where: str) -> list:
     """A review grade's other findings: a list of objects, each cluster an id or null."""
     others = rg.get("others")
@@ -400,7 +406,7 @@ def pin_mapping(r: Report, legacy: bool) -> None:
         if not has_pin:
             return
         if legacy:
-            label_ = next((c.get("category") for c in r.protocol.get("cases") or [] if isinstance(c, dict) and c.get("id") == "pin"), None)
+            label_ = next((c.get("category") for c in cases_of(r) if isinstance(c, dict) and c.get("id") == "pin"), None)
             r.limit(rule, f"legacy run: scores.json records no category_mapping; the protocol labels the pin case {label_}; "
                           "the table reads it as pin-tests under the host's rule 4 (run 3 amendment A-2)")
         else:
@@ -614,7 +620,9 @@ def legacy_scores(r: Report, obs, lenses: dict, prongs) -> None:
     for p in sorted(set(cells) ^ set(profiles)):
         r.fail(rule, f"profile {p} is in {'observations.json' if p in cells else 'scores.json'} only")
     rules, refused, digests = {}, set(), {}
-    stated = [c for c in (r.protocol.get("cases") if isinstance(r.protocol.get("cases"), list) else []) if isinstance(c, dict) and c.get("id") in CASES]
+    if "cases" in r.protocol and not isinstance(r.protocol["cases"], list):
+        r.fail(rule, "legacy run: protocol.json cases is not a list")
+    stated = [c for c in cases_of(r) if isinstance(c, dict) and c.get("id") in CASES]
     for case in CASES:
         n = sum(1 for c in stated if c["id"] == case)
         if n > 1:
@@ -723,7 +731,7 @@ GRADER = re.compile(r"\b(haiku|sonnet|opus|fable)\b[^)]*?\b(low|medium|high|xhig
 
 
 def legacy_judging(r: Report) -> None:
-    review = next((c for c in r.protocol.get("cases") or [] if isinstance(c, dict) and c.get("id") == "review"), None)
+    review = next((c for c in cases_of(r) if isinstance(c, dict) and c.get("id") == "review"), None)
     m = GRADER.search(str((review or {}).get("grading") or ""))
     if m:
         r.limit("judging-profile-named", f"legacy run: no judging_profile; the grader {m.group(1)}-{m.group(2)} is named in protocol.json cases[review].grading; "
@@ -734,7 +742,11 @@ def legacy_judging(r: Report) -> None:
 
 def legacy_relayed(r: Report) -> None:
     rule = "relayed-chat-statement"
-    for a in r.protocol.get("amendments") or []:
+    amendments = r.protocol.get("amendments")
+    if amendments is not None and not isinstance(amendments, list):
+        r.fail(rule, "legacy run: protocol.json amendments is not a list, so whether the relayed text was recorded cannot be read")
+        return
+    for a in amendments or []:
         if isinstance(a, dict) and re.search(r"relay", f"{a.get('change', '')} {a.get('reason', '')}", re.I):
             r.limit(rule, f"legacy run: no relayed_operator_text before the launch; the relayed text is recorded after the run in amendment {a.get('id') or a.get('at')}")
             return

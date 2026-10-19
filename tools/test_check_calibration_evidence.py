@@ -756,11 +756,15 @@ def nodes(v, at=()):
             yield from nodes(x, at + (i,))
 
 
+SCALARS = [7, True, None]  # N3: a number, a boolean and null where an object or a list belongs
+
+
 def wrong_shapes(v) -> list:
     if isinstance(v, dict):
-        return ["x", ["x"]]
+        return ["x", ["x"], *SCALARS]
     if isinstance(v, list):
-        return ["x", {"x": 1}]
+        return ["x", {"x": 1}, *SCALARS]
+    # a leaf keeps one: every scalar in place of every leaf was swept once, green, and would cost the gate about 20 s more
     return [{"x": 1}]
 
 
@@ -813,6 +817,11 @@ class Shapes(unittest.TestCase):
              "scores.json totals.cells is not an object, so whether it counts the flagged PASSes cannot be read"),
             (ROOT / RUN3, "observations.json", lambda o: o["haiku-medium"]["review-grade"].update(others="C-1"), "scores-derivable",
              "review:haiku-medium: observations.json review grade.others is not a list"),
+            # N3: a number or a boolean where a list belongs, which the sweep reaches once SCALARS joined it
+            (ROOT / RUN1, "protocol.json", lambda p: p.update(cases=7), "scores-derivable", "legacy run: protocol.json cases is not a list"),
+            (ROOT / RUN3, "protocol.json", lambda p: p.update(cases=True), "scores-derivable", "legacy run: protocol.json cases is not a list"),
+            (ROOT / RUN3, "protocol.json", lambda p: p.update(amendments=True), "relayed-chat-statement",
+             "legacy run: protocol.json amendments is not a list, so whether the relayed text was recorded cannot be read"),
         ]
         for i, (src, name, fn, rule, needle) in enumerate(cases):
             with self.subTest(i=i, rule=rule):

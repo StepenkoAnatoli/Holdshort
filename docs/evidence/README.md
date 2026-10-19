@@ -21,7 +21,9 @@ It prints one line per failure, `FAIL <folder> <rule>: <text>`, one per limitati
 and a summary line. It exits 1 when any folder fails. A folder with limitations and no failures passes: a limitation
 says what the folder cannot answer, and it is never counted as a pass of that rule. A value of the wrong shape (a
 string where a cell object belongs, a list where the classification belongs) is a `FAIL` under the rule that reads
-it, never a traceback.
+it, never a traceback. The check's tests put a value of each other kind, a number, a boolean and null among them, in
+place of each object and list of the passing fixture and runs 1 and 3 (one profile of each shape, two items of each
+list), and the table renders each folder the check still accepts.
 
 **Two kinds of run.** A *kit run* is a folder whose `protocol.json` carries the calibration kit's keys
 (`classification.prongs`, `judging_profile`, `relayed_operator_text`) at the kit template's `schema_version` or later.

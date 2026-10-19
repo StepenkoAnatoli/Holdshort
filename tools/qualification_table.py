@@ -105,7 +105,8 @@ class Run:
         sc = (self.scores.get("profiles") or {}).get(profile, {})
         sc = sc.get(case) if isinstance(sc, dict) else None
         if not isinstance(sc, dict):
-            if f"{case}:{profile}" in (self.scores.get("void_cells") or {}):
+            void = self.scores.get("void_cells")
+            if isinstance(void, dict) and f"{case}:{profile}" in void:  # the check does not read void_cells
                 return "void", "void", ["void"]
             return None
         grade, caveats = grade_of(case, sc), []
