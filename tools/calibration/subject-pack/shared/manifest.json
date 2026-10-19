@@ -1,0 +1,125 @@
+{
+  "_lineage": "the subject sections of calibration runs 1-3's protocols, in the pack format of ../README.md, for the shared synthetic pack (onboarding proposal Item 2); the commit ids are the ones make-repo.sh builds from trees/",
+  "pack": "shared-bounded-reader",
+  "pack_version": "1",
+  "kind": "shared",
+  "repository": "repo",
+  "subject": {
+    "name": "a bounded chunk reader (src/bounded.py)",
+    "module": "src/bounded.py",
+    "promise": "read_bounded accepts any iterable whose items are bytes-like (bytes, bytearray, memoryview) or str (encoded as UTF-8), never raises on such input, and never returns more than limit bytes",
+    "reference": "SPEC.md (the promise, the chunk kinds, the bound), the docstrings of src/bounded.py, and tests/test_bounded.py with its runner tests/run.py (the shipped harness)"
+  },
+  "commit_rule": null,
+  "accepted_fix": "da71a8e3d85a8ef6490b4c714208b9c9f3ffddeb",
+  "findings": [
+    {
+      "id": "D-1",
+      "severity": "S3",
+      "present_at": [
+        "46c1cb9c8dc8029a45e3f5c02c5092224c701df2"
+      ],
+      "summary": "read_bounded raises TypeError on a memoryview chunk, a bytes-like chunk its promise says it reads without raising",
+      "cause": "chunk_kind does not classify a memoryview as a bytes-like (binary) chunk, so read_bounded takes it for an unsupported chunk and raises",
+      "required_behaviour": "a memoryview chunk is read like any other bytes-like chunk: its bytes join the result within the limit, and read_bounded does not raise",
+      "found_rule": "a finding says a memoryview chunk makes read_bounded raise (or reject it) instead of reading it",
+      "cause_rule": "it locates the cause in chunk_kind's classification, which does not recognise memoryview as bytes-like",
+      "accepted_fix": "b41a7f9c2c38c3caef06ceb0a3987e19098f759b"
+    },
+    {
+      "id": "D-2",
+      "severity": "S3",
+      "present_at": [
+        "46c1cb9c8dc8029a45e3f5c02c5092224c701df2",
+        "b41a7f9c2c38c3caef06ceb0a3987e19098f759b"
+      ],
+      "summary": "read_bounded returns more than limit bytes when the stream holds str chunks",
+      "cause": "in read_bounded, a str chunk is appended once encoded without being counted against limit or cut to the room left, so neither the bound nor the stop applies to it",
+      "required_behaviour": "a str chunk's UTF-8 bytes count against limit like any other chunk's, so the result never exceeds limit bytes whatever mix of str and bytes-like chunks the iterable yields, and once limit bytes are taken read_bounded reads no further chunk",
+      "found_rule": "a finding says str chunks are not counted against limit, so the result can exceed limit bytes",
+      "cause_rule": "it locates the cause in read_bounded's handling of str chunks, which bypasses the bound",
+      "accepted_fix": "da71a8e3d85a8ef6490b4c714208b9c9f3ffddeb"
+    }
+  ],
+  "cases": {
+    "pin": {
+      "base": "b41a7f9c2c38c3caef06ceb0a3987e19098f759b",
+      "category": "pin-tests",
+      "tier": "T1",
+      "finding": "D-2",
+      "test_file": "tests/test_pin.py",
+      "pass_rule": "the candidate's new tests fail at the base tree AND pass with the accepted source AND no file under the source directory changes AND lint is clean",
+      "instructions": "Write it as a two-row test: two chunk streams, each with its limit and the exact bytes read_bounded must return."
+    },
+    "fix": {
+      "base": "b41a7f9c2c38c3caef06ceb0a3987e19098f759b",
+      "category": "fix",
+      "tier": "T1",
+      "finding": "D-2",
+      "pass_rule": "the candidate's tests are green at its head AND red with the source restored to the base AND the accepted test is green against the candidate's source AND every changed file is in scope AND lint is clean",
+      "instructions": "SPEC.md is the specification and stays as it is.",
+      "commit_prefix": "fix(bounded): D-2 - "
+    },
+    "review": {
+      "base": "46c1cb9c8dc8029a45e3f5c02c5092224c701df2",
+      "category": "review",
+      "tier": "T1",
+      "findings": [
+        "D-1",
+        "D-2"
+      ],
+      "pass_rule": "PASS when every ground-truth finding is found AND adjudicated falseBlocking is 0 AND copiedFromHistory is false; PARTIAL when some but not all are found under the same two conditions; FAIL otherwise",
+      "scope": "read_bounded and its helpers chunk_kind and join_parts"
+    }
+  },
+  "paths": {
+    "source": [
+      "src/bounded.py"
+    ],
+    "source_dir": "src",
+    "test_file": "tests/test_bounded.py",
+    "new_test_pattern": "^tests/test_pin.*\\.py$",
+    "allowed_extra": [],
+    "map_file": null,
+    "accepted_test": {
+      "from": "tests/test_pin.py",
+      "to": "tests/zz_accepted_pin.py"
+    },
+    "scratch_test": "tests/scratch_{name}.py"
+  },
+  "commands": {
+    "test": "python3 tests/run.py {files}",
+    "test_report": "exit-code",
+    "lint": "python3 -m py_compile {files}",
+    "timeout_seconds": 120,
+    "run_one": "python3 tests/run.py {file}"
+  },
+  "checkout": {
+    "links": []
+  },
+  "source_hashes": {
+    ".gitattributes": "e055833a5f155a84220b48714edac4712d8218aef261ea8472fc5851bfcc7b21",
+    "README.md": "4c1dae05428a19fe6e537a5f84d14c214c49fe99507d12d1253efefdace38800",
+    "make-repo.sh": "df8574e32f0d15d2153cdb4acbde1f5454b37331d230c61abab137b55e9d299a",
+    "trees/accepted/.gitignore": "32dae3052f331ee34d628ef535709b301259a45df7c7522c4d35dcf49873f00b",
+    "trees/accepted/SPEC.md": "9f036ca37a1979b5a9dd8cd37ef29784ad6f47c4ae449b07950385f3d451b9bd",
+    "trees/accepted/src/__init__.py": "630f27c1aa4227584b29f5b14457a36c75ab48976f41073b52c5a0192187f011",
+    "trees/accepted/src/bounded.py": "a1927f4b1bbd0492c3f711f9295fa0e349bd137758d8df90d1f6ee4849c0073b",
+    "trees/accepted/tests/run.py": "fe8d8485c8b636871287b8a80aaa465e343690ad4966c6d1def9eda7d8afc47d",
+    "trees/accepted/tests/test_bounded.py": "01a784c4f065211ae7663fe6fbb1edae2208a9eec3b49010aa55408c876c657e",
+    "trees/accepted/tests/test_pin.py": "78ea81910a382a929b0f42078bc13f8081eef8799edd8d6577e7060058fb3be9",
+    "trees/base/.gitignore": "32dae3052f331ee34d628ef535709b301259a45df7c7522c4d35dcf49873f00b",
+    "trees/base/SPEC.md": "9f036ca37a1979b5a9dd8cd37ef29784ad6f47c4ae449b07950385f3d451b9bd",
+    "trees/base/src/__init__.py": "630f27c1aa4227584b29f5b14457a36c75ab48976f41073b52c5a0192187f011",
+    "trees/base/src/bounded.py": "39d9920a1e9a6ce7d1d7431975c94024e3346b18d299154e503623fbaf7fd862",
+    "trees/base/tests/run.py": "fe8d8485c8b636871287b8a80aaa465e343690ad4966c6d1def9eda7d8afc47d",
+    "trees/base/tests/test_bounded.py": "01a784c4f065211ae7663fe6fbb1edae2208a9eec3b49010aa55408c876c657e",
+    "trees/review/.gitignore": "32dae3052f331ee34d628ef535709b301259a45df7c7522c4d35dcf49873f00b",
+    "trees/review/SPEC.md": "9f036ca37a1979b5a9dd8cd37ef29784ad6f47c4ae449b07950385f3d451b9bd",
+    "trees/review/src/__init__.py": "630f27c1aa4227584b29f5b14457a36c75ab48976f41073b52c5a0192187f011",
+    "trees/review/src/bounded.py": "4e582d678a1e0eae6a5b5500c6b399042e06e5cd4b95cef8c3d8f9303d2a7a24",
+    "trees/review/tests/run.py": "fe8d8485c8b636871287b8a80aaa465e343690ad4966c6d1def9eda7d8afc47d",
+    "trees/review/tests/test_bounded.py": "01a784c4f065211ae7663fe6fbb1edae2208a9eec3b49010aa55408c876c657e"
+  },
+  "isolation": "candidate checkouts are history-less trees of the case base only, made outside the pack and outside the kit's tree; the pack repository, its accepted fix, the trees, this manifest and its ground truth stay outside every candidate's permitted paths, and the subject is synthetic, so no host's code travels"
+}
