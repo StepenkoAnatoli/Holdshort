@@ -21,7 +21,7 @@ Each folder is checked under eight named rules:
 
 A KIT RUN is a folder whose protocol.json carries the kit's keys (classification.prongs, judging_profile,
 relayed_operator_text) at the kit template's schema_version or later; every rule applies in full. A LEGACY RUN carries
-none of those keys (calibration runs 1-3 predate the kit); it is checked for what the folder can answer, and what it
+none of those keys and one of calibration runs 1-3's run ids (they predate the kit; the class is closed, N4); it is checked for what the folder can answer, and what it
 cannot answer prints as a limitation, never as a pass. A legacy run is refused only for an internal contradiction.
 
 Output, one line each:   FAIL <folder> <rule>: <text>     LIMIT <folder> <rule>: <text>
@@ -484,6 +484,9 @@ def check_kit(r: Report, obs, adjudication) -> None:
 
 
 # ---- rules over a legacy run (calibration runs 1-3: no kit keys) -----------------------------------------------------
+# the legacy class is closed: these three run ids and no other (N4); a folder without the kit's keys and another run id
+# is refused under protocol-frozen, so legacy leniency never reaches a new run
+LEGACY_RUN_IDS = frozenset({"wf_052c5f34-973", "wf_fe91e1d6-d78", "wf_4e9ef48d-066"})
 
 def _pin(lint: bool):
     return lambda g, ctx: "PASS" if (g.get("redAtHead") is True and g.get("greenWithFix") is True and g.get("srcClean") is True
@@ -797,6 +800,11 @@ def check_folder(folder: Path) -> Report:
     if err:
         r.fail("scores-derivable", err)
     r.kind = "kit" if kit_keys(protocol) else "legacy"
+    if r.kind == "legacy" and not (isinstance(protocol.get("run_id"), str) and protocol["run_id"] in LEGACY_RUN_IDS):
+        # the legacy class is calibration runs 1-3, by run id (N4): a later folder without the kit's keys is a new run
+        # written in the old form, and a new run is a kit run; its scores are not read under the legacy rules
+        r.fail("protocol-frozen", f"legacy run: run_id {protocol.get('run_id')!r} is not one of calibration runs 1-3 "
+                                  f"({', '.join(sorted(LEGACY_RUN_IDS))}); a new run is a kit run (it carries the kit's keys)")
     adjudication, err = read_json(folder, "adjudication.json")
     if r.kind == "kit":
         if err or not isinstance(adjudication, dict):

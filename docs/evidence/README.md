@@ -27,7 +27,7 @@ list), and the table renders each folder the check still accepts.
 
 **Two kinds of run.** A *kit run* is a folder whose `protocol.json` carries the calibration kit's keys
 (`classification.prongs`, `judging_profile`, `relayed_operator_text`) at the kit template's `schema_version` or later.
-Every rule applies to it in full. A *legacy run* carries none of them: calibration runs 1-3 predate the kit. The check
+Every rule applies to it in full. A *legacy run* carries none of them and one of calibration runs 1-3's run ids: those three predate the kit, and the class is closed (any other folder without the kit's keys is refused as a new run written in the old form). The check
 applies what such a folder can answer and records the rest as a limitation. A legacy run is refused only for an
 internal contradiction, such as a score its observations do not give, or a flag that disagrees with its own schema.
 

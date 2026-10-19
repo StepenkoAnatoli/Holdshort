@@ -690,12 +690,16 @@ class LegacyRuns(unittest.TestCase):
             return out
         same_id = f"run_id {run_id!r} is also the run id of "
         same_number = "claude-code run 2 is also the folder "
+        # the copies that carry another run id carry a real legacy id (runs 1 and 3), since N4 refuses any other id on a
+        # folder without the kit's keys; a copy alone must still pass
+        run1_id = read(ROOT / RUN1 / "protocol.json")["run_id"]
+        run3_id = read(ROOT / RUN3 / "protocol.json")["run_id"]
         cases = [
             ("a copy under a second date", ("2026-10-17", "claude-code-calibration-2", None), ("2026-10-20", "claude-code-calibration-2", None), (same_id, same_number)),
             ("the same run id under another number", ("2026-10-17", "claude-code-calibration-2", None), ("2026-10-17", "claude-code-calibration-5", None), (same_id,)),
-            ("the same number under another run id", ("2026-10-17", "claude-code-calibration-2", None), ("2026-10-20", "claude-code-calibration-2", "wf_other-run"), (same_number,)),
+            ("the same number under another run id", ("2026-10-17", "claude-code-calibration-2", None), ("2026-10-20", "claude-code-calibration-2", run3_id), (same_number,)),
             # no suffix is run 1, as -calibration-1 is
-            ("run 1 in both name forms", ("2026-10-17", "claude-code-calibration", "wf_one"), ("2026-10-20", "claude-code-calibration-1", "wf_other-run"),
+            ("run 1 in both name forms", ("2026-10-17", "claude-code-calibration", run1_id), ("2026-10-20", "claude-code-calibration-1", run3_id),
              ("claude-code run 1 is also the folder ",)),
         ]
         for i, (what, a, b, needles) in enumerate(cases):
@@ -707,9 +711,12 @@ class LegacyRuns(unittest.TestCase):
                 self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
                 fails = lines(p.stdout, "FAIL")
                 self.assertEqual({rule_of(ln) for ln in fails}, {"protocol-frozen"}, fails)
-                self.assertEqual(len(fails), 2 * len(needles), fails)
+                # the copies carry made-up run ids, so each also fails N4's closed legacy class; this test counts the
+                # duplicate rule's lines only
+                dup = [ln for ln in fails if "one run is one evidence folder" in ln]
+                self.assertEqual(len(dup), 2 * len(needles), fails)
                 for folder, other in ((first, second), (second, first)):
-                    mine = [ln for ln in fails if ln.split(" ", 2)[1] == folder.as_posix()]
+                    mine = [ln for ln in dup if ln.split(" ", 2)[1] == folder.as_posix()]
                     self.assertEqual(sorted(ln.split(": ", 1)[1].split(other.as_posix(), 1)[0] for ln in mine), sorted(needles), mine)
                 # each folder alone passes: the refusal is the pair's
                 for folder in (first, second):
@@ -730,6 +737,17 @@ class LegacyRuns(unittest.TestCase):
         self.assertEqual({rule_of(ln) for ln in self.fails(folder)}, {"protocol-frozen"})
         edit_json(folder, "protocol.json", lambda p: p.pop("run_id"))
         self.assertIn("run_id", "\n".join(self.fails(folder)))
+
+    def test_a_folder_without_kit_keys_that_is_not_one_of_runs_1_3_is_refused(self):
+        # N4 (re-review 2): the legacy class is runs 1-3 by run id; any other folder without the kit's keys is a new run
+        # written in the old form, and a new run is a kit run
+        folder = self.copy_run(RUN2)
+        edit_json(folder, "protocol.json", lambda p: p.update(run_id="wf_newrun00-000"))
+        edit_json(folder, "scores.json", lambda s: s.update(run_id="wf_newrun00-000"))
+        fails = self.fails(folder)
+        self.assertEqual({rule_of(ln) for ln in fails}, {"protocol-frozen"}, fails)
+        self.assertIn("a new run is a kit run", "\n".join(fails))
+        self.assertIn("wf_newrun00-000", "\n".join(fails))
 
     def test_a_legacy_run_carries_no_kit_rule_it_cannot_answer_as_a_failure(self):
         # a legacy run is never refused for lacking kit keys: it has no judging_profile, relayed text or prongs
