@@ -122,7 +122,7 @@ def ensure_unique(taken: set[str], n_hex_chars: int = DEFAULT_HEX_CHARS,
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Mint and validate SmartRouter host task ids.")
+    ap = argparse.ArgumentParser(description="Mint and validate Holdshort host task ids.")
     ap.add_argument("--mint", action="store_true", help="print one fresh id (checked against --repo scope)")
     ap.add_argument("--validate", default=None, help="exit 0 iff the value is a valid task id")
     ap.add_argument("--branch", nargs=2, metavar=("TASK_ID", "SLUG"), help="print the branch name derivation")

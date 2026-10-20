@@ -1,10 +1,10 @@
 {
- "_comment": "SmartRouter host policy for the MoonAliza build process (the Claude Code session that plans and delegates units). Inputs the lead collects before every dispatch decision, per skills/smart-router/SKILL.md 'Decision flow' step 1. Qualification is host-declared from this session's run history and from graded calibration runs (trace/calibration-<n>/), under the lead's qualification rules (README 'Qualification rules'), and is not an independent review; every evidence ref is a workflow run id in the session's workflow journal plus the unit's ledger row in RUN.md, or a calibration grade entry 'calibration-<n>: <category> PASS|PARTIAL|FAIL (n=<k>)'.",
+ "_comment": "Holdshort host policy for the MoonAliza build process (the Claude Code session that plans and delegates units). Inputs the lead collects before every dispatch decision, per skills/holdshort/SKILL.md 'Decision flow' step 1. Qualification is host-declared from this session's run history and from graded calibration runs (trace/calibration-<n>/), under the lead's qualification rules (README 'Qualification rules'), and is not an independent review; every evidence ref is a workflow run id in the session's workflow journal plus the unit's ledger row in RUN.md, or a calibration grade entry 'calibration-<n>: <category> PASS|PARTIAL|FAIL (n=<k>)'.",
  "policy-revision": "host-policy-6",
  "difficulty-tiers": "enforced",
  "evidence": "typed",
- "smartrouter": {
-  "repo": "https://github.com/StepenkoAnatoli/SmartRouter",
+ "holdshort": {
+  "repo": "https://github.com/StepenkoAnatoli/Holdshort",
   "revision": "fbe7bca",
   "skill-version": "3.0.0",
   "prices-revision": "prices-2"
@@ -16,7 +16,7 @@
  },
  "authorization": {
   "actor": "StepenkoAnatoli (owner) via session_01VdJ51CTnHT4Zet6eScsBBh",
-  "granted": "2026-10-17 'yes absolutely full permission' to let SmartRouter decide model and effort for MoonAliza build sub-agents",
+  "granted": "2026-10-17 'yes absolutely full permission' to let Holdshort decide model and effort for MoonAliza build sub-agents",
   "destinations": [
    "anthropic (Claude Code hosted sub-agents)"
   ],
@@ -38,7 +38,7 @@
  },
  "isolation": {
   "capability": "worktree+branch",
-  "branch-convention": "build/<unit-slug> (host convention; SmartRouter suggests sr/<task-id>/<slug>, recorded as branch-hint)",
+  "branch-convention": "build/<unit-slug> (host convention; Holdshort suggests sr/<task-id>/<slug>, recorded as branch-hint)",
   "shared-surfaces": [
    "node_modules symlink to the main checkout",
    ".build symlink",
@@ -57,7 +57,7 @@
   "cost-bound-rule": "tokens x output_rate_per_mtok / 1e6 (conservative: output rate >= input rate)"
  },
  "prices": {
-  "source": "SmartRouter tools/prices-2.json @ fbe7bca, verified by its owner against platform.claude.com/docs/en/about-claude/pricing on 2026-10-14",
+  "source": "Holdshort tools/prices-2.json @ fbe7bca, verified by its owner against platform.claude.com/docs/en/about-claude/pricing on 2026-10-14",
   "claude-fable-5-1": {
    "input_rate_per_mtok": 10.0,
    "output_rate_per_mtok": 50.0

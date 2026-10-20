@@ -1,4 +1,4 @@
-# SmartRouter model-policy pilot — 14 October 2026
+# Holdshort model-policy pilot — 14 October 2026
 
 All three requested models matched the frozen expected decisions on twelve
 synthetic cases. The pilot demonstrates basic policy following for the supplied

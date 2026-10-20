@@ -1,5 +1,5 @@
-// Tests for the SmartRouter host adapter (route.mjs). Each test is named after the SmartRouter
-// fixture it mirrors (tests/smart_router_decisions.py and references/gates.md at fbe7bca).
+// Tests for the Holdshort host adapter (route.mjs). Each test is named after the Holdshort
+// fixture it mirrors (tests/holdshort_decisions.py and references/gates.md at fbe7bca).
 // Node built-ins only: node --test docs/orchestration/smartrouter/route.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -512,7 +512,7 @@ function cycle(trace, taskId, category, profile, value, deviation) {
 }
 const failedFix = (trace, taskId) => cycle(trace, taskId, 'fix', 'cc-opus-high', 'verification-failed');
 // a qualification run on an unqualified profile: dispatch refuses it (F3), so the record stands for a run the lead
-// recorded by hand, outside SmartRouter routing (README 'How to add evidence'); it is marked as a deviation
+// recorded by hand, outside Holdshort routing (README 'How to add evidence'); it is marked as a deviation
 function handQualificationRun(trace, taskId, category, profile, value) {
   const d = run(req({ taskId, category }), { traceDir: trace });
   const p = POLICY.profiles.find((x) => x.id === profile);
@@ -2802,13 +2802,13 @@ test('README: how calibration run 3 was applied (host-policy-4 fixture) - the ro
   for (const part of ['fix-u7-r3 seq 4', 'fix-x2-2 seq 3', 'two later passes dated after 2026-10-18', '`pin-tests` for `cc-fable-medium`', 'required reviewer']) {
     assert.ok(flat.includes(part), `the run-3 section names ${part}`);
   }
-  const friction = readme.slice(readme.indexOf('## Friction log for SmartRouter upstream'));
+  const friction = readme.slice(readme.indexOf('## Friction log for Holdshort upstream'));
   assert.match(friction, /\n19\. \*\*The workflow harness relays the operator's latest chat message into every worker/);
   assert.match(friction, /\n20\. \*\*The three-lens adjudication's output schema has no `forbidden` prong/);
 });
 
 // ---------------------------------------------------------------------------------------------
-// SmartRouter Item 4 (accepted upstream 2026-10-18): a null cash counter or spend carries its estimate-only marker
+// Holdshort Item 4 (accepted upstream 2026-10-18): a null cash counter or spend carries its estimate-only marker
 // ---------------------------------------------------------------------------------------------
 const ledgerLines = (trace) => readFileSync(join(trace, 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
 
@@ -2887,7 +2887,7 @@ test('Item 4: an outcome with evidence.actual-spend null and no actual-spend-bas
     dispatch(taskId, 'cc-opus-high', { projectStop: CLEAR, traceDir: trace, policyPath: POLICY_PATH, now: NOW });
     const o = outcome({ 'task-id': taskId, outcome: 'accepted', 'original-brief-fingerprint': d.briefFingerprint });
     o.evidence = { ...o.evidence, 'actual-spend-basis': bad };
-    assert.throws(() => recordOutcome(o, { traceDir: trace, policyPath: POLICY_PATH, now: NOW }), (e) => e instanceof RouterError && e.code === 2 && /invalid Outcome \(spec-v2 §10\.3\): evidence\.actual-spend-basis must be "estimate-only" when present \(SmartRouter Item 4\)/.test(e.message), JSON.stringify(bad));
+    assert.throws(() => recordOutcome(o, { traceDir: trace, policyPath: POLICY_PATH, now: NOW }), (e) => e instanceof RouterError && e.code === 2 && /invalid Outcome \(spec-v2 §10\.3\): evidence\.actual-spend-basis must be "estimate-only" when present \(Holdshort Item 4\)/.test(e.message), JSON.stringify(bad));
     const out = cli(['outcome', writeJson(o), '--trace', trace, '--now', NOW]);
     assert.equal(out.code, 2, `${JSON.stringify(bad)}: ${out.stdout}`);
     assert.match(out.stderr, /evidence\.actual-spend-basis must be "estimate-only" when present/);
@@ -2917,7 +2917,7 @@ test('Item 4: an outcome with evidence.actual-spend null and no actual-spend-bas
 });
 
 // ---------------------------------------------------------------------------------------------
-// host-policy-5 (unit sr-policy-5): difficulty tiers (SmartRouter docs/proposals/difficulty-tiers.md, merged as PR
+// host-policy-5 (unit sr-policy-5): difficulty tiers (Holdshort docs/proposals/difficulty-tiers.md, merged as PR
 // #100) under the lead's decisions D1-D9 (briefs/policy5-builder.md); the host-policy-4 assertions above stay on the
 // host-policy-4 fixture
 // ---------------------------------------------------------------------------------------------
@@ -3541,7 +3541,7 @@ test('README: Difficulty tiers (host-policy-5 fixture) - the predicate table, th
   const applied = readme.slice(readme.indexOf('### How the tiers proposal was applied (host-policy-5)'));
   assert.ok(readme.includes('### How the tiers proposal was applied (host-policy-5)'));
   for (const d of ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9']) assert.match(applied.slice(0, applied.indexOf('\n### ', 5)), new RegExp(`\\n- \\*\\*${d}\\.?\\*\\*`), d);
-  const friction = readme.slice(readme.indexOf('## Friction log for SmartRouter upstream'));
+  const friction = readme.slice(readme.indexOf('## Friction log for Holdshort upstream'));
   assert.match(friction, /\n21\. \*\*The proposal's Item 3 "names it" clause is the existing `eligible-outside-candidates` hint, and the reviewer-tier question \(D5\) is not addressed by the proposal\.\*\*/);
 });
 
@@ -3564,7 +3564,7 @@ test('README (F1): the proposal\'s status clause ("not normative ... hosts MUST 
   for (const s of [TIERS_STATUS, '`' + TIERS_REVIEW_ROW + '`', 'PR #100', '`2e30291`', '`7f7fc75`', '`b8e1a1d`', 'D1-D9', 'without the delta review', '"difficulty-tiers": "enforced"']) {
     assert.ok(f7flat.includes(s), `policy finding 7 lacks: ${s}`);
   }
-  const friction = readme.slice(readme.indexOf('## Friction log for SmartRouter upstream'));
+  const friction = readme.slice(readme.indexOf('## Friction log for Holdshort upstream'));
   const f22 = friction.slice(friction.indexOf('\n22. **'));
   assert.ok(f22.startsWith('\n22. **A merged proposal still says hosts MUST NOT emit or require its fields.**'), 'friction item 22');
   const f22flat = unquote(f22);
@@ -3574,7 +3574,7 @@ test('README (F1): the proposal\'s status clause ("not normative ... hosts MUST 
 });
 
 // ---------------------------------------------------------------------------------------------
-// host-policy-6 (unit sr-policy-6): calibration-first evidence (SmartRouter docs/proposals/calibration-first-onboarding.md,
+// host-policy-6 (unit sr-policy-6): calibration-first evidence (Holdshort docs/proposals/calibration-first-onboarding.md,
 // merged as PR #102) under the lead's decisions E1-E7 (briefs/policy6-builder.md); the host-policy-5 assertions above stay
 // on the host-policy-5 fixture
 // ---------------------------------------------------------------------------------------------
@@ -3925,7 +3925,11 @@ const HP6_TABLE = {
 
 test('host-policy-6: the lead\'s table applied - "evidence": "typed", revision 5\'s production-derived entries rewritten into references or dropped with their lines kept as prose, the lead-direct profile and the calibration-derived profiles unchanged; every reference resolves against the committed store', () => {
   const raw = JSON.parse(readFileSync(COMMITTED_POLICY_PATH, 'utf8'));
-  const hp5 = JSON.parse(readFileSync(HP5_POLICY_PATH, 'utf8'));
+  // ADR-0003: the project was renamed Holdshort after this revision; the archived host-policy-5 keeps the old
+  // spelling, so it is compared renamed (MoonAliza's folder docs/orchestration/smartrouter keeps its name)
+  const hp5 = JSON.parse(readFileSync(HP5_POLICY_PATH, 'utf8').replaceAll('docs/orchestration/smartrouter', '<moonaliza-folder>')
+    .replaceAll('SmartRouter', 'Holdshort').replaceAll('smartrouter', 'holdshort').replaceAll('smart-router', 'holdshort')
+    .replaceAll('<moonaliza-folder>', 'docs/orchestration/smartrouter'));
   const live = loadPolicy(COMMITTED_POLICY_PATH);   // the validator resolves every reference against trace/ beside it
   assert.deepEqual([live['policy-revision'], live.evidence, live['difficulty-tiers']], ['host-policy-6', 'typed', 'enforced']);
   // the key sits after "difficulty-tiers"; nothing else at the top level changes
@@ -4213,7 +4217,7 @@ test('README: How the onboarding proposal was applied (host-policy-6) names E1-E
   const findings = readme.slice(fStart, readme.indexOf('\n## ', fStart + 1)).replace(/\s+/g, ' ');
   // the next revision's fixture problem and the owner check beyond E1 are on record
   for (const s of ['trace/policies/host-policy-6.json', 'owner-profile']) assert.ok(findings.includes(s), `the findings lack: ${s}`);
-  const friction = readme.slice(readme.indexOf('## Friction log for SmartRouter upstream'));
+  const friction = readme.slice(readme.indexOf('## Friction log for Holdshort upstream'));
   assert.match(friction, /\n23\. \*\*The proposal has no clause for the lead's own profile\.\*\*/);
   assert.match(friction, /\n24\. \*\*The proposal's `outcome:` form carries no tier\.\*\*/);
   const f24 = friction.slice(friction.indexOf('\n24. **')).replace(/\s+/g, ' ');

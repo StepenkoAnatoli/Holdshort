@@ -12,7 +12,7 @@ ANCHOR_SECTION_4 = "## 4. Numerical thresholds — status per value"
 PRICING_BLOCK = """### 3.3 Pricing revision skeleton — structure RATIFIED, numbers PENDING-owner-ratification
 
 Per plan §11 ("Fill approved numerical values ... Blanks mean not ready") and §5 of the
-smart-router-eval-prep checklist, a pilot cannot start without a pinned price list. The structure
+holdshort-eval-prep checklist, a pilot cannot start without a pinned price list. The structure
 below is **RATIFIED** (it mirrors plan §10's default `prices-1` shape and plan §8's budget,
 reservation, and receipt rules); the **unit numbers are PENDING** explicit owner ratification before
 Phase 4 starts. No number is author-ratified.

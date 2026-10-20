@@ -1,10 +1,10 @@
-# RELEASE_NOTES.md — SmartRouter v1.0.1 (enforcement & docs refresh)
+# RELEASE_NOTES.md — Holdshort v1.0.1 (enforcement & docs refresh)
 
-> **Base release:** [`v1.0.0-pilot`](https://github.com/StepenkoAnatoli/SmartRouter/releases/tag/v1.0.0-pilot)
+> **Base release:** [`v1.0.0-pilot`](https://github.com/StepenkoAnatoli/Holdshort/releases/tag/v1.0.0-pilot)
 > at commit `b6e04fd525fa886b07d149ab5a7f88da3f7b7c89`. This revision supersedes it on `main`
 > (tip: `f4d1522`) with enforcement, testing, and documentation upgrades. **No change to the
 > three executable skills' routing semantics** — the canonical policy content of
-> `skills/smart-router{,-review,-eval-prep}` is byte-identical in intent; what changed is
+> `skills/holdshort{,-review,-eval-prep}` is byte-identical in intent; what changed is
 > everything that enforces and proves the pipeline around them.
 
 ## What's new since v1.0.0-pilot
@@ -62,7 +62,7 @@
   `hook_wiring`, `validate_skills`, all test suites, `check_secrets` fail-closed).
 - Packaged-tree spot-checks executed in the staging directory before zipping:
   - `python tools/validate_skills.py` → exit 0 ("3 skills validated")
-  - `python tests/smart_router_decisions.py` → exit 0 (79 assertions / 52 fixtures)
+  - `python tests/holdshort_decisions.py` → exit 0 (79 assertions / 52 fixtures)
   - `python tools/check_secrets.py` → exit 0 (0 hits)
 - Asset built from the parity tree `f4d1522` (local main == origin/main at packaging time).
 - **Ships-nothing exclusions verified in the zip itself**: no `.env`, no ledger files, no
@@ -74,9 +74,9 @@
 | --- | --- |
 | `README.md` | Current phase-state ledger + the four-protection-layers story |
 | `CHANGELOG.md` | Chronological enforcement hardening narrative (hash-referenced) |
-| `skills/smart-router/` | Canonical five-gate routing policy (v1.0.0, unchanged semantics) |
-| `skills/smart-router-review/` | Blocker-focused reviewer procedure (v1.0.0) |
-| `skills/smart-router-eval-prep/` | Preregistration prep, no live spend (v1.0.0) |
+| `skills/holdshort/` | Canonical five-gate routing policy (v1.0.0, unchanged semantics) |
+| `skills/holdshort-review/` | Blocker-focused reviewer procedure (v1.0.0) |
+| `skills/holdshort-eval-prep/` | Preregistration prep, no live spend (v1.0.0) |
 | `tools/` | Full enforcement + dispatch + close toolchain (incl. new `check_hook_wiring.py`) |
 | `tests/`, `fixture_checks.py` | 79-assertion decision suite + smoke harness |
 | `docs/GO_LIVE_RUNBOOK.md` | Operational runbook for the first live pilot session |

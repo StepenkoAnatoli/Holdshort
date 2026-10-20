@@ -9,7 +9,7 @@ hosts MUST NOT emit or require them.
 
 ## Context
 
-- Gate 4 ([gates.md](../../skills/smart-router/references/gates.md)) requires
+- Gate 4 ([gates.md](../../skills/holdshort/references/gates.md)) requires
   work plus required verification to "fit inside approved cash and resource
   caps", but the only budget the schemas type is cash, calls and a deadline:
   spec-v2.md §10.1 `allowance {cash, calls, deadline}`, §10.5 `counters`
@@ -26,7 +26,7 @@ hosts MUST NOT emit or require them.
   percentages and best-effort tokens do not provide a conservative
   per-dispatch cash/call reservation contract", and "window resets make naive
   before/after subtraction invalid"
-  ([usage review](../SMARTROUTER_USAGE_REVIEW_2026-10-13.md), lines 50 and 73).
+  ([usage review](../HOLDSHORT_USAGE_REVIEW_2026-10-13.md), lines 50 and 73).
 - Without a typed window, a subscription host either reports Gate 4 as
   advisory-only for every task or invents a cash figure. This proposal gives
   it a third option that stays inside the repository's units rule: "Cash,
@@ -179,7 +179,7 @@ reproducible on any record whose cash fields are `null`.
 
 ## Review record (Item 4 decided; Items 1-3 pending)
 
-- Author: SmartRouter working thread, 2026-10-17, revision at PR time. A
+- Author: Holdshort working thread, 2026-10-17, revision at PR time. A
   Claude Code host adapter outside this repository is specified to implement
   Items 1-3; no result from it is claimed here.
 - Independent reviewer: *unassigned* — plan §15 requires a non-author

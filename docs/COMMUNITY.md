@@ -1,16 +1,16 @@
-# Share SmartRouter and help test it
+# Share Holdshort and help test it
 
-SmartRouter is a model-routing policy and local supervision toolkit for coding
+Holdshort is a model-routing policy and local supervision toolkit for coding
 agents. It makes permissions, capabilities, verification, budget, and routing
 reasons inspectable. The live-provider tools remain experimental; use the README's
 local checks to begin without an API key.
 
 ## Join the conversation
 
-- Read the [project introduction](https://github.com/StepenkoAnatoli/SmartRouter/discussions/62).
-- Ask integration questions in [Discussions](https://github.com/StepenkoAnatoli/SmartRouter/discussions).
-- Pick a [LLM testing issue](https://github.com/StepenkoAnatoli/SmartRouter/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22llm%20evaluation%22).
-- Begin with [unseen reservation fixtures](https://github.com/StepenkoAnatoli/SmartRouter/issues/56)
+- Read the [project introduction](https://github.com/StepenkoAnatoli/Holdshort/discussions/62).
+- Ask integration questions in [Discussions](https://github.com/StepenkoAnatoli/Holdshort/discussions).
+- Pick a [LLM testing issue](https://github.com/StepenkoAnatoli/Holdshort/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22llm%20evaluation%22).
+- Begin with [unseen reservation fixtures](https://github.com/StepenkoAnatoli/Holdshort/issues/56)
   if you want a task that needs no provider account or paid calls.
 - Follow [CONTRIBUTING.md](../CONTRIBUTING.md) for setup, verification, and pull requests.
 
@@ -35,5 +35,5 @@ Acceptance belongs to that list's maintainers. Other directories have their own
 requirements; check them before submitting and do not claim a listing is accepted
 until it appears upstream.
 
-If you find SmartRouter helpful, please consider giving it a star. Reproducible
+If you find Holdshort helpful, please consider giving it a star. Reproducible
 feedback and focused contributions are welcome too.

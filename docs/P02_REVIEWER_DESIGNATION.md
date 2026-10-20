@@ -22,7 +22,7 @@
 | # | Command | Expected observation |
 | --- | --- | --- |
 | 1 | `git diff --name-only 6d20b04..2f4b141 -- skills/ \| wc -l` | `0` |
-| 2 | `python tests/smart_router_decisions.py` | exit 0; "79/79 assertions passed; 52/52 distinct fixture IDs" |
+| 2 | `python tests/holdshort_decisions.py` | exit 0; "79/79 assertions passed; 52/52 distinct fixture IDs" |
 | 3 | `python tools/validate_skills.py` then `python tools/validate_skills.py --strict` | exit 0 both |
 | 4 | `python fixture_checks.py` | exit 0; "All arithmetic fixtures verified." |
 | 5 | inline SHA-256 of `d7c00f96a17c35e6c47c5ba1f7e3a9160c966042\|<label>` for all six seed labels | 6/6 hex values match the §3.2 table in `docs/PHASE3_PREREGISTRATION.md` |

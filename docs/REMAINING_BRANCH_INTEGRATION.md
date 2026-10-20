@@ -63,7 +63,7 @@ state requires an authoritative reconciliation procedure; this integration
 stops safely rather than inventing repaired counters. Wall-clock steps and
 simultaneous state/registry writers remain host integration risks.
 
-SmartRouter was applied to this integration as an advisory routing policy:
+Holdshort was applied to this integration as an advisory routing policy:
 additional automatic provider dispatch remains blocked on missing host identity,
 qualification, reservation, and accounting evidence. HumanGate is `none`; the
 existing user-directed coding session continued. No additional provider trial

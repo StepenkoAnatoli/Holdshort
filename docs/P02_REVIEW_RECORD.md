@@ -26,7 +26,7 @@
 | 1 | Delta scope as briefed (§1) | `git log --oneline 6d20b04..2f4b141 \| wc -l` / `git diff --name-only … \| wc -l` | 5 commits; 9 files | ✓ |
 | 2 | Skill tree untouched (hard rule: canonical set untouched by a non-author change) | `git diff --name-only 6d20b04..2f4b141 -- skills/ \| wc -l` | **0** | ✓ |
 | 3 | `DEVELOPMENT_PLAN.md` delta is typo-only (no substantive plan change riding along) | `git diff --numstat 6d20b04..2f4b141 -- docs/DEVELOPMENT_PLAN.md` | 2 / 2 (`recieve`→`receive` on S01 and V02 fixture rows only) | ✓ |
-| 4 | Decision suite integrity (hard rule #4: 79/79, exit 0) | `python tests/smart_router_decisions.py`; captured exit code | **79/79 assertions passed; 52/52 fixture IDs; exit 0** | ✓ |
+| 4 | Decision suite integrity (hard rule #4: 79/79, exit 0) | `python tests/holdshort_decisions.py`; captured exit code | **79/79 assertions passed; 52/52 fixture IDs; exit 0** | ✓ |
 | 5 | Skill validator default + strict modes | `python tools/validate_skills.py`; then `--strict`; captured exits | exit **0** both modes, "OK: 3 skill(s) validated" | ✓ |
 | 6 | Fixture smoke | `python fixture_checks.py`; captured exit | exit **0**; "All arithmetic fixtures verified." | ✓ |
 | 7 | Seed derivation method w/ 6 labels | inline SHA-256 recompute of `<plan-rev>\|<label>` vs. both hex and decimal columns | **6/6 exact match** | ✓ |

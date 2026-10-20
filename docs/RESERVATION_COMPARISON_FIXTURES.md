@@ -39,7 +39,7 @@ plan needs another reservation. `planned_calls` includes mandatory verification.
 The prospective count includes other tasks' reservations as well as this task's.
 
 Gate 4 requires sufficient new cash and call headroom. Equality passes, following
-the [canonical gate](../skills/smart-router/references/gates.md). The proposal's
+the [canonical gate](../skills/holdshort/references/gates.md). The proposal's
 declared bound must cover the mandatory work and verification sum; a proposal
 that omits verification fails even if the corrected sum would fit. Accepted
 cases route `direct`; rejected cases route `blocked` at Gate 4. These cases
@@ -92,5 +92,5 @@ python tools/score_reservation_fixtures.py --responses tests/fixtures/reservatio
 The audit joins the complete `tools/run_regression.py` gate. These local checks
 make no model or provider calls, change no ratified historical ledgers, and do
 not establish model qualification, savings or production budget enforcement.
-The dispatcher gaps in the [engineering review](SMARTROUTER_USAGE_REVIEW_2026-10-13.md)
+The dispatcher gaps in the [engineering review](HOLDSHORT_USAGE_REVIEW_2026-10-13.md)
 need separate runtime fixes.

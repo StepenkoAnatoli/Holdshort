@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Custody-directory ACL lockdown — the token tree must stay readable by the user alone.
 
-The default custody tree is ~/.secrets/smart-router. Its intended policy is inheritance
+The default custody tree is ~/.secrets/holdshort. Its intended policy is inheritance
 broken on every object and full control granted to the user account alone, so SYSTEM
 and Administrators hold no STANDING access to the files. ACL state regresses silently: an
 installer, a profile tool, or one careless `icacls /reset` re-enables inheritance and the
@@ -124,8 +124,8 @@ def default_root(env: dict | None = None) -> Path:
     env = env if env is not None else os.environ
     for var in ("USERPROFILE", "HOME"):
         if env.get(var):
-            return Path(env[var]) / ".secrets" / "smart-router"
-    return Path.home() / ".secrets" / "smart-router"
+            return Path(env[var]) / ".secrets" / "holdshort"
+    return Path.home() / ".secrets" / "holdshort"
 
 
 def na_reason(root: Path, platform: str | None = None) -> str | None:

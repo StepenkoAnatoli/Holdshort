@@ -84,7 +84,7 @@ T2 is a request that is neither T1 nor T3 in its category.
 
 Rules (proposed):
 
-1. The host declares `difficulty-tier` on the request. SmartRouter computes a
+1. The host declares `difficulty-tier` on the request. Holdshort computes a
    **floor** from the mechanical parts of the predicates it can see (the size of
    the edit set, the `uncertainty` flag, the category) and refuses a declared
    tier below the floor; a declared tier above it is accepted as given (the

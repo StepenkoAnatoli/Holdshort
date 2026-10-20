@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Skill-text adherence pin + semantic sample harness (G2).
 
-The decision suite (tests/smart_router_decisions.py) proves the *Python
+The decision suite (tests/holdshort_decisions.py) proves the *Python
 mirror* of the routing policy — not that a model reading SKILL.md decides
 identically. Full closure needs a model-graded run (still PENDING — see
 `--sample` below). This tool closes what can be closed in CI:
@@ -31,9 +31,9 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SKILL = REPO_ROOT / "skills" / "smart-router" / "SKILL.md"
-GATES = REPO_ROOT / "skills" / "smart-router" / "references" / "gates.md"
-SPEC = REPO_ROOT / "skills" / "smart-router" / "references" / "spec-v2.md"
+SKILL = REPO_ROOT / "skills" / "holdshort" / "SKILL.md"
+GATES = REPO_ROOT / "skills" / "holdshort" / "references" / "gates.md"
+SPEC = REPO_ROOT / "skills" / "holdshort" / "references" / "spec-v2.md"
 
 # (file, exact substring that must survive verbatim)
 PINS: tuple[tuple[Path, str], ...] = (

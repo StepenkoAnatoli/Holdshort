@@ -7,7 +7,7 @@
 # inside an existing checkout, or give it a repo URL to clone first:
 #
 #   bash tools/setup_machine.sh                                  # current checkout
-#   bash tools/setup_machine.sh https://github.com/StepenkoAnatoli/SmartRouter.git
+#   bash tools/setup_machine.sh https://github.com/StepenkoAnatoli/Holdshort.git
 #
 # Sequence:
 #   1. (optional) clone -> wire core.hooksPath

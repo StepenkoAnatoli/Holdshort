@@ -14,7 +14,7 @@
 | Evidence item | Where | What it establishes |
 | --- | --- | --- |
 | **R-D1 origin** | [PROJECT_COMPLETION.md §3](PROJECT_COMPLETION.md) — "That step was **superseded by explicit owner instruction this turn**… Both merges were made directly by the named owner's agent with `merge_method=merge`" plus the PR#8→`09fd8de`, PR#9→`c69352c` table | The formal independent-reviewer step was not used for PRs #8/#9; the owner directed the merges. This is the honest bookkeeping R-D1 discloses — `unresolved-by-record-design` until a countersignature authenticates the review step. |
-| **R-D1 rule** | [blocked-review.md L32-33](../skills/smart-router-review/references/blocked-review.md): "author self-review cannot close a blocking gate that requires independence (plan P01/P02)." | Why the earlier record left R-D1 open and why this acceptance pass can close it only against the owner's recorded deviation, not by re-asserting authority the reviewing session doesn't have. |
+| **R-D1 rule** | [blocked-review.md L32-33](../skills/holdshort-review/references/blocked-review.md): "author self-review cannot close a blocking gate that requires independence (plan P01/P02)." | Why the earlier record left R-D1 open and why this acceptance pass can close it only against the owner's recorded deviation, not by re-asserting authority the reviewing session doesn't have. |
 | **PR merge SHAs** | `git log 6d20b04..2f4b141`: `09fd8de Merge PR #8`, `c69352c Merge PR #9` | Two substantive preregistration revisions merged; each names its scope in the subject line. |
 | **Auth status column discipline** | [PHASE3_PREREGISTRATION.md](PHASE3_PREREGISTRATION.md) §4/§5/§10/§11 — per-item RATIFIED/PENDING/PROPOSED labels retained through the merged chain | Brief item §2.2 (every substantive amendment carries an explicit status label). Verified unchanged in RECHECK #8 below. |
 
@@ -28,7 +28,7 @@ not filtered. Items map to the earlier record's §2 table exactly.
 | 1 | Delta scope | `git log --oneline 6d20b04..2f4b141 \| wc -l`; `git diff --name-only 6d20b04..2f4b141 \| wc -l` | 5 commits; 9 files — identical to the earlier record's numbers | ✓ matches |
 | 2 | Skill tree untouched | `git diff --name-only 6d20b04..2f4b141 -- skills/ \| wc -l` | **0** | ✓ matches |
 | 3 | Plan delta typo-only | `git diff --numstat 6d20b04..2f4b141 -- docs/DEVELOPMENT_PLAN.md` | `2  2` (the `recieve`→`receive` rows only) | ✓ matches |
-| 4 | Decision suite integrity | `python tests/smart_router_decisions.py` | **79/79 assertions; 52/52 fixture IDs; exit 0** | ✓ matches |
+| 4 | Decision suite integrity | `python tests/holdshort_decisions.py` | **79/79 assertions; 52/52 fixture IDs; exit 0** | ✓ matches |
 | 5 | Validator default + strict | `python tools/validate_skills.py`; `python tools/validate_skills.py --strict` | **exit 0 both modes** | ✓ matches |
 | 6 | Fixture smoke | `python fixture_checks.py` | **"All arithmetic fixtures verified."; exit 0** | ✓ matches |
 | 7 | Seed derivation — full 6/6 | inline SHA-256 of `d7c00f96…|<label>` for all six labels compared to the preregistration table hex values | **6/6 exact hex matches** (holdout 1–3, ordering 1–3) | ✓ matches; strengthened from 1 spot-check to all 6 |

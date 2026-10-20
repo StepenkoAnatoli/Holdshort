@@ -1,4 +1,4 @@
-# Read-only review brief — SmartRouter PR #2 at 4654158
+# Read-only review brief — Holdshort PR #2 at 4654158
 
 Prepared 2026-10-08 by Buffy, the plan author. This brief was prepared locally and is now published in PR #2 by explicit owner authorization. It remains **not an independent verdict, owner designation or GitHub review**.
 
@@ -8,10 +8,10 @@ Adding this brief and the b7e4827 acceptance packet creates a newer PR head. The
 
 ## 1. Exact target and historical-revision warning
 
-- PR: [SmartRouter #2](https://github.com/StepenkoAnatoli/SmartRouter/pull/2).
+- PR: [Holdshort #2](https://github.com/StepenkoAnatoli/Holdshort/pull/2).
 - **Review only:** `4654158c7ca4f882b63d6c13a318defd067b5924`.
-- [Pinned tree](https://github.com/StepenkoAnatoli/SmartRouter/tree/4654158c7ca4f882b63d6c13a318defd067b5924).
-- [Pinned base comparison](https://github.com/StepenkoAnatoli/SmartRouter/compare/f575225642155e2e5abe1a718c8f6924e9a4f66d...4654158c7ca4f882b63d6c13a318defd067b5924).
+- [Pinned tree](https://github.com/StepenkoAnatoli/Holdshort/tree/4654158c7ca4f882b63d6c13a318defd067b5924).
+- [Pinned base comparison](https://github.com/StepenkoAnatoli/Holdshort/compare/f575225642155e2e5abe1a718c8f6924e9a4f66d...4654158c7ca4f882b63d6c13a318defd067b5924).
 - Base: `f575225642155e2e5abe1a718c8f6924e9a4f66d`.
 - Target parent: `325db3771b66d67b2b130c87d45d810b690e7686`.
 
@@ -39,10 +39,10 @@ Read all four target files. Hashes are for raw UTF-8 bytes; rendered page text i
 
 | Document | Pinned link | SHA-256 of raw bytes |
 | --- | --- | --- |
-| README | [Planning guide](https://github.com/StepenkoAnatoli/SmartRouter/blob/4654158c7ca4f882b63d6c13a318defd067b5924/README.md) | `8089b9316077a49008bce69efbdc741553f00fb374fc62eaf6ada324b71f2617` |
-| Plan | [Development plan](https://github.com/StepenkoAnatoli/SmartRouter/blob/4654158c7ca4f882b63d6c13a318defd067b5924/docs/DEVELOPMENT_PLAN.md) | `6ecd8cbf09582bf830095e76e81dea342479f2b3bcb72132eda1dce7940e495b` |
-| Survey | [Pinned repository survey](https://github.com/StepenkoAnatoli/SmartRouter/blob/4654158c7ca4f882b63d6c13a318defd067b5924/docs/ROUTER_SURVEY.md) | `98542b43a0921be9ebacd7efd459ac90e14b20fb151bba7de06fcc5b8cffbe51` |
-| License | [Scoped MIT grant](https://github.com/StepenkoAnatoli/SmartRouter/blob/4654158c7ca4f882b63d6c13a318defd067b5924/LICENSE) | `0010894042db7a84869a71da9ed493599c8ba50fe7644b6efe15466977ff454e` |
+| README | [Planning guide](https://github.com/StepenkoAnatoli/Holdshort/blob/4654158c7ca4f882b63d6c13a318defd067b5924/README.md) | `8089b9316077a49008bce69efbdc741553f00fb374fc62eaf6ada324b71f2617` |
+| Plan | [Development plan](https://github.com/StepenkoAnatoli/Holdshort/blob/4654158c7ca4f882b63d6c13a318defd067b5924/docs/DEVELOPMENT_PLAN.md) | `6ecd8cbf09582bf830095e76e81dea342479f2b3bcb72132eda1dce7940e495b` |
+| Survey | [Pinned repository survey](https://github.com/StepenkoAnatoli/Holdshort/blob/4654158c7ca4f882b63d6c13a318defd067b5924/docs/ROUTER_SURVEY.md) | `98542b43a0921be9ebacd7efd459ac90e14b20fb151bba7de06fcc5b8cffbe51` |
+| License | [Scoped MIT grant](https://github.com/StepenkoAnatoli/Holdshort/blob/4654158c7ca4f882b63d6c13a318defd067b5924/LICENSE) | `0010894042db7a84869a71da9ed493599c8ba50fe7644b6efe15466977ff454e` |
 
 No `skills/`, SKILL.md, installer, release changelog, preview acceptance record or product code belongs in this tree. Historical skills are not target delivery. Review the license's limited grant and the survey's source/test-inspection limits without assuming rights over linked upstream or historical works.
 
@@ -68,7 +68,7 @@ Line numbers refer exclusively to the pinned plan above.
 | Independent acceptance and A1-A5 matrix | 324–348 |
 | Outstanding choices and evidence limits | 350–364 |
 
-Direct references: [outcome rules](https://github.com/StepenkoAnatoli/SmartRouter/blob/4654158c7ca4f882b63d6c13a318defd067b5924/docs/DEVELOPMENT_PLAN.md#L88-L107), [pilot decisions](https://github.com/StepenkoAnatoli/SmartRouter/blob/4654158c7ca4f882b63d6c13a318defd067b5924/docs/DEVELOPMENT_PLAN.md#L272-L286), [independent acceptance](https://github.com/StepenkoAnatoli/SmartRouter/blob/4654158c7ca4f882b63d6c13a318defd067b5924/docs/DEVELOPMENT_PLAN.md#L328-L344).
+Direct references: [outcome rules](https://github.com/StepenkoAnatoli/Holdshort/blob/4654158c7ca4f882b63d6c13a318defd067b5924/docs/DEVELOPMENT_PLAN.md#L88-L107), [pilot decisions](https://github.com/StepenkoAnatoli/Holdshort/blob/4654158c7ca4f882b63d6c13a318defd067b5924/docs/DEVELOPMENT_PLAN.md#L272-L286), [independent acceptance](https://github.com/StepenkoAnatoli/Holdshort/blob/4654158c7ca4f882b63d6c13a318defd067b5924/docs/DEVELOPMENT_PLAN.md#L328-L344).
 
 ## 5. Required gate assessment — all unreviewed
 

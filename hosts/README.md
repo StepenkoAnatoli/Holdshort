@@ -1,8 +1,8 @@
 # Host integrations
 
-Reference integrations of the SmartRouter policy into a concrete host. A host is the application that
+Reference integrations of the Holdshort policy into a concrete host. A host is the application that
 runs the agent and connects routing decisions to model calls, permissions, billing and project state
-(README, "Use SmartRouter in a coding-agent host"). Each integration here is offered as a worked
+(README, "Use Holdshort in a coding-agent host"). Each integration here is offered as a worked
 example and a source of friction reports, not as a gate component of this repository.
 
 | Directory | Host | Language | Status |

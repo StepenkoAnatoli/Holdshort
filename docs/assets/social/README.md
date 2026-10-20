@@ -1,4 +1,4 @@
-# SmartRouter social explainers
+# Holdshort social explainers
 
 These portrait graphics use the palette of the README preview and are designed
 for image posts. The SVG files are editable sources; the PNG files are 1080 × 1350

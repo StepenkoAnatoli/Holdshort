@@ -7,7 +7,7 @@ checks from 14 October 2026.
 
 | Time | Content |
 | --- | --- |
-| 0–8 s | SmartRouter: model routing, clear checks, visible limits; experimental live-provider status. |
+| 0–8 s | Holdshort: model routing, clear checks, visible limits; experimental live-provider status. |
 | 8–19 s | Clone the repository and run the two local checks below. Packaging passed for three skills; the decision suite passed 94 assertions across 57 fixture IDs. |
 | 19–30 s | Permissions, capabilities, verification, affordability, and economics, in order. |
 | 30–38 s | Synthetic cash cap of $0.10, spending of $0.06, and another task's reservation of $0.02 leave $0.02 for the new task. These are fixture values, not provider prices. |
@@ -17,7 +17,7 @@ Observed commands, run from the repository root:
 
 ```bash
 python tools/validate_skills.py --strict
-python tests/smart_router_decisions.py
+python tests/holdshort_decisions.py
 ```
 
 The exported MP4 uses H.264 video, 720 × 1280 pixels, 24 frames per second,

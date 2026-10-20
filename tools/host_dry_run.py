@@ -10,7 +10,7 @@ Lifecycle per worker (mirrors host-worktree-flow/agents/registry/merge):
 
   1. mint task id (`tools/task_ids.py`: secrets entropy + live-scope uniqueness)
   2. `git worktree add -b sr/<id>/<slug> ../.sr-worktrees/<id> main` (outside form)
-  3. inject the exact Brief (`SMARTROUTER_BRIEF.json`) + start simulated work
+  3. inject the exact Brief (`HOLDSHORT_BRIEF.json`) + start simulated work
   4. worker edits, commits on its branch; acceptance check runs inside its worktree
   5. host merges each branch into main, records a §10.3 Outcome per task
   6. host removes the worktree and (after merge) the branch
@@ -100,7 +100,7 @@ def _must(cwd: Path, *args: str, env: dict, what: str) -> str:
 
 def brief_for(task_id: str, slug: str) -> dict:
     return {"objective": f"dry-run {slug}", "acceptance": {"checks": [
-        {"command": "test -f SMARTROUTER_BRIEF.json", "expect": "exit 0"}]},
+        {"command": "test -f HOLDSHORT_BRIEF.json", "expect": "exit 0"}]},
         "isolation": "worktree+branch", "branch-hint": f"sr/{task_id}/{slug}",
         "attempts": 1, "ownership": "worker"}
 
@@ -181,7 +181,7 @@ def run(root: Path, env: dict) -> dict:
             raise DryRunFailed(f"P2 failed: {s['task_id']} missing its own payload")
         if (s["path"] / WORKERS[1 - k]["file"]).exists():
             raise DryRunFailed(f"P2 failed: {s['task_id']} sees {other['task_id']}'s file")
-        if not (s["path"] / "SMARTROUTER_BRIEF.json").is_file():
+        if not (s["path"] / "HOLDSHORT_BRIEF.json").is_file():
             raise DryRunFailed(f"P2 failed: {s['task_id']} missing its injected Brief")
 
     # P3 — git agrees both worktrees are live at once.

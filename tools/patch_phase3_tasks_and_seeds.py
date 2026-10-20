@@ -37,11 +37,11 @@ an isolated scratch clone so no cross-run state leaks and tasks share no mutable
 
 | ID | Category | Anchor artefact | Exact acceptance contract |
 | --- | --- | --- | --- |
-| T-01 | bugfix-typo-isolated | Real repo text fixing: locate a single misspelled token (e.g. "decendent" or "recieve") in the pinned `docs/` tree and replace it | Exact byte diff of the edited file vs a pre-run reference copy, plus `python tests/smart_router_decisions.py` exit 0 post-edit |
+| T-01 | bugfix-typo-isolated | Real repo text fixing: locate a single misspelled token (e.g. "decendent" or "recieve") in the pinned `docs/` tree and replace it | Exact byte diff of the edited file vs a pre-run reference copy, plus `python tests/holdshort_decisions.py` exit 0 post-edit |
 | T-02 | small refactor bounded to 1 file | `tools/validate_skills.py`: extract one clearly-bounded inline helper (e.g. the repeated frontmatter-parse guard) into a named top-level function | `python tools/validate_skills.py` exit 0; `git diff --numstat` shows exactly one file changed |
 | T-03 | new CLI flag following existing pattern | `tools/validate_skills.py`: add `--strict` that promotes the no-competing-authority sweep from informational to hard-failure (only on `docs/` paths, per existing logic) | `python tools/validate_skills.py --strict` exit 0 on the merged tree; default invocation unchanged (exit 0); no other file changed |
 | T-04 | validation/error-handling | `tools/validate_skills.py`: harden `parse_frontmatter` so a SKILL.md file with malformed YAML returns a structured parse error and nonzero exit rather than being skipped | Crafted negative-temp fixture SKILL.md makes `--root=<temp>` exit nonzero with a named parse error; existing three skills still exit 0 |
-| T-05 | small debug helper following existing pattern | `tests/smart_router_decisions.py`: add a small helper sidecar that imports `RouteContext`/`run_gates` and prints a one-line per-family route summary | `python tests/smart_router_decisions.py` exit 0 before and after; helper's print run exits 0 |
+| T-05 | small debug helper following existing pattern | `tests/holdshort_decisions.py`: add a small helper sidecar that imports `RouteContext`/`run_gates` and prints a one-line per-family route summary | `python tests/holdshort_decisions.py` exit 0 before and after; helper's print run exits 0 |
 
 **Common properties (RATIFIED as constraints on every concrete task):**
 - Each task has an executable acceptance contract (exit-code check, byte-diff, or structural
@@ -81,7 +81,7 @@ the pilot only when Phase 4 is separately authorized.
 `random`/`numpy` RNG.
 
 **Pinned plan revision:** `d7c00f96a17c35e6c47c5ba1f7e3a9160c966042` (the merged main that carries
-the plan artefacts and the smart-router skill tree; anchored to the plan hash, not the Phase-3
+the plan artefacts and the holdshort skill tree; anchored to the plan hash, not the Phase-3
 amendment hash, so all Phase-2/3/4 revisions of this document derive the same seeds).
 
 **Derived values (recomputable from the method above):**

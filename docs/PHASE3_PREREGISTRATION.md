@@ -1,8 +1,8 @@
-# Phase 3 evaluation preregistration — SmartRouter pilot
+# Phase 3 evaluation preregistration — Holdshort pilot
 
 > **Ratification revision (2026-10-10).** Owner actions recorded this revision (on top of the
 > concrete-fill revision at `6d20b04df5dc09815d6d57cdd4f1a6aeb0d11f37`, PR #8):
-> (a) **Named evaluation host = `SR-PHASE3-LOCAL`** — the local SmartRouter checkout (§2.1) —
+> (a) **Named evaluation host = `SR-PHASE3-LOCAL`** — the local Holdshort checkout (§2.1) —
 > confirmed by explicit owner decision this day;
 > (b) the §4 numerical thresholds, §5 attempt/budget/deadline constraints, and the §3 rows they
 > gate are **ratified as a set** at the exact proposed values (none changed);
@@ -18,7 +18,7 @@
 
 Status: **draft ratification revision awaiting independent review + reaffirmation by owner** (Phase 3 exit gate per plan §14/§15).
 Prepared per [docs/DEVELOPMENT_PLAN.md §11](DEVELOPMENT_PLAN.md) and the
-[smart-router-eval-prep skill](../skills/smart-router-eval-prep/SKILL.md). Pinned to plan revision
+[holdshort-eval-prep skill](../skills/holdshort-eval-prep/SKILL.md). Pinned to plan revision
 `d7c00f96a17c35e6c47c5ba1f7e3a9160c966042` and the skill tree at merged main at the time of amendment.
 
 ## 0. Status vocabulary used throughout this document
@@ -41,7 +41,7 @@ cannot self-ratify.
 | A | Strong qualified **direct** — dispatch the task straight to the operator's strongest qualified model | Baseline for quality/loss comparison |
 | B | Economical qualified **direct** — dispatch straight to the cheapest qualified model | Baseline for cost comparison |
 | C | Simple **fixed rule** — deterministic cheap-if-eligible-else-strong selector | Baseline for "simpler policy" comparison |
-| D | **SmartRouter** skill flow (ordered gates + brief/verifier/review) including all overhead | The candidate under test |
+| D | **Holdshort** skill flow (ordered gates + brief/verifier/review) including all overhead | The candidate under test |
 
 Same acceptance/privacy/effects rules for all four arms. Weak baselines (B, C) are **never** exposed
 to production secrets or consequential writes. Kit workflow constant across arms.
@@ -54,7 +54,7 @@ parent tuple in §2.2.
 
 ### 2.1 Named evaluation host — **RATIFIED** (owner decision, 2026-10-10)
 
-The named Phase 3 evaluation host is **`SR-PHASE3-LOCAL`**: the local SmartRouter checkout itself,
+The named Phase 3 evaluation host is **`SR-PHASE3-LOCAL`**: the local Holdshort checkout itself,
 operated by the owner. What it supplies, and the one hard cap on its scope:
 
 | Provided by SR-PHASE3-LOCAL | Meaning |
@@ -63,7 +63,7 @@ operated by the owner. What it supplies, and the one hard cap on its scope:
 | Call limits | Attempt, repair, and escalation counters enforced at arm level; restart does not reset them (plan §7 structural rule) |
 | Test isolation | Arms run in separate working copies of this checkout — no shared mutable state across arms |
 | Stop/recovery | Observable Stop via process control on the local runner; cancellation and restart semantics are host-observable |
-| Required checks | `tools/validate_skills.py`, `tests/smart_router_decisions.py`, and `fixture_checks.py` run with deterministic exit codes on pinned main |
+| Required checks | `tools/validate_skills.py`, `tests/holdshort_decisions.py`, and `fixture_checks.py` run with deterministic exit codes on pinned main |
 | Usage/billing | **Not provided.** This is a hard cap on the host's scope: SR-PHASE3-LOCAL exhibits no per-call accounting of its own. Every hosted-model call must carry its price bound from the §2.2 price list, and a missing bound blocks Gate 4 (plan §8). |
 
 **Host-name and the five host-controls above are RATIFIED** (owner decision, 2026-10-10). This
@@ -144,7 +144,7 @@ binding on the pilot only when Phase 4 is separately authorized.
 `random`/`numpy` RNG.
 
 **Pinned plan revision:** `d7c00f96a17c35e6c47c5ba1f7e3a9160c966042` (the merged main that carries
-the plan artefacts and the smart-router skill tree; anchored to the plan hash, not the Phase-3
+the plan artefacts and the holdshort skill tree; anchored to the plan hash, not the Phase-3
 amendment hash, so all Phase-2/3/4 revisions of this document derive the same seeds).
 
 **Derived values (recomputable from the method above):**
@@ -165,7 +165,7 @@ hash changes the derived seeds and therefore requires a new ratification round.
 ### 3.3 Pricing revision skeleton — structure **RATIFIED**, unit numbers **PENDING**
 
 Per plan §11 ("Fill approved numerical values ... Blanks mean not ready") and §5 of the
-smart-router-eval-prep checklist, a pilot cannot start without a pinned price list. The structure
+holdshort-eval-prep checklist, a pilot cannot start without a pinned price list. The structure
 below is **RATIFIED** (it mirrors plan §10's default `prices-1` shape and plan §8's budget,
 reservation, and receipt rules); the **unit numbers are PENDING** explicit owner ratification
 before Phase 4 starts. No number is author-ratified.

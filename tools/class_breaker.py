@@ -3,7 +3,7 @@
 
 HITL §9.6 flag 3: a class-level escalation rate (">30%") is aggregated data, and
 brief-and-result.md reserves above-attempt statistics for the separately authorized
-evaluation flow (`smart-router-eval-prep`) — never per-task routing. A host that
+evaluation flow (`holdshort-eval-prep`) — never per-task routing. A host that
 recomputes class rates inline, on every task, launders evaluation into routing:
 thresholds drift per task, samples are whatever happened to run lately, and no owner
 ever approved the gate change. This tool is the split, executable:

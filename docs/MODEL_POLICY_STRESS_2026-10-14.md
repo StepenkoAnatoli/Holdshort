@@ -70,8 +70,8 @@ files preserve the actual observed dispositions.
 | NaN work bound | Dispatched | `blocked-gate4`; no transport call |
 | NaN Brief cash allowance | Accepted | Rejected |
 | One-candidate SpeculativeSet with zero parallelism | Accepted | Rejected |
-| Remaining task budget checked after transport | Second transport ran before refusal | Later fix for [#47](https://github.com/StepenkoAnatoli/SmartRouter/issues/47): durable work and verification reservations precede transport; failures and overruns preserve attempts and known or uncertain cost. The frozen probe predates the adapter's reservation contract and remains unchanged. New tests use declared token ceilings and explicit bounds; see [dispatch accounting](DISPATCH_ACCOUNTING.md). |
-| Independent dispatchers sharing a pilot ledger | Both accepted against separate process totals | Later fix for [#48](https://github.com/StepenkoAnatoli/SmartRouter/issues/48): shared persistent reservations coordinate local processes. A two-process test checks the actual send boundary, and a process-crash test proves uncertain allowance survives restart. |
+| Remaining task budget checked after transport | Second transport ran before refusal | Later fix for [#47](https://github.com/StepenkoAnatoli/Holdshort/issues/47): durable work and verification reservations precede transport; failures and overruns preserve attempts and known or uncertain cost. The frozen probe predates the adapter's reservation contract and remains unchanged. New tests use declared token ceilings and explicit bounds; see [dispatch accounting](DISPATCH_ACCOUNTING.md). |
+| Independent dispatchers sharing a pilot ledger | Both accepted against separate process totals | Later fix for [#48](https://github.com/StepenkoAnatoli/Holdshort/issues/48): shared persistent reservations coordinate local processes. A two-process test checks the actual send boundary, and a process-crash test proves uncertain allowance survives restart. |
 | Wall clock moves backward | Negative elapsed time allowed dispatch | `blocked-deadline`; an observed rollback remains terminal across persisted restarts |
 
 The dispatcher now rejects non-finite, negative, boolean, or otherwise invalid
@@ -104,7 +104,7 @@ times were not exposed either. These remain **unknown**, not zero. Root observat
 bounds include tool and inspection delays and cannot support model latency claims.
 No speed, price, savings, or broad capability winner is asserted.
 
-Follow-up tasks are [#56–#61](https://github.com/StepenkoAnatoli/SmartRouter/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22llm%20evaluation%22).
+Follow-up tasks are [#56–#61](https://github.com/StepenkoAnatoli/Holdshort/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22llm%20evaluation%22).
 They cover unseen fixtures, more repeats, Claude, offline Gemini preparation,
 local/open-weight models, and usage/latency capture. Live trials require their
 own protocol and authorized spend allowance; an issue is not permission to spend.
