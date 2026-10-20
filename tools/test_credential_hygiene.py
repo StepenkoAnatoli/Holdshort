@@ -464,6 +464,20 @@ class CredentialHygiene(unittest.TestCase):
         self.assertNotIn("legacy custody folder", moved.stdout + moved.stderr)
         self.assertIn("plain.key", moved.stdout, moved.stdout + moved.stderr)
 
+    # C20 ------------------------------------------------------------------
+    def test_c20_legacy_custody_folder_fails_closed_with_explicit_secrets_dir(self):
+        # an explicit --secrets-dir must not hide keys left in the pre-rename folder
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            env = env_for(tmp)
+            legacy = tmp / "userhome" / ".secrets" / "smart-router"
+            legacy.mkdir(parents=True)
+            (legacy / "plain.key").write_text("FAKE-LEGACY-KEY-0123456789", encoding="utf-8")
+            new = tmp / "userhome" / ".secrets" / "holdshort"
+            r = run_cli(tmp, env, "--secrets-dir", str(new))
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("legacy custody folder", r.stderr)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

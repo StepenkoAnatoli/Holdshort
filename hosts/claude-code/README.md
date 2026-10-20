@@ -957,7 +957,9 @@ Revision 4's table, untiered, kept as the record of what revision 5 re-declared 
    A decision not yet dispatched is rechecked against the edited policy at `dispatch`, so a demotion or a
    revocation takes effect on pending decisions too. When a revision changes what the goldens or the base tests
    assume, freeze the previous policy as `trace/policies/host-policy-<n>.json` and keep them on it (never in
-   `trace/decisions/`, whose file names belong to decisions). A policy with typed references loads from
+   `trace/decisions/`, whose file names belong to decisions). host-policy-6 was live at the rename (ADR-0003), so its
+   frozen copy keeps the upstream block named `smartrouter`; `route.mjs` accepts that name only there and in
+   host-policy-1..5. A policy with typed references loads from
    `trace/policies/` too: a fixture under `<root>/trace/policies/` resolves its references against `<root>`, the
    directory holding that trace (`policyRoot`, the lead's integration fix of policy finding 5 of host-policy-6); the
    two directory names are the rule, and a copy anywhere else resolves against its own directory.
@@ -1439,7 +1441,7 @@ Every point where the spec was ambiguous or did not fit a subscription host. Cit
    depth 1". With nesting off, this host prints `MaxNestingDepth: 0` (the policy's value) and emits
    `"max-nesting-depth": 1` in the Brief, meaning the top level only. One numbering would remove the ambiguity.
 5. **Tools are a boolean in the fixture runner.** gates.md Gate 2 asks for "required tools (active, not
-   decorative)", but `tests/holdshort_decisions.py` models `Profile.tools: bool`, and no §10 object carries a
+   decorative)", but `tests/smart_router_decisions.py` models `Profile.tools: bool`, and no §10 object carries a
    profile's tool list. Policy finding 2 above follows from this.
 6. **The direct bound is not specified.** gates.md Gate 5 says to compare "against the full direct bound". This
    host's builder brief sets the direct bound to the lead's rate on the tokens, without the required review that a
@@ -1474,7 +1476,7 @@ Every point where the spec was ambiguous or did not fit a subscription host. Cit
     candidate is suitable; recommend a stronger eligible profile", which reads as reaching outside the candidates.
     The fixture-pinned semantics say the opposite: SKILL.md decision flow step 3 ("No eligible candidate ⇒ route is
     `blocked`"), 'Hard prohibitions' ("No empty-set resurrection"), gates.md Gate 5 ("do not fall back to a cheaper
-    tier to avoid blocking"), and fixture E01's first leg in `tests/holdshort_decisions.py` (only C is a
+    tier to avoid blocking"), and fixture E01's first leg in `tests/smart_router_decisions.py` (only C is a
     candidate, C fails Gate 2, expected `BLOCKED`). The fixture runner's `choose_route` never returns
     `recommend-escalation`, and the policy has no order of strength between profiles. The adapter follows the
     fixtures: an empty eligible set is `blocked`, and a would-be-eligible non-candidate is only a hint in

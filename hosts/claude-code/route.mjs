@@ -3,7 +3,7 @@
 //
 // Holdshort (StepenkoAnatoli/Holdshort @ fbe7bca, skill 3.0.0) is advisory and stateless; this
 // adapter is the host side: it collects the inputs from host-policy.json and the request, walks the
-// five ordered gates for every candidate (references/gates.md, tests/holdshort_decisions.py
+// five ordered gates for every candidate (references/gates.md, tests/smart_router_decisions.py
 // run_gates/choose_route), prints the Required output format block plus the Brief (spec-v2 §10.1),
 // and keeps the append-only Outcome Ledger (spec-v2 §10.5). It never dispatches anything itself.
 //
@@ -136,7 +136,8 @@ export function policyRoot(path) {
 export function loadPolicy(path = DEFAULT_POLICY) {
   const p = readJsonFile(path, 'policy');
   // typed production references resolve against the policy file's directory, never against --trace (E1)
-  validatePolicy(p, policyRoot(path));
+  const root = policyRoot(path);
+  validatePolicy(p, root, root !== dirname(resolve(path)));
   return p;
 }
 
@@ -217,13 +218,16 @@ function resolveReference(ref, pr, baseDir, stores) {
   return null;
 }
 
-function validatePolicy(p, baseDir) {
+function validatePolicy(p, baseDir, frozen = false) {
   const fail = (m) => { throw invalid(`invalid policy: ${m}`); };
   if (!p || typeof p !== 'object') fail('not an object');
   if (!isStr(p.harness?.id)) fail('harness.id missing');
-  // ADR-0003: the upstream block is `holdshort`. Only the archived host-policy-1..5 keep the old key; a later policy
-  // carrying it has not migrated and would bind `holdshort: null` into every decision without a word
-  if (p.smartrouter !== undefined && !/^host-policy-[1-5]$/.test(p['policy-revision'] ?? '')) fail('the upstream block is named smartrouter; rename it holdshort (ADR-0003; only the archived host-policy-1..5 keep the old name)');
+  // ADR-0003: the upstream block is `holdshort`. The archived host-policy-1..5 keep the old key, and so does
+  // host-policy-6, the revision live at the rename, but only as its frozen copy under <root>/trace/policies/ (the next
+  // revision pins that copy to the bytes its decisions were bound to). Any other policy carrying the old key has not
+  // migrated and would bind `holdshort: null` into every decision without a word
+  const revision = p['policy-revision'] ?? '';
+  if (p.smartrouter !== undefined && !/^host-policy-[1-5]$/.test(revision) && !(frozen && revision === 'host-policy-6')) fail('the upstream block is named smartrouter; rename it holdshort (ADR-0003; only the archived host-policy-1..5, and host-policy-6 as its frozen copy under trace/policies/, keep the old name)');
   const a = p.authorization;
   if (!a || !isStrArray(a['data-classes-permitted']) || !isStrArray(a['data-classes-forbidden']) || !isStrArray(a.destinations)) fail('authorization data classes or destinations missing');
   if (!isStrArray(a['project-stop-rules']) || a['project-stop-rules'].length < 3) fail('authorization.project-stop-rules needs the red-suite, gate-off and research-gate rules');

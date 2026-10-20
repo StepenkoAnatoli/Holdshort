@@ -28,7 +28,7 @@ not filtered. Items map to the earlier record's §2 table exactly.
 | 1 | Delta scope | `git log --oneline 6d20b04..2f4b141 \| wc -l`; `git diff --name-only 6d20b04..2f4b141 \| wc -l` | 5 commits; 9 files — identical to the earlier record's numbers | ✓ matches |
 | 2 | Skill tree untouched | `git diff --name-only 6d20b04..2f4b141 -- skills/ \| wc -l` | **0** | ✓ matches |
 | 3 | Plan delta typo-only | `git diff --numstat 6d20b04..2f4b141 -- docs/DEVELOPMENT_PLAN.md` | `2  2` (the `recieve`→`receive` rows only) | ✓ matches |
-| 4 | Decision suite integrity | `python tests/holdshort_decisions.py` | **79/79 assertions; 52/52 fixture IDs; exit 0** | ✓ matches |
+| 4 | Decision suite integrity | `python tests/smart_router_decisions.py` | **79/79 assertions; 52/52 fixture IDs; exit 0** | ✓ matches |
 | 5 | Validator default + strict | `python tools/validate_skills.py`; `python tools/validate_skills.py --strict` | **exit 0 both modes** | ✓ matches |
 | 6 | Fixture smoke | `python fixture_checks.py` | **"All arithmetic fixtures verified."; exit 0** | ✓ matches |
 | 7 | Seed derivation — full 6/6 | inline SHA-256 of `d7c00f96…|<label>` for all six labels compared to the preregistration table hex values | **6/6 exact hex matches** (holdout 1–3, ordering 1–3) | ✓ matches; strengthened from 1 spot-check to all 6 |

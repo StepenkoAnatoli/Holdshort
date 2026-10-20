@@ -4224,7 +4224,7 @@ test('README: How the onboarding proposal was applied (host-policy-6) names E1-E
   assert.ok(f24.includes('`[@T<k>]`'), 'item 24 names the tier this host added');
 });
 
-test('ADR-0003: only the archived host-policy-1..5 may name the upstream block smartrouter - a later revision carrying it is refused (with or without a holdshort block) instead of binding holdshort: null; the migrated block loads', () => {
+test('ADR-0003: only the archived host-policy-1..5, and host-policy-6 as its frozen copy under trace/policies/, may name the upstream block smartrouter - any other policy carrying it is refused (with or without a holdshort block) instead of binding holdshort: null; the migrated block loads', () => {
   const hp5 = JSON.parse(readFileSync(HP5_OFF_PATH, 'utf8'));
   assert.equal(loadPolicy(HP5_OFF_PATH)['policy-revision'], 'host-policy-5', 'an archived revision still loads');
   for (const policy of [{ ...hp5, 'policy-revision': 'host-policy-6' }, { ...hp5, 'policy-revision': 'host-policy-7', holdshort: hp5.smartrouter }]) {
@@ -4233,4 +4233,19 @@ test('ADR-0003: only the archived host-policy-1..5 may name the upstream block s
   }
   const migrated = Object.fromEntries(Object.entries(hp5).map(([k, v]) => [k === 'smartrouter' ? 'holdshort' : k, v]));
   assert.equal(loadPolicy(writeJson({ ...migrated, 'policy-revision': 'host-policy-6' }))['policy-revision'], 'host-policy-6');
+  // host-policy-6 was live at the rename, so every recorded version of it names the block smartrouter: its frozen copy
+  // under <root>/trace/policies/ keeps those bytes and loads; the same policy as a live policy has not migrated
+  const root = tmp();
+  cpSync(join(HERE, 'trace'), join(root, 'trace'), { recursive: true });
+  mkdirSync(join(root, 'trace', 'policies'), { recursive: true });
+  const unmigrated = Object.fromEntries(Object.entries(COMMITTED_POLICY).map(([k, v]) => [k === 'holdshort' ? 'smartrouter' : k, v]));
+  assert.equal(unmigrated['policy-revision'], 'host-policy-6');
+  const frozen = join(root, 'trace', 'policies', 'host-policy-6.json');
+  writeFileSync(frozen, JSON.stringify(unmigrated));
+  const loaded = loadPolicy(frozen);
+  assert.deepEqual([loaded['policy-revision'], loaded.holdshort, loaded.smartrouter], ['host-policy-6', undefined, COMMITTED_POLICY.holdshort]);
+  const refused = [join(root, 'host-policy.json'), join(root, 'trace', 'policies', 'host-policy-7.json')];
+  writeFileSync(refused[0], JSON.stringify(unmigrated));
+  writeFileSync(refused[1], JSON.stringify({ ...unmigrated, 'policy-revision': 'host-policy-7' }));
+  for (const path of refused) assert.throws(() => loadPolicy(path), (e) => e instanceof RouterError && e.code === 2 && /rename it holdshort \(ADR-0003/.test(e.message), path);
 });

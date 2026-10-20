@@ -63,7 +63,10 @@ Exit codes (stop-the-line, matching check_secrets.py / check_app_db_secrets.py):
   1  NEW finding(s) — refuse the commit; clean the store, or record the subject in the
      baseline after triage: `--update-baseline --note "<why this one is known>"`
   2  fail-closed — a surface could not be read or parsed, or the baseline is malformed;
-     an unreadable hosts.yml could be hiding an orphan, so it is never "clean"
+     an unreadable hosts.yml could be hiding an orphan, so it is never "clean". Also while
+     the pre-rename custody folder <home>/.secrets/smart-router exists (ADR-0003), with or
+     without --secrets-dir; <home> is USERPROFILE, else HOME, so under the pre-commit hook
+     (HOME=<repo>) only Windows still sees the real home
 """
 from __future__ import annotations
 
@@ -414,8 +417,9 @@ def refuse_legacy_secrets_dir(home: Path | None) -> None:
         return
     legacy = home / LEGACY_SECRETS_DIR_NAME
     if legacy.exists():
-        raise FailClosed(f"legacy custody folder {legacy} is present; move it to "
-                         f"{home / SECRETS_DIR_NAME} (ADR-0003, CHANGELOG migration)")
+        raise FailClosed(f"legacy custody folder {legacy} is present; rename it to "
+                         f"{home / SECRETS_DIR_NAME}, or move its files into that folder if it "
+                         "already exists (ADR-0003, CHANGELOG migration)")
 
 
 def plaintext_names(secrets_dir: Path | None) -> tuple[list[str], str]:
@@ -624,8 +628,8 @@ def inspect(store_path: Path | None = None, gh_config_override: Path | None = No
     if config is None:
         config = config_entries(git_env())
     secrets_path = secrets_dir if secrets_dir is not None else resolve_secrets_dir(None)
-    if secrets_dir is None:
-        refuse_legacy_secrets_dir(home)
+    # with an explicit --secrets-dir too: the old folder's keys sit outside the check either way
+    refuse_legacy_secrets_dir(home)
     secret_names, secrets_desc = plaintext_names(secrets_path)
     return (entries, store_desc, store_available, hosts, hosts_desc, creds, malformed,
             config, secret_names, secrets_desc)
