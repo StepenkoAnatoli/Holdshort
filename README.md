@@ -1,16 +1,16 @@
-[![SmartRouter preview: model-routing policy, five eligibility checks, and clear host responsibilities](docs/assets/smartrouter-preview.svg)](#how-it-works)
+[![Holdshort preview: model-routing policy, five eligibility checks, and clear host responsibilities](docs/assets/holdshort-preview.svg)](#how-it-works)
 
-# SmartRouter
+# Holdshort
 
-[![Regression tests](https://github.com/StepenkoAnatoli/SmartRouter/actions/workflows/regression-gate.yml/badge.svg?branch=main)](https://github.com/StepenkoAnatoli/SmartRouter/actions/workflows/regression-gate.yml)
+[![Regression tests](https://github.com/StepenkoAnatoli/Holdshort/actions/workflows/regression-gate.yml/badge.svg?branch=main)](https://github.com/StepenkoAnatoli/Holdshort/actions/workflows/regression-gate.yml)
 [![License scope: see LICENSE](https://img.shields.io/badge/license%20scope-see%20LICENSE-blue)](LICENSE)
-[![Last commit](https://img.shields.io/github/last-commit/StepenkoAnatoli/SmartRouter)](https://github.com/StepenkoAnatoli/SmartRouter/commits/main/)
-[![GitHub stars](https://img.shields.io/github/stars/StepenkoAnatoli/SmartRouter?style=flat)](https://github.com/StepenkoAnatoli/SmartRouter/stargazers)
-[![Good first issues](https://img.shields.io/github/issues/StepenkoAnatoli/SmartRouter/good%20first%20issue?label=good%20first%20issues)](https://github.com/StepenkoAnatoli/SmartRouter/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22)
+[![Last commit](https://img.shields.io/github/last-commit/StepenkoAnatoli/Holdshort)](https://github.com/StepenkoAnatoli/Holdshort/commits/main/)
+[![GitHub stars](https://img.shields.io/github/stars/StepenkoAnatoli/Holdshort?style=flat)](https://github.com/StepenkoAnatoli/Holdshort/stargazers)
+[![Good first issues](https://img.shields.io/github/issues/StepenkoAnatoli/Holdshort/good%20first%20issue?label=good%20first%20issues)](https://github.com/StepenkoAnatoli/Holdshort/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22)
 
 **Clear model choices for coding tasks, with verification and limits built in.**
 
-SmartRouter helps a coding agent decide which model is suitable for a task, when to
+Holdshort helps a coding agent decide which model is suitable for a task, when to
 delegate work, and when to stop. It checks whether a model can do the job safely and
 within the available budget before comparing eligible options.
 
@@ -26,13 +26,13 @@ to actual model calls, permissions, billing, and project state.
 > Live-provider routing remains experimental, with known accounting and recovery
 > gaps. Start with the local checks below; they do not call a model provider.
 
-## Why use SmartRouter?
+## Why use Holdshort?
 
 Different coding tasks need different capabilities. A small edit, a difficult
 debugging session, and a change involving private data should not be routed using
 difficulty or price alone.
 
-SmartRouter makes those decisions explicit:
+Holdshort makes those decisions explicit:
 
 - **Check eligibility first.** Permissions, tools, verification, and budget must
   pass before price or convenience can influence the choice.
@@ -45,9 +45,9 @@ SmartRouter makes those decisions explicit:
 
 ## How it works
 
-![SmartRouter checks permissions, capabilities, verification, budget, and economics in that order. A failed check blocks the candidate.](docs/assets/routing-overview.svg)
+![Holdshort checks permissions, capabilities, verification, budget, and economics in that order. A failed check blocks the candidate.](docs/assets/routing-overview.svg)
 
-SmartRouter applies five checks, in order, to each candidate **model profile**.
+Holdshort applies five checks, in order, to each candidate **model profile**.
 A profile identifies a model together with the tools, settings, and qualification
 evidence needed to use it.
 
@@ -72,8 +72,8 @@ The policy returns one of five routes:
 | `recommend-escalation` | Recommend another eligible profile when direct work is unsuitable. |
 | `blocked` | Stop because a required condition is missing or has failed. |
 
-The [canonical skill](skills/smart-router/SKILL.md) defines the decision procedure.
-The [host contract](skills/smart-router/references/spec-v2.md) defines the objects
+The [canonical skill](skills/holdshort/SKILL.md) defines the decision procedure.
+The [host contract](skills/holdshort/references/spec-v2.md) defines the objects
 and responsibilities an integration must implement.
 
 ## Autonomous by default
@@ -92,7 +92,7 @@ That enables a `needs-human` package. A requested pre-dispatch stop also uses
 `--gate-raised`. The host must retain the user's request and its source across
 invocations. Human involvement does not waive eligibility or budget checks.
 
-See the [autonomous host policy](skills/smart-router/references/host-hil-policy.md)
+See the [autonomous host policy](skills/holdshort/references/host-hil-policy.md)
 for the lifecycle and optional human gates.
 
 ## Getting started
@@ -107,10 +107,10 @@ where it is named `python3`, substitute that command.
 ### 2. Clone the repository and run the policy checks
 
 ```bash
-git clone https://github.com/StepenkoAnatoli/SmartRouter.git
-cd SmartRouter
+git clone https://github.com/StepenkoAnatoli/Holdshort.git
+cd Holdshort
 python tools/validate_skills.py --strict
-python tests/smart_router_decisions.py
+python tests/holdshort_decisions.py
 ```
 
 These validate the skill packaging and deterministic routing fixtures. A passing
@@ -148,7 +148,7 @@ This example runs a harmless Python command under the supervisor. It needs no AP
 key and makes no model call. Use a new task ID and state path for a new task:
 
 ```bash
-python tools/host_watchdog.py --task-id readme-demo --state .local/readme-demo/state.json --timeout 10 -- python -c "print('SmartRouter local example completed')"
+python tools/host_watchdog.py --task-id readme-demo --state .local/readme-demo/state.json --timeout 10 -- python -c "print('Holdshort local example completed')"
 ```
 
 The supervisor records the attempt in `.local/readme-demo/state.json`. If the
@@ -182,15 +182,15 @@ This tool supervises one command per invocation. A host integration must supply
 current budget counters and enforce model dispatch, reservations, and descendant
 process cleanup. The example is a local supervision demonstration.
 
-## Use SmartRouter in a coding-agent host
+## Use Holdshort in a coding-agent host
 
 The repository contains three skills:
 
 | Skill | Purpose |
 | --- | --- |
-| [smart-router](skills/smart-router/SKILL.md) | Make the routing recommendation for a task or dispatch decision. |
-| [smart-router-review](skills/smart-router-review/SKILL.md) | Review a result against its acceptance contract and provenance. |
-| [smart-router-eval-prep](skills/smart-router-eval-prep/SKILL.md) | Prepare an evaluation protocol before separately authorized model trials. |
+| [holdshort](skills/holdshort/SKILL.md) | Make the routing recommendation for a task or dispatch decision. |
+| [holdshort-review](skills/holdshort-review/SKILL.md) | Review a result against its acceptance contract and provenance. |
+| [holdshort-eval-prep](skills/holdshort-eval-prep/SKILL.md) | Prepare an evaluation protocol before separately authorized model trials. |
 
 To integrate them, configure your host to read the canonical skill and provide its
 required inputs: authorized data and actions, exact model profiles, fresh
@@ -199,8 +199,8 @@ The host then executes eligible decisions and records outcomes.
 
 Cloning this repository does not install the skills into an agent or switch its
 running model. Provider setup and dispatch adapters belong to the host integration.
-The [worktree guide](skills/smart-router/references/host-worktree-flow.md) explains
-isolated delegation; the [lifecycle example](skills/smart-router/references/example-lifecycle.md)
+The [worktree guide](skills/holdshort/references/host-worktree-flow.md) explains
+isolated delegation; the [lifecycle example](skills/holdshort/references/example-lifecycle.md)
 shows how the pieces fit together.
 
 ## Current status and limits
@@ -243,7 +243,7 @@ or coordinate simultaneous registry writers.
 See the [integration notes](docs/REMAINING_BRANCH_INTEGRATION.md) for the optional
 worker checks and the exact scope of these fixes.
 
-The [October 13 review](docs/SMARTROUTER_USAGE_REVIEW_2026-10-13.md) preserves the
+The [October 13 review](docs/HOLDSHORT_USAGE_REVIEW_2026-10-13.md) preserves the
 original findings. Process-tree cleanup, host qualification, final billing
 accuracy and integration evidence still limit live-provider operation.
 
@@ -278,11 +278,11 @@ gaps with replayable evidence. Usage and billed cost remain unknown.
 
 | Start here when you want to… | Read |
 | --- | --- |
-| Understand the exact routing rules | [Canonical skill](skills/smart-router/SKILL.md) and [eligibility gates](skills/smart-router/references/gates.md) |
-| Build a host integration | [Host contract and schemas](skills/smart-router/references/spec-v2.md) |
+| Understand the exact routing rules | [Canonical skill](skills/holdshort/SKILL.md) and [eligibility gates](skills/holdshort/references/gates.md) |
+| Build a host integration | [Host contract and schemas](skills/holdshort/references/spec-v2.md) |
 | Reserve dispatch budget and recover uncertain usage | [Dispatch accounting and recovery](docs/DISPATCH_ACCOUNTING.md) |
-| Understand autonomous stops and optional HITL | [Host policy](skills/smart-router/references/host-hil-policy.md) |
-| Inspect observed use, bugs, and GPT usage | [Engineering review](docs/SMARTROUTER_USAGE_REVIEW_2026-10-13.md) |
+| Understand autonomous stops and optional HITL | [Host policy](skills/holdshort/references/host-hil-policy.md) |
+| Inspect observed use, bugs, and GPT usage | [Engineering review](docs/HOLDSHORT_USAGE_REVIEW_2026-10-13.md) |
 | Review the gap audit fixes and unresolved limits | [Audit follow-ups](docs/GAP_AUDIT_FOLLOWUPS_2026-10-15.md) |
 | Check the current pilot inputs, recovery fixes, and architecture review | [Pilot readiness review](docs/PILOT_READINESS_REVIEW_2026-10-16.md) |
 | Export and interpret token counters | [Usage telemetry guide](docs/USAGE_TELEMETRY.md) |
@@ -296,13 +296,13 @@ gaps with replayable evidence. Usage and billed cost remain unknown.
 ## Contributing
 
 New contributors are welcome. Start with the [contribution guide](CONTRIBUTING.md)
-and browse [good first issues](https://github.com/StepenkoAnatoli/SmartRouter/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22)
+and browse [good first issues](https://github.com/StepenkoAnatoli/Holdshort/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22)
 for small, clearly scoped tasks. The guide explains setup, labels, commit messages,
 bug reports, and pull requests.
 
-Interested in comparing models? Pick a [LLM testing issue](https://github.com/StepenkoAnatoli/SmartRouter/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22llm%20evaluation%22)
+Interested in comparing models? Pick a [LLM testing issue](https://github.com/StepenkoAnatoli/Holdshort/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22llm%20evaluation%22)
 for GPT repeats, Claude, Gemini preparation, local models, or usage capture.
-[Join the discussion](https://github.com/StepenkoAnatoli/SmartRouter/discussions/62)
+[Join the discussion](https://github.com/StepenkoAnatoli/Holdshort/discussions/62)
 or read the [community guide](docs/COMMUNITY.md) to share results and help others get started.
 
 Work on a feature branch, define acceptance checks before implementation, and run
@@ -318,5 +318,5 @@ See [LICENSE](LICENSE) for the license grant and its stated scope.
 *If you find this project helpful, please consider giving it a ⭐!*
 
 You can also help by reporting reproducible bugs, improving the documentation,
-or contributing a focused fix. Thank you for helping make SmartRouter clearer
+or contributing a focused fix. Thank you for helping make Holdshort clearer
 and more reliable.

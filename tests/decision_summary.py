@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from smart_router_decisions import PROFILES, RouteContext, choose_route  # noqa: E402
+from holdshort_decisions import PROFILES, RouteContext, choose_route  # noqa: E402
 
 def main() -> int:
     rows = [

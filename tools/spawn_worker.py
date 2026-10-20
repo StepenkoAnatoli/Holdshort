@@ -8,7 +8,7 @@ that primitive (library + CLI), stdlib only:
 
   * `spawn`: mint-or-take a task id (`tools/task_ids.py`: secrets entropy + live-scope
     uniqueness), `git worktree add -b sr/<id>/<slug>` in the OUTSIDE form, inject the
-    EXACT Brief bytes (`SMARTROUTER_BRIEF.json`, untracked — never committed, so parallel
+    EXACT Brief bytes (`HOLDSHORT_BRIEF.json`, untracked — never committed, so parallel
     merges cannot conflict on it), record task_id → {path, branch, profile} in the
     registry. Any step failing leaves no half-spawn (worktree removed, registry untouched).
   * Shared-surface plan (G7 — worktrees isolate git only, not ports/DBs/env):
@@ -44,7 +44,7 @@ import sys
 from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
-BRIEF_FILENAME = "SMARTROUTER_BRIEF.json"
+BRIEF_FILENAME = "HOLDSHORT_BRIEF.json"
 
 
 def _load(name: str, path: Path):

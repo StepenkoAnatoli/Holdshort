@@ -222,7 +222,7 @@ def verify_fixture(pool: dict, fixture_id: str, workspace: Path, *, timeout_s: f
     problem = _workspace_problem(fixture, workspace)
     if problem:
         return {"accepted": False, "reason": problem}
-    completion = ("SMARTROUTER_ACCEPTANCE_DONE:" + secrets.token_hex(16)).encode("ascii")
+    completion = ("HOLDSHORT_ACCEPTANCE_DONE:" + secrets.token_hex(16)).encode("ascii")
     script = ("import os,sys\nsys.path.insert(0,sys.argv[1])\nos.chdir(sys.argv[1])\n" + fixture["checks"]
               + f"\nprint({completion.decode('ascii')!r}, flush=True)\n")
     try:
@@ -243,7 +243,7 @@ def self_check(pool: dict) -> dict:
     validate_pool(pool)
     results = []
     for fixture in pool["fixtures"]:
-        with tempfile.TemporaryDirectory(prefix="smartrouter-eval-") as directory:
+        with tempfile.TemporaryDirectory(prefix="holdshort-eval-") as directory:
             workspace = Path(directory)
             _write_files(workspace, fixture["files"])
             baseline = verify_fixture(pool, fixture["fixture_id"], workspace)

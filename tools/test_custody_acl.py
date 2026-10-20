@@ -280,6 +280,26 @@ class CustodyAcl(unittest.TestCase):
             three = run_cli("--acl-json", str(fixture))
         self.assertEqual(three.returncode, 3, three.stdout + three.stderr)
 
+    # L15 ------------------------------------------------------------------
+    def test_l15_legacy_custody_folder_fails_closed_not_na(self):
+        # ADR-0003: a machine that still has .secrets/smart-router has not migrated
+        with tempfile.TemporaryDirectory() as td:
+            secrets = Path(td) / ".secrets"
+            (secrets / "smart-router").mkdir(parents=True)
+            root = secrets / "holdshort"
+            with self.assertRaises(cca.FailClosed):
+                cca.na_reason(root, platform="nt")            # new root absent: not N/A
+            root.mkdir()
+            with self.assertRaises(cca.FailClosed):
+                cca.na_reason(root, platform="nt")            # both present: still refused
+            self.assertIn("N/A", cca.na_reason(root, platform="linux"))
+            r = run_cli("--root", str(root))
+            if os.name == "nt":
+                self.assertEqual(r.returncode, cca.FAIL_CLOSED, r.stdout + r.stderr)
+                self.assertIn("legacy custody folder", r.stderr)
+            (secrets / "smart-router").rmdir()
+            self.assertIsNone(cca.na_reason(root, platform="nt"))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

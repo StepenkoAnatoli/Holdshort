@@ -1,4 +1,4 @@
-# Phase 4 pilot report — SmartRouter first non-live evaluation
+# Phase 4 pilot report — Holdshort first non-live evaluation
 
 > **Scope declaration.** This report covers the **non-live Phase 3/4 evaluation** authorized by the
 > owner (2026-10-10): the five §3.1 tasks executed on the ratified host **`SR-PHASE3-LOCAL`**, in an
@@ -32,7 +32,7 @@ Aggregate: **5/5 task contracts passed on the ratified host, zero deviations, ze
 
 ## 3. Non-live gates replayed on real artifacts
 
-The decision suite (`tests/smart_router_decisions.py`, 79 assertions / 52 fixture IDs) proves the
+The decision suite (`tests/holdshort_decisions.py`, 79 assertions / 52 fixture IDs) proves the
 deterministic gate-runner semantics: fail-closed routing, empty-set non-resurrection, unknown-price
 blocking, reservation arithmetic, cache-fingerprint invalidation, repair-counter stickiness.
 
@@ -75,7 +75,7 @@ and advisory-only sidecar output with no dispatch claims (T-05).
 > path in every arm; where the arm would execute the task identically to what the non-live run
 > already did, that is claimed; where it is a plan-only shape, the honesty note below applies.
 
-| Task | A (strong direct / cloud-S) | B (econ direct / cloud-C) | C (fixed rule) | D (SmartRouter flow) |
+| Task | A (strong direct / cloud-S) | B (econ direct / cloud-C) | C (fixed rule) | D (Holdshort flow) |
 | --- | --- | --- | --- | --- |
 | T-01 docs typo sweep | D: defined arm; content-wise same job as executed non-live contract | D: same, weaker model | D: pick cheapest eligible = **C**, content-wise same job | **G tested:** route=`direct`, profile=`local-L`, 5 gates pass |
 | T-02 validate_skills helper | D: same contract (extract helper); stronger model unneeded | D: same contract | D: picks C | **G tested:** route=`direct`, profile=`local-L` |
@@ -102,7 +102,7 @@ PENDING there. This is a **coverage ledger**, not a comparative measurement.
 | A — strong qualified direct | cloud-S ✓ | cloud-S ✓ | cloud-S ✓ | cloud-S ✓ | cloud-S ✓ | 5/5 |
 | B — economical qualified direct | cloud-C ✓ | cloud-C ✓ | cloud-C ✓ | cloud-C ✓ | cloud-C ✓ | 5/5 |
 | C — simple fixed rule | cloud-C ✓ | cloud-C ✓ | cloud-C ✓ | cloud-C ✓ | cloud-C ✓ | 5/5 |
-| D — SmartRouter skill flow (gate-runner) | direct → local-L ✓ | direct → local-L ✓ | direct → local-L ✓ | direct → local-L ✓ | direct → local-L ✓ | 5/5 |
+| D — Holdshort skill flow (gate-runner) | direct → local-L ✓ | direct → local-L ✓ | direct → local-L ✓ | direct → local-L ✓ | direct → local-L ✓ | 5/5 |
 
 **Aggregate: 20/20 cells `match=true`, coverage complete, no missing cells.** Per-cell cost labels
 remain the non-live $0.00 modeled class (see the matrix's accounting note) — measured costs arrive

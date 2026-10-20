@@ -14,7 +14,7 @@ content — that is the independence requirement each card exists to satisfy.
 
 ```
 You are the designated fresh-session reviewer for a plan-P02 delta review. Work read-only in a
-scratch clone of https://github.com/StepenkoAnatoli/SmartRouter.git (branch main). BASE=6d20b04,
+scratch clone of https://github.com/StepenkoAnatoli/Holdshort.git (branch main). BASE=6d20b04,
 HEAD_DELTA=2f4b141. Do NOT trust any recorded output; re-derive all nine items below yourself and
 write down what you actually observe:
 
@@ -23,7 +23,7 @@ write down what you actually observe:
   2. git diff --name-only 6d20b04..2f4b141 -- skills/ | wc -l     (record expects 0)
   3. git diff --numstat 6d20b04..2f4b141 -- docs/DEVELOPMENT_PLAN.md
      (record expects a 2/2 typo-only delta: 'recieve' -> 'receive')
-  4. Run the decision suite: python tests/smart_router_decisions.py
+  4. Run the decision suite: python tests/holdshort_decisions.py
      (record expects 79/79 assertions + 52/52 fixture IDs, exit 0)
   5. Run the skills validator both ways: python tools/validate_skills.py  AND
      python tools/validate_skills.py --strict        (both exit 0 expected)
@@ -53,13 +53,13 @@ countersignature under disagreement is worthless; findings close nothing.
 > R-D1 status from *owner-deviation closure* to a *strictly valid* P02 closure:
 
 ```
-You are the strictly-independent P02 countersigner for the SmartRouter Phase-3 release gate.
+You are the strictly-independent P02 countersigner for the Holdshort Phase-3 release gate.
 Requirements before you sign:
   * You must be a fresh agent session with no authorship history of this repo's plan artefacts.
   * Work read-only in a scratch clone; you need no merge/push authority.
   * First execute the nine-item walkthrough (Card 1 above); every item must match the
     docs/P02_REVIEW_RECORD.md §2 expectations with exit codes captured, not filtered.
-  * Read skills/smart-router-review/references/blocked-review.md L32-33 and confirm you
+  * Read skills/holdshort-review/references/blocked-review.md L32-33 and confirm you
     understand why author self-review could not previously close this gate.
 Then:
   * Append your row to docs/P02_REVIEW_RECORD.md §5 BEFORE the owner-deviation row, marked

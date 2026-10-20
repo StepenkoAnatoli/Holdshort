@@ -20,7 +20,7 @@ next host or reviewer. This check pins the restatements to the normative source:
       {direct, delegate, speculative, recommend-escalation, blocked}
   F5. every `sr/X/Y` branch example is either an angle-bracket template / `...`
       placeholder, or X validates per host-task-id.md and Y is a valid slug
-  F6. every file naming SMARTROUTER_BRIEF.json owns the convention note
+  F6. every file naming HOLDSHORT_BRIEF.json owns the convention note
       ("convention", case-insensitive) — the filename is host convention, never
       normative (spec-v2 §11 names no file)
 
@@ -113,8 +113,8 @@ def check(root: Path | None = None) -> list[str]:
                                 f"per host-task-id.md")
             elif ti.slugify(slug) != slug:
                 findings.append(f"{rel}: branch example `{full}` slug not canonical")
-        if "SMARTROUTER_BRIEF.json" in text and "convention" not in text.lower():
-            findings.append(f"{rel}: names SMARTROUTER_BRIEF.json without the "
+        if "HOLDSHORT_BRIEF.json" in text and "convention" not in text.lower():
+            findings.append(f"{rel}: names HOLDSHORT_BRIEF.json without the "
                             f"host-convention note")
         # F7: lattice order on lines naming 2+ levels
         levels = ["none", "directory", "worktree+branch", "ephemeral-container"]
@@ -146,8 +146,8 @@ def check(root: Path | None = None) -> list[str]:
                     findings.append(f"{rel}:{i + 1}: repair-cap restatement without "
                                     f"fixture cite (want R01 or above/below pointer)")
     # F8a: the two canonical gate tables agree on the name set
-    for canon in ("skills/smart-router/references/spec-v2.md",
-                  "skills/smart-router/references/host-hil-policy.md"):
+    for canon in ("skills/holdshort/references/spec-v2.md",
+                  "skills/holdshort/references/host-hil-policy.md"):
         ctext = (ROOT / canon).read_text(encoding="utf-8")
         missing = [g for g in HUMANGATES if g not in ctext]
         if missing:

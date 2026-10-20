@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Custody-directory ACL lockdown — the token tree must stay readable by the user alone.
 
-The default custody tree is ~/.secrets/smart-router. Its intended policy is inheritance
+The default custody tree is ~/.secrets/holdshort. Its intended policy is inheritance
 broken on every object and full control granted to the user account alone, so SYSTEM
 and Administrators hold no STANDING access to the files. ACL state regresses silently: an
 installer, a profile tool, or one careless `icacls /reset` re-enables inheritance and the
@@ -39,7 +39,8 @@ precedent):
   * platform: the tree is a Windows-machine fact. Elsewhere — or when the root does not
     exist on this machine — the surface is N/A and the gate stays green (CI runners must
     not fail on that). An ACL that exists but cannot be read is never N/A: see the
-    fail-closed exit below.
+    fail-closed exit below. On Windows a pre-rename custody folder (.secrets/smart-router)
+    beside the root is never N/A either, whether or not the root exists (ADR-0003).
 
 Exit codes — the count IS the interface, so CI or a human can branch on it:
   0    clean, or the surface does not exist on this machine (N/A)
@@ -47,7 +48,7 @@ Exit codes — the count IS the interface, so CI or a human can branch on it:
        its failing facts (0 is the only pass; N>1 is systemic drift, not a single miss)
   255  fail-closed — deliberately not a plausible object count: the ACL could not be
        read or parsed. An unreadable ACL could be hiding a foreign ACE, so it is never
-       "clean"
+       "clean". Also on Windows while the pre-rename custody folder exists (ADR-0003)
 """
 from __future__ import annotations
 
@@ -124,14 +125,22 @@ def default_root(env: dict | None = None) -> Path:
     env = env if env is not None else os.environ
     for var in ("USERPROFILE", "HOME"):
         if env.get(var):
-            return Path(env[var]) / ".secrets" / "smart-router"
-    return Path.home() / ".secrets" / "smart-router"
+            return Path(env[var]) / ".secrets" / "holdshort"
+    return Path.home() / ".secrets" / "holdshort"
 
 
 def na_reason(root: Path, platform: str | None = None) -> str | None:
-    """None = verify now; otherwise the N/A reason. Surface absent is N/A, never a failure."""
+    """None = verify now; otherwise the N/A reason. Surface absent is N/A, never a failure.
+
+    ADR-0003: a pre-rename custody folder (smart-router) beside the root fails closed, present
+    or not: its keys would otherwise sit outside this audit. It is detected, never read."""
     if (platform or os.name) != "nt":
         return "N/A on this platform (the custody tree is a Windows-machine fact)"
+    legacy = root.parent / "smart-router"
+    if legacy.exists():
+        raise FailClosed(f"legacy custody folder {legacy} is present; rename it to {root}, or "
+                         "move its files into that folder if it already exists (ADR-0003, "
+                         "CHANGELOG migration)")
     if not root.is_dir():
         return f"N/A — no custody root at {root} (nothing to verify on this machine)"
     return None

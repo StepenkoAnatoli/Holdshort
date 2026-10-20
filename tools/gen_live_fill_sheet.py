@@ -28,14 +28,14 @@ from typing import Dict, List
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "tests"))
 sys.path.insert(0, str(REPO_ROOT / "tools"))
-import smart_router_decisions as srd  # noqa: E402
+import holdshort_decisions as srd  # noqa: E402
 
 ARMS = ("A", "B", "C", "D")
 ARM_LABELS = {
     "A": "strong qualified direct",
     "B": "economical qualified direct",
     "C": "simple fixed rule",
-    "D": "SmartRouter skill flow (ordered gates + brief/verifier/review)",
+    "D": "Holdshort skill flow (ordered gates + brief/verifier/review)",
 }
 # live profiles per arm (plan §10 catalog; D is route-resolved per task)
 PROFILE_BY_ARM = {"A": "cloud-S", "B": "cloud-C", "C": "cloud-C", "D": None}

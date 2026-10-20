@@ -1,7 +1,7 @@
-# SmartRouter host adapter (MoonAliza build process)
+# Holdshort host adapter (MoonAliza build process)
 
-`route.mjs` is the host side of [SmartRouter](https://github.com/StepenkoAnatoli/SmartRouter) (pinned at `fbe7bca`,
-skill 3.0.0) for this repository's build runs. SmartRouter itself is a routing policy: advisory and stateless. It
+`route.mjs` is the host side of [Holdshort](https://github.com/StepenkoAnatoli/Holdshort) (pinned at `fbe7bca`,
+skill 3.0.0) for this repository's build runs. Holdshort itself is a routing policy: advisory and stateless. It
 says which route (direct, delegate, speculative, recommend-escalation, blocked), which profile (model and effort)
 and which isolation apply to a unit of work, and why. The **host** is this adapter plus the lead session. The host
 collects the inputs, enforces the decision, and keeps the Outcome Ledger. The adapter never dispatches anything
@@ -11,7 +11,7 @@ itself. Every output it prints carries `Advisory: recommendation only — no dis
 |---|---|
 | `host-policy.json` | The host's declared inputs: harness, authorization, accounting mode, prices, categories, profiles with qualification evidence, economics constants, opt-ins. Edited only by the lead. Current revision: `host-policy-6` (calibration-first evidence: every qualification backed by a typed evidence entry, section 'Calibration-first evidence'; difficulty tiers enforced since `host-policy-5`, section 'Difficulty tiers'). |
 | `route.mjs` | The adapter: CLI plus named exports. Node built-ins only. |
-| `route.test.mjs` | `node --test` suite, one test per SmartRouter fixture it mirrors, plus the three golden hand-walked decisions. The base tests and the goldens run on `host-policy-1`, the usage-window and host-policy-2 tests on `host-policy-2`, the host-policy-3 tests on `host-policy-3`, the host-policy-4 tests on `host-policy-4`, the host-policy-5 tests on `host-policy-5` (the fixtures below), the live policy on its own tests. Since host-policy-6 the tests write the live policy's derivatives beside a copy of the committed store, because its typed references resolve against the policy file's directory. |
+| `route.test.mjs` | `node --test` suite, one test per Holdshort fixture it mirrors, plus the three golden hand-walked decisions. The base tests and the goldens run on `host-policy-1`, the usage-window and host-policy-2 tests on `host-policy-2`, the host-policy-3 tests on `host-policy-3`, the host-policy-4 tests on `host-policy-4`, the host-policy-5 tests on `host-policy-5` (the fixtures below), the live policy on its own tests. Since host-policy-6 the tests write the live policy's derivatives beside a copy of the committed store, because its typed references resolve against the policy file's directory. |
 | `trace/ledger.jsonl` | The Outcome Ledger: spec-v2 §10.5 records, append-only, never rewritten. |
 | `trace/decisions/<task>-<seq>.json` | One file per decision: the request, input and policy digests, the per-candidate gate walkthrough with reasons, the chosen profile, estimates vs accounting, the Brief. `hand-*.json` are the lead's hand-walked decisions from before the adapter existed. |
 | `trace/policies/host-policy-1.json` | The policy before revision 2, byte-identical to the one the hand-walked decisions and `sr-policy-2-1` were decided under. A test fixture, never edited: the goldens decide against it with `--policy`. It lives apart from `trace/decisions/`, whose `<task>-<seq>.json` names belong to decisions (a fixture there would block a task named `host-policy` at seq 1). `sr-policy-2-1`'s Brief names the fixture's first path, `trace/decisions/host-policy-1.json`; the decision file is a record and is not rewritten. |
@@ -74,7 +74,7 @@ Run every command from the repository root. Node 24 must be on `PATH`.
    `node docs/orchestration/smartrouter/route.mjs outcome <outcome.json>`. This takes a §10.3 Outcome. Its
    `original-brief-fingerprint` must be the decision's, `actual-spend` is `null` in this host, and `owner-profile`
    is the profile id or its exact identity tuple. The adapter adds `actual-spend-basis: "estimate-only"` to the
-   stored copy when the Outcome has none or a `null` one (SmartRouter Item 4). A supplied `"estimate-only"` is kept, and
+   stored copy when the Outcome has none or a `null` one (Holdshort Item 4). A supplied `"estimate-only"` is kept, and
    any other basis is refused (exit 2), because upstream `conform_spec.py` refuses it. Put the unit's total tokens in the additive
    `evidence.actual-tokens` (an integer, or `null` when unknown). The outcome record carries it as `tokens`, and
    `rate` uses it to check the usage coefficients.
@@ -115,7 +115,7 @@ it, and the fix is to add the missing newline, which changes no record.
 | Lead-direct profile | **enforced**: the lead profile is walked only as `direct`, eligible up to `direct-max-tokens` (Gate 5); `dispatch` refuses it as a delegated worker, `--deviation` or not | `decide`, `dispatch` |
 | Isolation | **enforced as a lower bound**: `worktree+branch` for delegated work; a stronger requirement than the host's capability is denied at Gate 1 | `decide` |
 | Cash | **advisory**: the conservative bound (tokens x output rate) is computed, recorded and printed, never a cap. The Uncertainty line always says `cash: estimate only, no host accounting (subscription); not a strict cap` | `decide` |
-| Cash markers (SmartRouter Item 4) | **written**: Item 4 is accepted upstream (2026-10-18): a `null` cash counter or spend is conformant only beside its `estimate-only` marker. While `host-policy.json`'s `accounting.mode` is `"estimate-only"`, every record the adapter appends carries `counters["cash-basis"]: "estimate-only"` beside its `null` `cash-spent` and `cash-cap`. An Outcome whose `evidence.actual-spend` is `null` and that names no basis (absent or `null`) is stored (`trace/outcomes/<task>-<seq>.json`) with `evidence["actual-spend-basis"]: "estimate-only"`. A supplied `"estimate-only"` is kept, any other basis is refused (exit 2, the only value upstream accepts), a `null` basis is never stored, and a non-null spend gets no marker. The outcome record carries the stored basis as `actual-spend-basis`, beside `tokens`. Decision files and `status` keep the six §10.5 counters. The ledger is append-only, so lines written before the markers stay unmarked, and `conform_spec.py --record` keeps refusing them | `decide`, `dispatch`, `outcome` |
+| Cash markers (Holdshort Item 4) | **written**: Item 4 is accepted upstream (2026-10-18): a `null` cash counter or spend is conformant only beside its `estimate-only` marker. While `host-policy.json`'s `accounting.mode` is `"estimate-only"`, every record the adapter appends carries `counters["cash-basis"]: "estimate-only"` beside its `null` `cash-spent` and `cash-cap`. An Outcome whose `evidence.actual-spend` is `null` and that names no basis (absent or `null`) is stored (`trace/outcomes/<task>-<seq>.json`) with `evidence["actual-spend-basis"]: "estimate-only"`. A supplied `"estimate-only"` is kept, any other basis is refused (exit 2, the only value upstream accepts), a `null` basis is never stored, and a non-null spend gets no marker. The outcome record carries the stored basis as `actual-spend-basis`, beside `tokens`. Decision files and `status` keep the six §10.5 counters. The ledger is append-only, so lines written before the markers stay unmarked, and `conform_spec.py --record` keeps refusing them | `decide`, `dispatch`, `outcome` |
 | Usage windows | **enforced when configured**: fresh reading required; projection against stop-at - lead-reserve in decide and dispatch. Gate 4 fails a candidate with no reading at or before `now`, a reading older than `reading-max-age-minutes`, a window reset since the reading, or a projection over any window's limit, counting the `usage-tokens` of every dispatch the reading does not hold (recorded after it, or in flight from before it). `dispatch` re-checks at its `--now` against the decision's `usage-tokens` and those dispatches (section 'Usage windows') | `decide`, `dispatch` |
 | Unknown price | **enforced, by host choice**: a profile whose model has no price fails Gate 4 (`unknown price for <model>: the bound cannot be computed (no silent zero)`), though cash is not a cap here (friction item 15) | `decide` |
 | Speculative and nested delegation | **off**: speculative needs the opt-in plus `uncertainty: "high"`; a nested opt-in is refused with a note, because this host cannot produce or enforce a NestedBrief (§14) | `decide` |
@@ -124,7 +124,7 @@ it, and the fix is to add the missing newline, which changes no record.
 
 ## Difficulty tiers (host-policy-5)
 
-Host-policy-5 adopts SmartRouter's difficulty-tiers proposal (`docs/proposals/difficulty-tiers.md` on SmartRouter
+Host-policy-5 adopts Holdshort's difficulty-tiers proposal (`docs/proposals/difficulty-tiers.md` on Holdshort
 main, PR #100, merged 2026-10-18 by the operator): Items 1-3 and 5 in the adapter and the policy. Item 4 (calibration
 run 4, the T3 cells) is a later unit. The proposal is the specification; where it leaves a choice the lead's
 decisions D1-D9 bind (section 'How the tiers proposal was applied'). The proposal's own status line still reads "draft
@@ -362,8 +362,8 @@ profile there (run 4 adds T3 cells, not T2: a T2 request then routes to the chea
 
 ## Calibration-first evidence (host-policy-6)
 
-Host-policy-6 adopts Item 1 of SmartRouter's calibration-first onboarding proposal
-(`docs/proposals/calibration-first-onboarding.md` on SmartRouter main, PR #102, merged 2026-10-18 by the operator): no
+Host-policy-6 adopts Item 1 of Holdshort's calibration-first onboarding proposal
+(`docs/proposals/calibration-first-onboarding.md` on Holdshort main, PR #102, merged 2026-10-18 by the operator): no
 hand-declared qualification. Every `qualified-for` entry is backed by a typed evidence entry, and the adapter's
 validator resolves typed production references against the outcome store. Items 2-4 (the kit under one path, the
 shared subject pack, the evidence-folder CI check and the generated qualification table) are upstream units that
@@ -536,7 +536,7 @@ or label (gates.md, 'Qualification, freshness and pre-dispatch binding').
 4. The pin task (a bounded red-first pin, no source change) represents the normal-risk category `pin-tests` (median
    120000 tokens; verification: lint, the new tests green, guard-removal proof, the lead reads the diff), not
    `build-tests`: units of that size are 250000-token engine journeys the pin does not represent.
-5. **Per (category, tier)** (host-policy-5; SmartRouter `docs/proposals/difficulty-tiers.md` Item 2 rules 3-5,
+5. **Per (category, tier)** (host-policy-5; Holdshort `docs/proposals/difficulty-tiers.md` Item 2 rules 3-5,
    quoted). Rules 1-4 apply at each tier, and a bare entry reads `@T1`:
    > 3. The two-pass rule applies per (category, tier): a high-risk category needs two independent passes **at that
    > tier** (calibration cells of that tier, or an accepted production outcome whose request carried that tier).
@@ -567,7 +567,7 @@ the lead when editing the policy. The adapter checks only the form of the entrie
 ### How calibration run 2 was applied (host-policy-3)
 
 Calibration run 2 (`trace/calibration-2/`, workflow run `wf_fe91e1d6-d78`, protocol preregistered upstream in
-SmartRouter `docs/evidence/2026-10-17/claude-code-calibration-2/`) graded twelve profiles on pin and fix and fifteen
+Holdshort `docs/evidence/2026-10-17/claude-code-calibration-2/`) graded twelve profiles on pin and fix and fifteen
 on review. Its review grade is three-valued by that protocol: PASS (both ground-truth findings), PARTIAL (one, and no
 false blocking finding), FAIL. A PARTIAL is not a pass. With run 1 that gives two independent calibration passes for
 several high-risk cells, and the lead applied rules 1-4:
@@ -635,7 +635,7 @@ Gate 5's reason: `cc-haiku-high` has the lowest all-in bound among the four elig
 ### How calibration run 3 was applied (host-policy-4)
 
 Calibration run 3 (`trace/calibration-3/`, main run `wf_4e9ef48d-066` plus the supplementary run `wf_dbe29a64-3b2`
-for the two cells void under amendment A-1; protocol preregistered upstream in SmartRouter
+for the two cells void under amendment A-1; protocol preregistered upstream in Holdshort
 `docs/evidence/2026-10-18/claude-code-calibration-3/`) graded twelve profiles on pin and fix (U1-R11 at `e68583c`,
 history-less checkouts) and fifteen on review (U1-R8 + U1-R11 at `0e7a7f3`, a reachability-defined classification, a
 preregistered three-lens adjudication). Final tally: pin 11 of 12, fix 12 of 12, review 15 of 15 PASS, no PARTIAL.
@@ -767,7 +767,7 @@ Restricted to their own candidates, the demoted, blocked and one-later-pass prof
 
 ### How the tiers proposal was applied (host-policy-5)
 
-Unit sr-policy-5 applied SmartRouter's difficulty-tiers proposal (section 'Difficulty tiers') under the lead's
+Unit sr-policy-5 applied Holdshort's difficulty-tiers proposal (section 'Difficulty tiers') under the lead's
 decisions, which bind where the proposal leaves a choice:
 
 - **D1.** Tiering is explicit per policy: `"difficulty-tiers": "enforced"` turns it on, any other value is exit 2, and
@@ -799,7 +799,7 @@ decisions, which bind where the proposal leaves a choice:
 
 ### How the onboarding proposal was applied (host-policy-6)
 
-Unit sr-policy-6 applied Item 1 of SmartRouter's calibration-first onboarding proposal (section 'Calibration-first
+Unit sr-policy-6 applied Item 1 of Holdshort's calibration-first onboarding proposal (section 'Calibration-first
 evidence') under the lead's decisions, which bind where the proposal leaves a choice:
 
 - **E1.** Two typed evidence forms: the grade entry (as before) and the typed production reference
@@ -933,8 +933,8 @@ Revision 4's table, untiered, kept as the record of what revision 5 re-declared 
 
 1. A qualification run cannot go through `dispatch`: a profile not qualified for the category fails Gate 2, and
    `dispatch` refuses it even with `--deviation`. Running an unqualified profile on real work is a host policy
-   that SmartRouter does not sanction (spec-v2 §12: "No dispatch on unknown ... capability"). The path this host
-   uses is a **calibration run** outside SmartRouter routing: the same graded tasks for every profile, on past work
+   that Holdshort does not sanction (spec-v2 §12: "No dispatch on unknown ... capability"). The path this host
+   uses is a **calibration run** outside Holdshort routing: the same graded tasks for every profile, on past work
    with a known answer (calibration-1: the R16 finding), graded by the lead (friction item 14). Its grades go in
    `trace/calibration-<n>/observations.json`, never in the ledger.
 2. Run `rate`. It prints one `CALIBRATION` line per profile and category with the pass, partial and fail counts
@@ -957,7 +957,9 @@ Revision 4's table, untiered, kept as the record of what revision 5 re-declared 
    A decision not yet dispatched is rechecked against the edited policy at `dispatch`, so a demotion or a
    revocation takes effect on pending decisions too. When a revision changes what the goldens or the base tests
    assume, freeze the previous policy as `trace/policies/host-policy-<n>.json` and keep them on it (never in
-   `trace/decisions/`, whose file names belong to decisions). A policy with typed references loads from
+   `trace/decisions/`, whose file names belong to decisions). host-policy-6 was live at the rename (ADR-0003), so its
+   frozen copy keeps the upstream block named `smartrouter`; `route.mjs` accepts that name only there and in
+   host-policy-1..5. A policy with typed references loads from
    `trace/policies/` too: a fixture under `<root>/trace/policies/` resolves its references against `<root>`, the
    directory holding that trace (`policyRoot`, the lead's integration fix of policy finding 5 of host-policy-6); the
    two directory names are the rule, and a copy anywhere else resolves against its own directory.
@@ -1204,7 +1206,7 @@ recorded whole at its outcome, so such a pair cannot say what they cost.
 Found while building revision 6 (unit sr-policy-6). The lead decides.
 
 1. **The proposal was not at the path the brief names.** `/home/user/smartrouter` is still checked out at `5bd473a`
-   (PR #98), where `docs/proposals/calibration-first-onboarding.md` does not exist. It was read from SmartRouter main as
+   (PR #98), where `docs/proposals/calibration-first-onboarding.md` does not exist. It was read from Holdshort main as
    merged (`7f7fc75`, which contains PR #102's merge `bb3fa6c`), through the read-only main worktree of that repository
    (`git show origin/main:` gives the same bytes); nothing was copied but the passages this README quotes.
 2. **The proposal still says hosts MUST NOT emit or require its form.** Its status line (quoted in section
@@ -1247,7 +1249,7 @@ Found while building revision 6 (unit sr-policy-6). The lead decides.
 Found while building revision 5 (unit sr-policy-5). The lead decides.
 
 1. **The proposal was not at the path the brief names.** `/home/user/smartrouter` is checked out at `5bd473a` (PR #98),
-   where `docs/proposals/difficulty-tiers.md` does not exist. The proposal was read from SmartRouter main as merged
+   where `docs/proposals/difficulty-tiers.md` does not exist. The proposal was read from Holdshort main as merged
    (`7f7fc75`, which contains PR #100, `2e30291`), with `git show` in that same repository; nothing was copied but the
    passages the brief asks to quote.
 2. **The undeclared default blocks two categories outright.** D3's default reads T2 for every normal- and low-risk
@@ -1274,7 +1276,7 @@ Found while building revision 5 (unit sr-policy-5). The lead decides.
    reviews re-declared are T1. Every T2 or T3 review request the lead dispatches is blocked until run 4 (or a later
    run) qualifies one; the required reviewer of a unit is unaffected (D5).
 7. **The proposal says hosts MUST NOT emit or require its fields until a delta review accepts it; host-policy-5 emits and requires them.**
-   The merged text (SmartRouter `7f7fc75`; the file is unchanged since PR #100's merge commit `2e30291`, and the same
+   The merged text (Holdshort `7f7fc75`; the file is unchanged since PR #100's merge commit `2e30291`, and the same
    on `origin/main`) opens:
 
    > Status: **draft proposal, not normative; revision 2 after the independent review of 2026-10-18 (Request Changes
@@ -1406,10 +1408,10 @@ These were found while building the adapter. The lead decides.
    fact, and the dispatch is honestly marked as a host deviation. The adapter now refuses a `now` earlier than a
    task's latest event, so such a sequence cannot be produced through it.
 
-## Friction log for SmartRouter upstream
+## Friction log for Holdshort upstream
 
 Every point where the spec was ambiguous or did not fit a subscription host. Citations are to
-`StepenkoAnatoli/SmartRouter@fbe7bca`.
+`StepenkoAnatoli/Holdshort@fbe7bca`.
 
 1. **No cash accounting in subscription hosts.** gates.md Gate 4: "Strict caps additionally require a reliable
    conservative billable bound and reliable host accounting". A subscription with weekly token limits has neither
@@ -1417,7 +1419,7 @@ Every point where the spec was ambiguous or did not fit a subscription host. Cit
    §10.3 types `evidence.actual-spend` as a number. This host writes `null` for all three and reports cash as an
    estimate on every Uncertainty line. Upstream could add an `accounting: estimate-only` mode that types these
    fields as `number | null` and names the resource that *is* finite here (weekly tokens).
-   **Closed** for the cash fields: SmartRouter accepted Item 4 of `docs/proposals/usage-windows-gate4.md` on
+   **Closed** for the cash fields: Holdshort accepted Item 4 of `docs/proposals/usage-windows-gate4.md` on
    2026-10-18 (upstream unit sr-ci-item4). A `null` is conformant beside `counters["cash-basis"]: "estimate-only"`
    (§10.5) or `evidence["actual-spend-basis"]: "estimate-only"` (§10.3), and the adapter writes both markers
    (section 'Enforced vs advisory'). Records written before that stay unmarked. The finite resource (the usage
@@ -1443,7 +1445,7 @@ Every point where the spec was ambiguous or did not fit a subscription host. Cit
    profile's tool list. Policy finding 2 above follows from this.
 6. **The direct bound is not specified.** gates.md Gate 5 says to compare "against the full direct bound". This
    host's builder brief sets the direct bound to the lead's rate on the tokens, without the required review that a
-   delegate carries. That favours direct, which SmartRouter prefers anyway, but the asymmetry is the host's choice,
+   delegate carries. That favours direct, which Holdshort prefers anyway, but the asymmetry is the host's choice,
    not the spec's.
 7. **Fingerprint expiry at equality.** gates.md 'Qualification, freshness and pre-dispatch binding' item 4 makes
    quote and deadline equality expiry, but says nothing explicit about capability-fingerprint freshness limits. The
@@ -1552,7 +1554,7 @@ Every point where the spec was ambiguous or did not fit a subscription host. Cit
     until then hosts MUST NOT emit or require them") and its review record ending in
     `| 1-5 (revision 2) | pending delta review | — | — |`. A merge is the operator's act, but the text has no state
     between "draft, not normative" and "accepted", so a host that adopts a merged proposal on the operator's word (this
-    one, host-policy-5, policy finding 7) contradicts the text it cites, and nothing in SmartRouter tells a reader
+    one, host-policy-5, policy finding 7) contradicts the text it cites, and nothing in Holdshort tells a reader
     that the merge was a decision to adopt. Upstream could update the status line when a proposal is merged or
     reviewed, or say that a merged but unreviewed proposal may be adopted by a host behind a policy switch.
 23. **The proposal has no clause for the lead's own profile.** Item 1.1 says "a profile may enter a host policy

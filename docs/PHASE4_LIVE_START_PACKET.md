@@ -62,7 +62,7 @@ ratification — pricing pages can change, which is exactly what the S15b revisi
 | Tested context headroom | 8000-token capacity with 1000-token headroom per plan §10 declared facts — verify against actual Sonnet 5.5 context limits at first live dispatch | same |
 | Reviewer | **Designated — `"StepenkoAnatoli"` per `docs/P02_REVIEWER_NOTICE.md` (owner+reviewer signed 2026-10-10; §2 row 3 = owner-deviation basis, strict-P02 upgrade path via `docs/P02_REVIEWER_DESIGNATION.md` remains open)** | same |
 | Expiry | Suggested default **90 days** from pilot start; owner sets at row-4 signing | same |
-| Runtime recheck | Plan §5 requires a before-dispatch recheck of permissions/identity/availability — the `smart-router` Gate 1-2 implementation already supplies this | same |
+| Runtime recheck | Plan §5 requires a before-dispatch recheck of permissions/identity/availability — the `holdshort` Gate 1-2 implementation already supplies this | same |
 
 **What's genuinely owner-side here (not fillable from the repo):** ~~the reviewer designation that
 closes the "reviewed-by" field~~ — DONE 2026-10-10 via the signed `docs/P02_REVIEWER_NOTICE.md`; and any expiry duration the owner prefers over the 90-day default (still open, default in force).

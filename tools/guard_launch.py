@@ -2,7 +2,7 @@
 """Pre-launch guard — refuse to start a worker outside its dedicated worktree.
 
 The agent-focused companion states the key rule plainly ("The agent should never be
-started in the main working directory when SmartRouter requested `worktree+branch`"),
+started in the main working directory when Holdshort requested `worktree+branch`"),
 but prose never stopped a misconfigured launcher: a worker started in the main checkout
 writes onto every other worker's files, and a worker started in an unrelated directory
 has no branch, no Brief, and no provenance at all. This guard runs BEFORE the agent

@@ -1,6 +1,6 @@
 # Export and interpret usage telemetry
 
-SmartRouter's usage exporter reads one explicitly supplied Codex session JSONL
+Holdshort's usage exporter reads one explicitly supplied Codex session JSONL
 file and writes a summary of observed metadata. It makes no provider request.
 The summary can help you inspect token counters; it does not calculate a bill,
 attribute spending to individual tasks, or establish savings.
@@ -65,7 +65,7 @@ object can have `usage_status: "observed"` while individual fields remain `null`
 
 | Export field | What it tells you |
 | --- | --- |
-| `cumulative_usage` | The latest observed session totals, not counters for one SmartRouter task or model. Do not sum successive cumulative snapshots. |
+| `cumulative_usage` | The latest observed session totals, not counters for one Holdshort task or model. Do not sum successive cumulative snapshots. |
 | `last_observed_response_usage` | Usage supplied for the last observed response. It is not bound to a task ID or request ID by this exporter. |
 | `latest_model`, `models_observed`, `reasoning_effort` | Labels read from session metadata. They do not independently verify a requested model, immutable revision or actual provider deployment. Multiple model labels do not divide the session totals between models. |
 | `captured_at` | When the exporter ran. |
@@ -93,5 +93,5 @@ puts private information in a model label or timestamp field.
 
 Keep actual session files and private exports outside tracked evidence. Publish
 only data you have checked and are authorized to share. The repository's
-[engineering review](SMARTROUTER_USAGE_REVIEW_2026-10-13.md) explains the limits of
+[engineering review](HOLDSHORT_USAGE_REVIEW_2026-10-13.md) explains the limits of
 its historical usage snapshot.

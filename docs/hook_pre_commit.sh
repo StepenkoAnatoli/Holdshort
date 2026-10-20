@@ -1,5 +1,5 @@
 #!/bin/sh
-# SmartRouter pre-commit hook — runs the full regression gate before every commit.
+# Holdshort pre-commit hook — runs the full regression gate before every commit.
 # Bypass intentionally discouraged: use `git commit --no-verify` only with a
 # recorded reason (the gate's purpose is that future commits never silently
 # weaken §5 cap enforcement or the accounting checks).

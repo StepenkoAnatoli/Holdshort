@@ -76,7 +76,7 @@ REPO_ROOT = TOOLS.parent
 CHECKS = [
     ("hook_wiring", [sys.executable, "tools/check_hook_wiring.py"]),
     ("validate_skills", [sys.executable, "tools/validate_skills.py"]),
-    ("decision_fixtures", [sys.executable, "tests/smart_router_decisions.py"]),
+    ("decision_fixtures", [sys.executable, "tests/holdshort_decisions.py"]),
     ("test_reservation_fixtures", [sys.executable, "tools/test_reservation_fixtures.py"]),
     ("test_live_dispatcher", [sys.executable, "tools/test_live_dispatcher.py"]),
     ("test_dispatch_budget", [sys.executable, "tools/test_dispatch_budget.py"]),

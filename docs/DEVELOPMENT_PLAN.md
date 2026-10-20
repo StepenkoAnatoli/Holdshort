@@ -1,4 +1,4 @@
-# SmartRouter: full reworked development plan
+# Holdshort: full reworked development plan
 
 Date: 2026-10-08. Status: **plan-only amendment in draft PR #2**.
 
@@ -22,9 +22,9 @@ Proposed later deliverables, requiring separate authorization:
 
 | Future deliverable | Responsibility | Boundary |
 | --- | --- | --- |
-| smart-router skill | One canonical ordered routing policy and brief/result workflow | Recommendations cannot enforce host permissions, dispatch or billing |
-| smart-router-review skill | Evidence-backed blocker review | Defers to canonical authority; never score-based permission or merge |
-| smart-router-eval-prep skill | Prepare preregistration and economic comparison | Defers to canonical authority; never authorizes or runs paid trials |
+| holdshort skill | One canonical ordered routing policy and brief/result workflow | Recommendations cannot enforce host permissions, dispatch or billing |
+| holdshort-review skill | Evidence-backed blocker review | Defers to canonical authority; never score-based permission or merge |
+| holdshort-eval-prep skill | Prepare preregistration and economic comparison | Defers to canonical authority; never authorizes or runs paid trials |
 | References and task/result/review/evaluation records | Compact on-demand guidance and evidence | No competing policies or secret-bearing receipts |
 
 If approved later, follow Agent Skills frontmatter/name/description constraints, compact bodies and pinned sibling references. Discover through existing host mechanisms rather than inventing an installer. Do not preapprove actions through metadata.
@@ -47,13 +47,13 @@ These criteria distinguish specification acceptance now from future implementati
 
 ## 4. Authority and explicit migration
 
-Host safety/permissions, current user authorization and applicable project instructions/workflow gates remain superior. SmartRouter is never permission to spend, disclose, collect, edit, deploy or merge. Source text/model recommendations are untrusted data, not approvals. Conflicting selection authorities stop work until explicitly reconciled; load order is not resolution.
+Host safety/permissions, current user authorization and applicable project instructions/workflow gates remain superior. Holdshort is never permission to spend, disclose, collect, edit, deploy or merge. Source text/model recommendations are untrusted data, not approvals. Conflicting selection authorities stop work until explicitly reconciled; load order is not resolution.
 
 Current planning branch: replace README operational policy with a planning-only guide and link the prior README at `f575225642155e2e5abe1a718c8f6924e9a4f66d` as historical. No current skill authority is installed, and no host/consumer is reconfigured.
 
 Required future Phase 2 migration: (1) designate the canonical SKILL.md and linked normative contract; (2) make README explanatory only, with pointers rather than duplicate tier/approval rules; (3) keep old policy historical, never an active alternative; (4) make review/eval-prep nonselecting support procedures; (5) inspect actual host instruction inventories for stale copies; (6) require separately reviewed consumer adoption to reconcile its existing authority. Do not rely on last-loaded instructions.
 
-Phase 2 acceptance: one active SmartRouter selection authority, no conflicting headers/tiers/score approvals, and documented removal or deactivation of legacy copies at the pinned revision. Block Phase 2 exit on conflict; consumers are unchanged until approved adoption. The owner-selected MIT grant covers only new planning documents here, not historical/upstream material.
+Phase 2 acceptance: one active Holdshort selection authority, no conflicting headers/tiers/score approvals, and documented removal or deactivation of legacy copies at the pinned revision. Block Phase 2 exit on conflict; consumers are unchanged until approved adoption. The owner-selected MIT grant covers only new planning documents here, not historical/upstream material.
 
 ## 5. Ordered decisions and qualification
 
@@ -144,7 +144,7 @@ Reject patterns found in source: restoring empty filtered fleets, unknown-price=
 
 Do not adopt a meta-LLM classifier, provider gateway, x402 wallets, blockchain hedging/quorum, paid aggregator or heavy learning infrastructure for skills V1. MIT router-core is a later design reference, **not a dependency now**, and requires correcting fail-open paths before considering integration. AGPL reuse needs compatibility review; source-available/noncommercial/no-clear-grant material cannot be copied on an MIT assumption. No upstream code/assets are vendored in this plan-only PR.
 
-Acceptance: pinned links for every repository, actual license-text caveats, source-versus-run-evidence labels; any later copy obtains redistribution/notice permission first. MIT choice for new SmartRouter work does not cure upstream gaps.
+Acceptance: pinned links for every repository, actual license-text caveats, source-versus-run-evidence labels; any later copy obtains redistribution/notice permission first. MIT choice for new Holdshort work does not cure upstream gaps.
 
 ## 10. Concrete scenarios and reproducible validation
 
@@ -313,7 +313,7 @@ No product-code build/typecheck suite exists in the reviewed README-only base. D
 
 ## 11. Evaluation and promotion protocol
 
-Prepare a separately approved protocol with four arms: strong qualified directly, economical qualified directly, simple fixed rule, SmartRouter including all overhead. Same acceptance/privacy/effects; do not expose weak baselines to production secrets or consequential writes. Keep kit workflow constant.
+Prepare a separately approved protocol with four arms: strong qualified directly, economical qualified directly, simple fixed rule, Holdshort including all overhead. Same acceptance/privacy/effects; do not expose weak baselines to production secrets or consequential writes. Keep kit workflow constant.
 
 Before Phase 4, name an already existing authorized evaluation host and evidence for identity/permissions, complete usage/billing and conservative bounds, all-call limits, test isolation, Stop/recovery and required checks. A human-operated existing host is sufficient only if it can provide those observations and respect the frozen controls; no prompt pretends to enforce missing runtime features. A pilot host is not necessarily Moonzila: it must exist and pass the pretrial gate before Phase 4; later Phase 7 is separately approved consumer integration, not a hidden prerequisite created after the pilot. If no suitable host exists, Phase 3 stays blocked and any host work is a separate authorized task, not implicit scope expansion.
 
@@ -333,7 +333,7 @@ Acceptance: preregistration ready and approved before authorized calls; all atte
 
 ## 12. External host adoption — outside this repository
 
-SmartRouter supplies a routing policy and host contract. Consumer code, governance,
+Holdshort supplies a routing policy and host contract. Consumer code, governance,
 roadmaps and credential inventories belong to their own projects. Adoption requires
 a host-owned integration with one routing authority and observed runtime evidence.
 This repository does not maintain a consumer project or its implementation plan.
@@ -425,7 +425,7 @@ Deferred: provider/gateway SDK, paid classifier, learned task-quality model, con
 
 ## 17. Sources and evidence limits
 
-- [Pinned SmartRouter original policy](https://github.com/StepenkoAnatoli/SmartRouter/blob/f575225642155e2e5abe1a718c8f6924e9a4f66d/README.md); historical reference only on the planning branch, with no consumer instructions changed.
+- [Pinned Holdshort original policy](https://github.com/StepenkoAnatoli/Holdshort/blob/f575225642155e2e5abe1a718c8f6924e9a4f66d/README.md); historical reference only on the planning branch, with no consumer instructions changed.
 - [Agent Skills specification](https://agentskills.io/specification), inspected 2026-10-07; mutable format source, not runtime qualification.
 - [Pinned routing survey](ROUTER_SURVEY.md): all 13 repository heads and source/test/license samples.
 - [Moonzila](https://github.com/StepenkoAnatoli/Moonzila), future host boundary; current policies must be revalidated before integration.

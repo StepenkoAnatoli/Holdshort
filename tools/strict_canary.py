@@ -83,7 +83,7 @@ import urllib.error
 import urllib.request
 
 API_ROOT = "https://api.github.com"
-DEFAULT_REPO = "StepenkoAnatoli/SmartRouter"
+DEFAULT_REPO = "StepenkoAnatoli/Holdshort"
 
 #: Disposable marker written on the throwaway branch. Its appearance on `main`
 #: is the visible trace of a protection regression, so keep the path clearly
@@ -173,7 +173,7 @@ class GitHub:
         request.add_header("Authorization", f"Bearer {self._token}")
         request.add_header("Accept", "application/vnd.github+json")
         request.add_header("X-GitHub-Api-Version", "2022-11-28")
-        request.add_header("User-Agent", "smartrouter-strict-canary")
+        request.add_header("User-Agent", "holdshort-strict-canary")
         if data is not None:
             request.add_header("Content-Type", "application/json")
         try:

@@ -87,7 +87,7 @@ class SpawnWorker(unittest.TestCase):
     def test_s1_spawn_injects_verbatim_and_registers(self):
         rec = self._spawn(task_id="a3f9c1d2")
         self.assertEqual(rec["branch"], "sr/a3f9c1d2/work")
-        stored = json.loads((Path(rec["path"]) / "SMARTROUTER_BRIEF.json").read_text())
+        stored = json.loads((Path(rec["path"]) / "HOLDSHORT_BRIEF.json").read_text())
         self.assertEqual(stored, BRIEF, "the Brief must reach the worker byte-identical")
         reg = json.loads(self.reg.read_text())
         self.assertEqual(reg["workers"]["a3f9c1d2"]["branch"], rec["branch"])

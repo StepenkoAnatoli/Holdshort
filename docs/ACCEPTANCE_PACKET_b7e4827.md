@@ -1,4 +1,4 @@
-# SmartRouter PR #2 — non-author acceptance packet
+# Holdshort PR #2 — non-author acceptance packet
 
 Prepared: 2026-10-08 by Buffy, the plan author. **Packet preparation is not independent review or acceptance.** Originally prepared as a local handoff; now included in PR #2 by explicit owner authorization to publish reviewer documents. It is still a review instrument, not a submitted GitHub review or completed acceptance.
 
@@ -8,10 +8,10 @@ This publication creates a new PR head containing six documents: the original fo
 
 ## 1. Review contract and pinned target
 
-- PR: [SmartRouter #2](https://github.com/StepenkoAnatoli/SmartRouter/pull/2).
+- PR: [Holdshort #2](https://github.com/StepenkoAnatoli/Holdshort/pull/2).
 - Review revision: **`b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2`**.
-- [Immutable revision tree](https://github.com/StepenkoAnatoli/SmartRouter/tree/b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2).
-- [Immutable base comparison](https://github.com/StepenkoAnatoli/SmartRouter/compare/f575225642155e2e5abe1a718c8f6924e9a4f66d...b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2).
+- [Immutable revision tree](https://github.com/StepenkoAnatoli/Holdshort/tree/b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2).
+- [Immutable base comparison](https://github.com/StepenkoAnatoli/Holdshort/compare/f575225642155e2e5abe1a718c8f6924e9a4f66d...b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2).
 - Base/main observed: `f575225642155e2e5abe1a718c8f6924e9a4f66d`.
 - PR branch: `docs/corrected-smartrouter-development-plan`.
 - Observed during packet preparation: open, draft, unmerged; requested revision equals PR head; four-document diff; no submitted GitHub reviews. These are timestamped observations, not promises about later state.
@@ -44,10 +44,10 @@ Read all four files. Preserve bytes if checking hashes; GitHub-rendered page tex
 
 | Document | Pinned source | Git blob SHA-1 | Raw UTF-8 SHA-256 |
 | --- | --- | --- | --- |
-| README | [Planning guide](https://github.com/StepenkoAnatoli/SmartRouter/blob/b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2/README.md) | `2d314924c143bebba145616fc3ed4dd56cc2ba34` | `a57a16325708a0e8e7252df22895551bd3897a0cdf2a59f7fce121cbb9b3197b` |
-| Development plan | [Full specification](https://github.com/StepenkoAnatoli/SmartRouter/blob/b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2/docs/DEVELOPMENT_PLAN.md) | `10485cfa815554b52da5963860e3a5292aeac7f2` | `23cd414d30b985cfdd2948cb6512a87d87d60fde67ae2722e6321515da3426a6` |
-| Survey | [13-repository appendix](https://github.com/StepenkoAnatoli/SmartRouter/blob/b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2/docs/ROUTER_SURVEY.md) | `a621131f2d4fd6252f0debabaddb3dccdc30a302` | `881131ac1984a828fe96247cbc12f1d013d8b79610c462f7e2609984d573fea5` |
-| License | [Documentation-scoped MIT grant](https://github.com/StepenkoAnatoli/SmartRouter/blob/b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2/LICENSE) | `eab1a25d7ebf4b4466ff2e2afa0141425bff9ce4` | `0010894042db7a84869a71da9ed493599c8ba50fe7644b6efe15466977ff454e` |
+| README | [Planning guide](https://github.com/StepenkoAnatoli/Holdshort/blob/b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2/README.md) | `2d314924c143bebba145616fc3ed4dd56cc2ba34` | `a57a16325708a0e8e7252df22895551bd3897a0cdf2a59f7fce121cbb9b3197b` |
+| Development plan | [Full specification](https://github.com/StepenkoAnatoli/Holdshort/blob/b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2/docs/DEVELOPMENT_PLAN.md) | `10485cfa815554b52da5963860e3a5292aeac7f2` | `23cd414d30b985cfdd2948cb6512a87d87d60fde67ae2722e6321515da3426a6` |
+| Survey | [13-repository appendix](https://github.com/StepenkoAnatoli/Holdshort/blob/b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2/docs/ROUTER_SURVEY.md) | `a621131f2d4fd6252f0debabaddb3dccdc30a302` | `881131ac1984a828fe96247cbc12f1d013d8b79610c462f7e2609984d573fea5` |
+| License | [Documentation-scoped MIT grant](https://github.com/StepenkoAnatoli/Holdshort/blob/b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2/LICENSE) | `eab1a25d7ebf4b4466ff2e2afa0141425bff9ce4` | `0010894042db7a84869a71da9ed493599c8ba50fe7644b6efe15466977ff454e` |
 
 No `skills/`, SKILL.md, installer, product code, delivered test script or release changelog belongs in this target. Historical skills are not current delivery. The license covers only the listed new planning documents, not historical/upstream works. Hash equality proves identity, not truth or safety.
 
@@ -77,7 +77,7 @@ All line references below refer to the pinned development plan linked above.
 | Independent acceptance and A1-A5/G1-G6 maps | 368–405 |
 | Outstanding owners/evidence and evidence limits | 407–435 |
 
-Useful direct links: [qualification](https://github.com/StepenkoAnatoli/SmartRouter/blob/b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2/docs/DEVELOPMENT_PLAN.md#L56-L76), [terminal states](https://github.com/StepenkoAnatoli/SmartRouter/blob/b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2/docs/DEVELOPMENT_PLAN.md#L90-L119), [fixtures](https://github.com/StepenkoAnatoli/SmartRouter/blob/b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2/docs/DEVELOPMENT_PLAN.md#L147-L302), [independent acceptance](https://github.com/StepenkoAnatoli/SmartRouter/blob/b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2/docs/DEVELOPMENT_PLAN.md#L368-L405).
+Useful direct links: [qualification](https://github.com/StepenkoAnatoli/Holdshort/blob/b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2/docs/DEVELOPMENT_PLAN.md#L56-L76), [terminal states](https://github.com/StepenkoAnatoli/Holdshort/blob/b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2/docs/DEVELOPMENT_PLAN.md#L90-L119), [fixtures](https://github.com/StepenkoAnatoli/Holdshort/blob/b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2/docs/DEVELOPMENT_PLAN.md#L147-L302), [independent acceptance](https://github.com/StepenkoAnatoli/Holdshort/blob/b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2/docs/DEVELOPMENT_PLAN.md#L368-L405).
 
 ## 5. Review method and evidence levels
 

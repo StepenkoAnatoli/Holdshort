@@ -12,7 +12,7 @@ require them.
 
 - Gate 2 passes a profile only on a declared, fresh qualification; labels,
   price tier and self-confidence are not capability proof
-  (`skills/smart-router/references/spec-v2.md` §4). The Claude Code host
+  (`skills/holdshort/references/spec-v2.md` §4). The Claude Code host
   declares qualifications from graded calibration runs and production outcomes
   under its own rules: two independent passes for a high-risk category, one
   for a normal-risk one, a fail blocking the category until two later passes

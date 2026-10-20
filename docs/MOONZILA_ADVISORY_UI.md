@@ -1,9 +1,9 @@
 # Moonzila advisory UI design note — stored-preview vs generate-path
 
 Status: **draft design note; not ratified, not written code, does not authorize any Phase 6 work**
-(plan §13 boundary). Prepared on SmartRouter main `9b4bd687ac6bf24c1f437329b7dacfd60e18424b`;
+(plan §13 boundary). Prepared on Holdshort main `9b4bd687ac6bf24c1f437329b7dacfd60e18424b`;
 pinned to [docs/DEVELOPMENT_PLAN.md §13](DEVELOPMENT_PLAN.md) and to the canonical routing skill
-[skills/smart-router/SKILL.md](../skills/smart-router/SKILL.md). This note is design-specification
+[skills/holdshort/SKILL.md](../skills/holdshort/SKILL.md). This note is design-specification
 only; no code, no host changes, no consumer changes, no rate/cost claims.
 
 ## 1. Scope and non-scope
@@ -55,7 +55,7 @@ still match.
 **UI shape (notional):**
 
 ```
-SmartRouter preview — stored
+Holdshort preview — stored
 Profile:      (local-L, local, model-L@1, cfg-tools@1)          ← from stored record
 Route:        direct
 Difficulty:   trivial
@@ -77,7 +77,7 @@ host claim.
 **Hardedges:**
 - Requires explicit user permission at call time (not assumed from prior consent), plus the
   host's own accounting path, before any model call, embedding, fetch, or cache write.
-- Must use the canonical skill semantics ([smart-router SKILL.md](../skills/smart-router/SKILL.md))
+- Must use the canonical skill semantics ([holdshort SKILL.md](../skills/holdshort/SKILL.md))
   and its pinned references — Gate 1 (permissions/privacy/workflow) is checked **before** any
   transmission (S03/S17a/S17b); Gate 4 unknown/absent pricing/bounds account for **auxiliary**
   inference the generating call itself performs (per S06/S07).

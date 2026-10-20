@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// SmartRouter host adapter for the MoonAliza build process.
+// Holdshort host adapter for the MoonAliza build process.
 //
-// SmartRouter (StepenkoAnatoli/SmartRouter @ fbe7bca, skill 3.0.0) is advisory and stateless; this
+// Holdshort (StepenkoAnatoli/Holdshort @ fbe7bca, skill 3.0.0) is advisory and stateless; this
 // adapter is the host side: it collects the inputs from host-policy.json and the request, walks the
 // five ordered gates for every candidate (references/gates.md, tests/smart_router_decisions.py
 // run_gates/choose_route), prints the Required output format block plus the Brief (spec-v2 §10.1),
@@ -37,7 +37,7 @@ const EXPIRY_WARN_DAYS = 14;
 // PARTIAL (host-policy-3) is calibration-2's third review grade: one of the two ground-truth findings, no false blocking
 // one. The tier (difficulty tiers, proposal 2.6) is optional: a tierless entry reads @T1
 const CALIBRATION_ENTRY = /^calibration-([1-9]\d*): ([^\s@]+)(?:@(T[1-3]))? (PASS|PARTIAL|FAIL) \(n=([1-9]\d*)\)$/;
-// difficulty tiers (SmartRouter docs/proposals/difficulty-tiers.md, the lead's decisions D1-D9 in briefs/policy5-builder.md).
+// difficulty tiers (Holdshort docs/proposals/difficulty-tiers.md, the lead's decisions D1-D9 in briefs/policy5-builder.md).
 // A policy turns them on with "difficulty-tiers": "enforced" (D1); absent, the policy is untiered and behaves as before
 export const TIERS = ['T1', 'T2', 'T3'];
 export const TIERS_ENFORCED = 'enforced';
@@ -46,7 +46,7 @@ const tierRank = (t) => TIERS.indexOf(t) + 1;
 const tiersEnforced = (policy) => policy['difficulty-tiers'] === TIERS_ENFORCED;
 // a qualified-for entry is '<category>' or '<category>@T1|T2|T3' (D2)
 const QUALIFICATION = /^([^\s@]+)(?:@(T[1-3]))?$/;
-// calibration-first evidence (SmartRouter docs/proposals/calibration-first-onboarding.md Item 1, the lead's decisions
+// calibration-first evidence (Holdshort docs/proposals/calibration-first-onboarding.md Item 1, the lead's decisions
 // E1-E7 in briefs/policy6-builder.md). E1: the typed production reference, 'outcome: <task-id> <category>[@T<k>] accepted
 // <YYYY-MM-DD> (<path>)', optionally followed by '; <note>'. <path> is the outcome file the host writes
 // (trace/outcomes/<task>-<seq>.json), relative to the policy file's directory; its form is checked from the policy alone,
@@ -136,7 +136,8 @@ export function policyRoot(path) {
 export function loadPolicy(path = DEFAULT_POLICY) {
   const p = readJsonFile(path, 'policy');
   // typed production references resolve against the policy file's directory, never against --trace (E1)
-  validatePolicy(p, policyRoot(path));
+  const root = policyRoot(path);
+  validatePolicy(p, root, root !== dirname(resolve(path)));
   return p;
 }
 
@@ -217,10 +218,16 @@ function resolveReference(ref, pr, baseDir, stores) {
   return null;
 }
 
-function validatePolicy(p, baseDir) {
+function validatePolicy(p, baseDir, frozen = false) {
   const fail = (m) => { throw invalid(`invalid policy: ${m}`); };
   if (!p || typeof p !== 'object') fail('not an object');
   if (!isStr(p.harness?.id)) fail('harness.id missing');
+  // ADR-0003: the upstream block is `holdshort`. The archived host-policy-1..5 keep the old key, and so does
+  // host-policy-6, the revision live at the rename, but only as its frozen copy under <root>/trace/policies/ (the next
+  // revision pins that copy to the bytes its decisions were bound to). Any other policy carrying the old key has not
+  // migrated and would bind `holdshort: null` into every decision without a word
+  const revision = p['policy-revision'] ?? '';
+  if (p.smartrouter !== undefined && !/^host-policy-[1-5]$/.test(revision) && !(frozen && revision === 'host-policy-6')) fail('the upstream block is named smartrouter; rename it holdshort (ADR-0003; only the archived host-policy-1..5, and host-policy-6 as its frozen copy under trace/policies/, keep the old name)');
   const a = p.authorization;
   if (!a || !isStrArray(a['data-classes-permitted']) || !isStrArray(a['data-classes-forbidden']) || !isStrArray(a.destinations)) fail('authorization data classes or destinations missing');
   if (!isStrArray(a['project-stop-rules']) || a['project-stop-rules'].length < 3) fail('authorization.project-stop-rules needs the red-suite, gate-off and research-gate rules');
@@ -360,8 +367,8 @@ export function validateOutcome(o) {
   if (!(ev['actual-spend'] === null || (typeof ev['actual-spend'] === 'number' && ev['actual-spend'] >= 0))) fail('evidence.actual-spend');
   // additive (spec-v2 §13): the tokens the unit actually used, for the usage-window learning in rate
   if (!(ev['actual-tokens'] === undefined || ev['actual-tokens'] === null || isInt(ev['actual-tokens']))) fail('evidence.actual-tokens (an integer >= 0, or null = unknown)');
-  // SmartRouter Item 4: a basis other than "estimate-only" is a violation upstream (conform_spec.py); null = no basis
-  if (!(ev['actual-spend-basis'] == null || ev['actual-spend-basis'] === ESTIMATE_ONLY)) fail(`evidence.actual-spend-basis must be "${ESTIMATE_ONLY}" when present (SmartRouter Item 4)`);
+  // Holdshort Item 4: a basis other than "estimate-only" is a violation upstream (conform_spec.py); null = no basis
+  if (!(ev['actual-spend-basis'] == null || ev['actual-spend-basis'] === ESTIMATE_ONLY)) fail(`evidence.actual-spend-basis must be "${ESTIMATE_ONLY}" when present (Holdshort Item 4)`);
   if (!isStrArray(ev['files-touched'])) fail('evidence.files-touched');
   if (typeof ev.notes !== 'string') fail('evidence.notes');
   if (typeof o['original-brief-fingerprint'] !== 'string') fail('original-brief-fingerprint');
@@ -503,7 +510,7 @@ export function readLedger(traceDir = DEFAULT_TRACE) {
   });
 }
 
-// SmartRouter Item 4 (docs/proposals/usage-windows-gate4.md, accepted upstream 2026-10-18): §10.5's null cash counters
+// Holdshort Item 4 (docs/proposals/usage-windows-gate4.md, accepted upstream 2026-10-18): §10.5's null cash counters
 // conform only beside counters["cash-basis"] == "estimate-only", and §10.3's null actual-spend only beside
 // evidence["actual-spend-basis"] == "estimate-only". The policy's accounting.mode says whether this host is estimate-only
 export const ESTIMATE_ONLY = 'estimate-only';
@@ -1186,7 +1193,7 @@ export function computeDecision(req, policy, records = [], catMap = {}, { probe 
       attempts: st.repairsAllowed - st.repairsUsed - repair,
       'stop-triggers': [
         `verification failure -> outcome record, then a fresh decision; at most ${st.repairsAllowed} same-profile repair per task`,
-        'repairs exhausted -> fresh SmartRouter decision (no ownership transfer without it)',
+        'repairs exhausted -> fresh Holdshort decision (no ownership transfer without it)',
         `call slots exhausted (${st.callsLimit} per task) -> blocked`,
         `deadline ${deadlineIso} reached -> blocked`,
         'project stop rule -> blocked'
@@ -1250,7 +1257,7 @@ export function computeDecision(req, policy, records = [], catMap = {}, { probe 
 function policyBindings(policy, policyPath) {
   return {
     'policy-revision': policy['policy-revision'] ?? null, 'policy-sha256': sha256(readFileSync(policyPath)),
-    smartrouter: policy.smartrouter ?? null, harness: `${policy.harness.id}@${policy.harness.version ?? 'unknown'}`
+    holdshort: policy.holdshort ?? null, harness: `${policy.harness.id}@${policy.harness.version ?? 'unknown'}`
   };
 }
 

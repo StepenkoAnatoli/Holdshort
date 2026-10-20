@@ -5,7 +5,7 @@
   F1. an invented HumanGate value in a fixture doc is caught
   F2. a decision block missing §9 keys without an abbreviation note is caught
   F3. a branch example with a non-hex id is caught
-  F4. a SMARTROUTER_BRIEF.json mention without the convention note is caught
+  F4. a HOLDSHORT_BRIEF.json mention without the convention note is caught
   F5. template forms (`<a | b>`, `...` slugs) do NOT trip the check
 Run as part of the regression gate (tools/run_regression.py).
 """
@@ -72,7 +72,7 @@ class DocsDrift(unittest.TestCase):
     def test_f4_brief_filename_without_convention_caught(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            fixture(root, "d.md", "# t\n\nwrite SMARTROUTER_BRIEF.json there\n")
+            fixture(root, "d.md", "# t\n\nwrite HOLDSHORT_BRIEF.json there\n")
             found = dd.check(root)
         self.assertTrue(any("convention" in f for f in found), found)
 

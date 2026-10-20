@@ -17,14 +17,14 @@ class ProjectScope(unittest.TestCase):
             (sibling / "key.txt").write_text("unrelated fixture", encoding="utf-8")
             with patch.object(hygiene, "user_home", return_value=home):
                 selected = hygiene.resolve_secrets_dir(None)
-                self.assertEqual(selected, home / ".secrets" / "smart-router")
+                self.assertEqual(selected, home / ".secrets" / "holdshort")
                 names, _ = hygiene.plaintext_names(selected)
                 self.assertEqual(names, [])
 
     def test_acl_default_is_scoped_and_explicit_override_remains_available(self):
         home = Path("C:/fixture-user")
         self.assertEqual(acl.default_root({"USERPROFILE": str(home), "HOME": "C:/decoy"}),
-                         home / ".secrets" / "smart-router")
+                         home / ".secrets" / "holdshort")
         self.assertEqual(hygiene.resolve_secrets_dir(Path("explicit-project")),
                          Path("explicit-project"))
 

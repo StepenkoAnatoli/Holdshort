@@ -24,7 +24,7 @@ Revision: [`b758e036bbd1290c0997ad14c9812a106ef8d72b`](https://github.com/BlockR
 
 [proxy.spend-policy.test.ts](https://github.com/BlockRunAI/ClawRouter/blob/b758e036bbd1290c0997ad14c9812a106ef8d72b/src/proxy.spend-policy.test.ts) drives the actual proxy against a local 402 server and asserts blocked payees cause no signature/payment attachment. This is materially stronger static test evidence than a recreated score function, but was **not run here**.
 
-**Use:** actual-callsite no-side-effect tests, transparent local decisions/explanations. **Avoid:** generic transport retries as permission to replay, x402 wallets/payments/provider gateway in skills V1, marketing savings as measured SmartRouter outcomes.
+**Use:** actual-callsite no-side-effect tests, transparent local decisions/explanations. **Avoid:** generic transport retries as permission to replay, x402 wallets/payments/provider gateway in skills V1, marketing savings as measured Holdshort outcomes.
 
 ## 3. BJFinancial/Smart-router
 
@@ -40,7 +40,7 @@ Revision: [`65efa68d97004021cfdc3571d6974315a61d8865`](https://github.com/BJFina
 
 Revision: [`fa6ca992d32d3639d2a3be1fcfa8ed8b2b7208c1`](https://github.com/NadirRouter/NadirClaw/tree/fa6ca992d32d3639d2a3be1fcfa8ed8b2b7208c1). Approximately 149 files / 50 discovered test paths.
 
-[cascade.py](https://github.com/NadirRouter/NadirClaw/blob/fa6ca992d32d3639d2a3be1fcfa8ed8b2b7208c1/nadirclaw/cascade.py) accepts on verifier error, has a cheap-only kill-switch acceptance path after repeated failures, and force-cheap avoids verification. Fallback is not verified within this component. These are unsuitable fail-open patterns for a verification-first SmartRouter; no assertion is made that all callers lack additional controls. Pro-trained .80 calibration claims do not qualify the OSS heuristic for this workload.
+[cascade.py](https://github.com/NadirRouter/NadirClaw/blob/fa6ca992d32d3639d2a3be1fcfa8ed8b2b7208c1/nadirclaw/cascade.py) accepts on verifier error, has a cheap-only kill-switch acceptance path after repeated failures, and force-cheap avoids verification. Fallback is not verified within this component. These are unsuitable fail-open patterns for a verification-first Holdshort; no assertion is made that all callers lack additional controls. Pro-trained .80 calibration claims do not qualify the OSS heuristic for this workload.
 
 [test_code_safety.py](https://github.com/NadirRouter/NadirClaw/blob/fa6ca992d32d3639d2a3be1fcfa8ed8b2b7208c1/tests/test_code_safety.py) checks unfenced Python indentation via parsing and fenced-code byte preservation while allowing prose normalization. Static tests inform exact-content requirements; not executed here.
 
@@ -52,7 +52,7 @@ Revision: [`fa6ca992d32d3639d2a3be1fcfa8ed8b2b7208c1`](https://github.com/NadirR
 
 Revision: [`a0b29f9199e1601af5c5a967fa607530ad539ad9`](https://github.com/xorbitsai/xrouter-llm/tree/a0b29f9199e1601af5c5a967fa607530ad539ad9). Approximately 107 files / 17 discovered tests.
 
-[test_policy.py](https://github.com/xorbitsai/xrouter-llm/blob/a0b29f9199e1601af5c5a967fa607530ad539ad9/tests/test_policy.py) inspects predicted-quality/cost selection, fusion and fallback. A fallback may pick a model below the requested quality threshold within a margin of the best (e.g. .56/.58 with .70 floor). Fusion uses an any-success independence-style expression; it is not measured semantic correctness or engine verification. A hard task verification floor cannot become a soft margin in SmartRouter.
+[test_policy.py](https://github.com/xorbitsai/xrouter-llm/blob/a0b29f9199e1601af5c5a967fa607530ad539ad9/tests/test_policy.py) inspects predicted-quality/cost selection, fusion and fallback. A fallback may pick a model below the requested quality threshold within a margin of the best (e.g. .56/.58 with .70 floor). Fusion uses an any-success independence-style expression; it is not measured semantic correctness or engine verification. A hard task verification floor cannot become a soft margin in Holdshort.
 
 [LICENSE](https://github.com/xorbitsai/xrouter-llm/blob/a0b29f9199e1601af5c5a967fa607530ad539ad9/LICENSE) is Xagent source-available with restrictions including competing/hosted use and branding/single-tenant conditions. Review exact terms for intended use; not interchangeable with permissive open-source grants.
 
@@ -74,7 +74,7 @@ Revision: [`d823cc4c9dd9a00aaafd814c1758b30c67d963c7`](https://github.com/tumf/k
 
 [test_capability_routing.py](https://github.com/tumf/kani/blob/d823cc4c9dd9a00aaafd814c1758b30c67d963c7/tests/test_capability_routing.py) distinguishes active tool requirements from decorative schemas/old completed history. It covers forced choice, tools, vision, JSON and multiple capabilities; stripping decorative fields works on a copy. Required tools must never be silently stripped to fit a model.
 
-Inspected routing has explicit capability/input-limit errors, but classifier errors can default MEDIUM; all-cooldown paths may disregard cooldown; escalation metadata can diverge from selected candidate. Internal RoutingDecision includes resolved credential material; without serializer proof, this is **not a finding of a public leak**. SmartRouter receipts simply prohibit credentials.
+Inspected routing has explicit capability/input-limit errors, but classifier errors can default MEDIUM; all-cooldown paths may disregard cooldown; escalation metadata can diverge from selected candidate. Internal RoutingDecision includes resolved credential material; without serializer proof, this is **not a finding of a public leak**. Holdshort receipts simply prohibit credentials.
 
 No LICENSE was found in the complete tree despite README MIT wording; inspected project metadata did not establish a license grant. Redistribution remains blocked pending permission.
 
@@ -86,7 +86,7 @@ Revision: [`5e3cf74f6b0b600316b17dd0b429844b4e1a11d9`](https://github.com/Cohort
 
 [permissions.py](https://github.com/Cohorte-ai/context-router/blob/5e3cf74f6b0b600316b17dd0b429844b4e1a11d9/src/theaios/context_router/permissions.py) defaults allow for no matching rule; wildcard/exact rules merge with deny wins and restrictive defaults, rather than the documented exact-only precedence. [test_permissions.py](https://github.com/Cohorte-ai/context-router/blob/5e3cf74f6b0b600316b17dd0b429844b4e1a11d9/tests/test_permissions.py) includes a misleading default-deny-named test that actually asserts allow, and empty-path chunks can pass denied-path filtering.
 
-Inspected context pipeline fetches/caches sources before path denial; optional remote embeddings occur later. Source exceptions can be silently skipped; cache source/query keys lack some authorization metadata. These warrant design review, **not an asserted exploit**. SmartRouter must authorize before external fetching/embedding, fail closed for unknown identities/paths and make missing evidence explicit.
+Inspected context pipeline fetches/caches sources before path denial; optional remote embeddings occur later. Source exceptions can be silently skipped; cache source/query keys lack some authorization metadata. These warrant design review, **not an asserted exploit**. Holdshort must authorize before external fetching/embedding, fail closed for unknown identities/paths and make missing evidence explicit.
 
 **Use:** provenance-rich bounded context and minimum necessary snippets. **Avoid:** default-allow identity/path, post-fetch permission checks, silent missing-evidence acceptance or building a new context engine now.
 
@@ -106,7 +106,7 @@ No LICENSE in the inspected complete tree despite package MIT claim: do not infe
 
 Revision: [`c3395c82c89d2e13c97552347a453c7ec122e33d`](https://github.com/beettlle/pi-smart-router/tree/c3395c82c89d2e13c97552347a453c7ec122e33d). Approximately 1892 files / 182 discovered tests.
 
-[expected-cost.ts](https://github.com/beettlle/pi-smart-router/blob/c3395c82c89d2e13c97552347a453c7ec122e33d/src/domain/routing/expected-cost.ts#L534-L536) calculates bounded-success-weighted direct/escalation cost and assumes frontier success in that model. Before reuse define whether escalation includes the failed first attempt's sunk cost; actual SmartRouter ledger sums every billed attempt and keeps estimates separate. Risk penalties and virtual cache/quota credits are not observed cash savings.
+[expected-cost.ts](https://github.com/beettlle/pi-smart-router/blob/c3395c82c89d2e13c97552347a453c7ec122e33d/src/domain/routing/expected-cost.ts#L534-L536) calculates bounded-success-weighted direct/escalation cost and assumes frontier success in that model. Before reuse define whether escalation includes the failed first attempt's sunk cost; actual Holdshort ledger sums every billed attempt and keeps estimates separate. Risk penalties and virtual cache/quota credits are not observed cash savings.
 
 [session-pinner.ts](https://github.com/beettlle/pi-smart-router/blob/c3395c82c89d2e13c97552347a453c7ec122e33d/src/domain/pinning/session-pinner.ts) illustrates stickiness broken by context overflow/compaction, eligible overrides and qualified escalation/economics. Force-model checks reject out-of-fleet/unhealthy choices with reason; no silent provider remap. Context headroom constants are implementation choices, not universal qualification.
 
@@ -142,7 +142,7 @@ Revision: [`034daabaac5038bfc5f0a5c54a30df59baaffb3a`](https://github.com/ginson
 
 [Retry design](https://github.com/ginsonko/newapi-smart-router/blob/034daabaac5038bfc5f0a5c54a30df59baaffb3a/parts/algorithms/retry/README.md) separates transport/protocol/business contracts, committed semantic streams, acceptance ambiguity, replay class, deadlines and attempts. [Outcome golden vectors](https://github.com/ginsonko/newapi-smart-router/blob/034daabaac5038bfc5f0a5c54a30df59baaffb3a/parts/conformance/golden-vectors/outcome-v1.json) cover valid tool calls, pseudo-200 errors, committed streams, unknown video acceptance, capacity 429 and side-effecting unknown dispatch. Static vectors are not live success claims.
 
-[planner.go](https://github.com/ginsonko/newapi-smart-router/blob/034daabaac5038bfc5f0a5c54a30df59baaffb3a/core/smartrouter/planner.go) exposes no-price/no-candidate/attempt-budget outcomes, capability/replay fingerprints and snapshot/commit rules. [cache_economy.go](https://github.com/ginsonko/newapi-smart-router/blob/034daabaac5038bfc5f0a5c54a30df59baaffb3a/core/smartrouter/cache_economy.go) scores only after eligibility with bounded snapshot/horizon/sample/confidence/drift guards; specific namespace/session warm evidence matters, not generic hit-rate optimism. Numeric defaults are not transferable SmartRouter tolerances.
+[planner.go](https://github.com/ginsonko/newapi-smart-router/blob/034daabaac5038bfc5f0a5c54a30df59baaffb3a/core/smartrouter/planner.go) exposes no-price/no-candidate/attempt-budget outcomes, capability/replay fingerprints and snapshot/commit rules. [cache_economy.go](https://github.com/ginsonko/newapi-smart-router/blob/034daabaac5038bfc5f0a5c54a30df59baaffb3a/core/smartrouter/cache_economy.go) scores only after eligibility with bounded snapshot/horizon/sample/confidence/drift guards; specific namespace/session warm evidence matters, not generic hit-rate optimism. Numeric defaults are not transferable Holdshort tolerances.
 
 [Route receipt schema](https://github.com/ginsonko/newapi-smart-router/blob/034daabaac5038bfc5f0a5c54a30df59baaffb3a/parts/spec/route-receipt.schema.json) describes versions/attempt/reservation/settlement/reconciliation/operator review. Borrow the conceptual need for a small secret-free receipt, not the gateway or whole schema.
 
@@ -331,4 +331,4 @@ Nothing in these sections was installed, executed or benchmarked, and no upstrea
 3. **Preserve task contracts and exact context.** Tool/refusal/media/structured outcomes are contract-specific; verifier failures do not accept. Cache keys include relevant authority/price/check revisions and exact meaningful content.
 4. **Bound and account every attempt.** Capability escalation is not a price ladder. No replay after ambiguous effects/committed output; cancellation/restart reconcile first. Count router/review/sunk costs without double counting.
 5. **Measure before growth.** Four fair arms, approved preregistration, actual cost per verified success, complete accounting, hard severe-failure stops and explicit promote/simplify/reject/inconclusive outcomes.
-6. **Prefer original policy over copied implementations.** No runtime dependency now. MIT/Apache ideas do not establish correctness; noncommercial/source-available/no-grant/AGPL materials need appropriate permission/compatibility checks before any future copy. SmartRouter's chosen MIT grant covers only the newly authored planning documents listed in LICENSE, not upstream or historical content.
+6. **Prefer original policy over copied implementations.** No runtime dependency now. MIT/Apache ideas do not establish correctness; noncommercial/source-available/no-grant/AGPL materials need appropriate permission/compatibility checks before any future copy. Holdshort's chosen MIT grant covers only the newly authored planning documents listed in LICENSE, not upstream or historical content.

@@ -1,8 +1,8 @@
-# SmartRouter gap audit follow-ups — 15 October 2026
+# Holdshort gap audit follow-ups — 15 October 2026
 
 ## 1. Current State Summary
 
-SmartRouter routes bounded tasks through qualified profiles and records dispatch,
+Holdshort routes bounded tasks through qualified profiles and records dispatch,
 verification, cost, and evaluation evidence. Its outputs must preserve unknown
 usage, enforce the declared local budget authority, refuse invalid evidence, and
 keep measured observations tied to their sources.
@@ -187,7 +187,7 @@ All sources below are official primary sources fetched during the comparisons.
 **Every external comparison is an unledgered fetch, at most WELL-SUPPORTED;
 no Research-Kit E-nn evidence rows exist for these runs.** Project defects were
 established from source and probes, rather than feature differences. No
-external tool is claimed to guarantee SmartRouter's correctness.
+external tool is claimed to guarantee Holdshort's correctness.
 
 | Official source | Supported comparison claim | Source type | Confidence |
 | --- | --- | --- | --- |

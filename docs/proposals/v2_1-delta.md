@@ -18,7 +18,7 @@ additive" rule; until then hosts MUST NOT emit or require them.
   rules (`force_escalate` / `force_cheap` / `set_threshold`, reviewed at
   `fa6ca99`) show why this matters: a `force_cheap` activation returns an
   answer without verification, and a rule-evaluation failure silently continues
-  on the normal path. Under SmartRouter both are §12 violations, so the
+  on the normal path. Under Holdshort both are §12 violations, so the
   activation itself needs a human checkpoint.
 
 ## Item 1 — `failure-class` on Outcome (§10.3, additive optional field)
@@ -59,7 +59,7 @@ hosts a schema to record and checkpoint the decisions around them.
 
 ## Review record (pending)
 
-- Author: SmartRouter working thread, 2026-10-12, revision at PR time.
+- Author: Holdshort working thread, 2026-10-12, revision at PR time.
 - Independent reviewer: *unassigned* — plan §15 requires a non-author
   verdict at the full reviewed revision plus owner acknowledgement before
   this delta (or any part of it) amends normative files.

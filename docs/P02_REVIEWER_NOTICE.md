@@ -8,7 +8,7 @@
 ## 1. Designation (owner completes)
 
 I, the undersigned repo owner, designate the person/instance named in §2 as the **plan-§5
-qualification reviewer of record** for the SmartRouter Phase 4 pilot's profile qualification
+qualification reviewer of record** for the Holdshort Phase 4 pilot's profile qualification
 records:
 
 | Profile (immutable tuple) | Role |
@@ -22,7 +22,7 @@ records:
   `docs/PHASE4_PILOT_REPORT.md`) and the executable rubric basis (exact-diff + suite exit codes);
 - the tested context headroom statement (8000-token capacity, 1000-token headroom, plan §10);
 - that the immutable tuples match plan §10 pinned content, unchanged;
-- the runtime recheck implementation (`smart-router` Gates 1–2).
+- the runtime recheck implementation (`holdshort` Gates 1–2).
 
 **Out of scope**: merge authority, live-dispatch go/no-go (row-4 §10 covers that separately),
 report decision fields (§7 predicates), any Phase 5–7 consumer work.

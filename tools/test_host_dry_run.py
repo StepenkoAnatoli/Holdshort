@@ -112,7 +112,7 @@ class HostDryRun(unittest.TestCase):
             out = subprocess.run(["git", "log", "--all", "--name-only", "--pretty=format:"],
                                  cwd=root / "main", env=env,
                                  capture_output=True, text=True, timeout=60)
-            self.assertNotIn("SMARTROUTER_BRIEF.json", out.stdout)
+            self.assertNotIn("HOLDSHORT_BRIEF.json", out.stdout)
             self.assertEqual(len(report["proofs"]), 5)
 
 

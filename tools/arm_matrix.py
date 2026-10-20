@@ -4,14 +4,14 @@
 Extends docs/PHASE4_PILOT_REPORT.md (per-task evidence ledger) with the arm
 axis the preregistration §1 ratified structurally: every task must be traced
 to all four arms (A strong direct, B economical direct, C simple fixed rule,
-D SmartRouter skill flow). Output: a 4×5 JSON ledger (20 cells), each cell
+D Holdshort skill flow). Output: a 4×5 JSON ledger (20 cells), each cell
 carrying:
   * `evidence`   — the deterministic artifact observed for that arm on that task
   * `expected`   — the arm-level behavior the §3.1 contract requires
   * `match`      — observed == expected (pass) or not (fail)
 
 Arms are executed as *simulations on the same deterministic model the decision
-suite tests* (`tests/smart_router_decisions.py` RouteContext / choose_route) —
+suite tests* (`tests/holdshort_decisions.py` RouteContext / choose_route) —
 non-live, $0.00 spend, in keeping with the pilot report's scope declaration.
 No live-model dispatch occurs. Per-cell costs are labels, not measurements
 (the pilot report's "not measured" accounting rule for non-live scope).
@@ -23,7 +23,7 @@ Cell semantics:
       profile for its category.
   C (simple fixed rule): choose_route with [cheap, strong] candidates — the
       deterministic cheap-if-eligible-else-strong selector.
-  D (SmartRouter): choose_route with the full candidate set (all four
+  D (Holdshort): choose_route with the full candidate set (all four
       profiles), running every gate in order; records the exact route the
       gate-runner returns.
 """
@@ -37,14 +37,14 @@ from typing import Dict, List, Optional
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "tests"))
-import smart_router_decisions as srd  # noqa: E402
+import holdshort_decisions as srd  # noqa: E402
 
 ARMS = ("A", "B", "C", "D")
 ARM_LABELS = {
     "A": "strong qualified direct",
     "B": "economical qualified direct",
     "C": "simple fixed rule",
-    "D": "SmartRouter skill flow (ordered gates + brief/verifier/review)",
+    "D": "Holdshort skill flow (ordered gates + brief/verifier/review)",
 }
 PROFILE_BY_ARM = {"A": "cloud-S", "B": "cloud-C", "C": "cloud-C", "D": None}  # D: route-resolved
 
@@ -128,7 +128,7 @@ def build_matrix() -> dict:
         "matrix_version": 1,
         "extends": "docs/PHASE4_PILOT_REPORT.md §2 (per-task evidence ledger)",
         "arm_axis_source": "docs/PHASE3_PREREGISTRATION.md §1 (arm definitions RATIFIED structural)",
-        "model": "tests/smart_router_decisions.py deterministic gate-runner (non-live)",
+        "model": "tests/holdshort_decisions.py deterministic gate-runner (non-live)",
         "cells": cells,
         "coverage": {
             "arms": 4, "tasks": 5, "cells": len(cells),

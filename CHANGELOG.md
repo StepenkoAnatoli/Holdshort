@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- **Breaking: renamed SmartRouter → Holdshort** (docs/adr/0003-rename-to-holdshort.md). Every spelling of the old
+  name becomes `Holdshort`, `holdshort` or `HOLDSHORT`, in paths too, with no fallback for the old names. To migrate:
+  - point clones at the new repository: `git remote set-url origin https://github.com/StepenkoAnatoli/Holdshort.git`
+    (GitHub redirects the old URL meanwhile);
+  - replace installed copies of the skills `smart-router`, `smart-router-review` and `smart-router-eval-prep` with
+    `holdshort`, `holdshort-review` and `holdshort-eval-prep` (`defers-to: holdshort`);
+  - hosts write the worker Brief as `HOLDSHORT_BRIEF.json`, not `SMARTROUTER_BRIEF.json`;
+  - move the credential custody folder `~/.secrets/smart-router` to `~/.secrets/holdshort`; until it moves,
+    `tools/check_credential_hygiene.py` (also with `--secrets-dir`) and `tools/check_custody_acl.py` fail closed
+    instead of reporting clean. The ACL check is Windows-only, and under the pre-commit hook on Linux or macOS
+    (`HOME` is the repo there) neither sees the folder, so run the hygiene check by hand after moving it;
+  - in a Claude Code host policy, rename the upstream block `smartrouter` to `holdshort`; new decision records carry
+    `holdshort`. `route.mjs` refuses any policy that still carries `smartrouter`, except the archived
+    host-policy-1..5 and host-policy-6 as its frozen copy under `trace/policies/` (host-policy-6 was live at the
+    rename, so the next revision freezes it byte for byte);
+  - decide again for any decision not yet dispatched: the Brief's text changed, so the pre-dispatch check refuses the
+    fingerprint recorded before the rename;
+  - delete `SMARTROUTER_BRIEF.json` from a worker worktree spawned before the rename before cleaning it up (cleanup
+    removes only `HOLDSHORT_BRIEF.json` and refuses a worktree with untracked files);
+  - run the decision suite as `python tests/holdshort_decisions.py`.
+
+  Kept as written: the host ledger `hosts/claude-code/trace/**`, `docs/evidence/**`, the frozen pool id
+  `smartrouter-prospective-v1`, other projects' names (`BJFinancial/Smart-router`, `beettlle/pi-smart-router`,
+  `Magma-Devs/smart-router`, `ginsonko/newapi-smart-router`) and paths inside their URLs, MoonAliza's folder
+  `docs/orchestration/smartrouter/`, facts about things that still carry the old name (the published release asset
+  names and the zip's contents, the copy of the published v1.0.1 release notes, git branch names, paths pinned to a
+  commit before the rename and commands recorded as run before it, a path quoted from a brief) and one verbatim chat
+  quote. The social PNGs were re-exported;
+  the social video still shows the old name until it is re-rendered.
 - **The calibration gate checks run on a Windows host** (`tools/test_calibration_kit.py` and the tests of the evidence
   check and the qualification table). On Windows 17 of the kit's 79 tests failed, so the pre-commit hook refused every
   commit there: it read files in the locale's encoding, ran a bare `python3`, wrote a Windows path into a git config
@@ -61,7 +90,7 @@ state and packages are written. A metadata-only usage exporter and engineering
 record capture observed GPT counts, missing inputs, failures and future risks
 without turning subscription usage into an invented provider bill or savings claim.
 Removed unrelated consumer handoff/adoption records and named fixture coupling.
-Credential custody defaults to ~/.secrets/smart-router; sibling project inventories
+Credential custody defaults to ~/.secrets/holdshort; sibling project inventories
 are excluded. Historical binary bundles are removed from current source. The ACL
 probe uses its selected runtime's own modules; two Windows-only test harness leaks
 are fixed without weakening production checks.
@@ -346,8 +375,8 @@ v1.0.0 rules are retained unchanged (`metadata.previous: "1.0.0"`).
 
 ## Skill v2.0.0 — complete surface contract (10-12)
 
-`skills/smart-router/references/spec-v2.md` lands the consolidated
-SmartRouter + Isolated Workers specification (routes, isolation, ownership,
+`skills/holdshort/references/spec-v2.md` lands the consolidated
+Holdshort + Isolated Workers specification (routes, isolation, ownership,
 HumanGate, nesting, speculative sets, machine-readable objects, Host
 responsibilities, compliance), and the skill consumes it as its external
 contract. Every addition is strictly additive and default-deny, per the spec's

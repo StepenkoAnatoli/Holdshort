@@ -97,7 +97,7 @@ def decide(*, repairs_used: int, allowance: int, prev: dict | None, curr: dict,
     if nongoal_violation:
         return stop, f"non-goal/forbidden-path violation: {nongoal_violation}"
     if gate_raised:
-        return stop, "SmartRouter re-evaluation raised HumanGate"
+        return stop, "Holdshort re-evaluation raised HumanGate"
     if calls_limit is not None and calls_used >= calls_limit:
         return stop, f"call limit exhausted: {calls_used}/{calls_limit}"
     if cash_cap is not None and cash_spent >= cash_cap:
@@ -245,7 +245,7 @@ def parse_args(argv: list[str] | None = None):
     ap.add_argument("--task-id", required=True)
     ap.add_argument("--state", type=Path, required=True, help="restart-proof counters file (JSON)")
     ap.add_argument("--brief", default="", help="path to the Brief JSON (embedded into escalation package)")
-    ap.add_argument("--decision", default="", help="path to the SmartRouter decision JSON")
+    ap.add_argument("--decision", default="", help="path to the Holdshort decision JSON")
     ap.add_argument("--timeout", type=float, required=True, help="wall-clock seconds for the command (equality expires)")
     ap.add_argument("--allowance", type=int, default=REPAIR_ALLOWANCE_DEFAULT, help="same-profile repairs allowed total (default 1)")
     ap.add_argument("--calls-used", type=int, default=0)
@@ -304,7 +304,7 @@ def main(argv: list[str] | None = None) -> int:
         reason = f"cash ceiling exhausted: {args.cash_spent} >= {args.cash_cap}"
         return _escalate(args, state, reason)
     if args.gate_raised:
-        return _escalate(args, state, "SmartRouter re-evaluation raised HumanGate")
+        return _escalate(args, state, "Holdshort re-evaluation raised HumanGate")
     if args.nongoal_violation:
         return _escalate(args, state, f"non-goal/forbidden-path violation: {args.nongoal_violation}")
     if args.high_risk:

@@ -225,7 +225,7 @@ all — they are *regenerated* (Settings → Password and authentication → Rec
 which invalidates every previously printed code. If such a file was ever exposed, regenerate, delete
 the file, and keep the new codes in a password manager rather than in a text file.
 
-Inspect SmartRouter-owned credential custody only (`~/.secrets/smart-router`,
+Inspect Holdshort-owned credential custody only (`~/.secrets/holdshort`,
 or an explicitly supplied project path). Other projects' inventories and personal
 Desktop exports are outside this repository's scope.
 

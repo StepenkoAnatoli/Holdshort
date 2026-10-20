@@ -1,24 +1,24 @@
-# Contributing to SmartRouter
+# Contributing to Holdshort
 
-Thank you for helping improve SmartRouter. Documentation, reproducible bug reports,
+Thank you for helping improve Holdshort. Documentation, reproducible bug reports,
 tests, and focused code changes are all welcome. You do not need to be an expert in
 model routing to contribute.
 
 ## Choose a starting point
 
-- [Good first issues](https://github.com/StepenkoAnatoli/SmartRouter/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22)
+- [Good first issues](https://github.com/StepenkoAnatoli/Holdshort/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22)
   describe small tasks with clear acceptance checks.
-- [Help wanted](https://github.com/StepenkoAnatoli/SmartRouter/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22help%20wanted%22)
+- [Help wanted](https://github.com/StepenkoAnatoli/Holdshort/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22help%20wanted%22)
   identifies work where community contributions would help.
-- [LLM testing issues](https://github.com/StepenkoAnatoli/SmartRouter/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22llm%20evaluation%22)
+- [LLM testing issues](https://github.com/StepenkoAnatoli/Holdshort/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22llm%20evaluation%22)
   cover unseen fixtures, repeated GPT comparisons, Claude, offline Gemini adapters,
   local models, and usage capture. Each issue defines its acceptance criteria.
 - For a substantial change, open an issue describing the problem and proposed scope
   before investing in the implementation. Avoid duplicating an existing issue.
 
-Read the [README](README.md) first. The [canonical skill](skills/smart-router/SKILL.md)
-and [host contract](skills/smart-router/references/spec-v2.md) define behavior;
-the [engineering review](docs/SMARTROUTER_USAGE_REVIEW_2026-10-13.md) records known gaps.
+Read the [README](README.md) first. The [canonical skill](skills/holdshort/SKILL.md)
+and [host contract](skills/holdshort/references/spec-v2.md) define behavior;
+the [engineering review](docs/HOLDSHORT_USAGE_REVIEW_2026-10-13.md) records known gaps.
 
 ## Set up a fresh clone
 
@@ -29,13 +29,13 @@ Git for Windows and make Git Bash available on `PATH`. Use `python3` in place of
 Fork the repository on GitHub, then clone your fork and create a branch:
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/SmartRouter.git
-cd SmartRouter
-git remote add upstream https://github.com/StepenkoAnatoli/SmartRouter.git
+git clone https://github.com/YOUR-USERNAME/Holdshort.git
+cd Holdshort
+git remote add upstream https://github.com/StepenkoAnatoli/Holdshort.git
 git switch -c docs-improve-example
 python tools/install_hooks.py
 python tools/validate_skills.py --strict
-python tests/smart_router_decisions.py
+python tests/holdshort_decisions.py
 ```
 
 Set your intended Git author name and email in the clone before committing.
@@ -140,7 +140,7 @@ not be marked as beginner tasks merely because they need help.
 
 ## Report a bug
 
-Use the [bug report form](https://github.com/StepenkoAnatoli/SmartRouter/issues/new?template=bug_report.yml).
+Use the [bug report form](https://github.com/StepenkoAnatoli/Holdshort/issues/new?template=bug_report.yml).
 Include the commit, operating system, Python version, exact steps, expected result,
 and observed result. Prefer a minimal reproduction using synthetic data.
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Isolation-provenance check — does the delivered diff match its worktree+branch claim?
 
-The reviewer's question (see skills/smart-router-review/references/isolation-provenance.md):
+The reviewer's question (see skills/holdshort-review/references/isolation-provenance.md):
 a worker that was supposed to own brief T in `sr/<id>/<slug>` must have produced a diff
 that comes from THAT branch and touches ONLY permitted-effects paths. A diff that drifts
 outside its provenance is either a scope violation (Gate 1 / Brief permitted-effects) or

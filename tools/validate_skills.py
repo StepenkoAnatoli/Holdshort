@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package validator for SmartRouter Agent Skills.
+"""Package validator for Holdshort Agent Skills.
 
 Checks (per agentskills.io/specification, inspected 2026-10):
   1. Each skill directory contains SKILL.md with YAML frontmatter.
@@ -8,7 +8,7 @@ Checks (per agentskills.io/specification, inspected 2026-10):
   4. Optional fields' constraints: license (str), compatibility (1-500), metadata (str->str), allowed-tools (str).
   5. Relative file references in SKILL.md and references/*.md resolve to existing files (one level deep).
   6. No in-repo competing routing authority: no operational tier/flowchart/headers/score-approval
-     policy outside skills/smart-router/** (README/docs may describe the policy but must not
+     policy outside skills/holdshort/** (README/docs may describe the policy but must not
      restate operational rules).
 Exits 0 when all checks pass; nonzero otherwise. No network, no code execution of skill content.
 """
@@ -25,7 +25,7 @@ NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 FM_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
 # simple scalar/list parser subset for our known frontmatter fields
 DEFUNCT_OPERATIONAL_MARKERS = [
-    # old README policy's operational vocabulary — must not appear outside skills/smart-router
+    # old README policy's operational vocabulary — must not appear outside skills/holdshort
     (r"Difficulty: \[Trivial", "response-header mandate"),
     (r"chosen model tier", "tier header mandate"),
     (r"average score", "score-average approval"),

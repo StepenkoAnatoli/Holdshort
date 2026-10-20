@@ -3,8 +3,8 @@
 The dispatcher now reserves work, mandatory verification cash and verification
 call slots before transport. Task and pilot totals are shared across instances
 and restarts. This addresses the remaining-budget and independent-instance bugs
-tracked in [#47](https://github.com/StepenkoAnatoli/SmartRouter/issues/47) and
-[#48](https://github.com/StepenkoAnatoli/SmartRouter/issues/48).
+tracked in [#47](https://github.com/StepenkoAnatoli/Holdshort/issues/47) and
+[#48](https://github.com/StepenkoAnatoli/Holdshort/issues/48).
 
 The implementation has been tested with synthetic transports and real local
 processes. It does not establish provider qualification, final billing accuracy

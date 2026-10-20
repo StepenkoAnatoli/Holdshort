@@ -199,7 +199,7 @@
     },
     "D|T-01": {
       "arm": "D",
-      "arm_label": "SmartRouter skill flow (ordered gates + brief/verifier/review)",
+      "arm_label": "Holdshort skill flow (ordered gates + brief/verifier/review)",
       "cost_usd": "not measured (non-live; $0.00 modeled class)",
       "evidence": "arm-D contract: full skill flow on 'typo' \u2014 run_gates over all 4 candidates; choose_route \u2192 route='direct'; rejection reasons above are the ordered-gate trail; advisory summary via tests/decision_summary.py.",
       "expected": "ordered-gate route resolution (fail-closed, cheapest-preferred)",
@@ -212,7 +212,7 @@
     },
     "D|T-02": {
       "arm": "D",
-      "arm_label": "SmartRouter skill flow (ordered gates + brief/verifier/review)",
+      "arm_label": "Holdshort skill flow (ordered gates + brief/verifier/review)",
       "cost_usd": "not measured (non-live; $0.00 modeled class)",
       "evidence": "arm-D contract: full skill flow on 'mechanical' \u2014 run_gates over all 4 candidates; choose_route \u2192 route='direct'; rejection reasons above are the ordered-gate trail; advisory summary via tests/decision_summary.py.",
       "expected": "ordered-gate route resolution (fail-closed, cheapest-preferred)",
@@ -225,7 +225,7 @@
     },
     "D|T-03": {
       "arm": "D",
-      "arm_label": "SmartRouter skill flow (ordered gates + brief/verifier/review)",
+      "arm_label": "Holdshort skill flow (ordered gates + brief/verifier/review)",
       "cost_usd": "not measured (non-live; $0.00 modeled class)",
       "evidence": "arm-D contract: full skill flow on 'mechanical' \u2014 run_gates over all 4 candidates; choose_route \u2192 route='direct'; rejection reasons above are the ordered-gate trail; advisory summary via tests/decision_summary.py.",
       "expected": "ordered-gate route resolution (fail-closed, cheapest-preferred)",
@@ -238,7 +238,7 @@
     },
     "D|T-04": {
       "arm": "D",
-      "arm_label": "SmartRouter skill flow (ordered gates + brief/verifier/review)",
+      "arm_label": "Holdshort skill flow (ordered gates + brief/verifier/review)",
       "cost_usd": "not measured (non-live; $0.00 modeled class)",
       "evidence": "arm-D contract: full skill flow on 'text' \u2014 run_gates over all 4 candidates; choose_route \u2192 route='direct'; rejection reasons above are the ordered-gate trail; advisory summary via tests/decision_summary.py.",
       "expected": "ordered-gate route resolution (fail-closed, cheapest-preferred)",
@@ -251,7 +251,7 @@
     },
     "D|T-05": {
       "arm": "D",
-      "arm_label": "SmartRouter skill flow (ordered gates + brief/verifier/review)",
+      "arm_label": "Holdshort skill flow (ordered gates + brief/verifier/review)",
       "cost_usd": "not measured (non-live; $0.00 modeled class)",
       "evidence": "arm-D contract: full skill flow on 'text' \u2014 run_gates over all 4 candidates; choose_route \u2192 route='direct'; rejection reasons above are the ordered-gate trail; advisory summary via tests/decision_summary.py.",
       "expected": "ordered-gate route resolution (fail-closed, cheapest-preferred)",
@@ -273,5 +273,5 @@
   "decision_note": "No \u00a77 decision field is derived here; this ledger feeds arm-coverage counts only.",
   "extends": "docs/PHASE4_PILOT_REPORT.md \u00a72 (per-task evidence ledger)",
   "matrix_version": 1,
-  "model": "tests/smart_router_decisions.py deterministic gate-runner (non-live)"
+  "model": "tests/holdshort_decisions.py deterministic gate-runner (non-live)"
 }

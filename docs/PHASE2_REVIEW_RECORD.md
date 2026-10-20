@@ -10,13 +10,13 @@ revision plus owner acknowledgement — which remains outstanding.
 
 | Path | Role |
 | --- | --- |
-| [skills/smart-router/SKILL.md](../skills/smart-router/SKILL.md) | Canonical routing authority: ordered gates, output contract |
-| [skills/smart-router/references/gates.md](../skills/smart-router/references/gates.md) | Normative gate contract |
-| [skills/smart-router/references/brief-and-result.md](../skills/smart-router/references/brief-and-result.md) | Compact brief/result workflow |
-| [skills/smart-router-review/SKILL.md](../skills/smart-router-review/SKILL.md) | Blocker-review procedure; never selects |
-| [skills/smart-router-review/references/blocked-review.md](../skills/smart-router-review/references/blocked-review.md) | Blocker checklist/evidence record |
-| [skills/smart-router-eval-prep/SKILL.md](../skills/smart-router-eval-prep/SKILL.md) | Preregistration preparation; never authorizes trials |
-| [skills/smart-router-eval-prep/references/preregistration.md](../skills/smart-router-eval-prep/references/preregistration.md) | Preregistration checklist |
+| [skills/holdshort/SKILL.md](../skills/holdshort/SKILL.md) | Canonical routing authority: ordered gates, output contract |
+| [skills/holdshort/references/gates.md](../skills/holdshort/references/gates.md) | Normative gate contract |
+| [skills/holdshort/references/brief-and-result.md](../skills/holdshort/references/brief-and-result.md) | Compact brief/result workflow |
+| [skills/holdshort-review/SKILL.md](../skills/holdshort-review/SKILL.md) | Blocker-review procedure; never selects |
+| [skills/holdshort-review/references/blocked-review.md](../skills/holdshort-review/references/blocked-review.md) | Blocker checklist/evidence record |
+| [skills/holdshort-eval-prep/SKILL.md](../skills/holdshort-eval-prep/SKILL.md) | Preregistration preparation; never authorizes trials |
+| [skills/holdshort-eval-prep/references/preregistration.md](../skills/holdshort-eval-prep/references/preregistration.md) | Preregistration checklist |
 | [tools/validate_skills.py](../tools/validate_skills.py) | Packaging validator |
 | [README.md](../README.md) | Canonical-authority pointer; historical docs preserved |
 
@@ -29,7 +29,7 @@ revision plus owner acknowledgement — which remains outstanding.
 | Reference resolution one-level-deep | all SKILL.md + references | 0 broken links (validator catches this class) |
 | Related-name sweep for competing authority | README/docs/LICENSE + validator | no operational tier/flowchart/header/score-approval rules outside `skills/`; historical README content explicitly linked as non-operational (F4/S14) |
 | Secret-pattern scan | full tree | 0 hits |
-| Cross-references between skills | sibling pointers | `defers-to: smart-router` present in both non-canonical SKILL.md; canonical skill does not defer |
+| Cross-references between skills | sibling pointers | `defers-to: holdshort` present in both non-canonical SKILL.md; canonical skill does not defer |
 | Pinned spec revision stated | all skills | `docs/DEVELOPMENT_PLAN.md@d7c00f9` in frontmatter metadata |
 | **Packaging validator** | all skills | `python tools/validate_skills.py` → `OK: 3 skill(s) validated` (exit 0) |
 
