@@ -221,6 +221,9 @@ function validatePolicy(p, baseDir) {
   const fail = (m) => { throw invalid(`invalid policy: ${m}`); };
   if (!p || typeof p !== 'object') fail('not an object');
   if (!isStr(p.harness?.id)) fail('harness.id missing');
+  // ADR-0003: the upstream block is `holdshort`. Only the archived host-policy-1..5 keep the old key; a later policy
+  // carrying it has not migrated and would bind `holdshort: null` into every decision without a word
+  if (p.smartrouter !== undefined && !/^host-policy-[1-5]$/.test(p['policy-revision'] ?? '')) fail('the upstream block is named smartrouter; rename it holdshort (ADR-0003; only the archived host-policy-1..5 keep the old name)');
   const a = p.authorization;
   if (!a || !isStrArray(a['data-classes-permitted']) || !isStrArray(a['data-classes-forbidden']) || !isStrArray(a.destinations)) fail('authorization data classes or destinations missing');
   if (!isStrArray(a['project-stop-rules']) || a['project-stop-rules'].length < 3) fail('authorization.project-stop-rules needs the red-suite, gate-off and research-gate rules');

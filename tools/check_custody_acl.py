@@ -129,9 +129,16 @@ def default_root(env: dict | None = None) -> Path:
 
 
 def na_reason(root: Path, platform: str | None = None) -> str | None:
-    """None = verify now; otherwise the N/A reason. Surface absent is N/A, never a failure."""
+    """None = verify now; otherwise the N/A reason. Surface absent is N/A, never a failure.
+
+    ADR-0003: a pre-rename custody folder (smart-router) beside the root fails closed, present
+    or not: its keys would otherwise sit outside this audit. It is detected, never read."""
     if (platform or os.name) != "nt":
         return "N/A on this platform (the custody tree is a Windows-machine fact)"
+    legacy = root.parent / "smart-router"
+    if legacy.exists():
+        raise FailClosed(f"legacy custody folder {legacy} is present; move it to {root} "
+                         "(ADR-0003, CHANGELOG migration)")
     if not root.is_dir():
         return f"N/A — no custody root at {root} (nothing to verify on this machine)"
     return None

@@ -82,6 +82,9 @@ BASELINE_DEFAULT = TOOLS / "credential_hygiene_baseline.json"
 GH_CONFIG_ENV = "GH_CONFIG_DIR"
 CREDENTIALS_FILE_NAME = ".git-credentials"
 SECRETS_DIR_NAME = ".secrets/holdshort"
+# ADR-0003: the custody folder's name before the rename. A machine that still has it has not
+# migrated, and its keys would sit outside this check, so its presence fails closed. Never read.
+LEGACY_SECRETS_DIR_NAME = ".secrets/smart-router"
 
 # Helpers that read from a store this check can see. Matching is by the family name a
 # helper is written as (`manager`, a path to git-credential-manager, `!`-commands, ...).
@@ -405,6 +408,16 @@ def resolve_secrets_dir(override: Path | None) -> Path | None:
     return home / SECRETS_DIR_NAME
 
 
+def refuse_legacy_secrets_dir(home: Path | None) -> None:
+    """Fail closed while <home>/.secrets/smart-router exists (ADR-0003). Nothing in it is read."""
+    if home is None:
+        return
+    legacy = home / LEGACY_SECRETS_DIR_NAME
+    if legacy.exists():
+        raise FailClosed(f"legacy custody folder {legacy} is present; move it to "
+                         f"{home / SECRETS_DIR_NAME} (ADR-0003, CHANGELOG migration)")
+
+
 def plaintext_names(secrets_dir: Path | None) -> tuple[list[str], str]:
     """Top-level entry names under the secrets dir. Contents are NEVER read.
 
@@ -611,6 +624,8 @@ def inspect(store_path: Path | None = None, gh_config_override: Path | None = No
     if config is None:
         config = config_entries(git_env())
     secrets_path = secrets_dir if secrets_dir is not None else resolve_secrets_dir(None)
+    if secrets_dir is None:
+        refuse_legacy_secrets_dir(home)
     secret_names, secrets_desc = plaintext_names(secrets_path)
     return (entries, store_desc, store_available, hosts, hosts_desc, creds, malformed,
             config, secret_names, secrets_desc)

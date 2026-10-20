@@ -443,6 +443,27 @@ class CredentialHygiene(unittest.TestCase):
         self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
         self.assertIn("FAIL-CLOSED", r.stderr)
 
+    # C19 ------------------------------------------------------------------
+    def test_c19_legacy_custody_folder_fails_closed_without_being_read(self):
+        # ADR-0003: keys left in the pre-rename folder must not pass as "no secrets dir"
+        fake = "FAKE-LEGACY-KEY-0123456789"
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            env = env_for(tmp)
+            legacy = tmp / "userhome" / ".secrets" / "smart-router"
+            legacy.mkdir(parents=True)
+            (legacy / "plain.key").write_text(fake, encoding="utf-8")
+            r = run_cli(tmp, env)
+            self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+            self.assertIn("FAIL-CLOSED", r.stderr)
+            self.assertIn("legacy custody folder", r.stderr)
+            self.assertNotIn(fake, r.stdout + r.stderr, "the legacy folder is detected, never read")
+            # after the CHANGELOG move the same machine is judged on the new folder
+            legacy.rename(legacy.parent / "holdshort")
+            moved = run_cli(tmp, env)
+        self.assertNotIn("legacy custody folder", moved.stdout + moved.stderr)
+        self.assertIn("plain.key", moved.stdout, moved.stdout + moved.stderr)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

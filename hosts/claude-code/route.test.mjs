@@ -1,5 +1,5 @@
 // Tests for the Holdshort host adapter (route.mjs). Each test is named after the Holdshort
-// fixture it mirrors (tests/holdshort_decisions.py and references/gates.md at fbe7bca).
+// fixture it mirrors (tests/smart_router_decisions.py and references/gates.md at fbe7bca).
 // Node built-ins only: node --test docs/orchestration/smartrouter/route.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -4222,4 +4222,15 @@ test('README: How the onboarding proposal was applied (host-policy-6) names E1-E
   assert.match(friction, /\n24\. \*\*The proposal's `outcome:` form carries no tier\.\*\*/);
   const f24 = friction.slice(friction.indexOf('\n24. **')).replace(/\s+/g, ' ');
   assert.ok(f24.includes('`[@T<k>]`'), 'item 24 names the tier this host added');
+});
+
+test('ADR-0003: only the archived host-policy-1..5 may name the upstream block smartrouter - a later revision carrying it is refused (with or without a holdshort block) instead of binding holdshort: null; the migrated block loads', () => {
+  const hp5 = JSON.parse(readFileSync(HP5_OFF_PATH, 'utf8'));
+  assert.equal(loadPolicy(HP5_OFF_PATH)['policy-revision'], 'host-policy-5', 'an archived revision still loads');
+  for (const policy of [{ ...hp5, 'policy-revision': 'host-policy-6' }, { ...hp5, 'policy-revision': 'host-policy-7', holdshort: hp5.smartrouter }]) {
+    const path = writeJson(policy);
+    assert.throws(() => loadPolicy(path), (e) => e instanceof RouterError && e.code === 2 && /rename it holdshort \(ADR-0003/.test(e.message), policy['policy-revision']);
+  }
+  const migrated = Object.fromEntries(Object.entries(hp5).map(([k, v]) => [k === 'smartrouter' ? 'holdshort' : k, v]));
+  assert.equal(loadPolicy(writeJson({ ...migrated, 'policy-revision': 'host-policy-6' }))['policy-revision'], 'host-policy-6');
 });

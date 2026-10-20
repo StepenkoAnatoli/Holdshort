@@ -1203,7 +1203,7 @@ recorded whole at its outcome, so such a pair cannot say what they cost.
 
 Found while building revision 6 (unit sr-policy-6). The lead decides.
 
-1. **The proposal was not at the path the brief names.** `/home/user/holdshort` is still checked out at `5bd473a`
+1. **The proposal was not at the path the brief names.** `/home/user/smartrouter` is still checked out at `5bd473a`
    (PR #98), where `docs/proposals/calibration-first-onboarding.md` does not exist. It was read from Holdshort main as
    merged (`7f7fc75`, which contains PR #102's merge `bb3fa6c`), through the read-only main worktree of that repository
    (`git show origin/main:` gives the same bytes); nothing was copied but the passages this README quotes.
@@ -1246,7 +1246,7 @@ Found while building revision 6 (unit sr-policy-6). The lead decides.
 
 Found while building revision 5 (unit sr-policy-5). The lead decides.
 
-1. **The proposal was not at the path the brief names.** `/home/user/holdshort` is checked out at `5bd473a` (PR #98),
+1. **The proposal was not at the path the brief names.** `/home/user/smartrouter` is checked out at `5bd473a` (PR #98),
    where `docs/proposals/difficulty-tiers.md` does not exist. The proposal was read from Holdshort main as merged
    (`7f7fc75`, which contains PR #100, `2e30291`), with `git show` in that same repository; nothing was copied but the
    passages the brief asks to quote.

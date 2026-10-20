@@ -1,6 +1,6 @@
 # Phase 2 author-side review record (skill preview)
 
-Branch: `skills/holdshort-v1`, based on main at merge commit
+Branch: `skills/smart-router-v1`, based on main at merge commit
 `d7c00f96a17c35e6c47c5ba1f7e3a9160c966042`. Prepared by the plan author (Buffy). **This is author
 validation only; it is not an independent review, is not an approval, and does not close Phase 2.**
 Per plan sections 14/15, Phase 2 exit requires independently reviewed semantic coverage of the full

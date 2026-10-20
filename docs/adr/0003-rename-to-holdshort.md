@@ -32,7 +32,10 @@ files, change all files that says: smart router into Holdshort as suggested".
    `HOLDSHORT_BRIEF.json`, the custody folder is `~/.secrets/holdshort`, the skills are `holdshort`,
    `holdshort-review` and `holdshort-eval-prep`, the host policy's upstream block and the decision field
    written by `hosts/claude-code/route.mjs` are `holdshort`, and the canary's User-Agent and temporary
-   prefixes use the new name. Nothing reads the old names any more.
+   prefixes use the new name. Nothing reads the old names any more. Two checks make a missed migration loud
+   instead of silent; they detect the old names and never read through them: the custody checks
+   (`tools/check_credential_hygiene.py`, `tools/check_custody_acl.py`) fail closed while `~/.secrets/smart-router`
+   exists, and `route.mjs` refuses a policy after revision 5 that still names its upstream block `smartrouter`.
 4. **Kept as written**, because changing them would make a record false or point at something that does
    not exist:
    - `hosts/claude-code/trace/**`: the host's real ledger (decisions with Brief fingerprints, usage,
@@ -44,8 +47,17 @@ files, change all files that says: smart router into Holdshort as suggested".
      evidence refers to it.
    - Other projects' names: `BJFinancial/Smart-router` (and `src/smart_router/` inside its URLs),
      `beettlle/pi-smart-router`, `Magma-Devs/smart-router`, `ginsonko/newapi-smart-router`.
-   - MoonAliza's folder `docs/orchestration/smartrouter/`. It is the host's real path, and
-     `hosts/claude-code/` is a copy of it.
+   - MoonAliza's folder `docs/orchestration/smartrouter/`. It is the host's real path;
+     `hosts/claude-code/` was copied from it and differs from it since this rename.
+   - Facts about things that exist under the old name outside this tree: paths inside other projects' URLs
+     (`protocol/rpcsmartrouter/`, `core/smartrouter/`), the published release assets
+     (`SmartRouter-v1.0.0-pilot.zip`, `SmartRouter-v1.0.1.zip`) and the zip's contents as the MoonAliza handoff
+     names them, the copy of the published v1.0.1 release body (`tools/release/RELEASE_NOTES_v1.0.1.md`), git
+     branch names (`docs/corrected-smartrouter-development-plan`, `skills/smart-router-v1`), paths pinned to a
+     commit before the rename (`tests/smart_router_decisions.py` at `fbe7bca`) and a path quoted from a brief
+     (`/home/user/smartrouter`).
+   - The social video `docs/assets/social/local-first-look.mp4` until it is re-rendered; the two social PNGs
+     were re-exported from their renamed sources.
    - One verbatim chat quote in `hosts/claude-code/README.md` ("focus on smartrouter for now").
 5. The GitHub repository is renamed `StepenkoAnatoli/Holdshort` when this change merges. GitHub
    redirects the old URLs until a new repository takes the old name.

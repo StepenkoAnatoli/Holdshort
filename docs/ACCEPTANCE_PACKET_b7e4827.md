@@ -13,7 +13,7 @@ This publication creates a new PR head containing six documents: the original fo
 - [Immutable revision tree](https://github.com/StepenkoAnatoli/Holdshort/tree/b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2).
 - [Immutable base comparison](https://github.com/StepenkoAnatoli/Holdshort/compare/f575225642155e2e5abe1a718c8f6924e9a4f66d...b7e4827e7a568c4356212d50dfa4a79e1e4e7ca2).
 - Base/main observed: `f575225642155e2e5abe1a718c8f6924e9a4f66d`.
-- PR branch: `docs/corrected-holdshort-development-plan`.
+- PR branch: `docs/corrected-smartrouter-development-plan`.
 - Observed during packet preparation: open, draft, unmerged; requested revision equals PR head; four-document diff; no submitted GitHub reviews. These are timestamped observations, not promises about later state.
 - Review scope: specification coherence, authority, acceptance gates, literal fixtures, evidence limits, license scope and future dependencies. **No usable skill or runtime implementation exists in the reviewed tree.**
 

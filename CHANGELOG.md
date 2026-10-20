@@ -9,15 +9,23 @@
   - replace installed copies of the skills `smart-router`, `smart-router-review` and `smart-router-eval-prep` with
     `holdshort`, `holdshort-review` and `holdshort-eval-prep` (`defers-to: holdshort`);
   - hosts write the worker Brief as `HOLDSHORT_BRIEF.json`, not `SMARTROUTER_BRIEF.json`;
-  - move the credential custody folder `~/.secrets/smart-router` to `~/.secrets/holdshort`;
+  - move the credential custody folder `~/.secrets/smart-router` to `~/.secrets/holdshort`; until it moves,
+    `tools/check_credential_hygiene.py` and `tools/check_custody_acl.py` fail closed instead of reporting clean;
   - in a Claude Code host policy, rename the upstream block `smartrouter` to `holdshort`; new decision records carry
-    `holdshort`;
+    `holdshort`, and `route.mjs` refuses a policy after revision 5 that still carries `smartrouter`;
+  - decide again for any decision not yet dispatched: the Brief's text changed, so the pre-dispatch check refuses the
+    fingerprint recorded before the rename;
+  - delete `SMARTROUTER_BRIEF.json` from a worker worktree spawned before the rename before cleaning it up (cleanup
+    removes only `HOLDSHORT_BRIEF.json` and refuses a worktree with untracked files);
   - run the decision suite as `python tests/holdshort_decisions.py`.
 
   Kept as written: the host ledger `hosts/claude-code/trace/**`, `docs/evidence/**`, the frozen pool id
   `smartrouter-prospective-v1`, other projects' names (`BJFinancial/Smart-router`, `beettlle/pi-smart-router`,
-  `Magma-Devs/smart-router`, `ginsonko/newapi-smart-router`), MoonAliza's folder `docs/orchestration/smartrouter/` and
-  one verbatim chat quote.
+  `Magma-Devs/smart-router`, `ginsonko/newapi-smart-router`) and paths inside their URLs, MoonAliza's folder
+  `docs/orchestration/smartrouter/`, facts about things that still carry the old name (the published release asset
+  names and the zip's contents, the copy of the published v1.0.1 release notes, git branch names, paths pinned to a
+  commit before the rename, a path quoted from a brief) and one verbatim chat quote. The social PNGs were re-exported;
+  the social video still shows the old name until it is re-rendered.
 - **The calibration gate checks run on a Windows host** (`tools/test_calibration_kit.py` and the tests of the evidence
   check and the qualification table). On Windows 17 of the kit's 79 tests failed, so the pre-commit hook refused every
   commit there: it read files in the locale's encoding, ran a bare `python3`, wrote a Windows path into a git config

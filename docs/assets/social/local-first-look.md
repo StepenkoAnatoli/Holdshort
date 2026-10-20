@@ -5,6 +5,9 @@ It is not a screen recording, live-model benchmark, or demonstration of provider
 billing enforcement. Its graphical terminal panel reproduces locally observed
 checks from 14 October 2026.
 
+The current MP4 predates the 2026-10-20 rename (ADR-0003) and still shows SmartRouter and
+`tests/smart_router_decisions.py`. This storyboard uses the new names; re-render the video from it.
+
 | Time | Content |
 | --- | --- |
 | 0–8 s | Holdshort: model routing, clear checks, visible limits; experimental live-provider status. |
