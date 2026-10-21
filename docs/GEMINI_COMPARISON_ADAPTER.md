@@ -6,9 +6,10 @@ adapter ships no transport of its own, the checked-in authorization record is
 `unqualified`, and every test is mock-only — `provider_calls: 0`. A live
 comparison is a separate, explicitly authorized change (see *Bindings* below).
 
-Files: `tools/gemini_adapter.py` (mapping and gates),
-`tools/gemini_comparison_authorization.json` (the unqualified host record),
-`tools/test_gemini_adapter.py` (24 mock tests, in the regression gate).
+Files: `tools/gemini_adapter.py` (mapping, gates and a `MockTransport` for dry
+runs and tests), `tools/gemini_comparison_authorization.json` (the unqualified
+host record), `tools/test_gemini_adapter.py` (25 mock tests, in the regression
+gate).
 
 ## What it maps
 
@@ -66,12 +67,17 @@ truncated or filtered answer as capability.
 ## Frozen trial plan
 
 `frozen_trial_plan()` reads `tools/calibration/subject-pack/shared/manifest.json`
-(the cohort's packet), verifies the pinned manifest sha256 **and** every
+(the kit's shared packet), verifies the pinned manifest sha256 **and** every
 `source_hashes` entry, and emits one trial per case (`fix`, `pin`, `review`)
 with the manifest's base commit and tier. The oracle hash covers the manifest's
 `findings`, `commands`, `paths`, `accepted_fix`, `checkout`, `commit_rule` and
-`isolation` — the same packet and oracle the Claude and GPT arms ran, so a later
-Gemini result is comparable rather than a new task set. Any change to the pack
+`isolation` — the packet and oracle every host running the shared pack uses, so a
+later Gemini result is comparable rather than a new task set.
+
+The historical calibration runs (`docs/evidence/2026-10-17`, `2026-10-18`) used a
+host pack (`MoonAliza`), not the shared pack: the shared pack is the
+cross-host packet this kit defines, so the Gemini arm is comparable to any host
+that runs it, not retroactively to those host-pack runs. Any change to the pack
 files or the manifest refuses: a new pack version needs a new pinned plan and a
 new cohort, never a silent substitution.
 

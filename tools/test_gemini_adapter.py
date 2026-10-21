@@ -263,6 +263,18 @@ class EgressAndAuthorization(RecordCase):
         self.assertIn("MAX_TOKENS", str(caught.exception))
         self.assertEqual(caught.exception.usage, (20, 4096))
 
+    def test_mock_transport_replays_and_refuses_when_exhausted(self):
+        transport = ga.MockTransport(response(usage={"promptTokenCount": 3,
+                                              "candidatesTokenCount": 1}))
+        adapter = ga.build_dispatch_fn(authorization_path=self.write(qualified_record()),
+                                       transport=transport)
+        self.assertEqual(adapter("cloud-G", "q"), (3, 1))
+        self.assertEqual(len(transport.calls), 1)
+        self.assertEqual(transport.calls[0][1], MODEL)
+        self.assertEqual(transport.calls[0][0]["body"]["contents"][0]["parts"][0]["text"], "q")
+        with self.assertRaises(ga.GeminiRefused):
+            adapter("cloud-G", "second call with no queued response")
+
     def test_no_count_transport_is_invented(self):
         calls = []
         adapter = self.adapter(calls=calls, document=response())

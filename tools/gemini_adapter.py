@@ -74,6 +74,26 @@ class GeminiResult(NamedTuple):
     finish_reason: str
 
 
+class MockTransport:
+    """A canned transport: records requests and replays queued responses, no socket.
+
+    The issue asks for a mock transport, not only a transport hook: this is the
+    object a host dry run or a test hands to `build_dispatch_fn`. An exhausted
+    queue is a refusal, so a test can never accidentally compare one response
+    twice or fall through to a real request.
+    """
+
+    def __init__(self, *documents):
+        self.calls = []
+        self._queue = list(documents)
+
+    def __call__(self, mapped, model):
+        self.calls.append((mapped, model))
+        if not self._queue:
+            raise GeminiRefused("mock transport has no queued response")
+        return self._queue.pop(0)
+
+
 def _canonical(value) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"),
                                     ensure_ascii=False, allow_nan=False).encode("utf-8")).hexdigest()
