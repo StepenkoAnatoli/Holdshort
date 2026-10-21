@@ -1,8 +1,9 @@
 # Convenience targets. `make setup` is the one-command onboarding.
 
 SHELL := /bin/bash
-# python3: many distributions ship no bare `python`.
-PY ?= python3
+# Prefer python3: many distributions ship no bare `python`. Fall back to `python`
+# because a Windows Python install often provides only that name.
+PY ?= $(shell command -v python3 >/dev/null 2>&1 && echo python3 || echo python)
 
 .PHONY: setup gate hooks check clean-proof
 
