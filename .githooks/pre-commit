@@ -9,6 +9,10 @@ unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
 export HOME="$REPO_ROOT"
 GATE="tools/run_regression.py"
 [ -f "$GATE" ] || { echo "pre-commit: $GATE missing — refusing commit" >&2; exit 1; }
+# python3, not `python`: many distributions ship only the former, and a missing
+# interpreter must refuse the commit rather than skip the gate.
+PY="$(command -v python3 || command -v python || true)"
+[ -n "$PY" ] || { echo "pre-commit: no python3 on PATH — commit refused" >&2; exit 1; }
 
 UNSTAGED=$(git diff --name-only)
 UNTRACKED=$(git ls-files --others --exclude-standard)
@@ -22,7 +26,7 @@ if [ -n "$UNSTAGED$UNTRACKED" ]; then
 fi
 
 GATE_EXIT=0
-python "$GATE" || GATE_EXIT=$?
+"$PY" "$GATE" || GATE_EXIT=$?
 
 if [ "$STASHED" -eq 1 ]; then
   git stash pop -q || {
