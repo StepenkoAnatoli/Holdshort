@@ -14,11 +14,11 @@ egress. It does three things and nothing else:
   3. freezes the trial plan over the *same* subject pack and oracle as the
      comparison cohort, so a later run is comparable rather than a new task set.
 
-No transport is implemented here. `build_dispatch_fn` needs a caller-supplied
-transport (the tests pass a mock) *and* a host authorization record; the
-checked-in record is deliberately `unqualified`, so an ordinary run refuses
-before any request could be made (issue #59: real egress is off by default and
-outside ordinary CI). The bindings a future live comparison must satisfy are in
+No network transport is implemented here: `MockTransport` is the offline stand-in.
+`build_dispatch_fn` needs a caller-supplied transport *and* a host authorization
+record; the checked-in record is deliberately `unqualified`, so an ordinary run
+refuses before any request could be made (issue #59: real egress is off by
+default and outside ordinary CI). The bindings a future live comparison must satisfy are in
 docs/GEMINI_COMPARISON_ADAPTER.md.
 """
 from __future__ import annotations

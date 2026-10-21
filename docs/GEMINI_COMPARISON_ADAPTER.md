@@ -2,8 +2,9 @@
 
 Status: **offline preparation only** (issue #59). No Gemini destination, model id,
 price configuration or accounting scope is authorized in this repository. The
-adapter ships no transport of its own, the checked-in authorization record is
-`unqualified`, and every test is mock-only — `provider_calls: 0`. A live
+adapter ships no network transport (only the offline `MockTransport`), the
+checked-in authorization record is `unqualified`, and every test is mock-only —
+`provider_calls: 0`. A live
 comparison is a separate, explicitly authorized change (see *Bindings* below).
 
 Files: `tools/gemini_adapter.py` (mapping, gates and a `MockTransport` for dry
@@ -57,7 +58,7 @@ truncated or filtered answer as capability.
 - **price and accounting** — the record lacks `price_revision` or the sha256 of
   the price configuration, or its scope/currency is not
   `provider-reported-tokens` / `USD`;
-- **transport** — none supplied (this module has no egress path);
+- **transport** — none supplied (this module has no network path);
 - **change during a run** — the record's sha256 is recompared before every call,
   so an edited qualification stops the adapter instead of being half-honored;
 - **token counting** — `count_tokens` always refuses, because no counting
