@@ -1,6 +1,6 @@
 # Unit sr-packs-t1: four T1 host packs (build-core, build-tests, research-collect, docs-mechanical)
 
-Worktree and branch: created by the lead from the SmartRouter branch carrying `sr-kit-cases` (the launch prompt names
+Worktree and branch: created by the lead from the Holdshort branch carrying `sr-kit-cases` (the launch prompt names
 it). Work only under `tools/calibration/subject-pack/host/moonaliza-t1-*/` (four packs), `tools/test_calibration_kit.py`
 (one class per pack), `tools/calibration/subject-pack/README.md` (one paragraph), `CHANGELOG.md`, your report file
 under `docs/orchestration/2026-10-19-calibration-run-4/reports/`. Conventions: `briefs/conventions.md`.

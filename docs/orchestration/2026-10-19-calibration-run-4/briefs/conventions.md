@@ -4,6 +4,14 @@ Collected on 2026-10-19 from the MoonAliza briefs the run 4 briefs used to cite 
 `kit-builder.md`, `policy6-builder.md` on MoonAliza `build/github-sign-in`), so that a builder needs nothing from
 MoonAliza but the subject code the pack briefs name.
 
+## The rename (ADR-0003)
+
+- On 2026-10-20 the project was renamed SmartRouter to Holdshort (main 4ea8c6d, GitHub `StepenkoAnatoli/Holdshort`).
+  Use the new names: the policy's upstream block `holdshort`, the worker Brief `HOLDSHORT_BRIEF.json`, the skills
+  `holdshort`, `holdshort-review` and `holdshort-eval-prep`, the decision suite `tests/holdshort_decisions.py`, the
+  custody folder `~/.secrets/holdshort`. Kept as written: RUN.md entries before 2026-10-21, the frozen trace,
+  MoonAliza's `docs/orchestration/smartrouter/`, the `sr-` task ids and the scheduled task `smartrouter-run4-at-reset`.
+
 ## Commits
 
 - Identity: `git -c user.name=StepenkoAnatoli -c user.email=318295322+StepenkoAnatoli@users.noreply.github.com commit`.
@@ -12,7 +20,7 @@ MoonAliza but the subject code the pack briefs name.
 - One commit per task, each with the five-part report: what changed; why; what it touched; what you verified (each
   claim marked verified, untested or expected); what you got wrong and fixed (or "nothing to report"). Docs-only
   commits may use one line per part.
-- SmartRouter's pre-commit hook runs the full regression gate (`python tools/run_regression.py`) on the exact content
+- Holdshort's pre-commit hook runs the full regression gate (`python tools/run_regression.py`) on the exact content
   being committed. Never `--no-verify`, never `GATE_OFF`, never unwire the hook. No push: the lead integrates.
 - Commit with nothing unstaged or untracked: the hook otherwise sets them aside with `git stash`, and the stash stack
   is shared with every other worktree of the clone.
@@ -34,7 +42,8 @@ MoonAliza but the subject code the pack briefs name.
 
 - `python3` is a broken Microsoft Store alias there; run `python` (3.14). Bash scripts (`grade.sh`, `make-repo.sh`,
   `historyless-checkout.sh`) run under Git Bash. Node 24.
-- SmartRouter's gate takes about 25 minutes there, so each commit through the hook takes that long.
+- Holdshort's gate takes 36 to 50 minutes there (measured 2026-10-20 on main at the rename), so each commit
+  through the hook takes that long.
 - The MoonAliza clone (read only; the launch prompt names its path) has `node_modules` installed from a lockfile that
   is identical at `16f637f`, `01a8604` and its head; it serves as `MOONALIZA_CLONE`.
 

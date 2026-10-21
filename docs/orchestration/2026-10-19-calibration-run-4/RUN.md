@@ -128,3 +128,27 @@ read only, for the subject trees the packs export.
 - This branch was re-cut from e4bc1e1 with the folder staged, and this folder is committed through the hook in the
   same step, then pushed as a draft PR. The 04:46Z override task is done with that PR; Gate 4 still blocks every run
   4 unit until the reset (2026-10-24 18:00Z), and the scheduled task stays armed.
+
+## 2026-10-21 02:30 UTC (lead) - renamed to Holdshort; this branch moved onto the rename; the 07:34 entry corrected
+
+- The project is now Holdshort (ADR-0003): PR #112 merged as 4ea8c6d on 2026-10-20, and the GitHub repo is
+  `StepenkoAnatoli/Holdshort` (the old URL redirects). The policy's upstream block is `holdshort`: where the 2026-10-19
+  entries say `smartrouter.revision`, read `holdshort.revision`. `route.mjs` refuses a policy that still carries
+  `smartrouter`, except host-policy-1..5 and host-policy-6 as a frozen copy under `trace/policies/`.
+- Correction to the 07:34 entry: the folder was committed on e4bc1e1 but never pushed. GitHub has no
+  `orchestration/calibration-run-4` branch and no PR for it (checked 02:28Z), so the 04:46Z override's last step
+  (push, draft PR) is still open.
+- Rebased onto 4ea8c6d now (the run commit is 0527d08) instead of staying on e4bc1e1. Why: no run 4 decision or
+  dispatch exists, unit worktrees start from origin/main anyway, so nothing recorded is bound to pre-rename bytes; and
+  the briefs must describe the tree the units will see. The live policy loads on this tree (host-policy-6, `holdshort`).
+- Briefs and requests now use Holdshort for the project. `briefs/conventions.md` has the rename map and what keeps the
+  old name. policy7-builder G1 freezes the live, renamed bytes that sr-policy-7's decision binds, never a pre-rename
+  version; G4 moves `holdshort.revision` and names `tests/holdshort_decisions.py` for citations at the new commit.
+  The gate time is corrected to 36-50 minutes. Objectives, tiers and acceptance checks are unchanged.
+- Scheduled task `smartrouter-run4-at-reset` checked, not changed (the owner's call). Step 1's `git pull` would merge
+  origin/main (this branch's upstream; pull.rebase is false) without the hook's gate; the Windows check names
+  `origin/tools/calibration-kit-windows`, deleted on GitHub and kept only by a stale local ref that a prune would
+  remove, which would read as "not on main" and block every dispatch (`de25ea7` is on origin/main). Proposed fixes:
+  `gittoken/run4-scheduled-task-update.md`.
+- Gate 4 unchanged: it blocks until 2026-10-24 18:00Z; the task fires at 18:07Z.
+- Next action: the owner's yes or no on the task edits, and on pushing this branch and opening its draft PR.

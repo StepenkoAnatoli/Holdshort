@@ -1,6 +1,6 @@
 {
   "taskId": "sr-packs-t1",
-  "objective": "Four T1 host packs in SmartRouter tools/calibration/subject-pack/host/moonaliza-t1-*/ (docs/orchestration/2026-10-19-calibration-run-4/briefs/run4-packs-t1-builder.md): build-core (U2-R7, fix-shaped), build-tests (wire module, pin-shaped with three mutants), research-collect (electron-fuses project, gate-graded), docs-mechanical (five-part report checker, gate-graded); wrong-answer matrices first; make-repo.sh per pack; tests; docs lines.",
+  "objective": "Four T1 host packs in Holdshort tools/calibration/subject-pack/host/moonaliza-t1-*/ (docs/orchestration/2026-10-19-calibration-run-4/briefs/run4-packs-t1-builder.md): build-core (U2-R7, fix-shaped), build-tests (wire module, pin-shaped with three mutants), research-collect (electron-fuses project, gate-graded), docs-mechanical (five-part report checker, gate-graded); wrong-answer matrices first; make-repo.sh per pack; tests; docs lines.",
   "category": "build-ui",
   "unit": "sr-packs-t1",
   "estimatedTokens": 700000,
@@ -39,7 +39,7 @@
       "expect": "unit tests red-first then green, guard-removal proofs"
     },
     {
-      "command": "python3 tools/run_regression.py (SmartRouter) or node --test route.test.mjs plus the artifacts and conform_spec checks (adapter)",
+      "command": "python3 tools/run_regression.py (Holdshort) or node --test route.test.mjs plus the artifacts and conform_spec checks (adapter)",
       "expect": "full-suite comparison vs baseline: every existing check green, also through the pre-commit hook"
     },
     {

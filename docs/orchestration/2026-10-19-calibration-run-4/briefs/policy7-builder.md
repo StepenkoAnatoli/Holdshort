@@ -1,8 +1,8 @@
 # Unit sr-policy-7: host-policy-7, the adapter reads a calibration task object's category and the gate task
 
-Worktree and branch: created by the lead from the SmartRouter branch carrying `sr-kit-cases` (the launch prompt names
-it). The live adapter is SmartRouter's `hosts/claude-code/` (since 2026-10-19; MoonAliza's
-`docs/orchestration/smartrouter/` copy is no longer where SmartRouter's runs are recorded). Work only under
+Worktree and branch: created by the lead from the Holdshort branch carrying `sr-kit-cases` (the launch prompt names
+it). The live adapter is Holdshort's `hosts/claude-code/` (since 2026-10-19; MoonAliza's
+`docs/orchestration/smartrouter/` copy is no longer where Holdshort's runs are recorded). Work only under
 `hosts/claude-code/` (`route.mjs`, `route.test.mjs`, `host-policy.json`, `README.md`,
 `trace/policies/host-policy-6.json` as the fixture that freezes revision 6), your report file under
 `docs/orchestration/2026-10-19-calibration-run-4/reports/`. Conventions: `briefs/conventions.md` (beside this brief).
@@ -19,7 +19,11 @@ The kit unit `sr-kit-cases` (K1, K3) writes `category` into each calibration tas
 ## The lead's decisions
 
 G1. **Freeze revision 6**: copy the live policy to `trace/policies/host-policy-6.json`; the revision-6 table test
-    pins to the fixture, the live table test moves to revision 7 (as every revision did).
+    pins to the fixture, the live table test moves to revision 7 (as every revision did). Copy the live policy as it
+    is when the unit starts, which is the bytes sr-policy-7's decision binds; since the rename (ADR-0003) its upstream
+    block is `holdshort`. Do not copy a pre-rename version of host-policy-6: it names the block `smartrouter`, which
+    `route.mjs` accepts on host-policy-6 only as a frozen copy under `trace/policies/`. The fixture's sha256 pin is
+    sr-policy-7's bound digest, as host-policy-5's is sr-policy-6's.
 G2. **`rate` reads `category`.** For each task object (`pin`, `fix`, `review`, `gate`) a string `category` that is
     one of the policy's categories counts the grade under that category; absent, the positional mapping as today
     (runs 1-3 print unchanged: assert byte-equal `rate` output on the committed trace); a category the policy does
@@ -31,13 +35,15 @@ G3. **The grade entry line** `calibration-<n>: <category>[@T<k>] PASS|PARTIAL|FA
     tier supports a `qualified-for` entry.
 G4. **No routing change.** Host-policy-7 is revision 6 plus the key `"policy-revision": "host-policy-7"` and the
     README section; every `decide` assertion of the revision-6 table holds on revision 7 (assert it). The policy's
-    `smartrouter.revision` binding moves from `fbe7bca` to the SmartRouter main commit the unit starts from (recorded
-    for this revision on 2026-10-19); if a check pins the old value, move it too and say so in the report.
+    `holdshort.revision` binding (`smartrouter.revision` before ADR-0003) moves from `fbe7bca` to the Holdshort main
+    commit the unit starts from (recorded for this revision on 2026-10-19); if a check pins the old value, move it too
+    and say so in the report. A citation that moves to the new commit names `tests/holdshort_decisions.py`; one that
+    stays at `fbe7bca` keeps `tests/smart_router_decisions.py`, the file's name there.
 G5. **Tests**: G2's four branches (positional fallback byte-equal; a category counted; an unknown category refused;
     a gate without category refused), G1's fixture pinning, G4; guard proofs for each. README: a "Calibration task
     categories (host-policy-7)" section, the applied decisions G1-G6, friction items if any.
-G6. **README head.** The first paragraph says the adapter is live here, in SmartRouter `hosts/claude-code/`, for
-    SmartRouter's own runs (its ledger and trace beside it, the run folders under `docs/orchestration/`), and that
+G6. **README head.** The first paragraph says the adapter is live here, in Holdshort `hosts/claude-code/`, for
+    Holdshort's own runs (its ledger and trace beside it, the run folders under `docs/orchestration/`), and that
     MoonAliza is the subject of the host packs, read from a clone, not where the adapter runs.
 
 ## Deliverables and stop triggers

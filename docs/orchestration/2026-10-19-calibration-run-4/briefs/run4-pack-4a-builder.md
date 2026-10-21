@@ -1,10 +1,10 @@
 # Unit sr-pack-4a: the host subject pack for calibration run 4 stage 4a (`fix@T3`), subject X2-1
 
-Worktree and branch: created by the lead from SmartRouter `main` (the kit, #106-#108 merged; the launch prompt names
+Worktree and branch: created by the lead from Holdshort `main` (the kit, #106-#108 merged; the launch prompt names
 the head). Work only under `tools/calibration/subject-pack/host/moonaliza-x2-1/`,
 `tools/test_calibration_kit.py` (a new `HostPackX21` class), `tools/calibration/subject-pack/README.md` (one
 paragraph: a host pack example lives beside the shared one), `CHANGELOG.md` (one line), plus your report file under
-`docs/orchestration/2026-10-19-calibration-run-4/reports/`. SmartRouter's pre-commit hook runs the regression gate on
+`docs/orchestration/2026-10-19-calibration-run-4/reports/`. Holdshort's pre-commit hook runs the regression gate on
 every commit; never --no-verify, never unwire it; no push. Commit identity, trailers, five-part reports, red-first
 tests with guard-removal proofs, reports: `briefs/conventions.md` (beside this brief).
 

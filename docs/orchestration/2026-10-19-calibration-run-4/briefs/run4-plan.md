@@ -1,12 +1,12 @@
 # Calibration run 4: the lead's plan (prepared 2026-10-19 03:xx UTC, before the seven-day reset)
 
 Moved on 2026-10-19 from MoonAliza `build/github-sign-in` (`docs/orchestration/smartrouter/briefs/`, commit 46113d9)
-into this SmartRouter run folder, on the operator's instruction that SmartRouter work lives in SmartRouter. The
+into this Holdshort run folder, on the operator's instruction that Holdshort work lives in Holdshort. The
 decisions are unchanged. What changed: the paths, the facts PRs #106-#109 settled (the kit, pack and check are on main),
-and where the adapter runs: SmartRouter `hosts/claude-code/` now records the run (decisions, dispatches, outcomes,
+and where the adapter runs: Holdshort `hosts/claude-code/` now records the run (decisions, dispatches, outcomes,
 readings). MoonAliza is read only, for the subject trees the packs export.
 
-The tiers proposal Item 4 (SmartRouter `docs/proposals/difficulty-tiers.md`, merged as #100) stages run 4 by cost:
+The tiers proposal Item 4 (Holdshort `docs/proposals/difficulty-tiers.md`, merged as #100) stages run 4 by cost:
 4a `fix@T3`, 4b `review@T3`, 4c `pin-tests@T3`. Host-policy-6 (E6) adds a fourth need of its own: one T1 host-pack
 cell for each of `build-core`, `build-tests`, `research-collect` and `docs-mechanical`, the categories that lost
 every delegate for want of outcome rows. This plan covers 4a and the T1 cells; 4b and 4c wait for their subjects.
@@ -46,7 +46,7 @@ fresh reading. Preparation is lead-only work: this plan, the briefs, the request
   `pin | fix | review` and the adapter's `rate` maps them to `pin-tests | fix | review` by position
   (`CALIBRATION_TASKS`). A `build-core` cell is fix-shaped on persistence code; a `build-tests` cell is pin-shaped
   against mutants; `research-collect` and `docs-mechanical` cells are graded by a command's exit code with hash
-  invariants. So: one kit unit (`sr-kit-cases`, SmartRouter, from main) adds `category` on the task object,
+  invariants. So: one kit unit (`sr-kit-cases`, Holdshort, from main) adds `category` on the task object,
   `mutants` for a pin case, and a `gate` case kind; one adapter unit (`sr-policy-7`, host-policy-7) reads the task
   object's `category` when present and the `gate` task. Set aside: four fix-shaped cells all labelled `fix` and a
   hand-written mapping at ratification (the evidence check, rule e, would refuse a category the observations do not
@@ -75,8 +75,8 @@ fresh reading. Preparation is lead-only work: this plan, the briefs, the request
   `judging_profile` filled with cc-opus-high and its `review@T1` typed reference and the note that no cell uses it
   (the launch step requires one), `relayed_operator_text` recorded at the launch from the operator's latest chat
   message (A-1: the harness relays it; the candidate preamble reconciles it), both readings taken with nothing in
-  flight, `revision` the SmartRouter commit the kit is read from (SmartRouter main, 311c36f or the head the
-  launch reads). The freeze commit goes into SmartRouter `docs/evidence/<date>/claude-code-calibration-4a/`; the host
+  flight, `revision` the Holdshort commit the kit is read from (Holdshort main, 311c36f or the head the
+  launch reads). The freeze commit goes into Holdshort `docs/evidence/<date>/claude-code-calibration-4a/`; the host
   trace gets `trace/calibration-4/` when the results come back (the adapter reads `calibration-<n>`, so the four T1
   runs are `calibration-5` to `calibration-8` in the trace and named by category in their evidence folders).
 - **R4-9. What is not claimed.** No ordering between profiles, no T2 claim (Item 4: a T2 request routes to the
@@ -85,7 +85,7 @@ fresh reading. Preparation is lead-only work: this plan, the briefs, the request
 ## Dispatch commands (after the reset; the request files are beside this plan)
 
 ```
-cd <SmartRouter checkout>/hosts/claude-code
+cd <Holdshort checkout>/hosts/claude-code
 RQ=../../docs/orchestration/2026-10-19-calibration-run-4/briefs/requests
 node route.mjs usage <reading.json>          # a reading under 30 minutes old, nothing in flight
 node route.mjs decide $RQ/sr-pack-4a.json    # then dispatch, as for sr-pack
@@ -94,7 +94,7 @@ node route.mjs decide $RQ/sr-kit-cases.json
 ```
 
 Each request declares `difficultyTier` (T3: edit sets above three files, new harness parts). Worktrees: every unit from
-SmartRouter (the kit units from main; sr-policy-7 and sr-packs-t1 from the branch carrying sr-kit-cases); MoonAliza
+Holdshort (the kit units from main; sr-policy-7 and sr-packs-t1 from the branch carrying sr-kit-cases); MoonAliza
 is read from a clone, never written.
 
 ## Follow-ups recorded from the re-review of 2026-10-19

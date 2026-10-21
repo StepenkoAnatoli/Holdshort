@@ -1,6 +1,6 @@
 {
   "taskId": "sr-policy-7",
-  "objective": "Host policy revision 7 in SmartRouter hosts/claude-code/ (docs/orchestration/2026-10-19-calibration-run-4/briefs/policy7-builder.md): rate reads a calibration task object's category and the gate task; revision 6 frozen as a fixture; no routing change; tests red-first; README section.",
+  "objective": "Host policy revision 7 in Holdshort hosts/claude-code/ (docs/orchestration/2026-10-19-calibration-run-4/briefs/policy7-builder.md): rate reads a calibration task object's category and the gate task; revision 6 frozen as a fixture; no routing change; tests red-first; README section.",
   "category": "build-ui",
   "unit": "sr-policy-7",
   "estimatedTokens": 400000,
@@ -40,7 +40,7 @@
       "expect": "unit tests red-first then green, guard-removal proofs"
     },
     {
-      "command": "python3 tools/run_regression.py (SmartRouter) or node --test route.test.mjs plus the artifacts and conform_spec checks (adapter)",
+      "command": "python3 tools/run_regression.py (Holdshort) or node --test route.test.mjs plus the artifacts and conform_spec checks (adapter)",
       "expect": "full-suite comparison vs baseline: every existing check green, also through the pre-commit hook"
     },
     {

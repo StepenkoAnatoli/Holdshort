@@ -1,6 +1,6 @@
 # Unit sr-kit-cases: a category on calibration task objects, mutants for a pin case, and a gate-graded case kind
 
-Worktree and branch: created by the lead from SmartRouter `main` (the kit, #106-#108 merged; the launch prompt names
+Worktree and branch: created by the lead from Holdshort `main` (the kit, #106-#108 merged; the launch prompt names
 the head). Work only under `tools/calibration/` (`grade.sh`, `observations.py`, `run.template.js`, `README.md`,
 `subject-pack/README.md`), `tools/test_calibration_kit.py`, `tests/fixtures/calibration/`, `CHANGELOG.md`, your report
 file under `docs/orchestration/2026-10-19-calibration-run-4/reports/`. The regression gate runs on every commit through
