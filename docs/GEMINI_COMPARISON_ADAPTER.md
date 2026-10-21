@@ -62,8 +62,14 @@ truncated or filtered answer as capability.
 - **change during a run** — the record's sha256 is recompared before every call,
   so an edited qualification stops the adapter instead of being half-honored;
 - **token counting** — `count_tokens` always refuses, because no counting
-  endpoint is authorized. The dispatcher's pre-send reservation therefore
-  blocks rather than pricing a prompt at zero.
+  transport is implemented. The dispatcher's pre-send reservation therefore
+  blocks rather than pricing a prompt at zero, even if a record names a
+  `count_endpoint`.
+
+The record's keys are exact: `schema_version`, `issue`, `status`, `destination`,
+`profiles`, `accounting`, `count_endpoint` and `notes` (a list of strings). An
+unmodeled key refuses, because a field this adapter does not understand may be
+the one that authorizes spend.
 
 ## Frozen trial plan
 

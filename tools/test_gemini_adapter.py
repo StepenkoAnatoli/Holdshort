@@ -224,6 +224,8 @@ class EgressAndAuthorization(RecordCase):
                           {"profiles": {"cloud-G": {"model": MODEL}}},
                           {"count_endpoint": "https://example.test/count"},
                           {"issue": 58},
+                          {"notes": {"a": 1}},
+                          {"notes": [1]},
                           {"unexpected": True}):
             with self.subTest(overrides=sorted(overrides)):
                 with self.assertRaises(ga.GeminiRefused):
@@ -280,7 +282,7 @@ class EgressAndAuthorization(RecordCase):
         adapter = self.adapter(calls=calls, document=response())
         with self.assertRaises(ga.GeminiRefused) as caught:
             adapter.count_tokens("cloud-G", "question")
-        self.assertIn("count endpoint", str(caught.exception))
+        self.assertIn("token-count", str(caught.exception))
         self.assertEqual(calls, [])
 
     def test_authorization_change_stops_a_built_adapter(self):

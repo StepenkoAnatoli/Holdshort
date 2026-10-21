@@ -168,6 +168,9 @@ def load_authorization(path: Path = AUTHORIZATION_PATH) -> Dict[str, object]:
     _sha256_name(accounting["price_sha256"], "accounting price_sha256")
     if doc["count_endpoint"] is not None and doc["count_endpoint"] not in KNOWN_ENDPOINTS:
         raise GeminiRefused("count_endpoint is not an endpoint this adapter can shape")
+    notes = doc["notes"]
+    if not isinstance(notes, list) or any(not isinstance(note, str) for note in notes):
+        raise GeminiRefused("authorization notes must be a list of strings")
     return doc
 
 
@@ -290,8 +293,11 @@ def parse_response(document, *, model: str, max_output_tokens: int) -> GeminiRes
 
 
 def _refuse_count(profile_id: str, request: str) -> int:
+    # Even a record that names a count endpoint does not enable one: this module
+    # implements no counting transport, so the dispatcher must block instead of
+    # pricing the prompt at zero.
     raise GeminiRefused(
-        "no Gemini token-count endpoint is authorized: the dispatcher's pre-send reservation "
+        "no Gemini token-count transport is implemented: the dispatcher's pre-send reservation "
         "must block rather than price the prompt at zero")
 
 
