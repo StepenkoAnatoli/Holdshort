@@ -29,8 +29,7 @@
   `docs/orchestration/smartrouter/`, facts about things that still carry the old name (the published release asset
   names and the zip's contents, the copy of the published v1.0.1 release notes, git branch names, paths pinned to a
   commit before the rename and commands recorded as run before it, a path quoted from a brief) and one verbatim chat
-  quote. The social PNGs were re-exported;
-  the social video still shows the old name until it is re-rendered.
+  quote. The social PNGs were re-exported and the social video re-rendered.
 - **The calibration gate checks run on a Windows host** (`tools/test_calibration_kit.py` and the tests of the evidence
   check and the qualification table). On Windows 17 of the kit's 79 tests failed, so the pre-commit hook refused every
   commit there: it read files in the locale's encoding, ran a bare `python3`, wrote a Windows path into a git config
