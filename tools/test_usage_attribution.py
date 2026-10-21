@@ -162,6 +162,29 @@ class Cost(unittest.TestCase):
         self.assertEqual(cost["price_revision"], "prices-2")
         self.assertTrue(cost["billing_assumptions"])
 
+    def test_unknown_subsets_do_not_become_a_guessed_split(self):
+        unknown_cached = obs(counters={**FULL, "cached_input_tokens": None})
+        priced = ua.estimate_cost(unknown_cached,
+                                  {"input": 3.0, "cached_input": 0.3, "output": 15.0},
+                                  price_revision="prices-2")
+        self.assertIsNone(priced["cost_usd"])
+        self.assertTrue(any("cached-input count is unknown" in line
+                            for line in priced["billing_assumptions"]))
+
+        flat = ua.estimate_cost(obs(counters={**FULL, "cached_input_tokens": None,
+                                              "input_tokens": 1_000_000, "output_tokens": 100_000}),
+                                {"input": 3.0, "output": 15.0}, price_revision="prices-2")
+        self.assertEqual(flat["cost_usd"], 4.5)                # 1M*3 + 100k*15
+        self.assertTrue(any("all input" in line for line in flat["billing_assumptions"]))
+
+        unknown_reasoning = obs(counters={**FULL, "reasoning_output_tokens": None})
+        split = ua.estimate_cost(unknown_reasoning,
+                                 {"input": 3.0, "cached_input": 0.3, "output": 15.0,
+                                  "reasoning": 20.0}, price_revision="prices-2")
+        self.assertIsNone(split["cost_usd"])
+        self.assertTrue(any("reasoning count is unknown" in line
+                            for line in split["billing_assumptions"]))
+
     def test_cost_refuses_an_unpriced_cached_subset_and_a_missing_revision(self):
         record = obs()
         with self.assertRaises(ua.AttributionError):

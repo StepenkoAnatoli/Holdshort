@@ -1,6 +1,6 @@
 # Run-level usage and latency attribution
 
-Status: **first slice** of issue #61 (`tools/usage_attribution.py`, 17 synthetic
+Status: **first slice** of issue #61 (`tools/usage_attribution.py`, 18 synthetic
 tests in the regression gate). The record schema, validation, export whitelist,
 per-model aggregation and cost function exist and are pinned; the dispatcher
 does not emit these records yet, so no issue claim rests on a live run.
@@ -50,8 +50,15 @@ revision, the currency, the unit and the billing assumptions it applied. It
 returns `cost_usd: null` when the counters it needs are unknown. Cached input is
 billed at the cached-input rate and not again as uncached input; reasoning is
 billed at the reasoning rate when the sheet prices it separately, otherwise as
-output. An account-wide usage percentage is not accepted as a per-run
-measurement.
+output.
+
+An unknown subset is never split by guess: if the cached-input count is null and
+the sheet prices cached input separately, or the reasoning count is null and the
+sheet prices reasoning separately, the cost is `null` with that reason. When the
+sheet has no separate rate, the assumption says so explicitly (all input billed
+at the input rate; any reasoning billed as output), so the figure carries the
+approximation instead of hiding it. An account-wide usage percentage is not
+accepted as a per-run measurement.
 
 ## What remains for #61
 

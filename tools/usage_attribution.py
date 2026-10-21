@@ -221,6 +221,11 @@ def estimate_cost(record: dict, rates: dict, *, price_revision: str) -> dict:
         return {**common, "cost_usd": None,
                 "billing_assumptions": ["input or output counter is unknown: no cost is claimed"]}
     cached = usage["cached_input_tokens"]
+    if cached is None and "cached_input" in rates:
+        # A discounted cache rate makes the unknown split unpricable: guessing
+        # either half would turn an unknown into a number.
+        return {**common, "cost_usd": None, "billing_assumptions": [
+            "cached-input count is unknown, so the cached/uncached split cannot be priced"]}
     if cached:
         if "cached_input" not in rates:
             raise AttributionError("cached input tokens are present but no cached-input rate is "
@@ -230,8 +235,16 @@ def estimate_cost(record: dict, rates: dict, *, price_revision: str) -> dict:
         prompt_cost = ((usage["input_tokens"] - cached) * rates["input"]
                        + cached * rates["cached_input"])
     else:
+        if cached is None:
+            common["billing_assumptions"].append(
+                "cached-input count is unknown and the sheet has no cached-input rate: all input "
+                "is billed at the input rate")
         prompt_cost = usage["input_tokens"] * rates["input"]
     reasoning = usage["reasoning_output_tokens"]
+    if reasoning is None and "reasoning" in rates:
+        return {**common, "cost_usd": None, "billing_assumptions": [
+            "reasoning count is unknown, so output cannot be split between output and "
+            "reasoning prices"]}
     if reasoning:
         if "reasoning" in rates:
             common["billing_assumptions"].append("reasoning tokens are billed at the reasoning rate, "
@@ -242,6 +255,10 @@ def estimate_cost(record: dict, rates: dict, *, price_revision: str) -> dict:
             common["billing_assumptions"].append("reasoning tokens are billed as output")
             output_cost = usage["output_tokens"] * rates["output"]
     else:
+        if reasoning is None:
+            common["billing_assumptions"].append(
+                "reasoning count is unknown and the sheet has no reasoning rate: any reasoning "
+                "tokens are billed as output")
         output_cost = usage["output_tokens"] * rates["output"]
     return {**common, "cost_usd": round((prompt_cost + output_cost) / 1_000_000, 6)}
 
