@@ -107,6 +107,7 @@ class LedgerEntry:
     mirror_status: Optional[str] = None
     transport_started_at: Optional[float] = None
     transport_finished_at: Optional[float] = None
+    mode: str = "enforce"
 
 
 class DispatchFailure(RuntimeError):
@@ -130,7 +131,8 @@ class LiveDispatcher:
     """Shared, durable work/review reservations; transport runs outside the lock."""
 
     def __init__(self, prices, ledger_path, *, now_fn=time.time,
-                 dispatch_fn=None, confirm_egress=False, task_store=None):
+                 dispatch_fn=None, confirm_egress=False, task_store=None,
+                 shadow=False):
         caps = prices["pilot_caps"]
         for key in ("max_cost_per_task_usd", "max_cost_per_pilot_usd",
                     "max_elapsed_seconds_per_task"):
@@ -146,6 +148,7 @@ class LiveDispatcher:
         self.ledger_path = Path(ledger_path)
         self.now_fn, self.dispatch_fn = now_fn, dispatch_fn
         self.confirm_egress = confirm_egress
+        self.shadow = bool(shadow)
         self._tasks = {}
         self._resumer = (ResumableTasks(TaskStateStore(Path(task_store), now_fn=now_fn))
                          if task_store is not None else None)
@@ -208,6 +211,7 @@ class LiveDispatcher:
     def _record(self, doc, task, profile, decision, reason, **kwargs):
         kwargs.setdefault("review_reserved_usd", float(money(task["review_reserved"])))
         kwargs.setdefault("review_calls_reserved", task["review_calls_reserved"])
+        kwargs.setdefault("mode", "shadow" if self.shadow else "enforce")
         entry = LedgerEntry(self.now_fn(), task["task_id"], task["attempts"], profile,
                             0, 0, 0.0, decision, reason, **kwargs)
         BudgetStore.event(doc, asdict(entry))
@@ -234,6 +238,8 @@ class LiveDispatcher:
     def _check(self, doc, task, profile, work, review, purpose, review_calls):
         def reject(decision, reason):
             return self._record(doc, task, profile, decision, reason, purpose=purpose)
+        if self.shadow:
+            return None
         if task.get("abandoned", False):
             return reject("blocked-abandoned", "task was abandoned; counters and evidence retained")
         if task["verified"]:
@@ -403,7 +409,7 @@ class LiveDispatcher:
                 result = LedgerEntry(self.now_fn(), task_id, task["attempts"], profile_id, 0, 0, 0.0,
                                      "blocked-deadline", "deadline stopped send after reservation; transport never began",
                                      identifier, 0.0, float(money(task["review_reserved"])), "not-dispatched", purpose,
-                                     task["review_calls_reserved"])
+                                     task["review_calls_reserved"], mode="shadow" if self.shadow else "enforce")
                 cancelled = asdict(result)
                 cancelled["decision"] = "dispatch-cancelled"
                 BudgetStore.event(doc, cancelled)
@@ -549,7 +555,7 @@ class LiveDispatcher:
                                  "dispatch-error" if failure or not known else "dispatched", reason,
                                  identifier, float(reserve), float(money(task["review_reserved"])),
                                  "observed" if known else "unknown", purpose, task["review_calls_reserved"],
-                                 float(cost if known else known_floor))
+                                 float(cost if known else known_floor), mode="shadow" if self.shadow else "enforce")
             result.settlement_status = "committed"
             result.transport_started_at = pending.get("transport_started_at")
             result.transport_finished_at = pending.get("transport_finished_at")
@@ -668,6 +674,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--ledger", default=str(LEDGER_DEFAULT))
     ap.add_argument("--task-store", default=None,
                     help="optional JSON state mirrors; authoritative counters always persist beside the ledger")
+    ap.add_argument("--shadow", action="store_true",
+                    help="shadow mode: do not enforce caps; record actual vs. estimated cost for G2 evidence")
     args = ap.parse_args(argv)
 
     prices = load_prices(PRICES_PATH)
@@ -692,7 +700,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return path if path.is_absolute() else REPO_ROOT / path
     task_store = repository_path(args.task_store) if args.task_store else None
     d = LiveDispatcher(prices, repository_path(args.ledger), confirm_egress=args.confirm_egress,
-                       dispatch_fn=dispatch_fn, task_store=task_store)
+                       dispatch_fn=dispatch_fn, task_store=task_store, shadow=args.shadow)
     try:
         e = d.attempt(args.task_id, args.profile, args.request,
                       work_bound=args.work_bound, review_bound=args.review_bound,
