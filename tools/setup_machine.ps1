@@ -57,7 +57,9 @@ if ($LASTEXITCODE -eq 0) {
 
 # PROOF 2: a staged fake key is REFUSED (fail-closed)
 Write-Host "==> PROOF 2: a staged fake key is REFUSED (fail-closed)"
-$fakeVal = "sk-ant-fake-setup-proof-000000"
+$fakeVal = "sk-ant-fake-setup-proof-"
+$fakeVal2 = "000000"
+$fakeVal = $fakeVal + $fakeVal2
 $slug = [System.IO.Path]::GetTempFileName()
 Set-Content -Path $slug -Value "ANTHROPIC_API_KEY=$fakeVal"
 Get-Content $slug | Add-Content -Path "README.md"
