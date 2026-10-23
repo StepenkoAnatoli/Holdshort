@@ -93,7 +93,6 @@ CHECKS = [
     ("test_task_crosscheck", [sys.executable, "tools/test_task_crosscheck.py"]),
     ("test_claude_code_host_artifacts", [sys.executable, "tools/test_claude_code_host_artifacts.py"]),
     ("test_calibration_kit", [sys.executable, "tools/test_calibration_kit.py"]),
-    ("test_generic_host", [sys.executable, "tools/test_generic_host.py"]),
     ("test_check_calibration_evidence", [sys.executable, "tools/test_check_calibration_evidence.py"]),
     ("check_calibration_evidence", [sys.executable, "tools/check_calibration_evidence.py"]),
     ("test_qualification_table", [sys.executable, "tools/test_qualification_table.py"]),
@@ -134,6 +133,7 @@ CHECKS = [
     ("test_skill_adherence", [sys.executable, "tools/test_skill_adherence.py"]),
     ("test_conform_spec", [sys.executable, "tools/test_conform_spec.py"]),
     ("test_watch_app_db_secrets", [sys.executable, "tools/test_watch_app_db_secrets.py"]),
+    ("test_generic_host", [sys.executable, "tools/test_generic_host.py"]),
 ]
 
 
