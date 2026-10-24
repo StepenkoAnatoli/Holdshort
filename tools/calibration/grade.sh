@@ -17,7 +17,9 @@
 # swapped in (redAtMutants: {id: bool}); without mutants the pin grade is what it always was. A gate case is graded by
 # its own command (cases.gate.commands.gate, exit 0), its invariants (each path's files hash as at the base, read as the
 # checkout stands), its required paths (each exists) and a commit; the invariants and the required paths are read
-# before the command runs, so they grade the candidate's work and not the command's side effects, which stay.
+# before the command runs, so they grade the candidate's work and not the command's side effects, which stay. A mutant
+# whose source files equal the base's or the accepted fix's is refused; a command that overruns its timeout (a test,
+# lint or gate command) has its whole process tree killed and reads as exit 124.
 #
 # Exit 0 with the grade (PASS true or false) as one JSON object; 2 on a bad argument, an unusable manifest or a
 # checkout that shares a path with the pack; 3 with {"error": ...} when the checkout is missing or has no commit.
@@ -25,7 +27,7 @@ set -u
 [ $# -eq 3 ] || { echo "usage: grade.sh MANIFEST pin|fix|gate CHECKOUT" >&2; exit 2; }
 command -v python3 >/dev/null 2>&1 || { echo "grade.sh: python3 not found" >&2; exit 2; }
 exec python3 -I - "$@" <<'PY'
-import json, os, re, shlex, subprocess, sys, tempfile, time
+import json, os, re, shlex, signal, subprocess, sys, tempfile, time
 from pathlib import Path
 
 def refuse(msg, code=2):
@@ -37,8 +39,9 @@ if task not in ("pin", "fix", "gate"):
     refuse(f"case must be pin, fix or gate, not {task!r} (a review is graded by the grader agent)")
 
 def inside(path):
-    """A path the manifest names inside the checkout: relative, with '/', no '..' segment."""
-    return isinstance(path, str) and path != "" and not path.startswith("/") and ":" not in path and ".." not in path.replace("\\", "/").split("/")
+    """A path the manifest names inside the checkout: relative (not rooted with '/' or '\\', no drive letter), no '..'
+    segment."""
+    return isinstance(path, str) and path != "" and not path.startswith(("/", "\\")) and ":" not in path and ".." not in path.replace("\\", "/").split("/")
 
 mutants = []
 try:
@@ -93,6 +96,19 @@ for rev in revs:
     if subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}"], capture_output=True).returncode:
         refuse(f"{rev} is not a commit in the pack repository {repo}")
 
+def show(rev, path):
+    p = subprocess.run(["git", "-C", str(repo), "show", f"{rev}:{path}"], capture_output=True)
+    return p.stdout if p.returncode == 0 else None
+
+if mutants:  # a mutant only swaps paths.source: one whose files equal the base's adds nothing, one equal to the accepted fix's fails every pin
+    src_base, src_acc = ({f: show(rev, f) for f in sources} for rev in (base, accepted))
+    for mu in mutants:
+        src = {f: show(mu["commit"], f) for f in sources}
+        if src == src_base:
+            refuse(f"cases.pin.mutants {mu['id']}: its paths.source files equal the base's, so it adds nothing to the base's red")
+        if src == src_acc:
+            refuse(f"cases.pin.mutants {mu['id']}: its paths.source files equal the accepted fix's, so no candidate's pin can be red at it")
+
 def base_blobs(path):
     """{file: blob id} of the files at or under path in the case's base commit."""
     out = subprocess.run(["git", "-C", str(repo), "ls-tree", "-r", "-z", "--full-tree", base, "--", path], capture_output=True, text=True).stdout
@@ -119,6 +135,26 @@ def git(*args):
 
 def names(*args):
     return [x for x in git(*args).split("\0") if x]
+
+def run_bash(cmd):
+    """The exit code of `bash -c cmd` in the checkout, 124 when it overruns the timeout. A timeout kills the command's
+    whole process tree (taskkill /T on Windows, the process group elsewhere): killing bash alone would leave a node or
+    python child writing into the checkout after the grade."""
+    p = subprocess.Popen(["bash", "-c", cmd], cwd=cand, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=os.name != "nt")
+    try:
+        return p.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)], stdin=subprocess.DEVNULL, capture_output=True, timeout=60)
+            else:
+                os.killpg(p.pid, signal.SIGKILL)
+        except (OSError, subprocess.SubprocessError):
+            pass
+        p.kill()
+        p.wait()
+        return 124
 
 try:
     roots = git("rev-list", "--max-parents=0", "HEAD").split()
@@ -148,11 +184,7 @@ if task == "gate":
 
     intact = {x: cand_blobs(x) == base_inv[x] for x in invariants}
     present = {x: (cand / x).exists() for x in required}
-    try:
-        gate_exit = subprocess.run(["bash", "-c", gate_cmd], cwd=cand, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                   stderr=subprocess.DEVNULL, timeout=timeout).returncode
-    except subprocess.TimeoutExpired:
-        gate_exit = 124
+    gate_exit = run_bash(gate_cmd)
     result = {"task": task, "head": head, "commits": commits, "changed": changed, "staged": staged, "untracked": untracked,
               "gateExit": gate_exit, "invariantsIntact": intact, "requiredPresent": present, "committed": commits > 0,
               "PASS": gate_exit == 0 and all(intact.values()) and all(present.values()) and commits > 0}
@@ -168,11 +200,7 @@ def run_tests(files):
     with tempfile.TemporaryDirectory() as td:
         report = Path(td) / "report.json"
         cmd = test_cmd.replace("{files}", " ".join(shlex.quote(f) for f in files)).replace("{report}", shlex.quote(str(report)))
-        try:
-            code = subprocess.run(["bash", "-c", cmd], cwd=cand, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                  stderr=subprocess.DEVNULL, timeout=timeout).returncode
-        except subprocess.TimeoutExpired:
-            code = 124
+        code = run_bash(cmd)
         r = {"passed": None, "failed": None, "total": None, "exit": code}
         if mode == "vitest-json":
             try:
@@ -196,15 +224,7 @@ def lint(files):
     if not lint_cmd:
         return "none"
     cmd = lint_cmd.replace("{files}", " ".join(shlex.quote(f) for f in files))
-    try:
-        p = subprocess.run(["bash", "-c", cmd], cwd=cand, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        return "fail"
-    return "ok" if p.returncode == 0 else "fail"
-
-def show(rev, path):
-    p = subprocess.run(["git", "-C", str(repo), "show", f"{rev}:{path}"], capture_output=True)
-    return p.stdout if p.returncode == 0 else None
+    return "ok" if run_bash(cmd) == 0 else "fail"
 
 saved = {f: ((cand / f).read_bytes() if (cand / f).is_file() else None) for f in sources}
 saved_mtime = {f: (cand / f).stat().st_mtime_ns for f in sources if (cand / f).is_file()}

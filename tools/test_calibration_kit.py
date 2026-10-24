@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import unittest
 from pathlib import Path
 
@@ -1934,6 +1935,26 @@ class KitCaseGrades(unittest.TestCase):
             self.assertEqual(code, 2, f"{bad}: {out}")
             self.assertIn(word, out, bad)
 
+    def test_k2_a_vacuous_mutant_is_refused(self):
+        # a mutant whose paths.source files equal the base's adds nothing (every pin red at the base is red at it); one
+        # whose files equal the accepted fix's (a change outside paths.source, say) fails every candidate (review R-2)
+        pack, c = make_pack(self.root, self.env)
+        cand = self.pin_cell(c, "pin-vacuous", PIN_BOTH)
+        m = json.loads((pack / "manifest.json").read_text(encoding="utf-8"))
+        repo, m1 = c["repo"], add_mutant(c, self.env, "11", MUTANT_11)
+        sh(["git", "checkout", "-q", "-b", "mutant-outside", c["accepted"]], repo, self.env)
+        (repo / "docs" / "note.md").write_text("a change outside paths.source\n")
+        outside = commit_all(repo, self.env, "a mutant that changes nothing in paths.source")
+        sh(["git", "checkout", "-q", "--detach", c["accepted"]], repo, self.env)
+        for commit, word in ((c["base"], "M-V: its paths.source files equal the base's"),
+                             (c["accepted"], "M-V: its paths.source files equal the accepted fix's"),
+                             (outside, "M-V: its paths.source files equal the accepted fix's")):
+            m["cases"]["pin"]["mutants"] = [{"id": "M-1", "commit": m1}, {"id": "M-V", "commit": commit}]
+            (pack / "manifest.json").write_text(json.dumps(m, indent=1))
+            code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)
+            self.assertEqual(code, 2, f"{word}: {out}")
+            self.assertIn(word, out)
+
     def gate_cell(self, c, name, notes="ok\n", summary=True, commit=True, also=None):
         cand = self.candidate(c["repo"], c["base"], name)
         (cand / "notes.txt").write_text(notes)
@@ -2017,6 +2038,54 @@ class KitCaseGrades(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(d["gateExit"], 124, out)
         self.assertIs(d["PASS"], False)
+
+    def test_k3_a_gate_that_overruns_its_timeout_leaves_no_child_writing(self):
+        # the timeout kills the gate's whole process tree: a python (or node) child of bash would otherwise outlive the
+        # kill and keep writing into the checkout after the grade (review R-5)
+        case = copy.deepcopy(GATE_CASE)
+        case["commands"] = {"gate": "python3 -c \"import time; time.sleep(4); open('late.txt', 'w').write('late')\"; true", "timeout_seconds": 1}
+        pack, c = make_gate_pack(self.root, self.env, case)
+        cand = self.gate_cell(c, "gate-child")
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["gateExit"], 124, out)
+        self.assertIs(d["PASS"], False)
+        time.sleep(7)
+        self.assertFalse((cand / "late.txt").exists(), "the gate command's child outlived the timeout and wrote into the checkout")
+
+    def test_k3_the_grade_reads_the_paths_before_the_gate_command_runs(self):
+        # a gate command that itself makes the required path and writes under an invariant directory: the grade reads
+        # both before the command runs, so the command's side effects neither pass a candidate nor fail one (review R-1)
+        case = copy.deepcopy(GATE_CASE)
+        case["commands"] = {"gate": "mkdir -p out captures && echo made > out/summary.md && echo made > captures/by-gate.txt && python3 check.py",
+                            "timeout_seconds": 60}
+        pack, c = make_gate_pack(self.root, self.env, case)
+        lacking = self.gate_cell(c, "gate-lacking", summary=False)
+        code, d, out = grade(pack / "manifest.json", "gate", lacking, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["gateExit"], 0, out)
+        self.assertEqual(d["requiredPresent"], {"out/summary.md": False}, out)
+        self.assertIs(d["PASS"], False, out)
+        self.assertTrue((lacking / "out" / "summary.md").is_file())  # the command ran and its side effects stay
+        good = self.gate_cell(c, "gate-made")
+        code, d, out = grade(pack / "manifest.json", "gate", good, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["invariantsIntact"], {"data/ledger.txt": True, "captures": True}, out)
+        self.assertIs(d["PASS"], True, out)
+        self.assertTrue((good / "captures" / "by-gate.txt").is_file())
+
+    def test_k3_a_rooted_or_drive_path_is_refused(self):
+        # each clause of grade.sh's inside(): a '/'-rooted path, a '\\'-rooted one, a drive-letter one (review R-4)
+        for i, bad in enumerate(("/x", "\\x", "C:x", "C:/x")):
+            case = copy.deepcopy(GATE_CASE)
+            case["required_paths"] = [bad]
+            root = self.root / f"p{i}"
+            root.mkdir()
+            pack, c = make_gate_pack(root, self.env, case)
+            cand = self.candidate(c["repo"], c["base"], f"cand-p{i}")
+            code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+            self.assertEqual(code, 2, f"{bad}: {out}")
+            self.assertIn(f"required_paths names {bad!r}, which is not a relative path inside the checkout", out)
 
     def test_k3_a_gate_case_the_grade_cannot_honour_is_refused(self):
         outside = "which is not a relative path inside the checkout"

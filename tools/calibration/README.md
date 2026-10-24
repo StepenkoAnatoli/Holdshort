@@ -183,8 +183,9 @@ host-policy-7, in place of the position mapping; the review's category sits on `
 source in turn (each swap with its own mtime step, as for the base and the accepted source) and requires the
 candidate's new tests red at every one, as well as red at the base and green with the accepted source. The grade
 carries `atMutants` (the test run per mutant) and `redAtMutants: {id: bool}`, and `observations.py` copies
-`redAtMutants` into the pin task object. Without mutants the pin grade carries neither key. A pin case is red at its
-base by rule, so a pack whose rules hold at the base needs a base where they fail.
+`redAtMutants` into the pin task object. Without mutants the pin grade carries neither key. A mutant whose
+`paths.source` files equal the base's (it adds nothing) or the accepted fix's (no pin could be red at it) is refused. A
+pin case is red at its base by rule, so a pack whose rules hold at the base needs a base where they fail.
 
 **`gate`** (`cases.gate`). A case kind graded by a command: the candidate's prompt is the case's `instructions` after
 the common preamble (the relayed-text reconciliation, the checkout, the commit command), and `run.template.js` runs a
@@ -192,8 +193,10 @@ gate item per profile like a pin or fix item, with no grader agent. `grade.sh ga
 `commands.gate` exits 0 in the candidate's checkout, every `invariants` path holds the files and content it holds at
 the base, every `required_paths` path exists, and the candidate committed; the grade carries `gateExit`,
 `invariantsIntact` and `requiredPresent` (each a `{path: bool}` map) and `committed`. `observations.py` counts gate cells
-in `scores.json` (`cells.gate`, `category_mapping.gate`). One case per kind per pack stays the rule. A gate-only pack
-needs no `subject`, `paths`, `commands` or `accepted_fix`.
+in `scores.json` (`cells.gate`, `category_mapping.gate`). The invariants and the required paths are read before the
+command runs, so a command that writes files neither passes a candidate nor fails one. A command (gate, test or lint)
+that overruns its timeout has its whole process tree killed and reads as exit 124. One case per kind per pack stays the
+rule. A gate-only pack needs no `subject`, `paths`, `commands` or `accepted_fix`.
 
 **A null `judging_profile`.** A run whose manifest has no review case judges nothing (pin, fix and gate are graded
 mechanically), so its protocol may record `judging_profile: null`; the launch step refuses null when the manifest has a

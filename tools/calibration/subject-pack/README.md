@@ -78,7 +78,8 @@ grader to read, so they say what the module must do, never how the accepted fix 
   - `cases.pin.mutants`: optional; a list of single-rule mutants of the accepted source, each `{id, commit}`. With it,
     `grade.sh pin` also requires the candidate's new tests red with each mutant's source swapped in (`redAtMutants`).
     - `cases.pin.mutants[].id`: the mutant's id, as the grade reports it (each id once).
-    - `cases.pin.mutants[].commit`: a commit in the pack's repository holding the mutant's `paths.source` files.
+    - `cases.pin.mutants[].commit`: a commit in the pack's repository holding the mutant's `paths.source` files; they
+      must differ from both the base's and the accepted fix's (grade.sh refuses a mutant that equals either).
   - `cases.gate`: optional; a task graded by a command rather than by tests against an accepted fix. A pack with only a
     gate case needs no `subject`, `findings`, `paths`, `commands` or `accepted_fix`.
     - `cases.gate.base`: the commit the case's checkouts hold.
@@ -93,7 +94,8 @@ grader to read, so they say what the module must do, never how the accepted fix 
     - `cases.gate.invariants`: paths (files or directories) whose files must hash as at the base, read as the
       checkout stands before the command runs (committed or not); a file added or removed under a directory breaks it.
       Each must exist at the base.
-    - `cases.gate.required_paths`: paths that must exist in the checkout before the command runs.
+    - `cases.gate.required_paths`: paths that must exist in the checkout before the command runs. Every invariant and
+      required path is relative: one rooted with `/` or `\`, with a drive letter or with a `..` segment is refused.
 - `paths`: what grade.sh reads in a candidate's checkout.
   - `paths.source`: the source files the accepted fix changes; swapped for the accepted or base version while grading.
   - `paths.source_dir`: a pin cell may change nothing under it.

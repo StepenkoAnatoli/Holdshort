@@ -3,16 +3,15 @@
 Unit: sr-kit-cases (run 4 plan R4-4), brief `briefs/run4-kit-cases-builder.md`. Branch `build/sr-kit-cases`, made
 from `origin/main` 0a6d341.
 
-**Final verdict: DONE, committed through the hook (see "Continuation, 2026-10-24" at the end).** The first attempt
-stopped at STOP-1, described in the next sections as it was written then. The lead widened the permitted paths to
-`tests/fixtures/calibration-evidence/**`, for regeneration by the kit's own command only. The continuation
-regenerated those fixtures and committed the work. K1 is unchanged.
+**Final verdict: DONE, committed through the hook as f9e7b3b (base 0a6d341); the regression gate passed on that
+commit.** The final state is described in "What changed", "Tests", "Guard-removal proofs", "Checks" and "Continuation,
+2026-10-24". The lead widened the permitted paths to `tests/fixtures/calibration-evidence/**`, for regeneration by the
+kit's own command only; K1 is unchanged. The first attempt stopped at STOP-1; that story is kept as history in the
+next section. (Report corrected in fix round 1, review finding R-6: this opening, the Checks section and the sha.)
 
-First attempt, as written at the stop: **Verdict: STOPPED, nothing committed.** The branch head was still 0a6d341.
-All the work below was staged in the worktree, uncommitted, and this report is part of it. The K3 stop trigger did
-not fire. The stop was a conflict between K1 and the permitted paths (next section).
+## History: the first attempt stopped (STOP-1), K1 changed kit-built fixtures outside the permitted paths
 
-## Why stopped: K1 changes kit-built fixtures outside the permitted paths
+As written at the stop, when nothing was committed and the branch head was still 0a6d341.
 
 The pre-commit regression gate refused the commit with two failures, both in `tools/test_check_calibration_evidence.py`.
 
@@ -160,7 +159,8 @@ The brief's K5 list maps onto these tests:
 Each guard was removed in a scratch copy of the worktree, outside the repository. The named tests were run, the red
 ones recorded, and the copy restored. The first pass found four guards that no test caught. Per the conventions
 ("a guard no test catches is a missing test"), the tests were strengthened and those guards re-proved. The table
-shows the final state.
+shows the final state: 26 guards in the kit files (G1-G16, O1-O6, T1-T4) plus D1, a test change, so 27 rows; the
+commit message's "26 guard removals" counts the guards.
 
 | Guard removed | Tests that go red |
 |---|---|
@@ -213,9 +213,10 @@ What the four first-pass misses showed:
   CHANGELOG).
 - Baseline before any change: the kit file's 80 tests OK (1 skipped) in 7 m 47 s. Full file after the change: 108
   tests, 1 failure, fixed below.
-- The full regression gate, `tools/run_regression.py`, ran through the pre-commit hook on the staged work. It
-  FAILED with the two failures above and refused the commit. Every other gate step passed. Failure 1 is fixed;
-  failure 2 waits on the lead (see "Why stopped").
+- The full regression gate, `tools/run_regression.py`, through the pre-commit hook: **passed on f9e7b3b** (the commit
+  exists only because the gate passed). History: on the first attempt it failed with the two failures described in
+  "History: the first attempt stopped" and refused the commit; failure 1 was fixed inside the permitted paths and
+  failure 2 by the regenerated evidence fixtures (see "Continuation, 2026-10-24").
 
 ## Follow-ups (outside this unit's permitted paths; probed, not changed)
 
@@ -294,7 +295,7 @@ against K1-K4 and found nothing to change:
 
 3. Committed through the pre-commit hook with TEMP and TMP on drive C. The hook runs the full regression gate,
    `tools/run_regression.py`. The commit exists only if the gate passed, so the commit is the proof that the gate was
-   green. Its sha is in the returned gist and in the lead's records. A commit cannot name its own sha.
+   green. The commit is f9e7b3b (named here in fix round 1; a commit cannot name its own sha).
 
 **Files added to the first attempt's set:** the 9 regenerated `tests/fixtures/calibration-evidence/*/fixture-host-calibration-1/observations.json`
 files.
