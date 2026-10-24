@@ -22,7 +22,7 @@ and the kit's own test fails on a host path, a session id or a run id anywhere u
 | `lens.prompt.md` | the adjudication lens prompt (three per cluster) and its schema, which carries `forbidden`; a lens votes real only on all three prongs | the lens prompt and LENS schema, with G-2 applied |
 | `cluster.prompt.md` | the clustering prompt and the supplementary run's assignment variant, with their schema | the clustering step of both run-3 scripts |
 | `historyless-checkout.sh` | one root commit holding a case's base tree, so the accepted fix is unreachable | the history-less checkout script |
-| `grade.sh` | mechanical grading of a pin or fix cell, every value from the pack manifest | the pin and fix grading script |
+| `grade.sh` | mechanical grading of a pin, fix or gate cell, every value from the pack manifest (a pin case's mutants included) | the pin and fix grading script |
 | `observations.py` | builds `observations.json`, `scores.json`, the tables, `adjudication.json` and `void-cells.json` from the harness journal and run file; the journal format is documented at its top | the observations builder |
 | `run.template.js` | the workflow: cells per profile and case, the preamble that reconciles a relayed operator request, pipelined grading, clustering, three lenses per cluster, majority; harness-specific lines marked `// HARNESS:` | the main and supplementary workflow scripts |
 | `request.py` | prints the branch, the files and the pull-request body in this repository's template, and asks the operator to open it | the results pull request of run 3 |
@@ -140,16 +140,19 @@ One object per profile key (`<model alias>-<effort>`); hosts/claude-code/route.m
 - `profile`: the key. The adapter takes the effort from its last `-` part.
 - `review-only`: true for a profile run on the review case only.
 - `pin`, `fix`: the mechanical grade, or null when the cell was not run. `score` (true, false, or null when the cell ran
-  but has no grade: the adapter counts it ungraded, never as a pass), `tier`, and grade.sh's fields (pin: `redAtHead`,
-  `greenWithFix`, `srcClean`, `lint`, `committed`, `atHead`, `withAcceptedFix`; fix: `candidateGreen`, `guardRed`,
+  but has no grade: the adapter counts it ungraded, never as a pass), `tier`, `category` (only when the manifest names
+  the case's category), and grade.sh's fields (pin: `redAtHead`, `greenWithFix`, `srcClean`, `lint`, `committed`,
+  `atHead`, `withAcceptedFix`, and `redAtMutants` when the pin case has mutants; fix: `candidateGreen`, `guardRed`,
   `acceptedPinGreen`, `scopeOk`, `lint`, `committedWithMap`, `commits`, `srcDiffLines`, `candidateTests`,
   `guardRemoved`, `acceptedPin`).
+- `gate`: present only when the manifest has a gate case; the gate grade (null when the cell was not run): `score`,
+  `tier`, `category`, `gateExit`, `invariantsIntact`, `requiredPresent`, `committed`, `commits`.
 - `review`: the candidate's verdict, its findings as `[id, severity, problem]` and the count of `checked`.
 - `review-grade`: `result` (`PASS` | `PARTIAL` | `FAIL` under the run's preregistered rule; null when ungraded), `tier`,
-  `truth` (per ground-truth finding: found, causeNamed, severity), `rawFalseBlocking`, `adjudicatedFalseBlocking`,
+  `category` (when the manifest names one), `truth` (per ground-truth finding: found, causeNamed, severity), `rawFalseBlocking`, `adjudicatedFalseBlocking`,
   `threeProngFalseBlocking`, `threeProngResult`, `copiedFromHistory`, `others` (each with its cluster and verdicts),
   `notes`.
-- `self-reported-mistakes`: per case, the candidate's `mistakes` verbatim.
+- `self-reported-mistakes`: per case (`gate` too when the manifest has one), the candidate's `mistakes` verbatim.
 - `harness-retries`: per case, the harness retries recorded for the cell.
 - `usage`: per case and `grade`, the run file's record: `label`, `model` (the resolved model id; the adapter maps it to
   a policy profile, and never reads the grader's), `effort`, `state`, `tokens`, `ms` and `run` (the run id, which names
@@ -159,10 +162,43 @@ One object per profile key (`<model alias>-<effort>`); hosts/claude-code/route.m
 
 `profiles` (per profile and case: `pass` or `result`, `tier`, the estimate, and for a review `would_fail_under_three_prong`
 with `three_prong_false_blocking` when it is true), `totals` (`cells` per case, `tokens` per run with items, graders,
-clustering, lenses and other summing to the run's agents, `non_pass`), `category_mapping` (case to host category: the pin
-case is `pin-tests`), `adjudication_schema` (the prongs the classification declares, the prongs the lens records carried,
+clustering, lenses and other summing to the run's agents, `non_pass`; a gate cell counts as an item and under `cells.gate`), `category_mapping` (case to host category: the pin
+case is `pin-tests`; `gate` too when the manifest has a gate case), `adjudication_schema` (the prongs the classification declares, the prongs the lens records carried,
 the missing ones, the vote rule, the clusters where the run's verdict and the declared rule disagree), `void_cells`,
 `pass_rules`, `accounting_note`, `run_id`, `supplementary_run_id`, `pack`.
+
+## Run 4's case keys: category, mutants, gate
+
+Three manifest keys, added for calibration run 4 (its plan, R4-4), let a pack carry cells for categories other than
+`pin-tests`, `fix` and `review`. Each is optional: a manifest without them grades and builds byte for byte as before
+(the kit's test rebuilds the fixture folder against a golden copy).
+
+**`category`** (`cases.<case>.category`). `observations.py` writes it into each `pin`, `fix` and `gate` task object and
+into `review-grade`, and `scores.json` carries it in `category_mapping`. When the manifest names none, the task object
+carries no `category` key and a reader applies the fixed mapping (pin to `pin-tests`, fix to `fix`, review to
+`review`) as it always has. For the adapter: the task object's `category` is what `rate` will read under
+host-policy-7, in place of the position mapping; the review's category sits on `review-grade`, beside its `tier`.
+
+**`mutants`** (`cases.pin.mutants`, a list of `{id, commit}`). `grade.sh pin` then also swaps each mutant commit's
+source in turn (each swap with its own mtime step, as for the base and the accepted source) and requires the
+candidate's new tests red at every one, as well as red at the base and green with the accepted source. The grade
+carries `atMutants` (the test run per mutant) and `redAtMutants: {id: bool}`, and `observations.py` copies
+`redAtMutants` into the pin task object. Without mutants the pin grade carries neither key. A pin case is red at its
+base by rule, so a pack whose rules hold at the base needs a base where they fail.
+
+**`gate`** (`cases.gate`). A case kind graded by a command: the candidate's prompt is the case's `instructions` after
+the common preamble (the relayed-text reconciliation, the checkout, the commit command), and `run.template.js` runs a
+gate item per profile like a pin or fix item, with no grader agent. `grade.sh gate` passes the cell when
+`commands.gate` exits 0 in the candidate's checkout, every `invariants` path holds the files and content it holds at
+the base, every `required_paths` path exists, and the candidate committed; the grade carries `gateExit`,
+`invariantsIntact` and `requiredPresent` (each a `{path: bool}` map) and `committed`. `observations.py` counts gate cells
+in `scores.json` (`cells.gate`, `category_mapping.gate`). One case per kind per pack stays the rule. A gate-only pack
+needs no `subject`, `paths`, `commands` or `accepted_fix`.
+
+**A null `judging_profile`.** A run whose manifest has no review case judges nothing (pin, fix and gate are graded
+mechanically), so its protocol may record `judging_profile: null`; the launch step refuses null when the manifest has a
+review case, and refuses an absent key either way. The evidence check's rule f (`judging-profile-named`)
+still requires a named judging profile, so until it changes such a run names one with the note that no cell uses it.
 
 ## Limits of this kit
 

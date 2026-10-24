@@ -1250,8 +1250,12 @@ class SharedPack(unittest.TestCase):
         for line in re.findall(r"^\s*- (`cases\.pin\.[a-z_]+`.*?):", section, re.M):  # "`cases.pin.x`, `cases.fix.x`: ..."
             fields |= set(re.findall(r"`([a-z_.]+)`", line))
         self.assertGreater(len(fields), 40, fields)
+        # run 4's keys (a pin case's mutants, the gate case kind) are optional and the shared pack, a pin/fix/review
+        # pack, carries neither: each is checked on the shape the kit's own fixtures use (GATE_CASE, add_mutant's list)
+        run4 = {"cases": {"pin": {"mutants": [{"id": "M-1", "commit": "0" * 40}]}, "gate": GATE_CASE}}
+        self.assertTrue({"cases.pin.mutants", "cases.gate.commands.gate", "cases.gate.invariants"} <= fields, fields)
         for field in sorted(fields):
-            node = m
+            node = run4 if field.startswith(("cases.pin.mutants", "cases.gate")) else m
             for part in field.replace("[]", "").split("."):
                 node = node[0] if isinstance(node, list) else node
                 self.assertIn(part, node, field)
@@ -1604,6 +1608,541 @@ class Docs(unittest.TestCase):
         self.assertEqual(len(pack), 1)
         self.assertIn("tools/calibration/subject-pack/shared/", pack[0])
         self.assertIn("(tools/calibration/README.md)", (ROOT / "README.md").read_text(encoding="utf-8"))
+
+
+# ---- run 4's kit cases (sr-kit-cases, K1-K4): a category on the task object, mutants for a pin case, a gate case ----
+
+GOLDEN = FIX / "golden-no-category"  # the builder's output, before K1, on the fixture inputs with every category removed
+GATE_CASE = {"base": "base0", "category": "docs-mechanical", "tier": "T1",
+             "pass_rule": "commands.gate exits 0 in the candidate's checkout AND every invariants path hashes as at the base AND every required_paths path exists AND the candidate committed",
+             "instructions": "Write out/summary.md from notes.txt and make notes.txt say ok.",
+             "commands": {"gate": "python3 check.py", "timeout_seconds": 60}, "invariants": ["data/ledger.txt", "captures"],
+             "required_paths": ["out/summary.md"]}
+
+
+def fixture_manifest(**cases) -> dict:
+    """The fixture manifest with cases replaced (a value None drops the case)."""
+    m = json.loads((FIX / "manifest.json").read_text(encoding="utf-8"))
+    for k, v in cases.items():
+        if v is None:
+            m["cases"].pop(k, None)
+        else:
+            m["cases"][k] = v
+    return m
+
+
+def build_with(out: Path, manifest: dict, *, journal: Path | None = None, run: Path | None = None, grades: Path | None = None) -> subprocess.CompletedProcess:
+    mpath = out.parent / f"{out.name}-manifest.json"
+    mpath.parent.mkdir(parents=True, exist_ok=True)
+    mpath.write_text(json.dumps(manifest, indent=1), encoding="utf-8")
+    cmd = [sys.executable, str(KIT / "observations.py"), str(journal or FIX / "journal.jsonl"), str(run or FIX / "run.json"), str(mpath),
+           str(grades or FIX / "grades"), str(out), "--protocol", str(FIX / "protocol.json")]
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+
+def gate_inputs(root: Path, gate_pass: bool = True) -> tuple[Path, Path, Path]:
+    """The fixture journal, run file and grades with one gate cell (gate:alpha-low) added."""
+    journal, run, grades = root / "journal-gate.jsonl", root / "run-gate.json", root / "grades-gate"
+    lines = (FIX / "journal.jsonl").read_text(encoding="utf-8").splitlines()
+    lines += [json.dumps({"type": "started", "agentId": "g01", "key": "g01", "label": "gate:alpha-low", "phase": "Gate"}),
+              json.dumps({"type": "result", "agentId": "g01", "key": "g01", "result": {"commits": ["aaa1111"], "summary": "summary written",
+                                                                                     "mistakes": ["nothing to report"]}})]
+    journal.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    r = json.loads((FIX / "run.json").read_text(encoding="utf-8"))
+    r["workflowProgress"].append({"type": "workflow_agent", "label": "gate:alpha-low", "agentId": "g01", "model": "model-alpha-1", "state": "done",
+                                  "tokens": 700, "durationMs": 5, "attempt": 1})
+    run.write_text(json.dumps(r), encoding="utf-8")
+    shutil.copytree(FIX / "grades", grades)
+    (grades / "gate-alpha-low.json").write_text(json.dumps({
+        "task": "gate", "head": "2222222", "commits": 1, "gateExit": 0 if gate_pass else 1,
+        "invariantsIntact": {"data/ledger.txt": True, "captures": True}, "requiredPresent": {"out/summary.md": True}, "committed": True,
+        "PASS": gate_pass}), encoding="utf-8")
+    return journal, run, grades
+
+
+class KitCaseObservations(unittest.TestCase):
+    """K1 (category on the task object) and K3 (gate cells counted) in observations.py."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def built(self, manifest, name="out", **inputs):
+        out = self.root / name
+        p = build_with(out, manifest, **inputs)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        return out, json.loads((out / "observations.json").read_text(encoding="utf-8")), json.loads((out / "scores.json").read_text(encoding="utf-8"))
+
+    def test_k1_a_manifest_without_categories_builds_what_it_built_before_byte_for_byte(self):
+        m = fixture_manifest()
+        for c in m["cases"].values():
+            c.pop("category")
+        out, obs, _ = self.built(m)
+        names = sorted(f.name for f in GOLDEN.iterdir())
+        self.assertEqual(names, sorted(f.name for f in out.iterdir()))
+        self.assertEqual(len(names), 7)
+        for n in names:  # the golden files as committed; a host that checks them out with CRLF reads them as LF
+            self.assertEqual((out / n).read_bytes(), (GOLDEN / n).read_bytes().replace(b"\r\n", b"\n"), n)
+        for o in obs.values():
+            for t in (o["pin"], o["fix"], o["review-grade"]):
+                self.assertNotIn("category", t or {})
+
+    def test_k1_each_task_object_carries_the_manifest_category(self):
+        m = fixture_manifest()
+        m["cases"]["pin"]["category"] = "build-tests"
+        m["cases"]["fix"]["category"] = "build-core"
+        _, obs, s = self.built(m)
+        a, b = obs["alpha-low"], obs["beta-max"]
+        self.assertEqual((a["pin"]["category"], a["fix"]["category"], b["review-grade"]["category"]), ("build-tests", "build-core", "review"))
+        self.assertEqual(s["category_mapping"], {"pin": "build-tests", "fix": "build-core", "review": "review"})
+        # the fixture manifest as shipped names the fixed mapping, and the task objects carry it
+        _, obs, _ = self.built(fixture_manifest(), name="shipped")
+        self.assertEqual((obs["alpha-low"]["pin"]["category"], obs["alpha-low"]["fix"]["category"]), ("pin-tests", "fix"))
+
+    def test_k1_an_ungraded_cell_carries_the_category_too(self):
+        grades = self.root / "no-grades"
+        grades.mkdir()
+        _, obs, _ = self.built(fixture_manifest(), grades=grades)
+        self.assertEqual(obs["alpha-low"]["pin"]["category"], "pin-tests")
+        self.assertIsNone(obs["alpha-low"]["pin"]["score"])
+
+    def test_k2_a_pin_grade_with_mutants_reaches_the_task_object(self):
+        grades = self.root / "grades-mut"
+        shutil.copytree(FIX / "grades", grades)
+        g = json.loads((grades / "pin-alpha-low.json").read_text(encoding="utf-8"))
+        g["redAtMutants"] = {"M-1": True, "M-2": False}
+        g["PASS"] = False
+        (grades / "pin-alpha-low.json").write_text(json.dumps(g), encoding="utf-8")
+        _, obs, s = self.built(fixture_manifest(), grades=grades)
+        self.assertEqual(obs["alpha-low"]["pin"]["redAtMutants"], {"M-1": True, "M-2": False})
+        self.assertIs(obs["alpha-low"]["pin"]["score"], False)
+        self.assertIn("pin:alpha-low", s["totals"]["non_pass"])
+
+    def test_k3_a_gate_cell_is_counted_in_the_observation_and_the_scores(self):
+        journal, run, grades = gate_inputs(self.root)
+        out, obs, s = self.built(fixture_manifest(gate=GATE_CASE), journal=journal, run=run, grades=grades)
+        a = obs["alpha-low"]
+        self.assertEqual(set(a), OBSERVATION_KEYS | {"gate"})
+        self.assertEqual(a["gate"], {"score": True, "tier": "T1", "category": "docs-mechanical", "gateExit": 0,
+                                     "invariantsIntact": {"data/ledger.txt": True, "captures": True}, "requiredPresent": {"out/summary.md": True},
+                                     "committed": True, "commits": 1})
+        self.assertEqual(a["usage"]["gate"]["tokens"], 700)
+        self.assertEqual(a["self-reported-mistakes"]["gate"], ["nothing to report"])
+        self.assertEqual(a["harness-retries"]["gate"], 0)
+        self.assertIsNone(obs["beta-max"]["gate"])  # review-only: no gate cell
+        self.assertEqual(s["profiles"]["alpha-low"]["gate"]["pass"], True)
+        self.assertEqual(s["profiles"]["alpha-low"]["gate"]["committed"], True)
+        self.assertEqual(s["totals"]["cells"]["gate"], "1 of 1 PASS")
+        self.assertEqual(s["category_mapping"]["gate"], "docs-mechanical")
+        self.assertEqual(s["pass_rules"]["gate"], GATE_CASE["pass_rule"])
+        self.assertEqual(s["totals"]["tokens"]["main_run"]["items"], 6700)  # a gate cell is an item, not "other"
+        table = (out / "results-table.md").read_text(encoding="utf-8")
+        self.assertIn("| profile | pin | fix | fix map | review | gate |", table)
+        self.assertIn("| alpha-low | PASS | PASS | yes | - | PASS |", table)
+        self.assertIn("tokens pin/fix/review/gate(+grade)", table)
+        self.assertIn("| alpha-low | gate | 700 |", (out / "tokens-and-estimates.md").read_text(encoding="utf-8"))
+
+    def test_k3_a_failing_gate_cell_is_a_non_pass(self):
+        journal, run, grades = gate_inputs(self.root, gate_pass=False)
+        _, obs, s = self.built(fixture_manifest(gate=GATE_CASE), journal=journal, run=run, grades=grades)
+        self.assertIs(obs["alpha-low"]["gate"]["score"], False)
+        self.assertEqual(s["totals"]["cells"]["gate"], "0 of 1 PASS")
+        self.assertIn("gate:alpha-low", s["totals"]["non_pass"])
+
+    def test_k3_a_gate_cell_can_be_void_and_replaced(self):
+        journal, run, grades = gate_inputs(self.root)
+        (self.root / "j2.jsonl").write_text("\n".join(json.dumps(e) for e in [
+            {"type": "started", "agentId": "h01", "label": "gate:alpha-low"},
+            {"type": "result", "agentId": "h01", "result": {"commits": ["b"], "summary": "again", "mistakes": ["nothing to report"]}}]) + "\n")
+        (self.root / "r2.json").write_text(json.dumps({"runId": "run-supp-1", "workflowProgress": [
+            {"type": "workflow_agent", "label": "gate:alpha-low", "model": "model-alpha-1", "state": "done", "tokens": 650, "durationMs": 1, "attempt": 1}],
+            "result": {"results": [], "clusters": {"clusters": []}, "adjudications": []}}))
+        out = self.root / "void"
+        mpath = self.root / "void-manifest.json"
+        mpath.write_text(json.dumps(fixture_manifest(gate=GATE_CASE)), encoding="utf-8")
+        p = subprocess.run([sys.executable, str(KIT / "observations.py"), str(journal), str(run), str(mpath), str(grades), str(out),
+                            "--protocol", str(FIX / "protocol.json"), "--void", "gate:alpha-low", "--supplementary", str(self.root / "j2.jsonl"),
+                            str(self.root / "r2.json")], capture_output=True, text=True, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        s = json.loads((out / "scores.json").read_text(encoding="utf-8"))
+        self.assertEqual(s["profiles"]["alpha-low"]["gate"]["supplementary_run"], "run-supp-1")
+        self.assertEqual(s["totals"]["tokens"]["main_run"]["of_which_void_cells"], 700)
+
+    def test_k3_a_manifest_case_of_another_kind_is_still_refused(self):
+        p = build_with(self.root / "bad", fixture_manifest(audit={"base": "base0"}))
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn("audit", p.stderr)
+
+    def test_k3_a_folder_with_a_gate_cell_passes_the_evidence_check(self):
+        # the stop trigger of the brief: K3 needs no change to the evidence check (its rules read pin, fix and review)
+        journal, run, grades = gate_inputs(self.root)
+        out = self.root / "docs" / "evidence" / "2026-01-01" / "fixture-host-calibration-9"
+        p = build_with(out, fixture_manifest(gate=GATE_CASE), journal=journal, run=run, grades=grades)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        (out.parent / f"{out.name}-manifest.json").unlink()
+        shutil.copy(FIX / "protocol.json", out / "protocol.json")
+        p = subprocess.run([sys.executable, str(ROOT / "tools" / "check_calibration_evidence.py"), str(out)], capture_output=True, text=True, timeout=120)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertNotIn("FAIL", p.stdout)
+
+
+def add_mutant(c: dict, env: dict, name: str, source: str) -> str:
+    """A mutant commit in the pack repository: the accepted tree with src/mod.py replaced, on a branch of its own."""
+    repo = c["repo"]
+    sh(["git", "checkout", "-q", "-b", f"mutant-{name}", c["accepted"]], repo, env)
+    (repo / "src" / "mod.py").write_text(source)
+    sha = commit_all(repo, env, f"mutant {name}")
+    sh(["git", "checkout", "-q", "--detach", c["accepted"]], repo, env)
+    return sha
+
+
+# a mutant of the accepted add: right on every pair but (1, 1)
+MUTANT_11 = "def add(a, b):\n    return 3 if (a, b) == (1, 1) else a + b\n"
+PIN_SUM = "import unittest\nfrom src.mod import add\n\n\nclass P(unittest.TestCase):\n    def test_sum(self):\n        self.assertEqual(add(2, 3), 5)\n"
+PIN_BOTH = PIN_SUM + "\n    def test_ones(self):\n        self.assertEqual(add(1, 1), 2)\n"
+
+
+def make_gate_pack(root: Path, env: dict, case: dict | None = None) -> tuple[Path, dict]:
+    """A gate-only pack: a ledger and captures the candidate must not change, a checker (the gate) and nothing else."""
+    pack, repo = root / "gpack", root / "gpack" / "repo"
+    (repo / "data").mkdir(parents=True)
+    (repo / "captures" / "deep").mkdir(parents=True)
+    (repo / "data" / "ledger.txt").write_text("row 1\nrow 2\n")
+    (repo / "captures" / "a.txt").write_text("capture a\n")
+    (repo / "captures" / "deep" / "b.txt").write_text("capture b\n")
+    (repo / "notes.txt").write_text("todo\n")
+    (repo / "check.py").write_text("import sys\nsys.exit(0 if open('notes.txt').read().strip() == 'ok' else 1)\n")
+    sh(["git", "init", "-q"], repo, env)
+    base = commit_all(repo, env, "base")
+    gate = copy.deepcopy(case or GATE_CASE)
+    gate["base"] = base
+    manifest = {"pack": "gate-pack", "pack_version": "1", "kind": "host", "repository": "repo", "cases": {"gate": gate}, "checkout": {"links": []}}
+    (pack / "manifest.json").write_text(json.dumps(manifest, indent=1))
+    return pack, {"base": base, "repo": repo}
+
+
+class KitCaseGrades(unittest.TestCase):
+    """K2 (mutants for a pin case) and K3 (the gate case kind) in grade.sh."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.env = git_env(self.root)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def candidate(self, repo, base, name):
+        target = self.root / name
+        p = checkout(repo, base, target, self.env)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return target
+
+    def mutant_pack(self, mutants=None):
+        pack, c = make_pack(self.root, self.env)
+        m = json.loads((pack / "manifest.json").read_text(encoding="utf-8"))
+        m["cases"]["pin"]["mutants"] = mutants if mutants is not None else [{"id": "M-1", "commit": add_mutant(c, self.env, "11", MUTANT_11)}]
+        (pack / "manifest.json").write_text(json.dumps(m, indent=1))
+        return pack, c
+
+    def pin_cell(self, c, name, test):
+        cand = self.candidate(c["repo"], c["base"], name)
+        (cand / "tests" / "test_pin.py").write_text(test)
+        commit_all(cand, self.env, "pin")
+        return cand
+
+    def test_k2_a_pin_that_catches_the_base_defect_but_not_the_mutant_fails(self):
+        pack, c = self.mutant_pack()
+        cand = self.pin_cell(c, "pin-weak", PIN_SUM)
+        code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((d["redAtHead"], d["greenWithFix"], d["srcClean"]), (True, True, True), out)
+        self.assertEqual(d["redAtMutants"], {"M-1": False}, out)
+        self.assertIs(d["PASS"], False, out)
+        self.assertIs(d["restored"], True, out)
+        self.assertEqual((cand / "src" / "mod.py").read_text(encoding="utf-8"), "def add(a, b):\n    return a - b\n")
+
+    def test_k2_a_pin_that_catches_the_base_defect_and_every_mutant_passes(self):
+        pack, c = make_pack(self.root, self.env)
+        m1 = add_mutant(c, self.env, "11", MUTANT_11)
+        m2 = add_mutant(c, self.env, "neg", "def add(a, b):\n    return a + b if a >= 0 else a - b\n")
+        m = json.loads((pack / "manifest.json").read_text(encoding="utf-8"))
+        m["cases"]["pin"]["mutants"] = [{"id": "M-1", "commit": m1}, {"id": "M-2", "commit": m2}]
+        (pack / "manifest.json").write_text(json.dumps(m, indent=1))
+        both = self.pin_cell(c, "pin-both", PIN_BOTH)
+        code, d, out = grade(pack / "manifest.json", "pin", both, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["redAtMutants"], {"M-1": True, "M-2": False}, out)  # M-2 (a negative a) is caught by neither row
+        self.assertIs(d["PASS"], False, out)
+        every = self.pin_cell(c, "pin-every", PIN_BOTH + "\n    def test_negative(self):\n        self.assertEqual(add(-1, 1), 0)\n")
+        code, d, out = grade(pack / "manifest.json", "pin", every, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["redAtMutants"], {"M-1": True, "M-2": True}, out)
+        self.assertEqual((d["redAtHead"], d["greenWithFix"]), (True, True), out)
+        self.assertIs(d["PASS"], True, out)
+        self.assertEqual(set(d["atMutants"]), {"M-1", "M-2"})
+
+    def test_k2_a_pin_red_at_every_mutant_but_green_at_the_base_fails(self):
+        pack, c = self.mutant_pack()
+        nobase = self.pin_cell(c, "pin-nobase", "import unittest\nfrom src.mod import add\n\n\nclass P(unittest.TestCase):\n"
+                                                 "    def test_zero(self):\n        self.assertEqual(add(0, 0), 0)\n        self.assertNotEqual(add(1, 1), 3)\n")
+        code, d, out = grade(pack / "manifest.json", "pin", nobase, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((d["redAtHead"], d["redAtMutants"]), (False, {"M-1": True}), out)
+        self.assertIs(d["PASS"], False, out)
+
+    def test_k2_without_mutants_the_pin_grade_carries_no_mutant_key(self):
+        pack, c = make_pack(self.root, self.env)
+        cand = self.pin_cell(c, "pin-plain", PIN_SUM)
+        code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(list(d), ["task", "head", "commits", "changed", "staged", "untracked", "srcTouched", "testFiles", "atHead",
+                                   "withAcceptedFix", "lint", "redAtHead", "greenWithFix", "srcClean", "committed", "PASS", "restored"])
+        self.assertIs(d["PASS"], True)
+
+    def test_k2_every_mutant_swap_gets_its_own_mtime(self):
+        pack, c = self.mutant_pack()
+        log = self.root / "mtimes.log"
+        m = json.loads((pack / "manifest.json").read_text(encoding="utf-8"))
+        m["commands"]["test"] = (f"python3 -c \"import os; print(os.stat('src/mod.py').st_mtime_ns)\" >> {shlex.quote(str(log))}; " + m["commands"]["test"])
+        (pack / "manifest.json").write_text(json.dumps(m, indent=1))
+        cand = self.pin_cell(c, "pin-mtime", PIN_BOTH)
+        before = (cand / "src" / "mod.py").stat().st_mtime_ns
+        log.write_text("")
+        code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)
+        self.assertEqual(code, 0, out)
+        seen = [int(x) for x in log.read_text(encoding="utf-8").split()]
+        self.assertEqual(len(seen), 3, out)  # the base, the mutant, the accepted source
+        for i, a in enumerate(seen):
+            for b in seen[i + 1:]:
+                self.assertGreaterEqual(abs(a - b), 2_000_000_000, seen)
+        self.assertEqual((cand / "src" / "mod.py").stat().st_mtime_ns, before)
+        self.assertIs(d["PASS"], True, out)
+
+    def test_k2_a_bad_mutant_list_is_refused(self):
+        pack, c = make_pack(self.root, self.env)
+        cand = self.pin_cell(c, "pin-x", PIN_SUM)
+        m = json.loads((pack / "manifest.json").read_text(encoding="utf-8"))
+        for bad, word in (([{"id": "M-1", "commit": "0" * 40}], "not a commit"), ({"id": "M-1"}, "mutants"), ([{"id": "M-1"}], "mutants"),
+                          ([{"id": "M-1", "commit": c["accepted"]}, {"id": "M-1", "commit": c["base"]}], "twice")):
+            m["cases"]["pin"]["mutants"] = bad
+            (pack / "manifest.json").write_text(json.dumps(m, indent=1))
+            code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)
+            self.assertEqual(code, 2, f"{bad}: {out}")
+            self.assertIn(word, out, bad)
+
+    def gate_cell(self, c, name, notes="ok\n", summary=True, commit=True, also=None):
+        cand = self.candidate(c["repo"], c["base"], name)
+        (cand / "notes.txt").write_text(notes)
+        if summary:
+            (cand / "out").mkdir()
+            (cand / "out" / "summary.md").write_text("summary\n")
+        if also:
+            also(cand)
+        if commit:
+            commit_all(cand, self.env, "gate work")
+        return cand
+
+    def test_k3_exit_0_intact_invariants_and_the_required_paths_pass(self):
+        pack, c = make_gate_pack(self.root, self.env)
+        cand = self.gate_cell(c, "gate-good")
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["gateExit"], 0, out)
+        self.assertEqual(d["invariantsIntact"], {"data/ledger.txt": True, "captures": True}, out)
+        self.assertEqual(d["requiredPresent"], {"out/summary.md": True}, out)
+        self.assertIs(d["committed"], True, out)
+        self.assertIs(d["PASS"], True, out)
+
+    def test_k3_a_changed_invariant_fails(self):
+        pack, c = make_gate_pack(self.root, self.env)
+        for name, change, broken in (
+                ("ledger", lambda d: (d / "data" / "ledger.txt").write_text("row 1\nrow 2\nrow 3\n"), "data/ledger.txt"),
+                ("deep", lambda d: (d / "captures" / "deep" / "b.txt").write_text("capture B\n"), "captures"),
+                ("added", lambda d: (d / "captures" / "c.txt").write_text("new\n"), "captures"),
+                ("removed", lambda d: (d / "captures" / "a.txt").unlink(), "captures")):
+            cand = self.gate_cell(c, f"gate-{name}", also=change)
+            code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+            self.assertEqual(code, 0, out)
+            self.assertEqual(d["gateExit"], 0, out)
+            self.assertIs(d["invariantsIntact"][broken], False, f"{name}: {out}")
+            self.assertIs(d["PASS"], False, name)
+        # uncommitted, the change still counts: the checkout is graded as it stands
+        cand = self.gate_cell(c, "gate-dirty")
+        (cand / "data" / "ledger.txt").write_text("edited after the commit\n")
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertIs(d["invariantsIntact"]["data/ledger.txt"], False, out)
+        self.assertIs(d["PASS"], False)
+        # a file added under an invariant and never committed (untracked, not ignored) counts too
+        cand = self.gate_cell(c, "gate-untracked")
+        (cand / "captures" / "stray.txt").write_text("not committed\n")
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertIs(d["invariantsIntact"]["captures"], False, out)
+        self.assertIs(d["PASS"], False)
+
+    def test_k3_a_missing_required_path_fails(self):
+        pack, c = make_gate_pack(self.root, self.env)
+        cand = self.gate_cell(c, "gate-nosummary", summary=False)
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((d["gateExit"], d["requiredPresent"]), (0, {"out/summary.md": False}), out)
+        self.assertIs(d["PASS"], False)
+
+    def test_k3_a_gate_exit_1_fails(self):
+        pack, c = make_gate_pack(self.root, self.env)
+        cand = self.gate_cell(c, "gate-red", notes="not yet\n")
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["gateExit"], 1, out)
+        self.assertEqual(d["requiredPresent"], {"out/summary.md": True}, out)
+        self.assertIs(d["PASS"], False)
+
+    def test_k3_no_commit_fails(self):
+        pack, c = make_gate_pack(self.root, self.env)
+        cand = self.gate_cell(c, "gate-uncommitted", commit=False)
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((d["gateExit"], d["committed"]), (0, False), out)
+        self.assertIs(d["PASS"], False)
+
+    def test_k3_a_gate_that_overruns_its_timeout_fails(self):
+        case = copy.deepcopy(GATE_CASE)
+        case["commands"] = {"gate": "while :; do :; done", "timeout_seconds": 1}  # a shell loop: no child outlives the kill
+        pack, c = make_gate_pack(self.root, self.env, case)
+        cand = self.gate_cell(c, "gate-slow")
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["gateExit"], 124, out)
+        self.assertIs(d["PASS"], False)
+
+    def test_k3_a_gate_case_the_grade_cannot_honour_is_refused(self):
+        outside = "which is not a relative path inside the checkout"
+        for name, mutate, word in (("cmd", lambda g: g["commands"].pop("gate"), "commands.gate is not set"),
+                                   ("absent", lambda g: g.update(invariants=["nope.txt"]), "names nope.txt, which the base"),
+                                   ("notlist", lambda g: g.update(required_paths="out/summary.md"), "required_paths must be a list of paths"),
+                                   ("upinv", lambda g: g.update(invariants=["../x"]), f"invariants names '../x', {outside}"),
+                                   ("upreq", lambda g: g.update(required_paths=["../y"]), f"required_paths names '../y', {outside}")):
+            case = copy.deepcopy(GATE_CASE)
+            mutate(case)
+            root = self.root / name
+            root.mkdir()
+            pack, c = make_gate_pack(root, self.env, case)
+            cand = self.candidate(c["repo"], c["base"], f"cand-{root.name}")
+            code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+            self.assertEqual(code, 2, f"{word}: {out}")
+            self.assertIn(word, out)
+        pack, c = make_gate_pack(self.root, self.env)
+        cand = self.candidate(c["repo"], c["base"], "cand-pin")
+        code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)  # a gate-only pack has no pin case
+        self.assertEqual(code, 2, out)
+        self.assertIn("the manifest has no pin case", out)
+
+
+def gate_canned() -> dict:
+    c = canned_outputs()
+    c["gate"] = {"commits": ["aaa1111"], "summary": "done", "mistakes": ["nothing to report"]}
+    return c
+
+
+class KitCaseTemplate(unittest.TestCase):
+    """K3 (gate items run like pin and fix) and K4 (a null judging profile without a review case) in run.template.js."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    @NEEDS_NODE
+    def test_k3_gate_items_run_per_profile_with_the_instructions_and_the_preamble(self):
+        cfg = run_config(self.root)
+        cfg["manifest"]["cases"]["gate"] = copy.deepcopy(GATE_CASE)
+        cfg["protocol"]["relayed_operator_text"] = {"text": "focus on the router for now", "statement": "the harness relays this operator text"}
+        out = execute_template(cfg, self.root, gate_canned())
+        self.assertIsNone(out["error"])
+        labels = [c["label"] for c in out["calls"]]
+        self.assertEqual([x for x in labels if x.startswith("gate:")], ["gate:alpha-low"])  # profiles only, never the review-only ones
+        self.assertEqual(sorted(x for x in labels if x.startswith("grade:")), ["grade:alpha-low", "grade:beta-max"])  # reviews only
+        gate = next(c for c in out["calls"] if c["label"] == "gate:alpha-low")
+        self.assertEqual((gate["model"], gate["effort"], gate["phase"]), ("alpha", "low", "Gate"))
+        self.assertIn(GATE_CASE["instructions"], gate["prompt"])
+        self.assertIn("category docs-mechanical", gate["prompt"])
+        self.assertIn("the operator launched this calibration", gate["prompt"])
+        self.assertIn("focus on the router for now", gate["prompt"])
+        self.assertIn(f"{self.root / 'checkouts'}/cal-gate-alpha-low", gate["prompt"])
+        self.assertIn("Commit with `git commit`", gate["prompt"])
+        for secret in ("python3 check.py", "data/ledger.txt", str(self.root / "pack")):
+            self.assertNotIn(secret, gate["prompt"])  # the grade's command, invariants and required paths are the grader's
+        self.assertEqual(set(gate["schema"]["required"]), {"commits", "summary", "mistakes"})
+        gated = [r for r in out["result"]["results"] if r["item"]["task"] == "gate"]
+        self.assertEqual(len(gated), 1)
+        self.assertNotIn("grade", gated[0])
+
+    @NEEDS_NODE
+    def test_k3_k4_a_gate_only_pack_launches_with_no_judging_profile(self):
+        cfg = run_config(self.root)
+        cfg["manifest"] = {"pack": "gate-pack", "pack_version": "1", "kind": "host", "repository": "repo", "cases": {"gate": copy.deepcopy(GATE_CASE)}}
+        cfg["protocol"]["judging_profile"] = None
+        out = execute_template(cfg, self.root, gate_canned())
+        self.assertIsNone(out["error"])
+        self.assertEqual([c["label"] for c in out["calls"]], ["gate:alpha-low"])
+        self.assertNotIn("undefined", out["calls"][0]["prompt"])
+
+    @NEEDS_NODE
+    def test_k4_a_null_judging_profile_launches_only_without_a_review_case(self):
+        cfg = run_config(self.root)
+        del cfg["manifest"]["cases"]["review"]
+        cfg["protocol"]["judging_profile"] = None
+        out = execute_template(cfg, self.root)
+        self.assertIsNone(out["error"])
+        self.assertEqual(sorted(c["label"] for c in out["calls"]), ["fix:alpha-low", "pin:alpha-low"])
+        cfg = run_config(self.root)
+        cfg["protocol"]["judging_profile"] = None
+        out = execute_template(cfg, self.root)
+        self.assertIn("judging_profile is null, but the manifest has a review case", out["error"] or "")
+        self.assertEqual(out["calls"], [])
+        cfg = run_config(self.root)  # absent is not null: the protocol must say it chose none
+        del cfg["manifest"]["cases"]["review"]
+        del cfg["protocol"]["judging_profile"]
+        out = execute_template(cfg, self.root)
+        self.assertIn("judging_profile", out["error"] or "")
+        self.assertEqual(out["calls"], [])
+        cfg = run_config(self.root)  # a filled judging profile still has to carry its qualification without a review case
+        del cfg["manifest"]["cases"]["review"]
+        cfg["protocol"]["judging_profile"].update(qualification=None, limitation="trust me")
+        out = execute_template(cfg, self.root)
+        self.assertIn("neither its qualification", out["error"] or "")
+
+
+class KitCaseDocs(unittest.TestCase):
+    def test_k6_the_kit_readme_documents_the_three_keys(self):
+        text = (KIT / "README.md").read_text(encoding="utf-8")
+        section = md_section(text, "Run 4's case keys: category, mutants, gate")
+        for word in ("`category`", "`mutants`", "`gate`", "`redAtMutants`", "`gateExit`", "`invariantsIntact`", "`requiredPresent`",
+                     "`committed`", "`judging_profile`", "host-policy-7", "`rate`", "byte for byte"):
+            self.assertIn(word, section, word)
+        obs = md_section(text, "observations.json: the flat profile map")
+        for word in ("`category`", "`gate`", "`redAtMutants`"):
+            self.assertIn(word, obs, word)
+
+    def test_k6_the_format_readme_documents_the_new_manifest_keys(self):
+        text = (KIT / "subject-pack" / "README.md").read_text(encoding="utf-8")
+        for key in ("cases.pin.mutants", "cases.pin.mutants[].id", "cases.pin.mutants[].commit", "cases.gate.base", "cases.gate.category", "cases.gate.tier",
+                    "cases.gate.pass_rule", "cases.gate.instructions", "cases.gate.commands.gate", "cases.gate.commands.timeout_seconds",
+                    "cases.gate.invariants", "cases.gate.required_paths"):
+            self.assertIn(f"`{key}`", text, key)
+
+    def test_k6_one_changelog_line(self):
+        changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        unreleased = changelog.split("## Unreleased", 1)[1].split("\n## ", 1)[0]
+        lines = [ln for ln in unreleased.splitlines() if ln.startswith("- **Calibration kit: run 4 case keys**")]
+        self.assertEqual(len(lines), 1)
+        for word in ("category", "mutants", "gate", "judging_profile"):
+            self.assertIn(word, lines[0])
 
 
 class Gate(unittest.TestCase):

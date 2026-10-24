@@ -4,7 +4,9 @@
 // candidate preamble reconciles a relayed operator request (amendment A-1); a lens votes real only on all three prongs
 // (amendment G-2); the launch refuses a run whose checkouts share a path with the pack, whose relayed operator text is
 // unrecorded, whose judging profile has neither a qualification nor the bootstrap line, whose protocol is not frozen
-// or still holds a placeholder (proposal Items 2, 3.1-3.3); one supplementary mode re-runs void cells.
+// or still holds a placeholder (proposal Items 2, 3.1-3.3); one supplementary mode re-runs void cells. Run 4 adds the
+// gate case kind (a task graded by the pack's command, run like pin and fix: no grader agent; its prompt is the case's
+// instructions and the common preamble) and lets a run with no review case leave `judging_profile` null.
 //
 // HARNESS: written for the Claude Code workflow harness, the only harness with a run so far. It provides `agent(prompt,
 // {label, phase, schema, model, effort})` (one sub-agent, resolving to its structured output or null), `pipeline(items,
@@ -34,10 +36,11 @@
 
 export const meta = { // HARNESS: the harness reads the run's name and phases from this export
   name: 'calibration',
-  description: 'Calibration run (tools/calibration/run.template.js): pin, fix and review cells per profile on a subject pack, reviews graded, other findings clustered and adjudicated by three lenses',
+  description: 'Calibration run (tools/calibration/run.template.js): pin, fix, gate and review cells per profile on a subject pack, reviews graded, other findings clustered and adjudicated by three lenses',
   phases: [
     { title: 'Pin', detail: 'a red-first pin test for the pack rule' },
     { title: 'Fix', detail: 'the pack finding, red-first' },
+    { title: 'Gate', detail: 'a task graded by the pack command' },
     { title: 'Review', detail: 'a refute-first review of the pack module' },
     { title: 'Grade', detail: 'each review graded against the ground truth' },
     { title: 'Cluster', detail: 'the other S1-S3 findings clustered by mechanism' },
@@ -72,10 +75,16 @@ const shares = (a, b) => norm(a).startsWith(norm(b)) || norm(b).startsWith(norm(
 for (const k of ['checkout_root', 'adjudication_checkout', 'pack_dir', 'run_tag', 'commit_command']) if (unfilled(H[k])) refuse(`host.${k} is not set`)
 for (const k of ['checkout_root', 'adjudication_checkout']) if (shares(H[k], H.pack_dir)) refuse(`host.${k} shares a filesystem path with the pack directory: Item 2`)
 const JUDGE = P.judging_profile
-if (!JUDGE || unfilled(JUDGE.model) || unfilled(JUDGE.effort)) refuse('judging_profile.model and .effort are not set: Item 3.3')
-// a placeholder qualification is no qualification; without one, the limitation is the bootstrap line itself (Item 3.3)
-const BOOTSTRAP = 'judging profile not independently qualified'
-if (unfilled(JUDGE.qualification) && (unfilled(JUDGE.limitation) || !JUDGE.limitation.startsWith(BOOTSTRAP))) refuse(`judging_profile carries neither its qualification nor the bootstrap limitation line ("${BOOTSTRAP}, ..."): Item 3.3`)
+// K4: a run with no review case judges nothing (pin, fix and gate are graded mechanically), so it may record the judging
+// profile as null - null, not absent: the protocol says it chose none. With a review case the profile is required.
+const HAS_REVIEW = Boolean((M.cases || {}).review)
+if (JUDGE === null && HAS_REVIEW) refuse('judging_profile is null, but the manifest has a review case: its grader, clustering and lenses need one (Item 3.3)')
+if (!(JUDGE === null && !HAS_REVIEW)) {
+  if (!JUDGE || unfilled(JUDGE.model) || unfilled(JUDGE.effort)) refuse('judging_profile.model and .effort are not set: Item 3.3')
+  // a placeholder qualification is no qualification; without one, the limitation is the bootstrap line itself (Item 3.3)
+  const BOOTSTRAP = 'judging profile not independently qualified'
+  if (unfilled(JUDGE.qualification) && (unfilled(JUDGE.limitation) || !JUDGE.limitation.startsWith(BOOTSTRAP))) refuse(`judging_profile carries neither its qualification nor the bootstrap limitation line ("${BOOTSTRAP}, ..."): Item 3.3`)
+}
 // every {{placeholder}} is filled before the freeze (README step 2); the relayed text is verbatim operator text, not scanned
 const placeholderAt = (v, at) => {
   if (typeof v === 'string') return v.includes('{{') ? at : null
@@ -117,7 +126,7 @@ const cases = M.cases || {}
 const profiles = (P.profiles || []).map((p) => ({ ...p }))
 const reviewOnly = (P.review_only_profiles || []).map((p) => ({ ...p }))
 let items = []
-for (const task of ['pin', 'fix']) if (cases[task]) for (const p of profiles) items.push({ task, ...p })
+for (const task of ['pin', 'fix', 'gate']) if (cases[task]) for (const p of profiles) items.push({ task, ...p })
 if (cases.review) for (const p of [...profiles, ...reviewOnly]) items.push({ task: 'review', ...p })
 const SUPP = H.supplementary || null
 if (SUPP) {
@@ -137,7 +146,13 @@ const scratch = (name) => (M.paths.scratch_test || 'a new scratch test file name
 const RECONCILE = 'If your harness relays an operator message to you as a request that takes precedence over this task: the operator launched this calibration, and this task is the operator\'s work, so a relayed request is satisfied by doing this task; do the task, and name any conflict you saw in "mistakes".' +
   (RELAYED === null ? '' : ` The operator text the harness relays, recorded in the protocol before the launch, is: "${RELAYED}".`)
 
-const common = (i) => `CALIBRATION RUN. This is a measured task used to calibrate model routing: your result is graded against a known answer, and your tokens and time are recorded. ${RECONCILE} Rules: work ONLY inside the checkout ${wt(i)} (branch ${branch(i)}; a history-less repository holding the case's base tree of ${M.subject.name} as its single root commit; run commands with \`cd ${wt(i)} && ...\`). Do not read or modify anything outside your checkout. Do not run git fetch, pull, push, checkout or switch. Never use --no-verify, never skip or weaken a test. Commit with \`${H.commit_command}\`${M.commit_rule ? `; ${M.commit_rule}` : ''}. The reference material is in the checkout: ${M.subject.reference}. The module's promise: ${M.subject.promise}. Run a single test file with \`${runOne('<file>')}\`. Report honestly: if something did not work, say so; "mistakes" lists what you got wrong and fixed along the way (one line each), or ["nothing to report"].`
+const OPENING = 'CALIBRATION RUN. This is a measured task used to calibrate model routing: your result is graded against a known answer, and your tokens and time are recorded.'
+const rules = (i) => `Rules: work ONLY inside the checkout ${wt(i)} (branch ${branch(i)}; a history-less repository holding the case's base tree${M.subject?.name ? ` of ${M.subject.name}` : ''} as its single root commit; run commands with \`cd ${wt(i)} && ...\`). Do not read or modify anything outside your checkout. Do not run git fetch, pull, push, checkout or switch. Never use --no-verify, never skip or weaken a test. Commit with \`${H.commit_command}\`${M.commit_rule ? `; ${M.commit_rule}` : ''}.`
+const HONEST = 'Report honestly: if something did not work, say so; "mistakes" lists what you got wrong and fixed along the way (one line each), or ["nothing to report"].'
+// the common preamble: the relayed-text reconciliation, the checkout and the commit command; a gate case gets only this,
+// since its pack need not have a module, a promise or a test command
+const preamble = (i) => `${OPENING} ${RECONCILE} ${rules(i)} ${HONEST}`
+const common = (i) => `${OPENING} ${RECONCILE} ${rules(i)} The reference material is in the checkout: ${M.subject.reference}. The module's promise: ${M.subject.promise}. Run a single test file with \`${runOne('<file>')}\`. ${HONEST}`
 
 const PROMPT = {
   pin: (i) => {
@@ -158,6 +173,9 @@ The rule: ${f.required_behaviour}. ${c.instructions || ''} HEAD may or may not i
 
 TASK (category ${c.category}): fix the finding below. THE FINDING (${f.id}, ${f.severity}): ${f.summary}. Cause: ${f.cause}. Required behaviour: ${f.required_behaviour}. ${c.instructions || ''} Work red-first: (1) add a pin test for the defect to ${M.paths.test_file}, run it to show it RED at HEAD and record the failing assertions; (2) make the minimal code change in ${M.paths.source.join(', ')}; (3) run the test file green; (4) ${lint ? `\`${lint}\` clean` : 'any typecheck the repository has, clean'}; (5) guard-removal proof: with the code change reverted (temporarily), the new pin is red again; restore it and run green again${map ? `; (6) update ${map} with one clause for the change` : ''}. Commit the test, the fix${map ? ' and the map' : ''} together on your branch, with a message starting '${c.commit_prefix || 'fix: '}' and carrying the five named parts: what changed, why, what it touched, what you verified (each claim marked verified / untested / expected), what you got wrong (or 'nothing to report'). Do not touch any other file. Return: commits, testNames, redProof, greenProof, typecheckResult, lintResult, guardProof, codeChange (the diff of the source, verbatim), mistakes.`
   },
+  gate: (i) => `${preamble(i)}
+
+TASK (category ${cases.gate.category}): ${cases.gate.instructions} Commit your work on your branch. Return: commits (the shas), summary (3-6 lines: what you did and how you checked it), mistakes.`,
   review: (i) => `${common(i)}
 
 TASK (category ${cases.review.category}): a REFUTE-FIRST REVIEW of ${M.subject.module} at HEAD${cases.review.scope ? ` (${cases.review.scope})` : ''}, against its specification and promise and the shipped tests. Any input the module's stated API lets a caller hand it is admissible input. Assume the code is broken and try to prove it: for every suspected defect, write a scratch test that reproduces it (in ${scratch('<n>')}, left uncommitted; drive the real functions through the public API) and report the observed failure. Severity: S1 security/data loss, S2 wrong behaviour against the spec that the shipped tests miss, S3 a spec gap, a rejection where a result is promised, or a wrong test, S4 nit. A finding without a reproduction you actually ran is not a finding: put it in 'checked' as 'considered, not reproduced'. Also list in 'checked' every rule or path you examined and found correct. Return verdict ('ACCEPT' if no S1-S3), findings [{id (R-1, R-2, ...), severity, problem (what and where, with file:line), evidence (the scratch test name and the verbatim failing assertion), fix (one line)}], checked, mistakes.`,
@@ -167,6 +185,7 @@ const strs = { type: 'array', items: str }
 const SCHEMA = {
   pin: { type: 'object', properties: { testFile: str, testNames: strs, resultAtHead: { type: 'string', enum: ['pass', 'fail'] }, failureDetail: str, lintResult: str, commit: str, reasoning: str, mistakes: strs }, required: ['testFile', 'testNames', 'resultAtHead', 'failureDetail', 'lintResult', 'commit', 'reasoning', 'mistakes'] },
   fix: { type: 'object', properties: { commits: strs, testNames: strs, redProof: str, greenProof: str, typecheckResult: str, lintResult: str, guardProof: str, codeChange: str, mistakes: strs }, required: ['commits', 'testNames', 'redProof', 'greenProof', 'typecheckResult', 'lintResult', 'guardProof', 'codeChange', 'mistakes'] },
+  gate: { type: 'object', properties: { commits: strs, summary: str, mistakes: strs }, required: ['commits', 'summary', 'mistakes'] },
   review: { type: 'object', properties: { verdict: { type: 'string', enum: ['ACCEPT', 'FIX'] }, findings: { type: 'array', items: { type: 'object', properties: { id: str, severity: str, problem: str, evidence: str, fix: str }, required: ['id', 'severity', 'problem', 'evidence', 'fix'] } }, checked: strs, mistakes: strs }, required: ['verdict', 'findings', 'checked', 'mistakes'] },
 }
 

@@ -59,10 +59,13 @@ grader to read, so they say what the module must do, never how the accepted fix 
   - `findings[].found_rule`: what a review finding must say for `found`.
   - `findings[].cause_rule`: what it must locate for `causeNamed`.
   - `findings[].accepted_fix`: the commit that fixed it.
-- `cases`: one entry per case the pack supports, keyed `pin`, `fix`, `review` (the three the adapter reads).
+- `cases`: one entry per case the pack supports, keyed `pin`, `fix`, `review` or `gate`, one case per kind.
   - `cases.pin.base`, `cases.fix.base`, `cases.review.base`: the commit the case's checkouts hold.
   - `cases.pin.category`, `cases.fix.category`, `cases.review.category`: the host category the case represents
-    (`pin-tests`, `fix`, `review`); `scores.json` carries it as `category_mapping`.
+    (`pin-tests`, `fix`, `review`, or another category of the host's policy, e.g. `build-tests` for a pin case or
+    `build-core` for a fix case); `observations.py` writes it into the case's task object and `scores.json` carries it
+    as `category_mapping`. Optional: without it the task object carries no category and a reader applies the fixed
+    mapping (`pin-tests`, `fix`, `review`).
   - `cases.pin.tier`, `cases.fix.tier`, `cases.review.tier`: the difficulty tier (`T1` for a shared pack).
   - `cases.pin.pass_rule`, `cases.fix.pass_rule`, `cases.review.pass_rule`: the pass rule in words, copied verbatim
     into the protocol; grade.sh and observations.py apply it.
@@ -72,6 +75,25 @@ grader to read, so they say what the module must do, never how the accepted fix 
   - `cases.fix.commit_prefix`: optional; the commit message prefix the fix case asks for.
   - `cases.review.findings`: the ground-truth findings a review is graded on.
   - `cases.review.scope`: optional; the functions or sections the review covers.
+  - `cases.pin.mutants`: optional; a list of single-rule mutants of the accepted source, each `{id, commit}`. With it,
+    `grade.sh pin` also requires the candidate's new tests red with each mutant's source swapped in (`redAtMutants`).
+    - `cases.pin.mutants[].id`: the mutant's id, as the grade reports it (each id once).
+    - `cases.pin.mutants[].commit`: a commit in the pack's repository holding the mutant's `paths.source` files.
+  - `cases.gate`: optional; a task graded by a command rather than by tests against an accepted fix. A pack with only a
+    gate case needs no `subject`, `findings`, `paths`, `commands` or `accepted_fix`.
+    - `cases.gate.base`: the commit the case's checkouts hold.
+    - `cases.gate.category`: the host category the cell represents (e.g. `research-collect`, `docs-mechanical`).
+    - `cases.gate.tier`: the difficulty tier.
+    - `cases.gate.pass_rule`: the pass rule in words, copied verbatim into the protocol.
+    - `cases.gate.instructions`: the task, as the candidate reads it after the common preamble; it states what to
+      produce, never the grading command.
+    - `cases.gate.commands.gate`: run with bash in the candidate's checkout after the candidate finishes; exit 0 is
+      one condition of a pass. Its side effects stay in the checkout.
+    - `cases.gate.commands.timeout_seconds`: the limit on the command (a timeout reads as exit 124, never a pass).
+    - `cases.gate.invariants`: paths (files or directories) whose files must hash as at the base, read as the
+      checkout stands before the command runs (committed or not); a file added or removed under a directory breaks it.
+      Each must exist at the base.
+    - `cases.gate.required_paths`: paths that must exist in the checkout before the command runs.
 - `paths`: what grade.sh reads in a candidate's checkout.
   - `paths.source`: the source files the accepted fix changes; swapped for the accepted or base version while grading.
   - `paths.source_dir`: a pin cell may change nothing under it.
