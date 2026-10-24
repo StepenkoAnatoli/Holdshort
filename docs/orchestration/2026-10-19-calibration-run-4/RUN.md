@@ -219,3 +219,13 @@ read only, for the subject trees the packs export.
   sr-kit-cases deviation (`tests/fixtures/calibration-evidence/**`, regenerate only).
 - policy7-builder.md G4: host-policy-7's research-collect description becomes "Fetchproof (formerly Research-Kit)
   collection and brief" (owner-approved patch from the holdshort-finish session; before sr-policy-7 is dispatched).
+
+## 2026-10-25 (lead) - sr-kit-cases accepted; draft PR #120 waits on the owner (resume point)
+
+- wf_84740cc4-275: build f9e7b3b, review FIX (R-1 S3), fix 1 7ae4577, re-review ACCEPT at ce86512 (RR-1..RR-3 S4
+  open, listed in #120). Lead re-checks at ce86512: kit suite 112 OK / 1 skipped (418 s), evidence check 0 failures,
+  table --check 0, secrets clean, files within the permitted paths plus the approved fixtures folder.
+- Pushed `build/sr-kit-cases`, draft PR #120; the merge is the owner's. Outcome seq 3 accepted, 696,772 tokens
+  (wf_fb88b23e-3e1's are unknown and not counted).
+- Open: sr-pack-4a (wf_d882a0aa-d1d) still running. Then sr-policy-7 and sr-packs-t1 decide from the branch carrying
+  sr-kit-cases, with FU-1..FU-3 (evidence rule e, rule f, table gate cells) needing a unit before the T1 runs.
