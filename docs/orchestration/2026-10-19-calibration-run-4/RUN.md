@@ -152,3 +152,22 @@ read only, for the subject trees the packs export.
   `gittoken/run4-scheduled-task-update.md`.
 - Gate 4 unchanged: it blocks until 2026-10-24 18:00Z; the task fires at 18:07Z.
 - Next action: the owner's yes or no on the task edits, and on pushing this branch and opening its draft PR.
+
+## 2026-10-24 18:15 UTC (lead) - the reset; sr-pack-4a and sr-kit-cases decided and dispatched (resume point)
+
+- Run by hand on the owner's request (the scheduler no longer listed `smartrouter-run4-at-reset`). Before acting:
+  no decision or dispatch for either unit after 2026-10-19 04:10Z; this branch rebased onto origin/main 0a6d341
+  (no bare pull); the Windows fix de25ea7 is an ancestor of origin/main.
+- Reading 18:08:41Z (desktop `get_usage`, recorded with `route.mjs usage`): five_hour 0.01 (resets 23:00Z), seven_day
+  0.00 (resets 2026-10-31 18:00Z), weekly Fable 0%. `node --test route.test.mjs`: 142/142 after recording.
+- Decisions (now 18:10:10Z, deadline 2026-10-25 02:10:10Z, scratch copies of the requests): both delegate
+  cc-opus-high (build-ui@T3), sr-pack-4a all-in $13.09 estimate, sr-kit-cases $15.09; ledger seq 1. Dispatches seq 2
+  at 18:10:52Z.
+- Worktrees from origin/main 0a6d341: `gittoken/wt-sr-pack-4a` (build/sr-pack-4a), `gittoken/wt-sr-kit-cases`
+  (build/sr-kit-cases). Workflows (opus, effort high: build, refute-first review, at most two fix rounds):
+  wf_700a8638-73d (sr-pack-4a), wf_fb88b23e-3e1 (sr-kit-cases). Reports: each unit's `reports/` in its worktree.
+- Both units touch `tools/test_calibration_kit.py`, `CHANGELOG.md` and `subject-pack/README.md`: the lead merges
+  them one after the other.
+- This branch is still not pushed (the owner's call).
+- Next action: read both results, integrate (draft PRs, merge on green CI), record outcomes; then decide sr-policy-7
+  and sr-packs-t1 from the branch carrying sr-kit-cases.
