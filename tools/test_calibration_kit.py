@@ -110,9 +110,9 @@ def show_bytes(c: dict, rev: str, path: str = "src/mod.py") -> bytes:
     return subprocess.run(["git", "-C", str(c["repo"]), "show", f"{rev}:{path}"], capture_output=True, check=True).stdout
 
 
-def checkout(src: Path, commit: str, target: Path, env: dict, *flags: str) -> subprocess.CompletedProcess:
+def checkout(src: Path, commit: str, target: Path, env: dict, *flags: str, timeout: int = 120) -> subprocess.CompletedProcess:
     return subprocess.run(["bash", str(KIT / "historyless-checkout.sh"), *flags, str(src), commit, str(target), "cal/test"],
-                          env=env, capture_output=True, text=True, timeout=120)
+                          env=env, capture_output=True, text=True, timeout=timeout)
 
 
 def dir_link(link: Path, target: Path) -> None:
@@ -3184,23 +3184,30 @@ HYGIENE = [
 ]
 
 
+def hygiene_scan(root: Path) -> list[str]:
+    """K3 over every file under root. A host pack (subject-pack/host/<pack>/) is about its host's repository, so it may
+    name it (the MoonAliza rule); every other rule holds there too."""
+    hits = []
+    for f in sorted(root.rglob("*")):
+        if not f.is_file() or "__pycache__" in f.parts:
+            continue  # a bytecode cache is not kit content (and is git-ignored)
+        rules = [r for r in HYGIENE if r[0] != "a MoonAliza name"] if (KIT / "subject-pack" / "host") in f.resolve().parents else HYGIENE
+        for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            if n == 1 and line.startswith("#!"):
+                continue  # the interpreter line
+            if "EXAMPLE:" in line:
+                continue  # an example clearly marked as one
+            bare = re.sub(r"\{\{[^}]*\}\}", "", line)  # a {{placeholder}} may name anything
+            for what, rx in rules:
+                if rx.search(bare):
+                    hits.append(f"{f.relative_to(root)}:{n}: {what}: {line.strip()[:120]}")
+                    break  # one hit per line: the first rule it breaks
+    return hits
+
+
 class Hygiene(unittest.TestCase):
     def scan(self, root: Path):
-        hits = []
-        for f in sorted(root.rglob("*")):
-            if not f.is_file() or "__pycache__" in f.parts:
-                continue  # a bytecode cache is not kit content (and is git-ignored)
-            for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
-                if n == 1 and line.startswith("#!"):
-                    continue  # the interpreter line
-                if "EXAMPLE:" in line:
-                    continue  # an example clearly marked as one
-                bare = re.sub(r"\{\{[^}]*\}\}", "", line)  # a {{placeholder}} may name anything
-                for what, rx in HYGIENE:
-                    if rx.search(bare):
-                        hits.append(f"{f.relative_to(root)}:{n}: {what}: {line.strip()[:120]}")
-                        break  # one hit per line: the first rule it breaks
-        return hits
+        return hygiene_scan(root)
 
     def test_the_kit_has_no_host_path_session_id_key_or_provider_call(self):
         self.assertTrue(KIT.is_dir())
@@ -3878,6 +3885,534 @@ class SharedPack(unittest.TestCase):
         self.assertIn("frozen", out["error"] or "")
         self.assertEqual(out["calls"], [])
 
+# The host pack moonaliza-x2-1 (tools/calibration/subject-pack/host/moonaliza-x2-1/): it ships no subject code, so its
+# repository is built from a MoonAliza clone the host names in MOONALIZA_CLONE; without one, every test that needs the
+# clone reports UNSUPPORTED (a skip, never a pass), and the tests of the pack's own files still run.
+X21 = KIT / "subject-pack" / "host" / "moonaliza-x2-1"
+X21_UNSUPPORTED = "UNSUPPORTED: MOONALIZA_CLONE is not set (a MoonAliza clone holding 16f637f and 01a8604); this test needs the subject"
+
+
+def in_host_pack(f: Path) -> bool:
+    """A file of a host pack: the pack's README lists it, not the kit's (the kit README names the shared pack only)."""
+    return (KIT / "subject-pack" / "host") in f.parents
+
+
+def x21_clone() -> Path | None:
+    import os
+    value = os.environ.get("MOONALIZA_CLONE", "")
+    return Path(value) if value else None
+
+
+NEEDS_X21 = unittest.skipUnless(x21_clone(), X21_UNSUPPORTED)
+
+# The anchors the candidate changes below edit: lines of the base tree's three source files (MoonAliza 16f637f).
+X21_RECONCILE_CALL = "  await vault.reconcile(new Set([...references, ...collectorSettings.references(), ...githubStore.references()]));"
+X21_SIGNATURE = "  reconcile(committedReferences: ReadonlySet<string>): Promise<void> {"
+X21_DELETES = "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref))) {"
+X21_COMMITS = "        if (entry.state === 'staged' && committedReferences.has(ref)) {"
+X21_GETTER_AT = "  openedAppChanged(): boolean { return this.appChanged; }"
+X21_KEEP_SIGNATURE = "  reconcile(committedReferences: ReadonlySet<string>, options: { keepStaged?: boolean } = {}): Promise<void> {"
+X21_REFS = "new Set([...references, ...collectorSettings.references(), ...githubStore.references()])"
+
+
+def x21_getter(name: str, body: str = "this.unread") -> tuple[str, str, str]:
+    return ("src/main/github-account-store.ts", X21_GETTER_AT,
+            f"{X21_GETTER_AT}\n  /** X2-1: whether open() could not read the account file. */\n  {name}(): boolean {{ return {body}; }}")
+
+
+def x21_wire(call: str) -> tuple[str, str, str]:
+    return ("src/main/index.ts", X21_RECONCILE_CALL, call)
+
+
+X21_KEEP_UNREFERENCED = [  # the vault keeps unreferenced staged entries when asked (tombstones still go)
+    ("src/main/vault.ts", X21_SIGNATURE, X21_KEEP_SIGNATURE),
+    ("src/main/vault.ts", X21_DELETES,
+     "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref) && !options.keepStaged)) {"),
+]
+
+# Each wrong fix of WRONG-FIXES.md as a candidate's change on the base: (path, base text, new text) edits, the startup
+# lines of the candidate's own test (tests/x2_candidate.test.ts, the {{RECONCILE}} of X21_CANDIDATE_TEST), how long the
+# candidate's test holds the read failure ("open" or "once") and what it checks ("journey": the next readable start finds
+# the pair live; "index": the unread start leaves the pair staged in the index). Every one is green on its own tests, red
+# with the sources restored, in scope and lint-clean, so only the accepted journey test can fail it.
+X21_WRONG = {
+    "W-a": dict(hold="once", check="journey", reconcile="await vault.reconcile(new Set(store.references()));", edits=[
+        ("src/main/github-account-store.ts",
+         "      try { this.disk = AccountFileSchema.parse(await boundedJson(this.file, 64 * 1024)); }\n      // finishStartup",
+         "      const read = async () => AccountFileSchema.parse(await boundedJson(this.file, 64 * 1024));\n"
+         "      try {\n"
+         "        // X2-1: an I/O error at open() is taken for a transient one: the file is read once more before it counts as unread\n"
+         "        this.disk = await read().catch(async (error: NodeJS.ErrnoException) => {\n"
+         "          if (typeof error?.code !== 'string' || error.code === 'ENOENT') throw error;\n"
+         "          await new Promise(resolve => setTimeout(resolve, 50));\n"
+         "          return read();\n"
+         "        });\n"
+         "      }\n      // finishStartup")]),
+    "W-b": dict(hold="open", check="journey", reconcile="if (!store.openFailed()) await vault.reconcile(new Set(store.references()));", edits=[
+        x21_getter("openFailed"),
+        x21_wire(f"  if (!githubStore.openFailed()) await vault.reconcile({X21_REFS});")]),
+    "W-b2": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed() });", edits=[
+        x21_getter("openFailed"),
+        ("src/main/vault.ts", X21_SIGNATURE, X21_KEEP_SIGNATURE),
+        ("src/main/vault.ts", X21_DELETES,
+         "        } else if (!options.keepStaged && (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref)))) {"),
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
+    "W-c": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()));", edits=[
+        ("src/main/vault.ts", X21_DELETES,
+         "        } else if (entry.state === 'tombstoned') {   // X2-1: a staged entry may be named by a file this start cannot read")],
+        test_edits="W-c"),
+    "W-d": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()));", edits=[
+        ("src/main/vault.ts", "  async has(ref: string): Promise<boolean> {",
+         "  /** X2-1: the refs a crash may have left staged. */\n"
+         "  stagedReferences(): string[] { return Object.entries(this.index.entries).filter(([, entry]) => entry.state === 'staged').map(([ref]) => ref); }\n\n"
+         "  async has(ref: string): Promise<boolean> {"),
+        ("src/main/github-account-store.ts", "Pick<Vault, 'saveStaged' | 'commit' | 'tombstone' | 'remove' | 'has'>",
+         "Pick<Vault, 'saveStaged' | 'commit' | 'tombstone' | 'remove' | 'has' | 'stagedReferences'>"),
+        ("src/main/github-account-store.ts", "  references(): string[] { return refsOf(this.live); }",
+         "  references(): string[] { return this.unread ? this.vault.stagedReferences() : refsOf(this.live); }")]),
+    "W-e": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), { commitStaged: store.openFailed() });", edits=[
+        x21_getter("openFailed"),
+        ("src/main/vault.ts", X21_SIGNATURE,
+         "  reconcile(committedReferences: ReadonlySet<string>, options: { commitStaged?: boolean } = {}): Promise<void> {"),
+        ("src/main/vault.ts", X21_COMMITS,
+         "        if (entry.state === 'staged' && (committedReferences.has(ref) || options.commitStaged)) {"),
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ commitStaged: githubStore.openFailed() }});")]),
+    "W-f": dict(hold="open", check="index", reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed() });", edits=[
+        x21_getter("openFailed"),
+        ("src/main/vault.ts", X21_SIGNATURE, X21_KEEP_SIGNATURE),
+        ("src/main/vault.ts", X21_DELETES,
+         "        } else if (options.keepStaged && entry.state === 'staged' && !committedReferences.has(ref)) {\n"
+         "          // X2-1: the entry stays for the next readable start; its encrypted file is not needed until then\n"
+         "          await unlink(this.secretPath(ref)).catch(() => undefined);\n"
+         f"{X21_DELETES}"),
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
+    "W-g": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed() });", edits=[
+        x21_getter("openFailed"),
+        ("src/main/vault.ts", X21_SIGNATURE + "\n    return this.serial(async () => {",
+         X21_KEEP_SIGNATURE + "\n    return this.serial(async () => {\n"
+         "      // X2-1: a crash during the first sign-in leaves no committed entry; only then is a staged one kept\n"
+         "      const keep = options.keepStaged === true && !Object.values(this.index.entries).some(entry => entry.state === 'committed');"),
+        ("src/main/vault.ts", X21_DELETES,
+         "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref) && !keep)) {"),
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
+    "W-h1": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.keepStagedAtStart() });", edits=[
+        x21_getter("keepStagedAtStart", "this.unread || this.appChanged"),
+        *X21_KEEP_UNREFERENCED,
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.keepStagedAtStart() }});")]),
+    "W-h2": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed() });", edits=[
+        x21_getter("openFailed", "this.disk === null && !this.startupWrite"),
+        *X21_KEEP_UNREFERENCED,
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
+    "W-i": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.unreadAtOpen() });", edits=[
+        x21_getter("unreadAtOpen"),
+        *X21_KEEP_UNREFERENCED]),
+    "W-j": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed() });", edits=[
+        x21_getter("openFailed"),
+        ("src/main/vault.ts", "interface VaultEntry { state: 'staged' | 'committed' | 'tombstoned'; createdAt: number }",
+         "interface VaultEntry { state: 'staged' | 'committed' | 'tombstoned'; createdAt: number; held?: boolean }"),
+        ("src/main/vault.ts", X21_SIGNATURE, X21_KEEP_SIGNATURE),
+        ("src/main/vault.ts", X21_DELETES,
+         "        } else if (options.keepStaged && entry.state === 'staged' && !committedReferences.has(ref)) {\n"
+         "          entry.held = true;   // X2-1: held until a start that can name its references\n"
+         "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref) && !entry.held)) {"),
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
+}
+
+# A correct fix the accepted one is not: another name for the store's flag and a positional vault parameter.
+X21_ALTERNATIVE = dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), store.fileUnreadable());", edits=[
+    x21_getter("fileUnreadable"),
+    ("src/main/vault.ts", X21_SIGNATURE, "  reconcile(committedReferences: ReadonlySet<string>, keepUnreferencedStaged = false): Promise<void> {"),
+    ("src/main/vault.ts", X21_DELETES,
+     "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref) && !keepUnreferencedStaged)) {"),
+    x21_wire(f"  await vault.reconcile({X21_REFS}, githubStore.fileUnreadable());")])
+
+# W-c keeps every unreferenced staged entry, so the shipped crash-window row whose crash leaves an orphan pair (staged,
+# never written to the file) no longer holds; a candidate holding that idea drops the row as the change's consequence.
+X21_TEST_EDITS = {"W-c": [(
+    "tests/github-account-store.test.ts",
+    "    { name: 'after staging, before the file write', arm: (h, take) => h.spy.after('saveStaged', (_ref, count) => "
+    "{ if (count === 4) take(); }), expect: 'old' },\n",
+    "",
+)]}
+
+# The candidate's own red-first test for its change (tests/x2_candidate.test.ts): a first sign-in that crashed before its
+# first commit, a start whose open() cannot read the account file, then the check. Self-contained, as a candidate writes it.
+X21_CANDIDATE_TEST = """\
+import { afterEach, expect, test } from 'vitest';
+import { randomBytes } from 'node:crypto';
+import { cpSync, readFileSync } from 'node:fs';
+import fsp, { mkdtemp, rm } from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Vault } from '../src/main/vault';
+import { GitHubAccountStore } from '../src/main/github-account-store';
+
+// X2-1, written red-first by the candidate: a crash before the first commit, then a start that cannot read the account file.
+const cryptor = { isEncryptionAvailable: () => true, encryptString: (v: string) => Buffer.from(v, 'utf8'), decryptString: (b: Buffer) => b.toString('utf8') };
+const T0 = Date.UTC(2026, 9, 13, 10, 0, 0);
+const roots: string[] = [];
+afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
+const tokens = () => ({ access: `x2-a-${randomBytes(8).toString('hex')}`, refresh: `x2-r-${randomBytes(8).toString('hex')}`,
+  accessExpiresInS: 28_800, refreshExpiresInS: 15_897_600 });
+
+function busy(path: string, once: boolean): () => void {
+  const real = fsp.lstat; let failed = false;
+  (fsp as { lstat: unknown }).lstat = (target: string) => {
+    if (target === path && !(once && failed)) { failed = true; return Promise.reject(Object.assign(new Error('EBUSY'), { code: 'EBUSY' })); }
+    return real(target);
+  };
+  syncBuiltinESMExports();
+  return () => { (fsp as { lstat: unknown }).lstat = real; syncBuiltinESMExports(); };
+}
+
+async function startup(dir: string, unread: boolean) {
+  const file = join(dir, 'github', 'account.json');
+  const vault = new Vault(join(dir, 'vault'), cryptor); await vault.initialize('epoch-2');
+  const store = new GitHubAccountStore(file, vault, 'Iv1.x2-candidate', () => T0);
+  const restore = unread ? busy(file, {{ONCE}}) : () => {};
+  try { await store.open(); } finally { restore(); }
+  {{RECONCILE}}
+  await store.finishStartup();
+  return { vault, store };
+}
+
+test('X2-1: a start that cannot read the account file keeps the staged pair the file names', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'x2-candidate-')); roots.push(root);
+  const data = join(root, 'data'); const dir = join(root, 'crash');
+  const vault = new Vault(join(data, 'vault'), cryptor); await vault.initialize('epoch-1');
+  let crashed = false;
+  const spy = new Proxy(vault, { get(target, key) {
+    const value = Reflect.get(target, key, target) as unknown;
+    if (typeof value !== 'function') return value;
+    return (...args: unknown[]) => {
+      if (key === 'commit' && !crashed) { crashed = true; cpSync(data, dir, { recursive: true }); }
+      return (value as (...a: unknown[]) => unknown).apply(target, args);
+    };
+  } });
+  const store = new GitHubAccountStore(join(data, 'github', 'account.json'), spy, 'Iv1.x2-candidate', () => T0);
+  await store.open();
+  const account = await store.replace(tokens(), T0, 'sign-in', () => true);
+  const pair = [account!.accessRef, account!.refreshRef!];
+  await startup(dir, true);
+  const index = JSON.parse(readFileSync(join(dir, 'vault', 'index.json'), 'utf8')) as { entries: Record<string, { state: string }> };
+  expect(Object.keys(index.entries)).toEqual(expect.arrayContaining(pair));
+  {{CHECK}}
+});
+"""
+X21_CHECKS = {
+    "journey": "const next = await startup(dir, false);\n  expect([next.store.current()?.accessRef, next.store.current()?.refreshRef]).toEqual(pair);\n"
+               "  for (const ref of pair) expect(await next.vault.has(ref)).toBe(true);",
+    "index": "expect(pair.map(ref => index.entries[ref]?.state)).toEqual(['staged', 'staged']);",
+}
+
+
+def x21_edit(cand: Path, path: str, old: str, new: str) -> None:
+    """Replace the one occurrence of old in a checkout file, whatever its line ends (a host with core.autocrlf writes CRLF)."""
+    f = cand / path
+    raw = f.read_bytes().decode("utf-8")
+    crlf = "\r\n" in raw
+    text = raw.replace("\r\n", "\n")
+    if text.count(old) != 1:
+        raise AssertionError(f"{path}: the anchor occurs {text.count(old)} times: {old[:80]!r}")
+    text = text.replace(old, new)
+    f.write_bytes((text.replace("\n", "\r\n") if crlf else text).encode("utf-8"))
+
+
+def x21_candidate(cand: Path, change: dict, env: dict, message: str) -> None:
+    """Apply a candidate change on a history-less checkout of the base and commit it, as a candidate would."""
+    for path, old, new in change["edits"]:
+        x21_edit(cand, path, old, new)
+    for path, old, new in X21_TEST_EDITS.get(change.get("test_edits", ""), []):
+        x21_edit(cand, path, old, new)
+    test = (X21_CANDIDATE_TEST.replace("{{ONCE}}", "true" if change["hold"] == "once" else "false")
+            .replace("{{RECONCILE}}", change["reconcile"]).replace("{{CHECK}}", X21_CHECKS[change["check"]]))
+    (cand / "tests" / "x2_candidate.test.ts").write_text(test, encoding="utf-8", newline="\n")
+    sh(["git", "add", "-A"], cand, env)
+    sh(["git", "commit", "-q", "--no-verify", "-m", message], cand, env)  # the subject's hooks are not the candidate's grade
+
+
+def x21_shell_modules(clone: Path, target: Path) -> Path:
+    """A node_modules of its own whose every entry links to the clone's: vitest writes its caches (.vite, .vite-temp)
+    into the node_modules a checkout links, and the clone is read only."""
+    target.mkdir(parents=True)
+    for entry in sorted((clone / "node_modules").iterdir()):
+        if entry.name not in (".vite", ".vite-temp"):
+            (target / entry.name).symlink_to(entry, target_is_directory=entry.is_dir())
+    return target
+
+
+def x21_manifest() -> dict:
+    return json.loads((X21 / "manifest.json").read_text(encoding="utf-8"))
+
+
+def x21_wrong_rows() -> dict[str, list[str]]:
+    """WRONG-FIXES.md's table: {id: [the wrong idea, the pin row that catches it, the grade]}."""
+    rows = {}
+    for line in (X21 / "WRONG-FIXES.md").read_text(encoding="utf-8").splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if line.startswith("| W-") and len(cells) == 4:
+            rows[cells[0]] = cells[1:]
+    return rows
+
+
+class HostPackX21(unittest.TestCase):
+    """H4: the host pack moonaliza-x2-1 builds from a MoonAliza clone, its accepted journey test and its wrong-fix
+    matrix hold as WRONG-FIXES.md says, and the pack's own files are clean, shaped and hashed."""
+
+    # ---- without the clone -----------------------------------------------------------------------------------------
+    def test_the_pack_has_no_host_path_session_id_or_run_id(self):
+        self.assertEqual(hygiene_scan(X21), [])
+
+    def test_the_manifest_has_the_host_pack_shape(self):
+        m = x21_manifest()
+        self.assertEqual(next(iter(m)), "_lineage")
+        self.assertEqual((m["kind"], m["pack"], m["pack_version"], m["repository"]), ("host", "moonaliza-x2-1", "1", "repo"))
+        self.assertEqual(sorted(m["cases"]), ["fix"], "stage 4a is fix@T3 alone: no pin and no review case")
+        fix = m["cases"]["fix"]
+        self.assertEqual((fix["tier"], fix["category"], fix["finding"]), ("T3", "fix", "X2-1"))
+        self.assertEqual(fix["pass_rule"],
+                         "the candidate's tests are green at its head AND red again with the three source files restored to the base AND the "
+                         "accepted journey test is green against the candidate's source AND every changed file is one of the three source files, "
+                         "the two test files, the wiring test or the map, or a newly added test file matching the pattern AND eslint is clean on those files")
+        [f] = m["findings"]
+        self.assertEqual((f["id"], f["severity"], f["present_at"], f["accepted_fix"]), ("X2-1", "S3", [fix["base"]], m["accepted_fix"]))
+        for rev in (fix["base"], m["accepted_fix"]):
+            self.assertRegex(rev, r"^[0-9a-f]{40}$")
+        self.assertIn("unreferenced staged", f["cause"])
+        self.assertIn("reconcile", f["cause"])
+        for name in ("unreadAtOpen", "keepStaged"):  # the accepted fix's names stay out of every text a candidate or grader reads
+            self.assertNotIn(name, json.dumps({k: v for k, v in m.items() if k != "source_hashes"}), name)
+        p = m["paths"]
+        self.assertEqual(p["source"], ["src/main/github-account-store.ts", "src/main/vault.ts", "src/main/index.ts"])
+        self.assertEqual(p["test_file"], "tests/github-account-store.test.ts")
+        self.assertEqual(p["allowed_extra"], ["tests/vault.test.ts", "tests/github-main-wiring.test.ts", "docs/ARCHITECTURE.md"])
+        self.assertEqual(p["map_file"], "docs/ARCHITECTURE.md")
+        self.assertEqual(p["new_test_pattern"], r"^tests/.*x2.*\.test\.ts$")
+        self.assertEqual(p["accepted_test"], {"from": "tests/zz_accepted_x2_1.test.ts", "to": "tests/zz_accepted_x2_1.test.ts"})
+        self.assertRegex(p["accepted_test"]["to"], p["new_test_pattern"], "grade.sh leaves the accepted test out of the candidate's new tests")
+        c = m["commands"]
+        self.assertEqual((c["test"], c["test_report"], c["lint"], c["timeout_seconds"]),
+                         ("npx vitest run {files} --testTimeout=60000 --reporter=json --outputFile={report}", "vitest-json", "npx eslint {files}", 900))
+        self.assertEqual(m["checkout"]["links"], ["node_modules", ".build"])
+        self.assertIn("history-less", m["isolation"])
+        self.assertIn("no MoonAliza code", m["isolation"])
+        fmt = (KIT / "subject-pack" / "README.md").read_text(encoding="utf-8")
+        for k in ("subject", "commit_rule", "accepted_fix", "findings", "cases", "paths", "commands", "checkout", "source_hashes", "isolation"):
+            self.assertIn(k, m, k)
+            self.assertIn(f"`{k}`", fmt, k)
+        for k in m["paths"]:
+            self.assertIn(f"`paths.{k}`", fmt, k)
+
+    def test_the_source_hashes_cover_every_pack_file(self):
+        m = x21_manifest()
+        files = [f for f in pack_files(X21) if f != "manifest.json"]
+        self.assertEqual(sorted(m["source_hashes"]), sorted(files))
+        for f in files:
+            self.assertEqual(m["source_hashes"][f], text_hash(X21 / f), f)
+
+    def test_the_readme_lists_the_files_and_the_names_the_test_assumes(self):
+        text = (X21 / "README.md").read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("<!-- Lineage:"))
+        files = md_section(text, "Files")
+        for f in pack_files(X21):
+            self.assertIn(f"`{f}`", files, f)
+        for heading in ("The journey", "How a host builds the repository and the checkouts", "The names the journey test assumes",
+                        "What the pack does not discriminate", "Why there is no pin and no review case"):
+            md_section(text, heading)
+        build = md_section(text, "How a host builds the repository and the checkouts")
+        for word in ("make-repo.sh", "historyless-checkout.sh", "--link node_modules=", "grade.sh", "outside the pack"):
+            self.assertIn(word, build, word)
+        test = (X21 / "zz_accepted_x2_1.test.ts").read_text(encoding="utf-8")
+        for name in ("unreadAtOpen", "keepStaged"):
+            self.assertNotIn(name, test, f"the accepted journey test names the accepted fix's {name}")
+
+    def test_wrong_fixes_lists_every_wrong_fix_the_tests_grade(self):
+        rows = x21_wrong_rows()
+        self.assertEqual(sorted(rows), sorted(X21_WRONG))
+        for wid, (idea, row, grade_) in rows.items():
+            self.assertTrue(idea and row, wid)
+            self.assertTrue(grade_.startswith("FAIL"), f"{wid}: {grade_}")
+        text = (X21 / "WRONG-FIXES.md").read_text(encoding="utf-8")
+        for letter in "abcdefgh":  # the lead's list (H1), each by its letter
+            self.assertRegex(text, rf"\| W-{letter}\d? \|", letter)
+
+    def test_without_the_clone_the_subject_tests_report_unsupported(self):
+        for name in ("test_make_repo_builds_the_manifest_ids", "test_the_accepted_journey_test_is_red_at_base_and_green_at_accepted",
+                     "test_every_wrong_fix_grades_fail_on_the_accepted_journey_test_alone", "test_the_accepted_and_an_alternative_fix_grade_pass",
+                     "test_the_launch_refusals_hold_with_this_manifest_and_a_fix_only_protocol"):
+            method = getattr(type(self), name)
+            if x21_clone():
+                self.assertFalse(getattr(method, "__unittest_skip__", False), name)
+            else:  # a skip with the UNSUPPORTED reason, never a pass
+                self.assertTrue(getattr(method, "__unittest_skip__", False), name)
+                self.assertEqual(method.__unittest_skip_why__, X21_UNSUPPORTED, name)
+
+    # ---- with the clone --------------------------------------------------------------------------------------------
+    @classmethod
+    def setUpClass(cls):
+        cls.built = None
+        if not x21_clone():
+            return
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls.tmp.name)
+        cls.env = git_env(cls.root)
+        cls.env["MSYS"] = "winsymlinks:nativestrict"  # Git Bash makes a real symlink for --link, or fails, never a copy
+        cls.pack = cls.root / "pack"
+        shutil.copytree(X21, cls.pack)
+        cls.built = subprocess.run(["bash", str(cls.pack / "make-repo.sh"), str(x21_clone()), str(cls.pack / "repo")],
+                                   env=cls.env, capture_output=True, text=True, timeout=600)
+        cls.ids = dict(line.split() for line in cls.built.stdout.splitlines() if len(line.split()) == 2)
+        cls.modules = x21_shell_modules(x21_clone(), cls.root / "modules" / "node_modules")
+        cls.n = 0
+
+    @classmethod
+    def tearDownClass(cls):
+        if getattr(cls, "tmp", None):
+            cls.tmp.cleanup()
+
+    def at(self, name: str) -> Path:
+        """A fresh history-less checkout of the pack commit <name>0, outside the pack, node_modules linked."""
+        self.assertEqual(self.built.returncode, 0, self.built.stdout + self.built.stderr)
+        type(self).n += 1
+        target = self.root / "checkouts" / f"{name}-{self.n}"
+        # a MoonAliza tree takes over a minute to check out on the lead's host, more while grades run beside it
+        p = checkout(self.pack / "repo", self.ids[f"{name}0"], target, self.env, "--pack", str(self.pack),
+                     "--link", f"node_modules={self.modules}", timeout=900)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        return target
+
+    def grade_run(self, cand: Path) -> subprocess.CompletedProcess:
+        return subprocess.run(["bash", str(KIT / "grade.sh"), str(self.pack / "manifest.json"), "fix", str(cand)], env=self.env,
+                              capture_output=True, text=True, timeout=3600)
+
+    def grade_fix(self, cand: Path) -> dict:
+        p = self.grade_run(cand)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        return json.loads(p.stdout)
+
+    def vitest(self, cand: Path, *files: str) -> dict:
+        report = cand.parent / f"{cand.name}-report.json"
+        subprocess.run(["bash", "-c", 'npx vitest run "$@" --reporter=json --outputFile="$R" >/dev/null 2>&1', "vitest", *files],
+                       cwd=cand, env={**self.env, "R": str(report)}, timeout=900)
+        return json.loads(report.read_text(encoding="utf-8"))
+
+    @NEEDS_X21
+    def test_make_repo_builds_the_manifest_ids(self):
+        self.assertEqual(self.built.returncode, 0, self.built.stdout + self.built.stderr)
+        m = x21_manifest()
+        self.assertEqual(self.ids, {"base0": m["cases"]["fix"]["base"], "accepted0": m["accepted_fix"]})
+        self.assertIn("the ids equal manifest.json's", self.built.stderr)
+        g = lambda *a: sh(["git", *a], self.pack / "repo", self.env).stdout.strip()
+        for tag in ("base0", "accepted0"):
+            self.assertEqual(g("rev-list", "--count", tag), "1", f"{tag} is a root commit")
+        self.assertEqual(g("rev-parse", "base0^{tree}"), sh(["git", "rev-parse", "16f637f1a1eaf9879933a0020d676971a26b3c4b^{tree}"], x21_clone(), self.env).stdout.strip())
+        self.assertEqual(g("diff", "--name-status", "base0", "accepted0", "--", "tests/zz_accepted_x2_1.test.ts"), "A\ttests/zz_accepted_x2_1.test.ts")
+        self.assertEqual(subprocess.run(["git", "-C", str(self.pack / "repo"), "show", "accepted0:tests/zz_accepted_x2_1.test.ts"],
+                                        capture_output=True, check=True).stdout, (X21 / "zz_accepted_x2_1.test.ts").read_bytes())
+        again = subprocess.run(["bash", str(self.pack / "make-repo.sh"), str(x21_clone()), str(self.root / "elsewhere" / "repo")],
+                               env=self.env, capture_output=True, text=True, timeout=600)
+        self.assertEqual(again.stdout, self.built.stdout, "a second build elsewhere gives the same ids")
+        p = subprocess.run(["bash", str(self.pack / "make-repo.sh"), str(x21_clone()), str(self.pack / "repo")], env=self.env,
+                           capture_output=True, text=True, timeout=60)
+        self.assertEqual(p.returncode, 2, "an existing target is refused")
+
+    @NEEDS_X21
+    def test_the_accepted_journey_test_is_red_at_base_and_green_at_accepted(self):
+        test = (X21 / "zz_accepted_x2_1.test.ts").read_bytes()
+        base = self.at("base")
+        (base / "tests" / "zz_accepted_x2_1.test.ts").write_bytes(test)
+        at_base = self.vitest(base, "tests/zz_accepted_x2_1.test.ts")
+        results = {a["title"]: a["status"] for r in at_base["testResults"] for a in r["assertionResults"]}
+        journey = {t: s for t, s in results.items() if "crash before commit" in t}
+        self.assertEqual(len(journey), 8, results)
+        self.assertEqual(set(journey.values()), {"failed"}, "every journey row is red at the base")
+        self.assertEqual({t: s for t, s in results.items() if t not in journey and s != "passed"}, {}, "the other rows hold at the base")
+        at_accepted = self.vitest(self.at("accepted"), "tests/zz_accepted_x2_1.test.ts")
+        self.assertEqual((at_accepted["numFailedTests"], at_accepted["numPassedTests"]), (0, len(results)))
+
+    @NEEDS_X21
+    def test_every_wrong_fix_grades_fail_on_the_accepted_journey_test_alone(self):
+        rows = x21_wrong_rows()
+
+        def graded(wid: str) -> subprocess.CompletedProcess:
+            cand = self.at("base")
+            x21_candidate(cand, X21_WRONG[wid], self.env, f"fix: X2-1 - {rows[wid][0]}")
+            return self.grade_run(cand)
+
+        # one grade at a time: the subject's own tests have a 15 s testTimeout, and on a loaded host (grades side by side)
+        # some of its long tests time out, which turns a candidate's green run red for a reason that is not its change
+        runs = {wid: graded(wid) for wid in X21_WRONG}
+        for wid, p in runs.items():
+            with self.subTest(wid):
+                self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+                g = json.loads(p.stdout)
+                self.assertEqual((g["candidateGreen"], g["guardRed"], g["scopeOk"], g["lint"]), (True, True, True, "ok"), json.dumps(g, indent=1))
+                self.assertFalse(g["acceptedPinGreen"], json.dumps(g, indent=1))
+                self.assertFalse(g["PASS"])
+                self.assertEqual(g["restored"], True)
+                # the grade column of WRONG-FIXES.md states the count the grade returns
+                want = re.match(r"FAIL: acceptedPin (\d+) of 13 red;", rows[wid][2])
+                self.assertIsNotNone(want, rows[wid][2])
+                pin = g["acceptedPin"]
+                self.assertEqual((pin["failed"], pin["total"]), (int(want[1]), 13), json.dumps(g, indent=1))
+
+    @NEEDS_X21
+    def test_the_accepted_and_an_alternative_fix_grade_pass(self):
+        accepted = self.at("base")
+        for f in (*x21_manifest()["paths"]["source"], "tests/github-account-store.test.ts", "tests/vault.test.ts",
+                  "tests/github-main-wiring.test.ts", "docs/ARCHITECTURE.md"):
+            data = subprocess.run(["git", "-C", str(self.pack / "repo"), "show", f"accepted0:{f}"], capture_output=True, check=True).stdout
+            (accepted / f).write_bytes(data)
+        sh(["git", "add", "-A"], accepted, self.env)
+        sh(["git", "commit", "-q", "--no-verify", "-m", "fix: X2-1 - the accepted change"], accepted, self.env)
+        alternative = self.at("base")
+        x21_candidate(alternative, X21_ALTERNATIVE, self.env, "fix: X2-1 - an unread start keeps unreferenced staged entries (another correct fix)")
+        for name, cand in (("accepted", accepted), ("alternative", alternative)):
+            with self.subTest(name):
+                g = self.grade_fix(cand)
+                self.assertTrue(g["PASS"], json.dumps(g, indent=1))
+                self.assertTrue(g["acceptedPinGreen"] and g["guardRed"] and g["candidateGreen"] and g["scopeOk"], name)
+
+    @NEEDS_X21
+    @NEEDS_NODE
+    def test_the_launch_refusals_hold_with_this_manifest_and_a_fix_only_protocol(self):
+        m = x21_manifest()
+        co = self.root / "launch" / "checkouts"
+
+        def cfg(**host):
+            c = run_config(self.root / "launch", **{"pack_dir": str(self.pack), "checkout_root": str(co),
+                                                    "adjudication_checkout": str(co / "cal-adjudication"), **host})
+            c["manifest"] = m
+            p = c["protocol"]
+            p["cases"] = [{"id": "fix", "category": "fix", "tier": "T3", "base": "base0", "grading": "mechanical (grade.sh fix)",
+                           "pass_rule": m["cases"]["fix"]["pass_rule"]}]
+            p["subject_pack"] = {"pack": m["pack"], "pack_version": m["pack_version"], "kind": "host",
+                                 "manifest_sha256": text_hash(X21 / "manifest.json")}
+            return c
+
+        out = execute_template(cfg(), self.root)
+        self.assertIsNone(out["error"])
+        self.assertEqual(sorted(c["label"] for c in out["calls"]), ["fix:alpha-low"])
+        prompt = out["calls"][0]["prompt"]
+        f = m["findings"][0]
+        for text in (f["summary"], f["required_behaviour"], m["cases"]["fix"]["instructions"], "npx vitest run <file>",
+                     "npx eslint src/main/github-account-store.ts src/main/vault.ts src/main/index.ts tests/github-account-store.test.ts"):
+            self.assertIn(text, prompt)
+        for secret in (str(self.pack), "make-repo", "zz_accepted", "WRONG-FIXES", self.ids["accepted0"], self.ids["base0"]):
+            self.assertNotIn(secret, prompt)  # Item 2: the prompt names only the checkout
+        for host in ({"checkout_root": str(self.pack / "checkouts")}, {"adjudication_checkout": str(self.pack / "repo" / "adj")},
+                     {"pack_dir": str(co / "pack")}):
+            out = execute_template(cfg(**host), self.root)
+            self.assertIn("shares a filesystem path with the pack directory", out["error"] or "", host)
+            self.assertEqual(out["calls"], [], host)
+        frozen = cfg()
+        frozen["protocol"]["frozen_at"] = "{{ISO-8601 UTC time of the freeze commit}}"
+        out = execute_template(frozen, self.root)
+        self.assertIn("frozen", out["error"] or "")
+        self.assertEqual(out["calls"], [])
+
+
 class Docs(unittest.TestCase):
     def readme(self) -> str:
         return (KIT / "README.md").read_text(encoding="utf-8")
@@ -3891,7 +4426,7 @@ class Docs(unittest.TestCase):
     def test_readme_lists_every_kit_file(self):
         text = self.readme()
         for f in sorted(KIT.rglob("*")):
-            if f.is_file() and "__pycache__" not in f.parts and f != KIT / "README.md" and not in_shared_pack(f):
+            if f.is_file() and "__pycache__" not in f.parts and f != KIT / "README.md" and not in_shared_pack(f) and not in_host_pack(f):
                 self.assertIn(f"`{f.relative_to(KIT).as_posix()}`", text)
 
     def test_readme_documents_the_observation_keys_the_adapter_reads(self):
@@ -3989,13 +4524,16 @@ class Docs(unittest.TestCase):
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         unreleased = changelog.split("## Unreleased", 1)[1].split("\n## ", 1)[0]
         lines = [ln for ln in unreleased.splitlines() if "tools/calibration/" in ln]
-        self.assertEqual(len(lines), 2)
+        names = ("- **Calibration kit**", "- **Shared synthetic subject pack**", "- **Host subject pack moonaliza-x2-1**")
+        self.assertEqual(sorted(next((n for n in names if ln.startswith(n)), ln) for ln in lines), sorted(names))
         kit = [ln for ln in lines if ln.startswith("- **Calibration kit**")]
         self.assertEqual(len(kit), 1)
         self.assertIn("calibration-first-onboarding", kit[0])
         pack = [ln for ln in lines if ln.startswith("- **Shared synthetic subject pack**")]
         self.assertEqual(len(pack), 1)
         self.assertIn("tools/calibration/subject-pack/shared/", pack[0])
+        host = [ln for ln in lines if ln.startswith("- **Host subject pack moonaliza-x2-1**")]
+        self.assertIn("tools/calibration/subject-pack/host/moonaliza-x2-1/", host[0])
         self.assertIn("(tools/calibration/README.md)", (ROOT / "README.md").read_text(encoding="utf-8"))
 
 

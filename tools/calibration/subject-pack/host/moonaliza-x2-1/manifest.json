@@ -1,0 +1,83 @@
+{
+ "_lineage": "the host pack of calibration run 4 stage 4a (fix@T3, subject X2-1 of calibration run 2, cluster C-B), in the pack format of ../../README.md; the commit ids are the ones make-repo.sh builds from MoonAliza 16f637f and 01a8604 and this pack's accepted journey test",
+ "_cases": "one case, fix at T3: stage 4a of calibration run 4 measures fix@T3 alone, so the pack carries no pin case (the accepted journey test is the grade's pin, never a candidate's task) and no review case (no review ground truth is adjudicated for this subject at this base)",
+ "pack": "moonaliza-x2-1",
+ "pack_version": "1",
+ "kind": "host",
+ "repository": "repo",
+ "subject": {
+  "name": "MoonAliza's GitHub sign-in account store, credential vault and startup wiring",
+  "module": "src/main/github-account-store.ts",
+  "promise": "a crash at any point of a sign-in, a refresh or a sign-out never loses the account the account file names: the next start that reads the file is signed in with the pair it names, committed (docs/specification/github-sign-in.md 4.5), tombstoned vault entries are deleted on every start, and an unreferenced staged entry is deleted by the next start that reads the file",
+  "reference": "docs/specification/github-sign-in.md (4.3 the replace steps, 4.4 the startup checks, 4.5 the crash windows), the comments of src/main/github-account-store.ts and src/main/vault.ts, tests/github-account-store.test.ts (its crash-window helpers, restart and unreadStart) and tests/vault.test.ts (the shipped harnesses)"
+ },
+ "commit_rule": null,
+ "accepted_fix": "0793f9d377f0b736d2155492a6654f33ae3d9178",
+ "findings": [
+  {
+   "id": "X2-1",
+   "severity": "S3",
+   "present_at": [
+    "09fe935e94d43d787d00268fa2a8e67015891668"
+   ],
+   "summary": "a sign-in or refresh that crashes after the account file names its new pair but before the pair is committed, followed by a start that cannot read the account file (an I/O error other than a missing file) and then a start that can, loses the account: the readable start finds the refs the file names gone, although the crash-window table promises a sign-in with the new pair",
+   "cause": "during the start that cannot read the account file the store names no references, and the vault reconcile that start runs deletes every unreferenced staged entry, so it deletes the new pair the unread file still names",
+   "required_behaviour": "after that journey (the crash, a start whose open() cannot read the account file, then a start that can) the pair the file names is committed and live, for a first sign-in, for a sign-in that replaced an account and for a refresh (the old pair retired); the start that cannot read the file shows no account, leaves the file as it is and leaves the new pair in the vault as the crash left it, with its encrypted files; tombstoned entries are still deleted on every start, an unreferenced staged entry is deleted by the next start that reads the file, and a missing file still reads as no account, whose staged entries the start deletes",
+   "found_rule": "a finding says the double fault (a crash between the file write and the commit, then a start that cannot read the file) loses the staged pair the file names",
+   "cause_rule": "it locates the cause in the startup reconcile deleting unreferenced staged entries while the account file is unread",
+   "accepted_fix": "0793f9d377f0b736d2155492a6654f33ae3d9178"
+  }
+ ],
+ "cases": {
+  "fix": {
+   "base": "09fe935e94d43d787d00268fa2a8e67015891668",
+   "category": "fix",
+   "tier": "T3",
+   "finding": "X2-1",
+   "pass_rule": "the candidate's tests are green at its head AND red again with the three source files restored to the base AND the accepted journey test is green against the candidate's source AND every changed file is one of the three source files, the two test files, the wiring test or the map, or a newly added test file matching the pattern AND eslint is clean on those files",
+   "instructions": "Drive the journey through the startup order src/main/index.ts runs (the store's open(), the vault reconcile, then each finishStartup()); the account file's format stays as it is; a new test file, if you add one, is named tests/<name>.test.ts with x2 in its name.",
+   "commit_prefix": "fix(github): X2-1 - "
+  }
+ },
+ "paths": {
+  "source": [
+   "src/main/github-account-store.ts",
+   "src/main/vault.ts",
+   "src/main/index.ts"
+  ],
+  "source_dir": "src",
+  "test_file": "tests/github-account-store.test.ts",
+  "new_test_pattern": "^tests/.*x2.*\\.test\\.ts$",
+  "allowed_extra": [
+   "tests/vault.test.ts",
+   "tests/github-main-wiring.test.ts",
+   "docs/ARCHITECTURE.md"
+  ],
+  "map_file": "docs/ARCHITECTURE.md",
+  "accepted_test": {
+   "from": "tests/zz_accepted_x2_1.test.ts",
+   "to": "tests/zz_accepted_x2_1.test.ts"
+  }
+ },
+ "commands": {
+  "test": "npx vitest run {files} --testTimeout=60000 --reporter=json --outputFile={report}",
+  "test_report": "vitest-json",
+  "run_one": "npx vitest run {file}",
+  "lint": "npx eslint {files}",
+  "timeout_seconds": 900
+ },
+ "checkout": {
+  "links": [
+   "node_modules",
+   ".build"
+  ]
+ },
+ "source_hashes": {
+  ".gitattributes": "0065bcd2f22464bbbd231c56c33939f29e2f1bf54b43c5ae99f84760ae35c82b",
+  "README.md": "a84106cca4e71deb761ad7530aae20335d14534c1637172e2eb3ad534169aa50",
+  "WRONG-FIXES.md": "7c57be33fc96b39cc4680795044c0e167b042bc9a43e95d982b0a4ab851d4b3f",
+  "make-repo.sh": "01b41e9d4f435241aabea1a936966a47b151b5d8b802ba77dc66513a25b5d40a",
+  "zz_accepted_x2_1.test.ts": "0ffdb551b95d70fe490ad840bbb915895893b35fa2333bf224998aabe430be50"
+ },
+ "isolation": "candidate checkouts are history-less trees of the case base only (MoonAliza 16f637f's tree, without its history), made outside the pack and outside the kit's tree, with node_modules linked from an install outside the pack; the pack repository, its accepted commit (with the accepted journey test), this manifest, WRONG-FIXES.md and the ground truth stay outside every candidate's permitted paths; the pack itself carries no MoonAliza code, which the host's own clone provides when make-repo.sh builds the repository"
+}

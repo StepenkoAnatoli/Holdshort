@@ -19,6 +19,13 @@ pack's git repository with fixed identity, dates and messages, so the commit ids
 names on every host. The host builds that repository outside the kit's tree and copies `manifest.json` beside it, so
 `repository` (`repo`) resolves and the manifest's hash is the same on every host.
 
+A host pack lives beside it under `host/<pack>/`. The kit ships one there as an example (calibration run 4 stage 4a):
+one `fix` case at T3 from the measured host's GitHub sign-in. It carries no host code: its `make-repo.sh` builds the
+pack repository from the host's own clone, as two root commits with fixed identity, dates and messages, so the ids are
+the ones its manifest names. Its README says how a host builds the repository and the checkouts, which names its
+accepted journey test assumes and what the pack does not discriminate; its `WRONG-FIXES.md` lists the wrong fixes the
+grade must fail.
+
 ## Isolation
 
 A candidate's checkout is a history-less tree of its case's base only (`historyless-checkout.sh`). The accepted fix, the
