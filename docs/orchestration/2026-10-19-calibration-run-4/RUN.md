@@ -209,3 +209,13 @@ read only, for the subject trees the packs export.
   reads category from the task objects and `review-grade` (sr-policy-7's brief); FU-5 a K2 pin is red at its base by
   rule, so the `build-tests` pack needs a base where the rules fail (sr-packs-t1's brief). FU-1..FU-3 need a unit
   before the T1 runs; the lead folds them into the sr-policy-7 / sr-packs-t1 decisions.
+
+## 2026-10-24 21:40 UTC (lead) - PR #119 open; owner rules; policy-7 brief patch
+
+- This branch was pushed and draft PR #119 opened by the holdshort-finish session on the owner's approval ("yes,
+  lead pushes run-4 branch + draft PR"); 92e4389 pushed on top. No other PR for this branch.
+- Owner, confirmed in this lead chat: push branches and open PRs without asking, then ask the owner to review;
+  merges go to the owner (replaces "merge as you decide" in the 2026-10-19 mandate). Owner also confirmed the 20:35
+  sr-kit-cases deviation (`tests/fixtures/calibration-evidence/**`, regenerate only).
+- policy7-builder.md G4: host-policy-7's research-collect description becomes "Fetchproof (formerly Research-Kit)
+  collection and brief" (owner-approved patch from the holdshort-finish session; before sr-policy-7 is dispatched).

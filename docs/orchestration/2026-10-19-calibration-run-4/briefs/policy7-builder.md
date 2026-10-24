@@ -39,6 +39,11 @@ G4. **No routing change.** Host-policy-7 is revision 6 plus the key `"policy-rev
     commit the unit starts from (recorded for this revision on 2026-10-19); if a check pins the old value, move it too
     and say so in the report. A citation that moves to the new commit names `tests/holdshort_decisions.py`; one that
     stays at `fbe7bca` keeps `tests/smart_router_decisions.py`, the file's name there.
+    One text change rides on revision 7 (the Fetchproof rename, which renamed Research-Kit): the `research-collect`
+    category's `description` (`hosts/claude-code/host-policy.json:159`) goes from "Research-Kit collection and
+    brief" to "Fetchproof (formerly Research-Kit) collection and brief". Not a routing change; the frozen
+    host-policy-1..6 copies under `trace/policies/` keep the old text. If a check pins the description, move it too
+    and say so in the report.
 G5. **Tests**: G2's four branches (positional fallback byte-equal; a category counted; an unknown category refused;
     a gate without category refused), G1's fixture pinning, G4; guard proofs for each. README: a "Calibration task
     categories (host-policy-7)" section, the applied decisions G1-G6, friction items if any.
