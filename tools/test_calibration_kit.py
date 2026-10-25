@@ -7,6 +7,7 @@ repositories it builds itself; nothing here calls a provider, reads a credential
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib.util
 import json
 import re
@@ -145,9 +146,10 @@ PROTOCOL_KEYS = {"_lineage", "schema_version", "kit_version", "status", "run_id"
                  "usage_window_readings", "amendments"}
 
 
-def fill_template(cfg: dict) -> str:
-    """The README's fill step: the run config into `null // {{RUN}}`, the prompt files into `null // {{PROMPTS}}`."""
-    text = (KIT / "run.template.js").read_text(encoding="utf-8")
+def fill_template(cfg: dict, template: str | None = None) -> str:
+    """The README's fill step: the run config into `null // {{RUN}}`, the prompt files into `null // {{PROMPTS}}`
+    (`template`: another template's text, e.g. an earlier commit's, in place of the kit's run.template.js)."""
+    text = template if template is not None else (KIT / "run.template.js").read_text(encoding="utf-8")
     prompts = {n: (KIT / f"{n}.prompt.md").read_text(encoding="utf-8") for n in ("grader", "lens", "cluster")}
     prompts["classification"] = (KIT / "classification.md").read_text(encoding="utf-8")
     assert text.count("null // {{RUN}}") == 1 and text.count("null // {{PROMPTS}}") == 1
@@ -200,9 +202,9 @@ console.log(JSON.stringify({ calls, result, error }));
 """
 
 
-def execute_template(cfg: dict, root: Path, canned: dict | None = None) -> dict:
+def execute_template(cfg: dict, root: Path, canned: dict | None = None, template: str | None = None) -> dict:
     """Run the filled template under node with stub harness globals (the harness wraps a script body the same way)."""
-    body = fill_template(cfg).replace("export const meta", "const meta", 1)
+    body = fill_template(cfg, template).replace("export const meta", "const meta", 1)
     src = STUB_HARNESS.replace("__CANNED__", json.dumps(canned or canned_outputs())).replace("__BODY__", body)
     path = root / "filled-run.mjs"
     path.write_text(src)
@@ -1251,12 +1253,13 @@ class SharedPack(unittest.TestCase):
         for line in re.findall(r"^\s*- (`cases\.pin\.[a-z_]+`.*?):", section, re.M):  # "`cases.pin.x`, `cases.fix.x`: ..."
             fields |= set(re.findall(r"`([a-z_.]+)`", line))
         self.assertGreater(len(fields), 40, fields)
-        # run 4's keys (a pin case's mutants, the gate case kind) are optional and the shared pack, a pin/fix/review
-        # pack, carries neither: each is checked on the shape the kit's own fixtures use (GATE_CASE, add_mutant's list)
-        run4 = {"cases": {"pin": {"mutants": [{"id": "M-1", "commit": "0" * 40}]}, "gate": GATE_CASE}}
-        self.assertTrue({"cases.pin.mutants", "cases.gate.commands.gate", "cases.gate.invariants"} <= fields, fields)
+        # run 4's keys (a pin case's mutants, the gate case kind, a fix case's cause_in_prompt) are optional and the shared
+        # pack, a pin/fix/review pack, carries none (its fix prompt prints the cause, as before): each is checked on the
+        # shape the kit's own fixtures use (GATE_CASE, add_mutant's list, FixCauseInPrompt's false)
+        run4 = {"cases": {"pin": {"mutants": [{"id": "M-1", "commit": "0" * 40}]}, "gate": GATE_CASE, "fix": {"cause_in_prompt": False}}}
+        self.assertTrue({"cases.pin.mutants", "cases.gate.commands.gate", "cases.gate.invariants", "cases.fix.cause_in_prompt"} <= fields, fields)
         for field in sorted(fields):
-            node = run4 if field.startswith(("cases.pin.mutants", "cases.gate")) else m
+            node = run4 if field.startswith(("cases.pin.mutants", "cases.gate", "cases.fix.cause_in_prompt")) else m
             for part in field.replace("[]", "").split("."):
                 node = node[0] if isinstance(node, list) else node
                 self.assertIn(part, node, field)
@@ -2187,12 +2190,110 @@ class KitCaseTemplate(unittest.TestCase):
         self.assertIn("neither its qualification", out["error"] or "")
 
 
+# cases.fix.cause_in_prompt: the fix prompts rendered from run.template.js at ce86512 (the template before the key) with
+# GOLDEN_HOST, for the fixture manifest and the shared pack's manifest: (length in UTF-8 bytes, sha256). A pack without the
+# key, or with it true, renders these bytes, so runs 1-3 and the shared pack stay comparable.
+GOLDEN_HOST = {"checkout_root": "/golden/checkouts", "pack_dir": "/golden/pack", "adjudication_checkout": "/golden/checkouts/cal-adjudication"}
+FIX_PROMPT_GOLDEN = {"fixture": (2580, "5e66cf5f4d0c141cf0725ef473485816bf309367db47c8e45f905fb09555060a"),
+                     "shared": (3066, "54a0353d503c950d7c147145fefdf8397e113f6dda61edcb807af9dc55446e61")}
+BEFORE_CAUSE_KEY = "ce86512"
+ABSENT = object()
+
+
+def golden_manifests() -> dict:
+    return {"fixture": json.loads((FIX / "manifest.json").read_text(encoding="utf-8")),
+            "shared": json.loads((PACK / "manifest.json").read_text(encoding="utf-8"))}
+
+
+class FixCauseInPrompt(unittest.TestCase):
+    """cases.fix.cause_in_prompt in run.template.js: false leaves the finding's cause out of the fix prompt (and only there)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def launch(self, manifest: dict, template: str | None = None) -> dict:
+        cfg = run_config(self.root, **GOLDEN_HOST)
+        cfg["manifest"] = manifest
+        return execute_template(cfg, self.root, template=template)
+
+    def prompt(self, out: dict, label: str) -> str:
+        self.assertIsNone(out["error"])
+        return next(c["prompt"] for c in out["calls"] if c["label"] == label)
+
+    @staticmethod
+    def with_key(manifest: dict, value) -> dict:
+        m = copy.deepcopy(manifest)
+        if value is not ABSENT:
+            m["cases"]["fix"]["cause_in_prompt"] = value
+        return m
+
+    @NEEDS_NODE
+    def test_false_leaves_out_the_cause_and_keeps_the_summary_and_required_behaviour(self):
+        for name, manifest in golden_manifests().items():
+            for cause in (None, "QQcause-one in QQcause-two of QQcause-three"):  # the pack's own cause, then one whose every word is unique
+                m = self.with_key(manifest, False)
+                f = next(x for x in m["findings"] if x["id"] == m["cases"]["fix"]["finding"])
+                if cause:
+                    f["cause"] = cause
+                out = self.launch(m)
+                fix = self.prompt(out, "fix:alpha-low")
+                self.assertNotIn("Cause:", fix, name)
+                self.assertNotIn(f["cause"], fix, name)
+                self.assertNotIn("QQcause", fix, name)
+                self.assertIn(f"THE FINDING ({f['id']}, {f['severity']}): {f['summary']}. Required behaviour: {f['required_behaviour']}.", fix, name)
+                grader = self.prompt(out, "grade:alpha-low")  # the cause stays in the ground truth the judges read
+                self.assertIn(f"{f['summary']}. Cause: {f['cause']}.", grader, name)
+
+    @NEEDS_NODE
+    def test_absent_or_true_renders_the_fix_prompt_byte_for_byte_as_before(self):
+        old = subprocess.run(["git", "-C", str(ROOT), "show", f"{BEFORE_CAUSE_KEY}:tools/calibration/run.template.js"], capture_output=True)
+        before = old.stdout.decode("utf-8").replace("\r\n", "\n") if old.returncode == 0 else None  # the history may be absent: the hashes stand alone
+        for name, manifest in golden_manifests().items():
+            if before is not None:
+                then = self.prompt(self.launch(manifest, before), "fix:alpha-low").encode("utf-8")
+                self.assertEqual((len(then), hashlib.sha256(then).hexdigest()), FIX_PROMPT_GOLDEN[name], name)  # the golden is that commit's
+            for value in (ABSENT, True):
+                now = self.prompt(self.launch(self.with_key(manifest, value)), "fix:alpha-low")
+                self.assertEqual((len(now.encode("utf-8")), hashlib.sha256(now.encode("utf-8")).hexdigest()), FIX_PROMPT_GOLDEN[name],
+                                 f"{name} {value}: {now}")
+                if before is not None:
+                    self.assertEqual(now.encode("utf-8"), then, f"{name} {value}")
+
+    @NEEDS_NODE
+    def test_a_non_boolean_value_is_refused(self):
+        for bad in ("false", 0, 1, None, "", [], {}):
+            out = self.launch(self.with_key(golden_manifests()["fixture"], bad))
+            self.assertIn("calibration launch refused: cases.fix.cause_in_prompt must be true or false", out["error"] or "", repr(bad))
+            self.assertEqual(out["calls"], [], repr(bad))
+
+    @NEEDS_NODE
+    def test_the_key_outside_the_fix_case_is_refused(self):
+        for case in ("pin", "review", "gate"):
+            for value in (False, True):
+                m = golden_manifests()["fixture"]
+                if case == "gate":
+                    m["cases"]["gate"] = copy.deepcopy(GATE_CASE)
+                m["cases"][case]["cause_in_prompt"] = value
+                out = self.launch(m)
+                self.assertIn(f"calibration launch refused: cases.{case}.cause_in_prompt: only the fix prompt prints a cause", out["error"] or "", (case, value))
+                self.assertEqual(out["calls"], [], (case, value))
+        m = golden_manifests()["fixture"]
+        m["findings"][1]["cause_in_prompt"] = False  # on the finding instead of its fix case: the likeliest slip
+        out = self.launch(m)
+        self.assertIn("calibration launch refused: findings D-2 carries cause_in_prompt", out["error"] or "")
+        self.assertEqual(out["calls"], [])
+
+
 class KitCaseDocs(unittest.TestCase):
     def test_k6_the_kit_readme_documents_the_three_keys(self):
         text = (KIT / "README.md").read_text(encoding="utf-8")
         section = md_section(text, "Run 4's case keys: category, mutants, gate")
         for word in ("`category`", "`mutants`", "`gate`", "`redAtMutants`", "`gateExit`", "`invariantsIntact`", "`requiredPresent`",
-                     "`committed`", "`judging_profile`", "host-policy-7", "`rate`", "byte for byte"):
+                     "`committed`", "`judging_profile`", "host-policy-7", "`rate`", "byte for byte", "`cause_in_prompt`"):
             self.assertIn(word, section, word)
         obs = md_section(text, "observations.json: the flat profile map")
         for word in ("`category`", "`gate`", "`redAtMutants`"):
@@ -2202,7 +2303,7 @@ class KitCaseDocs(unittest.TestCase):
         text = (KIT / "subject-pack" / "README.md").read_text(encoding="utf-8")
         for key in ("cases.pin.mutants", "cases.pin.mutants[].id", "cases.pin.mutants[].commit", "cases.gate.base", "cases.gate.category", "cases.gate.tier",
                     "cases.gate.pass_rule", "cases.gate.instructions", "cases.gate.commands.gate", "cases.gate.commands.timeout_seconds",
-                    "cases.gate.invariants", "cases.gate.required_paths"):
+                    "cases.gate.invariants", "cases.gate.required_paths", "cases.fix.cause_in_prompt"):
             self.assertIn(f"`{key}`", text, key)
 
     def test_k6_one_changelog_line(self):
@@ -2210,7 +2311,7 @@ class KitCaseDocs(unittest.TestCase):
         unreleased = changelog.split("## Unreleased", 1)[1].split("\n## ", 1)[0]
         lines = [ln for ln in unreleased.splitlines() if ln.startswith("- **Calibration kit: run 4 case keys**")]
         self.assertEqual(len(lines), 1)
-        for word in ("category", "mutants", "gate", "judging_profile"):
+        for word in ("category", "mutants", "gate", "judging_profile", "cause_in_prompt"):
             self.assertIn(word, lines[0])
 
 

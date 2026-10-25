@@ -27,7 +27,8 @@ names only the checkout, never the pack; `historyless-checkout.sh --pack`, `grad
 `run.template.js` refuse a checkout that shares a filesystem path with the pack directory, and
 `historyless-checkout.sh --link` refuses a dependency directory inside the pack or its repository (installed
 dependencies live outside the pack). The fix case gives the
-candidate the finding (its summary, cause and required behaviour), never the accepted change. A shared pack is small by
+candidate the finding (its summary, cause and required behaviour; without the cause when `cases.fix.cause_in_prompt` is
+false), never the accepted change. A shared pack is small by
 construction: it discriminates the bounded T1 shape only, and a host that needs more runs its own pack.
 
 ## manifest.json
@@ -54,7 +55,8 @@ grader to read, so they say what the module must do, never how the accepted fix 
   - `findings[].severity`: S1-S4.
   - `findings[].present_at`: the base commits it is present at.
   - `findings[].summary`: the problem, stated without the fix.
-  - `findings[].cause`: where it comes from (the condition, the location).
+  - `findings[].cause`: where it comes from (the condition, the location). Required: the grader and the lenses read it,
+    and the fix prompt prints it unless `cases.fix.cause_in_prompt` is false.
   - `findings[].required_behaviour`: what the module must do instead, stated without the fix; the pin case's rule.
   - `findings[].found_rule`: what a review finding must say for `found`.
   - `findings[].cause_rule`: what it must locate for `causeNamed`.
@@ -73,6 +75,10 @@ grader to read, so they say what the module must do, never how the accepted fix 
   - `cases.pin.test_file`: the new test file the pin case asks for.
   - `cases.pin.instructions`, `cases.fix.instructions`: optional; one more sentence of task shape (e.g. how many rows).
   - `cases.fix.commit_prefix`: optional; the commit message prefix the fix case asks for.
+  - `cases.fix.cause_in_prompt`: optional, `true` or `false` (default `true`). `false` leaves the finding's cause out of
+    the fix prompt (the summary and the required behaviour stay), for a tier whose cause is unnamed; `true` or absent
+    renders the prompt as before. The launch step of `run.template.js` refuses a value that is not a boolean, and the
+    key on any other case or on a finding.
   - `cases.review.findings`: the ground-truth findings a review is graded on.
   - `cases.review.scope`: optional; the functions or sections the review covers.
   - `cases.pin.mutants`: optional; a list of single-rule mutants of the accepted source, each `{id, commit}`. With it,

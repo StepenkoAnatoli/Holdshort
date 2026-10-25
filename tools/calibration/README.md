@@ -198,6 +198,14 @@ command runs, so a command that writes files neither passes a candidate nor fail
 that overruns its timeout has its whole process tree killed and reads as exit 124. One case per kind per pack stays the
 rule. A gate-only pack needs no `subject`, `paths`, `commands` or `accepted_fix`.
 
+**`cause_in_prompt`** (`cases.fix.cause_in_prompt`, true or false). A fourth key, added when run 4's lead integrated
+these: with `false` the fix prompt leaves out the finding's cause (the whole "Cause: ..." clause) and keeps its summary
+and required behaviour, for a tier whose cause the candidate must find itself. True or absent prints the cause, so the
+prompt is byte for byte what it was (the kit's test compares it with the prompt the earlier template renders). The
+finding's `cause` stays required in the manifest and stays in the ground truth the grader and the lenses read. The
+launch step refuses a value that is not a boolean, and refuses the key on any other case or on a finding (only the fix
+prompt prints a cause, so a misplaced key would be ignored while the cause stayed in).
+
 **A null `judging_profile`.** A run whose manifest has no review case judges nothing (pin, fix and gate are graded
 mechanically), so its protocol may record `judging_profile: null`; the launch step refuses null when the manifest has a
 review case, and refuses an absent key either way. The evidence check's rule f (`judging-profile-named`)

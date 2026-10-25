@@ -6,7 +6,8 @@
 // unrecorded, whose judging profile has neither a qualification nor the bootstrap line, whose protocol is not frozen
 // or still holds a placeholder (proposal Items 2, 3.1-3.3); one supplementary mode re-runs void cells. Run 4 adds the
 // gate case kind (a task graded by the pack's command, run like pin and fix: no grader agent; its prompt is the case's
-// instructions and the common preamble) and lets a run with no review case leave `judging_profile` null.
+// instructions and the common preamble) and lets a run with no review case leave `judging_profile` null. The lead's
+// integration adds `cases.fix.cause_in_prompt` (false leaves the finding's cause out of the fix prompt).
 //
 // HARNESS: written for the Claude Code workflow harness, the only harness with a run so far. It provides `agent(prompt,
 // {label, phase, schema, model, effort})` (one sub-agent, resolving to its structured output or null), `pipeline(items,
@@ -99,6 +100,14 @@ const placeholderAt = (v, at) => {
 }
 const LEFT = placeholderAt(P, 'protocol')
 if (LEFT) refuse(`unfilled placeholder at ${LEFT}: fill every {{placeholder}} of the protocol before the freeze`)
+// cases.fix.cause_in_prompt: false leaves the finding's cause out of the fix prompt (a tier whose cause the candidate must
+// find); true or absent prints it, so a pack without the key renders the prompt as before. The cause stays in the
+// manifest and in every judging text. Only the fix prompt prints a cause, so the key anywhere else is refused, not
+// ignored: a false on the finding or on another case would leave the cause where its author meant to hide it.
+for (const [k, c] of Object.entries(M.cases || {})) if (k !== 'fix' && c && typeof c === 'object' && 'cause_in_prompt' in c) refuse(`cases.${k}.cause_in_prompt: only the fix prompt prints a cause, so the key belongs on cases.fix`)
+for (const f of M.findings || []) if (f && typeof f === 'object' && 'cause_in_prompt' in f) refuse(`findings ${f.id} carries cause_in_prompt: the key belongs on cases.fix`)
+const FIX_CAUSE = (M.cases || {}).fix?.cause_in_prompt
+if (FIX_CAUSE !== undefined && typeof FIX_CAUSE !== 'boolean') refuse(`cases.fix.cause_in_prompt must be true or false, not ${JSON.stringify(FIX_CAUSE)}`)
 
 // ---- the prompt files ------------------------------------------------------------------------------------------------
 const section = (md, heading) => {
@@ -171,7 +180,7 @@ The rule: ${f.required_behaviour}. ${c.instructions || ''} HEAD may or may not i
     const map = M.paths.map_file
     return `${common(i)}
 
-TASK (category ${c.category}): fix the finding below. THE FINDING (${f.id}, ${f.severity}): ${f.summary}. Cause: ${f.cause}. Required behaviour: ${f.required_behaviour}. ${c.instructions || ''} Work red-first: (1) add a pin test for the defect to ${M.paths.test_file}, run it to show it RED at HEAD and record the failing assertions; (2) make the minimal code change in ${M.paths.source.join(', ')}; (3) run the test file green; (4) ${lint ? `\`${lint}\` clean` : 'any typecheck the repository has, clean'}; (5) guard-removal proof: with the code change reverted (temporarily), the new pin is red again; restore it and run green again${map ? `; (6) update ${map} with one clause for the change` : ''}. Commit the test, the fix${map ? ' and the map' : ''} together on your branch, with a message starting '${c.commit_prefix || 'fix: '}' and carrying the five named parts: what changed, why, what it touched, what you verified (each claim marked verified / untested / expected), what you got wrong (or 'nothing to report'). Do not touch any other file. Return: commits, testNames, redProof, greenProof, typecheckResult, lintResult, guardProof, codeChange (the diff of the source, verbatim), mistakes.`
+TASK (category ${c.category}): fix the finding below. THE FINDING (${f.id}, ${f.severity}): ${f.summary}.${FIX_CAUSE === false ? '' : ` Cause: ${f.cause}.`} Required behaviour: ${f.required_behaviour}. ${c.instructions || ''} Work red-first: (1) add a pin test for the defect to ${M.paths.test_file}, run it to show it RED at HEAD and record the failing assertions; (2) make the minimal code change in ${M.paths.source.join(', ')}; (3) run the test file green; (4) ${lint ? `\`${lint}\` clean` : 'any typecheck the repository has, clean'}; (5) guard-removal proof: with the code change reverted (temporarily), the new pin is red again; restore it and run green again${map ? `; (6) update ${map} with one clause for the change` : ''}. Commit the test, the fix${map ? ' and the map' : ''} together on your branch, with a message starting '${c.commit_prefix || 'fix: '}' and carrying the five named parts: what changed, why, what it touched, what you verified (each claim marked verified / untested / expected), what you got wrong (or 'nothing to report'). Do not touch any other file. Return: commits, testNames, redProof, greenProof, typecheckResult, lintResult, guardProof, codeChange (the diff of the source, verbatim), mistakes.`
   },
   gate: (i) => `${preamble(i)}
 
