@@ -473,6 +473,29 @@ NEEDS_SH_LINKS = unittest.skipUnless(
     "bash's ln -s makes no symlink on this host (Git Bash without the privilege copies the directory)")
 
 
+def repo_holding(path: Path) -> Path | None:
+    """The nearest of path's real path and its ancestors that holds a .git entry (a directory, or the file a linked
+    worktree has) or is a git directory (HEAD, objects/ and refs/: a bare repository), as historyless-checkout.sh --link
+    looks; None when there is none."""
+    p = Path(path).resolve()
+    for d in (p, *p.parents):
+        if (d / ".git").exists() or (d / ".git").is_symlink() or ((d / "HEAD").is_file() and (d / "objects").is_dir() and (d / "refs").is_dir()):
+            return d
+    return None
+
+
+# A test that needs --link to accept a directory it made under the temporary directory refuses to run when that
+# directory is inside a repository: the script would refuse the link for that reason, not the test's (IC4-1).
+TEMP_IN_REPO = "the temporary directory {} is inside the git repository {}: set TEMP outside any repository to run this test"
+
+
+def native_links(env: dict) -> dict:
+    """env with Git Bash's `ln -s` making a native symlink (by default it copies the target). Only MSYS programs read
+    MSYS, so other hosts are unaffected."""
+    msys = env.get("MSYS", "")
+    return env if "winsymlinks" in msys else {**env, "MSYS": f"{msys} winsymlinks:nativestrict".strip()}
+
+
 class Scripts(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -509,6 +532,7 @@ class Scripts(unittest.TestCase):
         pack, c = make_pack(self.root, self.env)
         deps = self.root / "installed" / "deps"  # installed outside the pack (F2)
         deps.mkdir(parents=True)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
         p = checkout(c["repo"], c["base"], self.root / "plain", self.env)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertFalse((self.root / "plain" / "deps").exists())
@@ -554,6 +578,115 @@ class Scripts(unittest.TestCase):
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertIn("holds the accepted fix", p.stderr)
         self.assertFalse(target.exists())
+
+    def assert_link_refused(self, c, d, reason, *flags, name="node_modules"):
+        """--link name=d is refused with exit 2 and the reason, and nothing is made: not the target, not its parent."""
+        parent = self.root / f"refused-{len(list(self.root.glob('refused-*')))}"
+        target = parent / "cand"
+        p = checkout(c["repo"], c["base"], target, self.env, *flags, "--link", f"{name}={d}")
+        self.assertEqual(p.returncode, 2, f"{d} {flags}: {p.stdout}{p.stderr}")
+        self.assertIn(reason, p.stderr, f"{d} {flags}")
+        self.assertFalse(parent.exists(), f"{d} {flags}")
+
+    def other_repositories(self) -> tuple[Path, Path, Path]:
+        """Repositories that are not the pack: a work tree with a commit, a linked worktree of it (its .git is a file)
+        and a bare repository, each beside the pack under the temporary directory."""
+        other, wt, bare = self.root / "other", self.root / "wt", self.root / "bare.git"
+        (other / "node_modules" / "pkg").mkdir(parents=True)
+        (other / "README.md").write_text("other\n")
+        sh(["git", "init", "-q"], other, self.env)
+        commit_all(other, self.env, "other")
+        sh(["git", "worktree", "add", "-q", str(wt)], other, self.env)
+        (wt / "node_modules").mkdir()
+        sh(["git", "init", "-q", "--bare", str(bare)], self.root, self.env)
+        self.assertTrue((wt / ".git").is_file())
+        self.assertFalse((bare / ".git").exists())
+        return other, wt, bare
+
+    @NEEDS_PY_LINKS
+    def test_historyless_checkout_refuses_a_link_inside_a_git_repository(self):
+        # IC4-1: a dependency tree inside any repository reaches that repository's files and history through '..'
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        other, wt, bare = self.other_repositories()
+        inside = "is inside the git repository"
+        for d in (other,  # the directory is a repository's work tree
+                  other / "node_modules", other / "node_modules" / "pkg",  # a directory in a work tree, at any depth
+                  other / ".git" / "info",  # a directory in a .git directory
+                  wt / "node_modules",  # a linked worktree, whose .git is a file
+                  bare, bare / "refs"):  # a bare repository, and a directory in one
+            for flags in (("--pack", str(pack)), ()):  # with and without --pack
+                self.assert_link_refused(c, d, inside, *flags)
+        self.assert_link_refused(c, other / "node_modules", "lets the checkout reach that repository's history and files through '..'",
+                                 "--pack", str(pack))
+        # outside every repository the link is made as before
+        outside = self.root / "installed" / "node_modules"
+        outside.mkdir(parents=True)
+        target = self.root / "accepted" / "cand"
+        p = checkout(c["repo"], c["base"], target, native_links(self.env), "--pack", str(pack), "--link", f"node_modules={outside}")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertTrue((target / "node_modules").is_symlink())
+        self.assertEqual((target / "node_modules").resolve(), outside.resolve())
+        self.assertEqual(sh(["git", "status", "--porcelain"], target, self.env).stdout.strip(), "")
+
+    @NEEDS_PY_LINKS
+    def test_historyless_checkout_checks_the_symlinks_at_the_top_of_a_linked_directory(self):
+        # a symlink among DIR's own entries is checked like DIR: it must not reach the pack or a repository
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        other, wt, bare = self.other_repositories()
+        free = self.root / "free"  # a directory outside every repository
+        free.mkdir()
+        cases = [
+            ("lib", other / "node_modules", "is inside the git repository"),  # a directory in a work tree
+            ("readme", other / "README.md", "is inside the git repository"),  # a file in a work tree
+            (".hidden", wt, "is inside the git repository"),  # a dot entry, to a linked worktree
+            ("objs", bare / "objects", "is inside the git repository"),  # into a bare repository
+            ("src", c["repo"] / "src", "holds the accepted fix"),  # into the pack's repository
+            ("gone", self.root / "missing", "does not resolve"),  # a dangling link: refused, not skipped
+        ]
+        for i, (entry, to, reason) in enumerate(cases):
+            deps = self.root / f"deps-{i}"
+            (deps / "plain").mkdir(parents=True)
+            (deps / entry).symlink_to(to)
+            for flags in (("--pack", str(pack)), ()):
+                self.assert_link_refused(c, deps, reason, *flags)
+        # a chain of file links through a linked directory: the kernel follows sub before the '..' in b's target, so a
+        # reaches the repository far/y, though DIR holds a y of its own (outside every repository) that a '..' taken by
+        # spelling would reach instead
+        far = self.root / "far"
+        (far / "x").mkdir(parents=True)
+        (far / "y").mkdir()
+        sh(["git", "init", "-q"], far / "y", self.env)
+        (far / "y" / "file").write_text("in a repository\n")
+        (far / "x" / "b").symlink_to(Path("..") / "y" / "file")
+        deps = self.root / "deps-chain"
+        (deps / "y").mkdir(parents=True)
+        (deps / "sub").symlink_to(far / "x", target_is_directory=True)
+        (deps / "a").symlink_to(Path("sub") / "b")
+        self.assertEqual((deps / "a").read_text(), "in a repository\n")
+        self.assertIsNone(repo_holding(far / "x"))
+        # and a link whose own target walks '..' after a linked directory (sub/../y/file): bash reads it through sub,
+        # as a POSIX kernel does (Windows' own API takes that '..' by spelling, so Python is not asked here; nor is
+        # bash given a C:\ spelling, which Git Bash hands to that API: it reads c from inside the directory)
+        dotdot = self.root / "deps-dotdot"
+        (dotdot / "y").mkdir(parents=True)
+        (dotdot / "sub").symlink_to(far / "x", target_is_directory=True)
+        (dotdot / "c").symlink_to(Path("sub") / ".." / "y" / "file")
+        read = subprocess.run(["bash", "-c", 'cd -- "$1" && cat -- c', "cat", str(dotdot)], capture_output=True, text=True, timeout=60)
+        self.assertEqual(read.stdout, "in a repository\n", read.stderr)
+        for d in (deps, dotdot):
+            for flags in (("--pack", str(pack)), ()):
+                self.assert_link_refused(c, d, "far/y; a dependency tree inside a repository", *flags)
+        # links that stay inside DIR (a pnpm-style store) or reach a directory outside every repository are fine
+        deps = self.root / "deps-ok"
+        (deps / ".store" / "pkg").mkdir(parents=True)
+        (deps / "pkg").symlink_to(deps / ".store" / "pkg")
+        (deps / "free").symlink_to(free)
+        target = self.root / "accepted" / "cand"
+        p = checkout(c["repo"], c["base"], target, native_links(self.env), "--pack", str(pack), "--link", f"node_modules={deps}")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual((target / "node_modules").resolve(), deps.resolve())
 
     def test_historyless_checkout_refuses_an_existing_target_and_one_inside_the_pack(self):
         pack, c = make_pack(self.root, self.env)

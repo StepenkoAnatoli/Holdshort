@@ -13,9 +13,16 @@
 #   BRANCH       the branch the single commit is on
 #   --link NAME=DIR  symlink DIR (an installed dependency tree, a build cache) into TARGET/NAME and list NAME in
 #                TARGET/.git/info/exclude so a candidate's `git add -A` never commits it; repeatable. DIR must be
-#                installed outside the pack: refused when its real path is inside SOURCE_REPO or PACK_DIR or holds
-#                either (proposal Item 2: no path from a checkout reaches the accepted fix). Symlinks inside DIR are
-#                not followed: a dependency tree that links back into the pack is the host's to avoid.
+#                installed outside the pack and outside every git repository (proposal Item 2: no path from a
+#                checkout reaches the accepted fix). Refused when its real path is inside SOURCE_REPO or PACK_DIR or
+#                holds either, and when it is inside a git repository: DIR or one of its real ancestors holds a .git
+#                entry (a directory, or the file of a linked worktree or submodule) or is a git directory (HEAD,
+#                objects/ and refs/, as in a bare repository) - through '..' the checkout reaches that repository's
+#                files and history, such as a subject clone's accepted fix and orchestration records (IC4-1). Each
+#                symlink among DIR's own entries (its top level, dot entries too) is checked the same way on the
+#                real path it resolves to (followed hop by hop as a POSIX kernel does: a linked directory before the
+#                '..' after it), and one that does not resolve is refused. Nothing deeper is checked: a symlink or a
+#                repository further down inside DIR is not followed, and is the host's to avoid.
 #   --pack DIR   refuse when TARGET is inside DIR or DIR inside TARGET (proposal Item 2: no candidate checkout shares
 #                a filesystem path with the pack)
 #
@@ -58,11 +65,63 @@ TREE=$(git -C "$SRC_ABS" rev-parse --verify --quiet "$COMMIT^{tree}") || refuse 
 git check-ref-format --branch "$BRANCH" >/dev/null 2>&1 || refuse "not a branch name: $BRANCH"
 # within A B: A is B or lies under it (both physical paths from phys, so the root is spelled '/' and holds everything)
 within() { [ "$2" = / ] && return 0; case "$1/" in "$2"/*) return 0 ;; esac; return 1; }
+# repo_holding P: print the nearest of the physical path P and its ancestors that holds a .git entry (a directory, the
+# file of a linked worktree or submodule, or a link) or is a git directory (HEAD, objects/ and refs/, the test git
+# itself applies: a bare repository, or the inside of a .git directory); status 1 when there is none. It walks the
+# parents '..' walks, and reads the filesystem only: git's own discovery stops at a filesystem boundary, refuses a
+# repository another user owns, and honours GIT_DIR and GIT_CEILING_DIRECTORIES, none of which stop a '..' (IC4-1)
+repo_holding() {
+  local p=$1
+  while :; do
+    if [ -e "${p%/}/.git" ] || [ -L "${p%/}/.git" ] \
+      || { [ -f "${p%/}/HEAD" ] && [ -d "${p%/}/objects" ] && [ -d "${p%/}/refs" ]; }; then
+      printf '%s' "$p"
+      return 0
+    fi
+    [ "$p" = / ] && return 1
+    p=$(dirname -- "$p")
+  done
+}
+# physd D: the physical path of the directory D the way the kernel walks it: cd -P follows each link before the '..'
+# after it (phys's plain cd drops 'link/..' by spelling first, so 'link/../y' could name a different y than the
+# kernel reaches)
+physd() { local p; p=$(cd -P -- "$1" 2>/dev/null && pwd -P) || return 1; printf '%s' "${p/#\/\//\/}"; }
+# resolve E: print the physical path the symlink E resolves to: a directory through physd, a file as its directory's
+# physical path and its name, following a chain of links (at most 40) hop by hop, each hop's directory made physical
+# before a relative target is joined to it, as the kernel does; status 1 when E does not resolve
+resolve() {
+  local p=$1 t n=0 d
+  [ -e "$p" ] || return 1
+  if [ -d "$p" ]; then physd "$p"; return; fi
+  while :; do
+    d=$(physd "$(dirname -- "$p")") || return 1
+    p=${d%/}/$(basename -- "$p")
+    [ -L "$p" ] || break
+    n=$((n + 1))
+    [ "$n" -le 40 ] || return 1
+    t=$(readlink -- "$p") || return 1
+    case "$t" in /*) p=$t ;; *) p=${d%/}/$t ;; esac
+  done
+  printf '%s' "$p"
+}
 
 PACK_ABS=""
 if [ -n "$PACK" ]; then
   PACK_ABS=$(phys "$PACK") || refuse "no pack directory: $PACK"
 fi
+# guard_link NAME P WHAT: refuse when the physical path P shares a path with SOURCE_REPO or PACK_DIR, or is inside a
+# git repository (WHAT names P in the message)
+guard_link() {
+  local guarded hit
+  for guarded in "$SRC_ABS" ${PACK_ABS:+"$PACK_ABS"}; do
+    if within "$2" "$guarded" || within "$guarded" "$2"; then
+      refuse "--link $1: $3 shares a path with $guarded, which holds the accepted fix (Item 2)"
+    fi
+  done
+  if hit=$(repo_holding "$2"); then
+    refuse "--link $1: $3 is inside the git repository $hit; a dependency tree inside a repository lets the checkout reach that repository's history and files through '..' (Item 2)"
+  fi
+}
 LINK_NAMES=()
 LINK_DIRS=()
 for spec in ${LINKS[@]+"${LINKS[@]}"}; do
@@ -75,10 +134,11 @@ for spec in ${LINKS[@]+"${LINKS[@]}"}; do
     "" | /* | *..* ) refuse "--link takes a plain relative name: $name" ;;
   esac
   dep=$(phys "${spec#*=}") || refuse "--link $name: no directory ${spec#*=}"
-  for guarded in "$SRC_ABS" ${PACK_ABS:+"$PACK_ABS"}; do
-    if within "$dep" "$guarded" || within "$guarded" "$dep"; then
-      refuse "--link $name: $dep shares a path with $guarded, which holds the accepted fix (Item 2)"
-    fi
+  guard_link "$name" "$dep" "$dep"
+  for entry in "$dep"/* "$dep"/.[!.]* "$dep"/..?*; do  # an unmatched pattern stays literal and is no symlink
+    [ -L "$entry" ] || continue
+    real=$(resolve "$entry") || refuse "--link $name: $entry, a symlink in $dep, does not resolve"
+    guard_link "$name" "$real" "$entry, a symlink in $dep resolving to $real,"
   done
   LINK_NAMES+=("$name")
   LINK_DIRS+=("$dep")

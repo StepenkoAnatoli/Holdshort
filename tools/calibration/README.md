@@ -46,9 +46,17 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    `<run tag>/<case>-<profile>`, plus one checkout of the review base for the lenses:
    `bash tools/calibration/historyless-checkout.sh --pack <pack dir> [--link <name>=<dependency dir>] <pack dir>/<repository> <case base> <checkout> <branch>`.
    `--pack` refuses a checkout that shares a path with the pack; `--link` makes an installed dependency tree available
-   without letting a candidate commit it. Install the dependencies outside the pack: `--link` refuses a directory whose
-   real path is inside the pack or its repository, or holds either, since a link there is a path to the accepted fix.
-   It does not follow symlinks inside the dependency tree; keeping those out of the pack is the host's duty.
+   without letting a candidate commit it. Install the dependencies outside the pack and outside every git repository:
+   `--link` refuses a directory whose real path is inside the pack or its repository, or holds either, since a link
+   there is a path to the accepted fix; and it refuses a directory inside any git repository (it or one of its real
+   ancestors holds a `.git` directory or file, or is a git directory such as a bare repository), since through `..`
+   the checkout reaches that repository's files and history: a subject clone's `node_modules` would hand the
+   candidate the clone's accepted fix and orchestration records. So run the install in a directory that is no
+   repository, such as a history-less checkout of the case base made outside the pack. Each symlink among the
+   directory's own entries is checked the same way where it resolves (a linked directory is followed before a `..`
+   after it, as a POSIX kernel does), and one that does not resolve is refused.
+   Nothing deeper is checked: a symlink or a repository further down the dependency tree is not followed, and keeping
+   those out is the host's duty.
 4. **Fill.** Write `run-config.json` = `{"manifest": <manifest.json>, "protocol": <protocol.json without its sources>,
    "host": {...}}` (the host keys are listed in the header of `run.template.js`; the protocol goes in without `sources`
    because the sources record the filled script's hash). Every host path in it (`checkout_root`, `adjudication_checkout`, `pack_dir`) is absolute and already resolved: the launch step compares the strings and follows no symlink and no `..`, so a relative path, or one that resolves elsewhere after the launch, is outside its guard (the checkout script resolves real paths where the checkouts are made). Fill the template, hash `run.js` into the protocol's
