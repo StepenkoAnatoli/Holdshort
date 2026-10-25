@@ -2,7 +2,7 @@
 // adds it to the accepted commit at tests/zz_accepted_x2_1.test.ts and grade.sh places it in a candidate's checkout, where it runs against
 // the candidate's source. It names only what the base already has (Vault, GitHubAccountStore and the startup lines of src/main/index.ts),
 // never a name the accepted fix added, so a different correct fix passes it too.
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import fs, { cpSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import fsp, { mkdtemp, rm } from 'node:fs/promises';
@@ -10,6 +10,8 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { transformSync } from 'esbuild';
+import * as vaultModule from '../src/main/vault';
+import * as storeModule from '../src/main/github-account-store';
 import { Vault } from '../src/main/vault';
 import { GitHubAccountStore, type GitHubAccount } from '../src/main/github-account-store';
 
@@ -17,7 +19,8 @@ import { GitHubAccountStore, type GitHubAccount } from '../src/main/github-accou
 // start cannot read the file (an I/O error, not a missing file), the store knows no references, and the startup reconcile must not delete
 // the staged pair the file names; the next start that reads the file then finds the pair and commits it. The start is driven as the app
 // runs it: the store's open(), then the lines src/main/index.ts runs between the engine's references and the supervisor (the reconcile
-// and both finishStartup calls), taken from the candidate's own index.ts, so the test holds whatever names that wiring uses.
+// and both finishStartup calls), taken from the candidate's own index.ts, so the test holds whatever names that wiring uses. A later start
+// runs with the wall clock moved a month past the crash, as a start after a long time away would.
 
 const KEY = randomBytes(32);
 const cryptor = {
@@ -40,9 +43,14 @@ const refsOf = (account: { accessRef: string; refreshRef: string | null } | null
   !account ? [] : account.refreshRef === null ? [account.accessRef] : [account.accessRef, account.refreshRef];
 
 const roots: string[] = [];
-afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
+afterEach(async () => { vi.useRealTimers(); for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
 
-/** Every read of one path fails with `code` (EACCES, EBUSY) until the returned function runs: lstat, stat, open and readFile in
+const DAY = 86_400_000;
+/** Moves the wall clock (Date alone; timers stay real) `days` past now: the vault stamps a staged entry with Date.now(), and a start may
+ *  come long after the crash, so nothing about the kept pair may depend on how recent it is. */
+function later(days: number): void { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(Date.now() + days * DAY); }
+
+/** Every read of one path fails with `code` (EACCES, EBUSY, EIO) until the returned function runs: lstat, stat, open and readFile in
  *  node:fs/promises and their synchronous forms in node:fs, synced to every importer (the node project runs without isolation, so no
  *  module mock). A retry inside the start fails too, as it would while another process holds the file. */
 function failingReads(path: string, code: string): () => void {
@@ -66,16 +74,39 @@ function failingReads(path: string, code: string): () => void {
 }
 
 type Wiring = (vault: Vault, references: string[], collectorSettings: unknown, githubStore: GitHubAccountStore) => Promise<void>;
+const START = ['vault', 'references', 'collectorSettings', 'githubStore'];
+// The two other modules in scope, as the candidate's source exports them: a name index.ts imports from one of them is in scope in the
+// startup lines, so it is bound here to the same export (a helper the wiring calls, say).
+const MODULES: Record<string, Record<string, unknown>> = { './github-account-store': storeModule, './vault': vaultModule };
+/** The names src/main/index.ts imports from the modules in scope (named, renamed with `as`, or a namespace), each with its export. */
+function imported(source: string): Map<string, unknown> {
+  const names = new Map<string, unknown>();
+  for (const match of source.matchAll(/^import\s+(?!type\s)([^;]*?)\s+from\s+['"]([^'"]+)['"]/gm)) {
+    const clause = match[1] ?? ''; const module = MODULES[match[2] ?? '']; if (!module) continue;
+    for (const spec of (/\{([^}]*)\}/.exec(clause)?.[1] ?? '').split(',')) {
+      // a `type X` specifier does not match
+      const [, exported, local] = /^\s*([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?\s*$/.exec(spec) ?? [];
+      if (exported) names.set(local ?? exported, module[exported]);
+    }
+    const namespace = /\*\s*as\s+([A-Za-z_$][\w$]*)/.exec(clause)?.[1]; if (namespace) names.set(namespace, module);
+  }
+  for (const name of START) names.delete(name);
+  return names;
+}
 /** The startup lines of the candidate's src/main/index.ts: every line after the one that reads the engine's references (vault.references),
- *  up to the one that attaches the supervisor, run with the start's vault, store and engine references and a collector with no token. */
+ *  up to the one that attaches the supervisor, run with the start's vault, store and engine references, a collector with no token, and
+ *  what index.ts imports from the modules in scope. No other name of index.ts reaches them here. */
 function wiring(): Wiring {
-  const lines = readFileSync(new URL('../src/main/index.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n').split('\n');
+  const source = readFileSync(new URL('../src/main/index.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  const lines = source.split('\n');
   const from = lines.findIndex(line => /vault\.references/.test(line));
   const to = lines.findIndex((line, index) => index > from && /supervisor\.attach\(/.test(line));
   if (from < 0 || to < 0) throw new Error('the startup lines of src/main/index.ts were not found');
   const body = lines.slice(from + 1, to).join('\n');
-  const { code } = transformSync(`(async (vault, references, collectorSettings, githubStore) => {\n${body}\n});`, { loader: 'ts' });
-  return new Function(`return ${code.trim().replace(/;$/, '')}`)() as Wiring;
+  const extra = imported(source);
+  const { code } = transformSync(`(async (${[...START, ...extra.keys()].join(', ')}) => {\n${body}\n});`, { loader: 'ts' });
+  const run = new Function(`return ${code.trim().replace(/;$/, '')}`)() as (...args: unknown[]) => Promise<void>;
+  return (vault, references, collectorSettings, githubStore) => run(vault, references, collectorSettings, githubStore, ...extra.values());
 }
 const noCollectorToken = { references: (): string[] => [], finishStartup: async () => {} };
 
@@ -169,13 +200,14 @@ describe('X2-1 journey: a crash leaves the new pair staged, the next start canno
     ['refresh', 3, ['staged', 'staged']],
     ['refresh', 4, ['committed', 'staged']],
   ];
-  for (const [kind, at, states] of crashes) for (const code of ['EACCES', 'EBUSY']) {
+  for (const [kind, at, states] of crashes) for (const code of ['EACCES', 'EBUSY', 'EIO']) {
     test(`${kind}, crash before commit ${at}, ${code} at the next start: the pair survives that start and is live and committed after the next`, async () => {
       const { dir, pair } = await crashBeforeCommit(kind, at);
       expect(refsOf(accountFile(dir)?.account)).toEqual(pair);                 // the crash came after the file named the pair
       expect(pair.map(ref => entries(dir)[ref]?.state)).toEqual(states);
       const before = readFileSync(fileAt(dir), 'utf8');
 
+      later(30);                                                               // the next start comes a month after the crash
       const unread = await start(dir, { unread: code });
       expect(unread.store.current()).toBeNull();                               // that start reads no account
       expect(readFileSync(fileAt(dir), 'utf8')).toBe(before);                  // and leaves the file as it was
@@ -213,6 +245,7 @@ describe('what an unreadable start still deletes, and what a readable start dele
     expect(dir).toBeDefined();
     expect(Object.values(entries(dir!)).filter(entry => entry.state === 'staged')).toHaveLength(2);
 
+    later(30);
     await start(dir!, { unread: 'EACCES' });
     await expectAlone(dir!, await start(dir!), a);
   });

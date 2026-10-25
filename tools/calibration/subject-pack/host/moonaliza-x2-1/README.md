@@ -29,8 +29,9 @@ wrong-fix matrix and `make-repo.sh`, which builds the pack repository from a Moo
 1. A sign-in (the first one, or one that replaces an account) or a refresh reaches step 4 of `replace()`: the account
    file now names the new pair, which the vault still holds staged. The process dies before step 5 commits the pair, or
    after it commits only the access ref.
-2. The next start's `open()` cannot read the account file: an I/O error such as EACCES or EBUSY, not a missing file. The
-   store shows no account and names no references, and the startup runs its reconcile and both `finishStartup()` calls.
+2. The next start's `open()` cannot read the account file: an I/O error such as EACCES, EBUSY or EIO, not a missing
+   file. The store shows no account and names no references, and the startup runs its reconcile and both
+   `finishStartup()` calls. That start may come long after the crash.
 3. The start after that can read the file.
 
 At the base (MoonAliza `16f637f`), step 2's reconcile deletes the staged pair because no reference names it, so step 3
@@ -48,8 +49,9 @@ staged entries.
    (branch `build/github-sign-in`); nothing is written to it. The script makes a bare repository with two root
    commits, each with fixed identity, dates and messages: `base0` is MoonAliza 16f637f's tree as it is, and `accepted0`
    is 01a8604's tree plus `tests/zz_accepted_x2_1.test.ts`. Neither commit carries MoonAliza's history. The ids depend
-   on nothing on the host, so they are the ones `manifest.json` names, and the script checks this; with the manifest's
-   `repository` (`repo`), the copy resolves.
+   on nothing on the host, so they are the ones `manifest.json` names, and the script checks this (on a mismatch it
+   exits 1 and removes what it built, so a rerun is not refused); with the manifest's `repository` (`repo`), the copy
+   resolves.
 2. **Dependencies.** Install MoonAliza's dependencies (`npm ci` in a MoonAliza checkout of `16f637f`, Node 24) outside
    the pack and outside every checkout. vitest writes its caches into the `node_modules` a checkout links
    (`node_modules/.vite`, `node_modules/.vite-temp`), so link an install the host may write to, never a read-only
@@ -83,21 +85,32 @@ belong to the required behaviour, not to any fix:
 - The account file at `<data>/github/account.json` and the vault index at `<data>/vault/index.json`, read as JSON: the
   crash-window table speaks of both.
 - The two anchor lines of `src/main/index.ts`, and the identifiers the startup lines use there: `vault`, `references`,
-  `collectorSettings` and `githubStore`.
+  `collectorSettings` and `githubStore`. Every name `index.ts` imports from `./github-account-store` or `./vault`
+  (named, renamed with `as`, or a namespace) is bound as well, to the candidate's own export, so a wiring that calls a
+  helper one of those modules exports runs as the app would run it.
 
 It names nothing the accepted fix added. A vault-level row that called the accepted fix's new option directly would
 fail every other correct fix, so the journey rows assert what such a row would: the entries are kept, with their files
 and in their states. An unreadable file is simulated by failing every read of that one path (`lstat`, `stat`, `open`
 and `readFile` in `node:fs/promises`, and their synchronous forms) for the whole start, so a fix that re-reads the file
-another way still meets the error.
+another way still meets the error. In the journey rows and the orphan row the starts after the crash run with the wall
+clock (`Date` alone, through vitest's fake timers) moved a month on, so a fix that keeps the pair only while it is recent
+fails.
 
 ## What the pack does not discriminate
 
 - **Wiring that moves.** A fix that reconciles somewhere other than between the two anchor lines of `index.ts`, or that
   renames `vault`, `githubStore` or `collectorSettings` there, fails the journey test even when it is correct. The
   base's startup order is part of the required behaviour, so such a fix is out of the task's scope.
-- **Errors other than EACCES and EBUSY.** EIO, EPERM and others are not exercised; the rule is the same, any errno code
+- **Other names in the startup lines.** The test runs those lines on their own, with the four names above and what
+  `index.ts` imports from `./github-account-store` or `./vault`. A line there that uses any other name of `index.ts` (a
+  helper declared in `index.ts` itself, or a name imported from another module) throws a ReferenceError in every row
+  that runs a start, so such a fix fails even when it is correct. The case's `instructions` state this limit to the
+  candidate.
+- **Errors other than EACCES, EBUSY and EIO.** EPERM and others are not exercised; the rule is the same, any errno code
   but ENOENT.
+- **Time limits beyond a month.** The later starts run a month after the crash, so a fix that drops a kept pair only
+  once it is older than that passes.
 - **Crash points.** Only the four the table names: before commit 1 of a first sign-in, and before commits 3 and 4 of a
   replace. A crash during the reconcile itself, or a rollback write that failed (spec 4.3 step 5), is not exercised.
 - **Quality beyond the pass rule.** The grade is mechanical: a fix that passes may still be larger than it needs to be

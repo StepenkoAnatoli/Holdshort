@@ -4016,6 +4016,25 @@ X21_WRONG = {
          "          entry.held = true;   // X2-1: held until a start that can name its references\n"
          "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref) && !entry.held)) {"),
         x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
+    # review 1 F3: an unreferenced staged entry counts as abandoned once it is a day old, so a start long after the crash loses it
+    "W-k": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed() });", edits=[
+        x21_getter("openFailed"),
+        ("src/main/vault.ts", X21_SIGNATURE, X21_KEEP_SIGNATURE),
+        ("src/main/vault.ts", X21_DELETES,
+         "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref)\n"
+         "            && !(options.keepStaged && Date.now() - entry.createdAt < 24 * 3_600_000))) {   // X2-1: a day-old staged entry is abandoned"),
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
+    # review 1 F7: only the errno codes taken for a held file (EACCES, EBUSY) keep; any other I/O error still deletes the pair
+    "W-l": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed() });", edits=[
+        ("src/main/github-account-store.ts", "  private unread = false;\n",
+         "  private unread = false;\n  // X2-1: open() met a lock or a permission error, which a later start can get past\n  private held = false;\n"),
+        ("src/main/github-account-store.ts",
+         "        this.startupWrite = typeof code !== 'string'; this.unread = typeof code === 'string' && code !== 'ENOENT';",
+         "        this.startupWrite = typeof code !== 'string'; this.unread = typeof code === 'string' && code !== 'ENOENT';\n"
+         "        this.held = code === 'EACCES' || code === 'EBUSY';"),
+        x21_getter("openFailed", "this.held"),
+        *X21_KEEP_UNREFERENCED,
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
 }
 
 # A correct fix the accepted one is not: another name for the store's flag and a positional vault parameter.
@@ -4025,6 +4044,26 @@ X21_ALTERNATIVE = dict(hold="open", check="journey", reconcile="await vault.reco
     ("src/main/vault.ts", X21_DELETES,
      "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref) && !keepUnreferencedStaged)) {"),
     x21_wire(f"  await vault.reconcile({X21_REFS}, githubStore.fileUnreadable());")])
+
+# review 1 F1: a correct fix whose wiring calls a helper the store's module exports and index.ts imports (the decision made
+# testable outside index.ts, which has no harness), with an options object under another name.
+X21_ALTERNATIVE_HELPER = dict(
+    hold="open", check="journey", imports=", startupReconcileOptions",
+    reconcile="await vault.reconcile(new Set(store.references()), startupReconcileOptions(store));", edits=[
+        x21_getter("fileUnreadable"),
+        ("src/main/github-account-store.ts", "export class GitHubAccountStore {\n",
+         "/** X2-1: the startup reconcile's options: a start whose open() could not read the account file spares unreferenced staged entries. */\n"
+         "export function startupReconcileOptions(store: Pick<GitHubAccountStore, 'fileUnreadable'>): { spareStaged: boolean } {\n"
+         "  return { spareStaged: store.fileUnreadable() };\n"
+         "}\n\n"
+         "export class GitHubAccountStore {\n"),
+        ("src/main/vault.ts", X21_SIGNATURE,
+         "  reconcile(committedReferences: ReadonlySet<string>, options: { spareStaged?: boolean } = {}): Promise<void> {"),
+        ("src/main/vault.ts", X21_DELETES,
+         "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref) && !options.spareStaged)) {"),
+        ("src/main/index.ts", "import { GitHubAccountStore } from './github-account-store';\n",
+         "import { GitHubAccountStore, startupReconcileOptions } from './github-account-store';\n"),
+        x21_wire(f"  await vault.reconcile({X21_REFS}, startupReconcileOptions(githubStore));")])
 
 # W-c keeps every unreferenced staged entry, so the shipped crash-window row whose crash leaves an orphan pair (staged,
 # never written to the file) no longer holds; a candidate holding that idea drops the row as the change's consequence.
@@ -4046,7 +4085,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Vault } from '../src/main/vault';
-import { GitHubAccountStore } from '../src/main/github-account-store';
+import { GitHubAccountStore{{IMPORTS}} } from '../src/main/github-account-store';
 
 // X2-1, written red-first by the candidate: a crash before the first commit, then a start that cannot read the account file.
 const cryptor = { isEncryptionAvailable: () => true, encryptString: (v: string) => Buffer.from(v, 'utf8'), decryptString: (b: Buffer) => b.toString('utf8') };
@@ -4125,7 +4164,8 @@ def x21_candidate(cand: Path, change: dict, env: dict, message: str) -> None:
         x21_edit(cand, path, old, new)
     for path, old, new in X21_TEST_EDITS.get(change.get("test_edits", ""), []):
         x21_edit(cand, path, old, new)
-    test = (X21_CANDIDATE_TEST.replace("{{ONCE}}", "true" if change["hold"] == "once" else "false")
+    test = (X21_CANDIDATE_TEST.replace("{{IMPORTS}}", change.get("imports", ""))
+            .replace("{{ONCE}}", "true" if change["hold"] == "once" else "false")
             .replace("{{RECONCILE}}", change["reconcile"]).replace("{{CHECK}}", X21_CHECKS[change["check"]]))
     (cand / "tests" / "x2_candidate.test.ts").write_text(test, encoding="utf-8", newline="\n")
     sh(["git", "add", "-A"], cand, env)
@@ -4226,6 +4266,14 @@ class HostPackX21(unittest.TestCase):
         test = (X21 / "zz_accepted_x2_1.test.ts").read_text(encoding="utf-8")
         for name in ("unreadAtOpen", "keepStaged"):
             self.assertNotIn(name, test, f"the accepted journey test names the accepted fix's {name}")
+        # review 1 F1, F3, F7: the wiring binds index.ts's imports from the modules in scope, a later start runs a month after the
+        # crash, and a third errno code is exercised; the README states the limit that is left
+        self.assertIn("const extra = imported(source);", test)
+        self.assertIn("for (const code of ['EACCES', 'EBUSY', 'EIO'])", test)
+        self.assertEqual(test.count("later(30);"), 2, "the journey rows and the orphan row run their later starts a month on")
+        limits = md_section(text, "What the pack does not discriminate")
+        for word in ("./github-account-store", "./vault", "ReferenceError"):
+            self.assertIn(word, limits, word)
 
     def test_wrong_fixes_lists_every_wrong_fix_the_tests_grade(self):
         rows = x21_wrong_rows()
@@ -4239,8 +4287,8 @@ class HostPackX21(unittest.TestCase):
 
     def test_without_the_clone_the_subject_tests_report_unsupported(self):
         for name in ("test_make_repo_builds_the_manifest_ids", "test_the_accepted_journey_test_is_red_at_base_and_green_at_accepted",
-                     "test_every_wrong_fix_grades_fail_on_the_accepted_journey_test_alone", "test_the_accepted_and_an_alternative_fix_grade_pass",
-                     "test_the_launch_refusals_hold_with_this_manifest_and_a_fix_only_protocol"):
+                     "test_every_wrong_fix_grades_fail_on_the_accepted_journey_test_alone", "test_the_accepted_and_two_alternative_fixes_grade_pass",
+                     "test_the_launch_refusals_hold_with_this_manifest_and_a_fix_only_protocol", "test_make_repo_removes_its_target_when_the_ids_differ"):
             method = getattr(type(self), name)
             if x21_clone():
                 self.assertFalse(getattr(method, "__unittest_skip__", False), name)
@@ -4318,6 +4366,20 @@ class HostPackX21(unittest.TestCase):
         self.assertEqual(p.returncode, 2, "an existing target is refused")
 
     @NEEDS_X21
+    def test_make_repo_removes_its_target_when_the_ids_differ(self):
+        # review 1 F8: a failed build leaves nothing behind, so a rerun is not refused for an existing target
+        bad = self.root / "bad-pack"
+        shutil.copytree(X21, bad)
+        m = x21_manifest()
+        m["accepted_fix"] = "0" * 40
+        (bad / "manifest.json").write_text(json.dumps(m, indent=1), encoding="utf-8")
+        target = self.root / "bad" / "repo"
+        p = subprocess.run(["bash", str(bad / "make-repo.sh"), str(x21_clone()), str(target)], env=self.env, capture_output=True, text=True, timeout=600)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("accepted_fix: manifest " + "0" * 40, p.stderr)
+        self.assertFalse(target.exists(), "the built target is removed when the ids differ")
+
+    @NEEDS_X21
     def test_the_accepted_journey_test_is_red_at_base_and_green_at_accepted(self):
         test = (X21 / "zz_accepted_x2_1.test.ts").read_bytes()
         base = self.at("base")
@@ -4325,7 +4387,7 @@ class HostPackX21(unittest.TestCase):
         at_base = self.vitest(base, "tests/zz_accepted_x2_1.test.ts")
         results = {a["title"]: a["status"] for r in at_base["testResults"] for a in r["assertionResults"]}
         journey = {t: s for t, s in results.items() if "crash before commit" in t}
-        self.assertEqual(len(journey), 8, results)
+        self.assertEqual(len(journey), 12, results)
         self.assertEqual(set(journey.values()), {"failed"}, "every journey row is red at the base")
         self.assertEqual({t: s for t, s in results.items() if t not in journey and s != "passed"}, {}, "the other rows hold at the base")
         at_accepted = self.vitest(self.at("accepted"), "tests/zz_accepted_x2_1.test.ts")
@@ -4352,13 +4414,13 @@ class HostPackX21(unittest.TestCase):
                 self.assertFalse(g["PASS"])
                 self.assertEqual(g["restored"], True)
                 # the grade column of WRONG-FIXES.md states the count the grade returns
-                want = re.match(r"FAIL: acceptedPin (\d+) of 13 red;", rows[wid][2])
+                want = re.match(r"FAIL: acceptedPin (\d+) of 17 red;", rows[wid][2])
                 self.assertIsNotNone(want, rows[wid][2])
                 pin = g["acceptedPin"]
-                self.assertEqual((pin["failed"], pin["total"]), (int(want[1]), 13), json.dumps(g, indent=1))
+                self.assertEqual((pin["failed"], pin["total"]), (int(want[1]), 17), json.dumps(g, indent=1))
 
     @NEEDS_X21
-    def test_the_accepted_and_an_alternative_fix_grade_pass(self):
+    def test_the_accepted_and_two_alternative_fixes_grade_pass(self):
         accepted = self.at("base")
         for f in (*x21_manifest()["paths"]["source"], "tests/github-account-store.test.ts", "tests/vault.test.ts",
                   "tests/github-main-wiring.test.ts", "docs/ARCHITECTURE.md"):
@@ -4368,7 +4430,9 @@ class HostPackX21(unittest.TestCase):
         sh(["git", "commit", "-q", "--no-verify", "-m", "fix: X2-1 - the accepted change"], accepted, self.env)
         alternative = self.at("base")
         x21_candidate(alternative, X21_ALTERNATIVE, self.env, "fix: X2-1 - an unread start keeps unreferenced staged entries (another correct fix)")
-        for name, cand in (("accepted", accepted), ("alternative", alternative)):
+        helper = self.at("base")
+        x21_candidate(helper, X21_ALTERNATIVE_HELPER, self.env, "fix: X2-1 - the startup reconcile's options come from the store's module")
+        for name, cand in (("accepted", accepted), ("alternative", alternative), ("helper", helper)):
             with self.subTest(name):
                 g = self.grade_fix(cand)
                 self.assertTrue(g["PASS"], json.dumps(g, indent=1))

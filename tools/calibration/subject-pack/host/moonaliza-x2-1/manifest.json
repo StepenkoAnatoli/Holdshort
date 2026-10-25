@@ -12,7 +12,7 @@
   "reference": "docs/specification/github-sign-in.md (4.3 the replace steps, 4.4 the startup checks, 4.5 the crash windows), the comments of src/main/github-account-store.ts and src/main/vault.ts, tests/github-account-store.test.ts (its crash-window helpers, restart and unreadStart) and tests/vault.test.ts (the shipped harnesses)"
  },
  "commit_rule": null,
- "accepted_fix": "0793f9d377f0b736d2155492a6654f33ae3d9178",
+ "accepted_fix": "f39d775b20f0d08616c49c11664e22ac4a643981",
  "findings": [
   {
    "id": "X2-1",
@@ -25,7 +25,7 @@
    "required_behaviour": "after that journey (the crash, a start whose open() cannot read the account file, then a start that can) the pair the file names is committed and live, for a first sign-in, for a sign-in that replaced an account and for a refresh (the old pair retired); the start that cannot read the file shows no account, leaves the file as it is and leaves the new pair in the vault as the crash left it, with its encrypted files; tombstoned entries are still deleted on every start, an unreferenced staged entry is deleted by the next start that reads the file, and a missing file still reads as no account, whose staged entries the start deletes",
    "found_rule": "a finding says the double fault (a crash between the file write and the commit, then a start that cannot read the file) loses the staged pair the file names",
    "cause_rule": "it locates the cause in the startup reconcile deleting unreferenced staged entries while the account file is unread",
-   "accepted_fix": "0793f9d377f0b736d2155492a6654f33ae3d9178"
+   "accepted_fix": "f39d775b20f0d08616c49c11664e22ac4a643981"
   }
  ],
  "cases": {
@@ -35,7 +35,7 @@
    "tier": "T3",
    "finding": "X2-1",
    "pass_rule": "the candidate's tests are green at its head AND red again with the three source files restored to the base AND the accepted journey test is green against the candidate's source AND every changed file is one of the three source files, the two test files, the wiring test or the map, or a newly added test file matching the pattern AND eslint is clean on those files",
-   "instructions": "Drive the journey through the startup order src/main/index.ts runs (the store's open(), the vault reconcile, then each finishStartup()); the account file's format stays as it is; a new test file, if you add one, is named tests/<name>.test.ts with x2 in its name.",
+   "instructions": "Drive the journey through the startup order src/main/index.ts runs (the store's open(), the vault reconcile, then each finishStartup()); the account file's format stays as it is; a new test file, if you add one, is named tests/<name>.test.ts with x2 in its name. The grade runs the startup lines of src/main/index.ts, from the line that reads the engine's references up to supervisor.attach(), on their own: there they may use vault, references, collectorSettings, githubStore and what index.ts imports from ./github-account-store or ./vault, and no other name of index.ts.",
    "commit_prefix": "fix(github): X2-1 - "
   }
  },
@@ -74,10 +74,10 @@
  },
  "source_hashes": {
   ".gitattributes": "0065bcd2f22464bbbd231c56c33939f29e2f1bf54b43c5ae99f84760ae35c82b",
-  "README.md": "a84106cca4e71deb761ad7530aae20335d14534c1637172e2eb3ad534169aa50",
-  "WRONG-FIXES.md": "7c57be33fc96b39cc4680795044c0e167b042bc9a43e95d982b0a4ab851d4b3f",
-  "make-repo.sh": "01b41e9d4f435241aabea1a936966a47b151b5d8b802ba77dc66513a25b5d40a",
-  "zz_accepted_x2_1.test.ts": "0ffdb551b95d70fe490ad840bbb915895893b35fa2333bf224998aabe430be50"
+  "README.md": "10b6f358094e177d67a02fd042eb3cc36c3de5299548c92ea75c5efb53cd502b",
+  "WRONG-FIXES.md": "eddf448b049ab7b7b023bfbdf42e23de047e1ea9f21575cef71950635575a2bf",
+  "make-repo.sh": "a8a45db6b6a68ffcb1476ffa146e43b4faded5d82ef4d2f31716d2359aae3911",
+  "zz_accepted_x2_1.test.ts": "9b23cd686a7b2a9df1170f970c4cebcbf5f85b32e904729258641fc17e3fe9c0"
  },
  "isolation": "candidate checkouts are history-less trees of the case base only (MoonAliza 16f637f's tree, without its history), made outside the pack and outside the kit's tree, with node_modules linked from an install outside the pack; the pack repository, its accepted commit (with the accepted journey test), this manifest, WRONG-FIXES.md and the ground truth stay outside every candidate's permitted paths; the pack itself carries no MoonAliza code, which the host's own clone provides when make-repo.sh builds the repository"
 }

@@ -21,8 +21,8 @@
 # conversion) with mode 100644, and the identity, dates, messages and encoding of each commit are fixed here.
 #
 # Prints "<tag> <commit id>" for each commit. Exit 0 when the ids equal manifest.json's (or there is no manifest beside
-# this script); 1 when git fails, the clone lacks an object, or the ids differ from the manifest's; 2 on a bad argument,
-# an existing TARGET or a clone without the two commits.
+# this script); 1 when git fails, the clone lacks an object, or the ids differ from the manifest's, and TARGET is then
+# removed, so a rerun is not refused; 2 on a bad argument, an existing TARGET or a clone without the two commits.
 set -euo pipefail
 
 refuse() {
@@ -48,6 +48,8 @@ export GIT_AUTHOR_NAME="Calibration Kit" GIT_AUTHOR_EMAIL="host-pack@calibration
 export GIT_COMMITTER_NAME="Calibration Kit" GIT_COMMITTER_EMAIL="host-pack@calibration.invalid"
 
 mkdir -p -- "$(dirname -- "$TARGET")"
+# TARGET did not exist (checked above): from here on, a failure removes what this run built
+trap 'rm -rf -- "$TARGET"; echo "make-repo: failed; removed $TARGET" >&2' EXIT
 git init -q --bare --object-format=sha1 -- "$TARGET"
 REPO=$(cd -- "$TARGET" && pwd -P)
 INDEX="$REPO/make-repo.index"
@@ -86,7 +88,7 @@ git -C "$REPO" update-ref refs/tags/accepted0 "$ACCEPTED"
 git -C "$REPO" symbolic-ref HEAD refs/heads/accepted
 printf 'base0 %s\naccepted0 %s\n' "$BASE" "$ACCEPTED"
 
-[ -f "$HERE/manifest.json" ] || exit 0
+[ -f "$HERE/manifest.json" ] || { trap - EXIT; exit 0; }
 python3 -I - "$HERE/manifest.json" "$BASE" "$ACCEPTED" <<'PY'
 import json, sys
 m = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -103,3 +105,4 @@ if bad:
     sys.exit(1)
 print("make-repo: the ids equal manifest.json's", file=sys.stderr)
 PY
+trap - EXIT
