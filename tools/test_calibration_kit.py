@@ -4035,6 +4035,20 @@ X21_WRONG = {
         x21_getter("openFailed", "this.held"),
         *X21_KEEP_UNREFERENCED,
         x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
+    # re-review 1 R1: a file that names no account (signed out) counts as one whose references may be incomplete, so an
+    # orphan pair a crashed sign-in staged after a sign-out survives every readable start
+    "W-m": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed() });", edits=[
+        x21_getter("openFailed", "this.unread || this.disk?.account === null"),
+        *X21_KEEP_UNREFERENCED,
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
+    # re-review 1 R2: W-k's idea with a year for the limit, which a start a month after the crash did not reach
+    "W-n": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed() });", edits=[
+        x21_getter("openFailed"),
+        ("src/main/vault.ts", X21_SIGNATURE, X21_KEEP_SIGNATURE),
+        ("src/main/vault.ts", X21_DELETES,
+         "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref)\n"
+         "            && !(options.keepStaged && Date.now() - entry.createdAt < 365 * 24 * 3_600_000))) {   // X2-1: a year-old staged entry is abandoned"),
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
 }
 
 # A correct fix the accepted one is not: another name for the store's flag and a positional vault parameter.
@@ -4270,7 +4284,13 @@ class HostPackX21(unittest.TestCase):
         # crash, and a third errno code is exercised; the README states the limit that is left
         self.assertIn("const extra = imported(source);", test)
         self.assertIn("for (const code of ['EACCES', 'EBUSY', 'EIO'])", test)
-        self.assertEqual(test.count("later(30);"), 2, "the journey rows and the orphan row run their later starts a month on")
+        self.assertEqual(test.count("later(3650);"), 2, "the journey rows and the orphan row run their later starts ten years on")
+        self.assertNotIn("later(30)", test)
+        # re-review 1 R1, R4: a readable start after a sign-out deletes a crashed sign-in's orphan pair, and the startup lines
+        # are anchored on code lines (the engine call and the supervisor call), never on a comment that mentions them
+        self.assertIn("test('a sign-out, then a sign-in that crashed after staging, before the file write: the next readable start deletes", test)
+        self.assertIn(r"""const from = lines.findIndex(line => isCode(line) && /method:\s*['"]vault\.references['"]/.test(line));""", test)
+        self.assertIn(r"index > from && isCode(line) && /supervisor\.attach\(/.test(line));", test)
         limits = md_section(text, "What the pack does not discriminate")
         for word in ("./github-account-store", "./vault", "ReferenceError"):
             self.assertIn(word, limits, word)
@@ -4414,10 +4434,10 @@ class HostPackX21(unittest.TestCase):
                 self.assertFalse(g["PASS"])
                 self.assertEqual(g["restored"], True)
                 # the grade column of WRONG-FIXES.md states the count the grade returns
-                want = re.match(r"FAIL: acceptedPin (\d+) of 17 red;", rows[wid][2])
+                want = re.match(r"FAIL: acceptedPin (\d+) of 18 red;", rows[wid][2])
                 self.assertIsNotNone(want, rows[wid][2])
                 pin = g["acceptedPin"]
-                self.assertEqual((pin["failed"], pin["total"]), (int(want[1]), 17), json.dumps(g, indent=1))
+                self.assertEqual((pin["failed"], pin["total"]), (int(want[1]), 18), json.dumps(g, indent=1))
 
     @NEEDS_X21
     def test_the_accepted_and_two_alternative_fixes_grade_pass(self):

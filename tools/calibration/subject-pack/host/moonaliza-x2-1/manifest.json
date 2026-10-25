@@ -12,7 +12,7 @@
   "reference": "docs/specification/github-sign-in.md (4.3 the replace steps, 4.4 the startup checks, 4.5 the crash windows), the comments of src/main/github-account-store.ts and src/main/vault.ts, tests/github-account-store.test.ts (its crash-window helpers, restart and unreadStart) and tests/vault.test.ts (the shipped harnesses)"
  },
  "commit_rule": null,
- "accepted_fix": "f39d775b20f0d08616c49c11664e22ac4a643981",
+ "accepted_fix": "1cf7ceb64fcba4077c5cc8353bf5b91b7837f69c",
  "findings": [
   {
    "id": "X2-1",
@@ -25,7 +25,7 @@
    "required_behaviour": "after that journey (the crash, a start whose open() cannot read the account file, then a start that can) the pair the file names is committed and live, for a first sign-in, for a sign-in that replaced an account and for a refresh (the old pair retired); the start that cannot read the file shows no account, leaves the file as it is and leaves the new pair in the vault as the crash left it, with its encrypted files; tombstoned entries are still deleted on every start, an unreferenced staged entry is deleted by the next start that reads the file, and a missing file still reads as no account, whose staged entries the start deletes",
    "found_rule": "a finding says the double fault (a crash between the file write and the commit, then a start that cannot read the file) loses the staged pair the file names",
    "cause_rule": "it locates the cause in the startup reconcile deleting unreferenced staged entries while the account file is unread",
-   "accepted_fix": "f39d775b20f0d08616c49c11664e22ac4a643981"
+   "accepted_fix": "1cf7ceb64fcba4077c5cc8353bf5b91b7837f69c"
   }
  ],
  "cases": {
@@ -74,10 +74,10 @@
  },
  "source_hashes": {
   ".gitattributes": "0065bcd2f22464bbbd231c56c33939f29e2f1bf54b43c5ae99f84760ae35c82b",
-  "README.md": "10b6f358094e177d67a02fd042eb3cc36c3de5299548c92ea75c5efb53cd502b",
-  "WRONG-FIXES.md": "eddf448b049ab7b7b023bfbdf42e23de047e1ea9f21575cef71950635575a2bf",
+  "README.md": "9bb0c1a66d31790f416a00635eadd8d3b92a4aa6a3f60c04e571f0abd32d0c08",
+  "WRONG-FIXES.md": "2b9a10a8e528fa47691f2e771ef176d0f9f1921f7f561b88d92fb2e1e6b88b30",
   "make-repo.sh": "a8a45db6b6a68ffcb1476ffa146e43b4faded5d82ef4d2f31716d2359aae3911",
-  "zz_accepted_x2_1.test.ts": "9b23cd686a7b2a9df1170f970c4cebcbf5f85b32e904729258641fc17e3fe9c0"
+  "zz_accepted_x2_1.test.ts": "00cbca330976b757c0b6dab91c5a357098f4048d22dbc44aa075771254aa70ba"
  },
  "isolation": "candidate checkouts are history-less trees of the case base only (MoonAliza 16f637f's tree, without its history), made outside the pack and outside the kit's tree, with node_modules linked from an install outside the pack; the pack repository, its accepted commit (with the accepted journey test), this manifest, WRONG-FIXES.md and the ground truth stay outside every candidate's permitted paths; the pack itself carries no MoonAliza code, which the host's own clone provides when make-repo.sh builds the repository"
 }

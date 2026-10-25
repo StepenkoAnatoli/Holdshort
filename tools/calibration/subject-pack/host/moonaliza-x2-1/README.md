@@ -72,8 +72,8 @@ staged entries.
 
 The journey test drives a start as the app runs one: a new `Vault` and `GitHubAccountStore` on the crash's data
 directory, the store's `open()`, then the startup lines of the candidate's own `src/main/index.ts`. Those are the lines
-after the one that reads the engine's references (`vault.references`), up to the one that attaches the supervisor
-(`supervisor.attach(`), run with the start's vault, store and engine references and a collector holding no token. The
+after the one that reads the engine's references (the engine call with `method: 'vault.references'`), up to the one that
+attaches the supervisor (`supervisor.attach(`), run with the start's vault, store and engine references and a collector holding no token. The
 test reads them from the candidate's file and transpiles them with esbuild (a dependency of the subject), so whatever
 name a fix gives its flag, the test runs the wiring the fix wrote. It assumes only names the base already has, which
 belong to the required behaviour, not to any fix:
@@ -84,7 +84,8 @@ belong to the required behaviour, not to any fix:
   `openedAppChanged`.
 - The account file at `<data>/github/account.json` and the vault index at `<data>/vault/index.json`, read as JSON: the
   crash-window table speaks of both.
-- The two anchor lines of `src/main/index.ts`, and the identifiers the startup lines use there: `vault`, `references`,
+- The two anchor lines of `src/main/index.ts` (code lines only: a comment line that mentions either anchor is passed
+  over, so a comment a candidate adds does not move the slice), and the identifiers the startup lines use there: `vault`, `references`,
   `collectorSettings` and `githubStore`. Every name `index.ts` imports from `./github-account-store` or `./vault`
   (named, renamed with `as`, or a namespace) is bound as well, to the candidate's own export, so a wiring that calls a
   helper one of those modules exports runs as the app would run it.
@@ -94,8 +95,9 @@ fail every other correct fix, so the journey rows assert what such a row would: 
 and in their states. An unreadable file is simulated by failing every read of that one path (`lstat`, `stat`, `open`
 and `readFile` in `node:fs/promises`, and their synchronous forms) for the whole start, so a fix that re-reads the file
 another way still meets the error. In the journey rows and the orphan row the starts after the crash run with the wall
-clock (`Date` alone, through vitest's fake timers) moved a month on, so a fix that keeps the pair only while it is recent
-fails.
+clock (`Date` alone, through vitest's fake timers) moved ten years on, so a fix that keeps the pair only while it is
+recent fails, whatever age limit it picks short of that (W-k keeps for a day, W-n for a year). The store's clock is
+injected and fixed, so only the vault sees the move.
 
 ## What the pack does not discriminate
 
@@ -109,8 +111,8 @@ fails.
   candidate.
 - **Errors other than EACCES, EBUSY and EIO.** EPERM and others are not exercised; the rule is the same, any errno code
   but ENOENT.
-- **Time limits beyond a month.** The later starts run a month after the crash, so a fix that drops a kept pair only
-  once it is older than that passes.
+- **Time limits beyond ten years.** The later starts run ten years after the crash, so a fix that drops a kept pair
+  only once it is older than that passes.
 - **Crash points.** Only the four the table names: before commit 1 of a first sign-in, and before commits 3 and 4 of a
   replace. A crash during the reconcile itself, or a rollback write that failed (spec 4.3 step 5), is not exercised.
 - **Quality beyond the pass rule.** The grade is mechanical: a fix that passes may still be larger than it needs to be

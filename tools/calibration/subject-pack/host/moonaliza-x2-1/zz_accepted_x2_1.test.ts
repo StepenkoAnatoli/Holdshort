@@ -20,7 +20,7 @@ import { GitHubAccountStore, type GitHubAccount } from '../src/main/github-accou
 // the staged pair the file names; the next start that reads the file then finds the pair and commits it. The start is driven as the app
 // runs it: the store's open(), then the lines src/main/index.ts runs between the engine's references and the supervisor (the reconcile
 // and both finishStartup calls), taken from the candidate's own index.ts, so the test holds whatever names that wiring uses. A later start
-// runs with the wall clock moved a month past the crash, as a start after a long time away would.
+// runs with the wall clock moved ten years past the crash, so no age limit on a kept pair can pass for a start after a long time away.
 
 const KEY = randomBytes(32);
 const cryptor = {
@@ -47,7 +47,8 @@ afterEach(async () => { vi.useRealTimers(); for (const root of roots.splice(0)) 
 
 const DAY = 86_400_000;
 /** Moves the wall clock (Date alone; timers stay real) `days` past now: the vault stamps a staged entry with Date.now(), and a start may
- *  come long after the crash, so nothing about the kept pair may depend on how recent it is. */
+ *  come long after the crash, so nothing about the kept pair may depend on how recent it is. The rows move it ten years (3650 days), far
+ *  past any age a keep could be limited to (a day, a month, a year); the store's clock is injected and fixed, so only the vault sees it. */
 function later(days: number): void { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(Date.now() + days * DAY); }
 
 /** Every read of one path fails with `code` (EACCES, EBUSY, EIO) until the returned function runs: lstat, stat, open and readFile in
@@ -93,14 +94,16 @@ function imported(source: string): Map<string, unknown> {
   for (const name of START) names.delete(name);
   return names;
 }
-/** The startup lines of the candidate's src/main/index.ts: every line after the one that reads the engine's references (vault.references),
- *  up to the one that attaches the supervisor, run with the start's vault, store and engine references, a collector with no token, and
- *  what index.ts imports from the modules in scope. No other name of index.ts reaches them here. */
+/** The startup lines of the candidate's src/main/index.ts: every line after the one that reads the engine's references (the engine call
+ *  with method 'vault.references'), up to the one that attaches the supervisor, run with the start's vault, store and engine references, a
+ *  collector with no token, and what index.ts imports from the modules in scope. No other name of index.ts reaches them here. Both anchors
+ *  are code lines: a comment line that mentions either (`//`, `/*` or ` *` first) is passed over, so a candidate's comment cannot move them. */
 function wiring(): Wiring {
   const source = readFileSync(new URL('../src/main/index.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   const lines = source.split('\n');
-  const from = lines.findIndex(line => /vault\.references/.test(line));
-  const to = lines.findIndex((line, index) => index > from && /supervisor\.attach\(/.test(line));
+  const isCode = (line: string) => !/^\s*(\/\/|\/\*|\*)/.test(line);
+  const from = lines.findIndex(line => isCode(line) && /method:\s*['"]vault\.references['"]/.test(line));
+  const to = lines.findIndex((line, index) => index > from && isCode(line) && /supervisor\.attach\(/.test(line));
   if (from < 0 || to < 0) throw new Error('the startup lines of src/main/index.ts were not found');
   const body = lines.slice(from + 1, to).join('\n');
   const extra = imported(source);
@@ -207,7 +210,7 @@ describe('X2-1 journey: a crash leaves the new pair staged, the next start canno
       expect(pair.map(ref => entries(dir)[ref]?.state)).toEqual(states);
       const before = readFileSync(fileAt(dir), 'utf8');
 
-      later(30);                                                               // the next start comes a month after the crash
+      later(3650);                                                             // the next start comes ten years after the crash
       const unread = await start(dir, { unread: code });
       expect(unread.store.current()).toBeNull();                               // that start reads no account
       expect(readFileSync(fileAt(dir), 'utf8')).toBe(before);                  // and leaves the file as it was
@@ -245,9 +248,27 @@ describe('what an unreadable start still deletes, and what a readable start dele
     expect(dir).toBeDefined();
     expect(Object.values(entries(dir!)).filter(entry => entry.state === 'staged')).toHaveLength(2);
 
-    later(30);
+    later(3650);
     await start(dir!, { unread: 'EACCES' });
     await expectAlone(dir!, await start(dir!), a);
+  });
+
+  test('a sign-out, then a sign-in that crashed after staging, before the file write: the next readable start deletes the orphan pair (a file naming no account is read)', async () => {
+    const session = await firstSession();
+    await session.signIn();
+    expect(await session.store.clear(() => true)).toBe('durable');
+    let dir: string | undefined;
+    session.hooks.afterStaged = count => { if (count === 4) dir = session.snapshot(); };
+    await session.signIn();
+    expect(dir).toBeDefined();
+    expect(accountFile(dir!)?.account).toBeNull();                             // the file reads as signed out
+    expect(Object.values(entries(dir!)).map(entry => entry.state)).toEqual(['staged', 'staged']);
+
+    const next = await start(dir!);                                            // a readable start: the orphan pair goes, files and all
+    expect(next.store.current()).toBeNull();
+    expect(entries(dir!)).toEqual({});
+    expect(bins(dir!)).toEqual([]);
+    expect(accountFile(dir!)?.account).toBeNull();
   });
 
   test('a first sign-in that crashed after staging, before any file existed: a start deletes the staged pair (a missing file is no account)', async () => {
