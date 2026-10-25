@@ -3913,6 +3913,27 @@ X21_COMMITS = "        if (entry.state === 'staged' && committedReferences.has(r
 X21_GETTER_AT = "  openedAppChanged(): boolean { return this.appChanged; }"
 X21_KEEP_SIGNATURE = "  reconcile(committedReferences: ReadonlySet<string>, options: { keepStaged?: boolean } = {}): Promise<void> {"
 X21_REFS = "new Set([...references, ...collectorSettings.references(), ...githubStore.references()])"
+# integration D-F2: words of the mechanism, its location and its modules, which the manifest's cause (printed in the
+# candidate's fix prompt) must not name
+X21_CAUSE_WITHHELD = ("reconcile", "staged", "unreferenced", "keepStaged", "references", "vault.ts", "index.ts")
+
+# re-review 2 RR2-1: the engine call of index.ts (base and accepted), and three shapes of a correct fix's index.ts that the
+# journey test's slice of the startup lines must survive: the call wrapped over three lines, block comments whose inner
+# lines name either anchor (above the call and between the anchors), and line comments that name either anchor
+X21_ENGINE_CALL = "  const references = z.array(z.string()).parse(await engine.control({ method: 'vault.references' }));\n"
+X21_LAST_FINISH = "  await githubStore.finishStartup();\n"
+X21_SLICE_PROBES = {
+    "wrapped engine call": [("src/main/index.ts", X21_ENGINE_CALL,
+                             "  const references = z.array(z.string()).parse(\n    await engine.control({ method: 'vault.references' }),\n  );\n")],
+    "block comments": [
+        ("src/main/index.ts", X21_ENGINE_CALL,
+         "  /*\n    X2-1: method: 'vault.references' gives the engine's references\n  */\n" + X21_ENGINE_CALL),
+        ("src/main/index.ts", X21_LAST_FINISH,
+         X21_LAST_FINISH + "  /* X2-1: the store's references are settled\n    before supervisor.attach() runs */\n")],
+    "line comments": [
+        ("src/main/index.ts", X21_ENGINE_CALL, "  // X2-1: method: 'vault.references' gives the engine's references\n" + X21_ENGINE_CALL),
+        ("src/main/index.ts", X21_LAST_FINISH, X21_LAST_FINISH + "  // X2-1: settled before supervisor.attach() runs\n")],
+}
 
 
 def x21_getter(name: str, body: str = "this.unread") -> tuple[str, str, str]:
@@ -4233,8 +4254,6 @@ class HostPackX21(unittest.TestCase):
         self.assertEqual((f["id"], f["severity"], f["present_at"], f["accepted_fix"]), ("X2-1", "S3", [fix["base"]], m["accepted_fix"]))
         for rev in (fix["base"], m["accepted_fix"]):
             self.assertRegex(rev, r"^[0-9a-f]{40}$")
-        self.assertIn("unreferenced staged", f["cause"])
-        self.assertIn("reconcile", f["cause"])
         for name in ("unreadAtOpen", "keepStaged"):  # the accepted fix's names stay out of every text a candidate or grader reads
             self.assertNotIn(name, json.dumps({k: v for k, v in m.items() if k != "source_hashes"}), name)
         p = m["paths"]
@@ -4257,6 +4276,29 @@ class HostPackX21(unittest.TestCase):
             self.assertIn(f"`{k}`", fmt, k)
         for k in m["paths"]:
             self.assertIn(f"`paths.{k}`", fmt, k)
+
+    def test_the_cause_names_no_mechanism_and_the_readme_keeps_it(self):
+        # integration D-F2: the kit's fix prompt prints findings[].cause (run.template.js) and this fix-only pack has no
+        # grader that reads it, so the manifest's cause withholds the mechanism; the pack's README keeps it for humans
+        m = x21_manifest()
+        [f] = m["findings"]
+        cause = f["cause"].lower()
+        for word in X21_CAUSE_WITHHELD:
+            self.assertNotIn(word.lower(), cause, f"the cause the candidate reads names {word!r}")
+        self.assertIn("README.md", f["cause"], "the cause says where the ground truth lives")
+        journey = md_section((X21 / "README.md").read_text(encoding="utf-8"), "The journey")
+        for word in ("reconcile", "unreferenced staged entry", "names no references"):
+            self.assertIn(word, journey, word)
+
+    def test_the_instructions_state_the_grade_limit_without_pointing_at_the_fix(self):
+        # integration D-R3: the limit review 1 F1 needed disclosed stays (the grade drives each start in the wiring's order,
+        # with only the listed names in scope), framed as how every start is driven, not as where a change goes
+        text = x21_manifest()["cases"]["fix"]["instructions"]
+        for words in ("the vault reconcile", "finishStartup", "The grade runs the startup lines"):
+            self.assertNotIn(words, text, words)
+        for words in ("whichever files your change touches", "the store's open()", "from the line that reads the engine's references up to supervisor.attach()",
+                      "vault, references, collectorSettings, githubStore", "./github-account-store", "./vault", "any other name of index.ts"):
+            self.assertIn(words, text, words)
 
     def test_the_source_hashes_cover_every_pack_file(self):
         m = x21_manifest()
@@ -4289,8 +4331,14 @@ class HostPackX21(unittest.TestCase):
         # re-review 1 R1, R4: a readable start after a sign-out deletes a crashed sign-in's orphan pair, and the startup lines
         # are anchored on code lines (the engine call and the supervisor call), never on a comment that mentions them
         self.assertIn("test('a sign-out, then a sign-in that crashed after staging, before the file write: the next readable start deletes", test)
-        self.assertIn(r"""const from = lines.findIndex(line => isCode(line) && /method:\s*['"]vault\.references['"]/.test(line));""", test)
-        self.assertIn(r"index > from && isCode(line) && /supervisor\.attach\(/.test(line));", test)
+        # re-review 2 RR2-1: the anchors match code with every comment blanked (block comments too), and the slice starts
+        # after the end of the statement that holds the engine call, so a wrapped call is read whole
+        self.assertIn("const codeLines = codeOnly(source);", test)
+        self.assertIn("source.indexOf('*/', i + 2)", test)
+        self.assertIn(r"""const call = codeLines.findIndex(line => /method:\s*['"]vault\.references['"]/.test(line));""", test)
+        self.assertIn(r"codeLines.findIndex((line, index) => index >= call && /;\s*$/.test(line));", test)
+        self.assertIn(r"codeLines.findIndex((line, index) => index > from && /supervisor\.attach\(/.test(line));", test)
+        self.assertNotIn("isCode", test)
         limits = md_section(text, "What the pack does not discriminate")
         for word in ("./github-account-store", "./vault", "ReferenceError"):
             self.assertIn(word, limits, word)
@@ -4308,7 +4356,8 @@ class HostPackX21(unittest.TestCase):
     def test_without_the_clone_the_subject_tests_report_unsupported(self):
         for name in ("test_make_repo_builds_the_manifest_ids", "test_the_accepted_journey_test_is_red_at_base_and_green_at_accepted",
                      "test_every_wrong_fix_grades_fail_on_the_accepted_journey_test_alone", "test_the_accepted_and_two_alternative_fixes_grade_pass",
-                     "test_the_launch_refusals_hold_with_this_manifest_and_a_fix_only_protocol", "test_make_repo_removes_its_target_when_the_ids_differ"):
+                     "test_the_launch_refusals_hold_with_this_manifest_and_a_fix_only_protocol", "test_make_repo_removes_its_target_when_the_ids_differ",
+                     "test_the_accepted_fix_reshaped_in_index_ts_stays_green"):
             method = getattr(type(self), name)
             if x21_clone():
                 self.assertFalse(getattr(method, "__unittest_skip__", False), name)
@@ -4414,6 +4463,22 @@ class HostPackX21(unittest.TestCase):
         self.assertEqual((at_accepted["numFailedTests"], at_accepted["numPassedTests"]), (0, len(results)))
 
     @NEEDS_X21
+    def test_the_accepted_fix_reshaped_in_index_ts_stays_green(self):
+        # re-review 2 RR2-1: a correct fix whose engine call is wrapped, or whose index.ts carries a comment naming an anchor,
+        # is still correct; the journey test's slice of the startup lines must not turn it red
+        cand = self.at("accepted")
+        (cand / "tests" / "zz_accepted_x2_1.test.ts").write_bytes((X21 / "zz_accepted_x2_1.test.ts").read_bytes())
+        index = subprocess.run(["git", "-C", str(self.pack / "repo"), "show", "accepted0:src/main/index.ts"], capture_output=True, check=True).stdout
+        for name, edits in X21_SLICE_PROBES.items():
+            with self.subTest(name):
+                (cand / "src" / "main" / "index.ts").write_bytes(index)
+                for path, old, new in edits:
+                    x21_edit(cand, path, old, new)
+                run = self.vitest(cand, "tests/zz_accepted_x2_1.test.ts")
+                failed = [a["title"] for r in run["testResults"] for a in r["assertionResults"] if a["status"] != "passed"]
+                self.assertEqual((run["numFailedTests"], run["numTotalTests"]), (0, 18), failed)
+
+    @NEEDS_X21
     def test_every_wrong_fix_grades_fail_on_the_accepted_journey_test_alone(self):
         rows = x21_wrong_rows()
 
@@ -4483,6 +4548,7 @@ class HostPackX21(unittest.TestCase):
         for text in (f["summary"], f["required_behaviour"], m["cases"]["fix"]["instructions"], "npx vitest run <file>",
                      "npx eslint src/main/github-account-store.ts src/main/vault.ts src/main/index.ts tests/github-account-store.test.ts"):
             self.assertIn(text, prompt)
+        self.assertIn(f"Cause: {f['cause']}.", prompt)  # integration D-F2: the kit prints the cause, which names no mechanism
         for secret in (str(self.pack), "make-repo", "zz_accepted", "WRONG-FIXES", self.ids["accepted0"], self.ids["base0"]):
             self.assertNotIn(secret, prompt)  # Item 2: the prompt names only the checkout
         for host in ({"checkout_root": str(self.pack / "checkouts")}, {"adjudication_checkout": str(self.pack / "repo" / "adj")},

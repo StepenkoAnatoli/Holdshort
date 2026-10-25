@@ -94,16 +94,35 @@ function imported(source: string): Map<string, unknown> {
   for (const name of START) names.delete(name);
   return names;
 }
-/** The startup lines of the candidate's src/main/index.ts: every line after the one that reads the engine's references (the engine call
- *  with method 'vault.references'), up to the one that attaches the supervisor, run with the start's vault, store and engine references, a
- *  collector with no token, and what index.ts imports from the modules in scope. No other name of index.ts reaches them here. Both anchors
- *  are code lines: a comment line that mentions either (`//`, `/*` or ` *` first) is passed over, so a candidate's comment cannot move them. */
+/** The lines of `source` with every comment (line, block or trailing) blanked to spaces and every string kept, so that only code matches
+ *  an anchor: a comment a candidate adds, whatever its shape, cannot move the slice. */
+function codeOnly(source: string): string[] {
+  let out = ''; let i = 0;
+  while (i < source.length) {
+    const c = source[i] ?? ''; const next = source[i + 1];
+    if (c === '/' && (next === '/' || next === '*')) {
+      const end = next === '/' ? source.indexOf('\n', i) : source.indexOf('*/', i + 2);
+      const stop = end < 0 ? source.length : next === '/' ? end : end + 2;
+      out += source.slice(i, stop).replace(/[^\n]/g, ' '); i = stop;
+    } else if (c === "'" || c === '"' || c === '`') {
+      let j = i + 1; while (j < source.length && source[j] !== c) j += source[j] === '\\' ? 2 : 1;
+      out += source.slice(i, j + 1); i = j + 1;
+    } else { out += c; i += 1; }
+  }
+  return out.split('\n');
+}
+/** The startup lines of the candidate's src/main/index.ts: every line after the statement that reads the engine's references (the engine
+ *  call with method 'vault.references', up to the first code line at or after it that ends with `;`, so a call wrapped over several lines
+ *  counts whole), up to the line that attaches the supervisor, run with the start's vault, store and engine references, a collector with
+ *  no token, and what index.ts imports from the modules in scope. No other name of index.ts reaches them here. Both anchors match code
+ *  only (codeOnly), so a candidate's comment cannot move them. */
 function wiring(): Wiring {
   const source = readFileSync(new URL('../src/main/index.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   const lines = source.split('\n');
-  const isCode = (line: string) => !/^\s*(\/\/|\/\*|\*)/.test(line);
-  const from = lines.findIndex(line => isCode(line) && /method:\s*['"]vault\.references['"]/.test(line));
-  const to = lines.findIndex((line, index) => index > from && isCode(line) && /supervisor\.attach\(/.test(line));
+  const codeLines = codeOnly(source);
+  const call = codeLines.findIndex(line => /method:\s*['"]vault\.references['"]/.test(line));
+  const from = call < 0 ? -1 : codeLines.findIndex((line, index) => index >= call && /;\s*$/.test(line));
+  const to = from < 0 ? -1 : codeLines.findIndex((line, index) => index > from && /supervisor\.attach\(/.test(line));
   if (from < 0 || to < 0) throw new Error('the startup lines of src/main/index.ts were not found');
   const body = lines.slice(from + 1, to).join('\n');
   const extra = imported(source);

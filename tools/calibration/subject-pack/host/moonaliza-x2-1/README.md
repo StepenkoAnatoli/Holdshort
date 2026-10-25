@@ -13,7 +13,8 @@ wrong-fix matrix and `make-repo.sh`, which builds the pack repository from a Moo
 ## Files
 
 - `manifest.json`: the pack manifest (the format of `../../README.md`): one finding, X2-1, and one case, `fix` at T3.
-  `findings[].summary`, `cause` and `required_behaviour` state the journey and its cause, never the accepted change.
+  `findings[].summary` and `required_behaviour` state the journey, never the accepted change. `cause` withholds the
+  cause (the kit's fix prompt prints it to the candidate) and points to the journey below, which states it.
 - `make-repo.sh`: `make-repo.sh <moonaliza-clone> <target>` builds the pack repository (below).
 - `zz_accepted_x2_1.test.ts`: the accepted journey test. `make-repo.sh` adds it to the accepted commit at
   `tests/zz_accepted_x2_1.test.ts` (`paths.accepted_test.from`), and `grade.sh` places it at the same path
@@ -35,7 +36,9 @@ wrong-fix matrix and `make-repo.sh`, which builds the pack repository from a Moo
 3. The start after that can read the file.
 
 At the base (MoonAliza `16f637f`), step 2's reconcile deletes the staged pair because no reference names it, so step 3
-finds the refs the file names gone and signs the user out. The crash-window table (spec 4.5, "the file write, before
+finds the refs the file names gone and signs the user out. **The cause** (the ground truth, which the manifest's
+`cause` withholds; see the last section): during step 2 the store names no references, and the vault reconcile that
+start runs deletes every unreferenced staged entry, so it deletes the new pair the unread file still names. The crash-window table (spec 4.5, "the file write, before
 commit") promises a sign-in with the new pair. Required: after step 3 the pair the file names is committed and live.
 Step 2 shows no account, leaves the file as it is, and leaves the pair in the vault as the crash left it, with its
 encrypted files. Three things stay as they are. Tombstoned entries are deleted on every start. An unreferenced staged
@@ -84,8 +87,10 @@ belong to the required behaviour, not to any fix:
   `openedAppChanged`.
 - The account file at `<data>/github/account.json` and the vault index at `<data>/vault/index.json`, read as JSON: the
   crash-window table speaks of both.
-- The two anchor lines of `src/main/index.ts` (code lines only: a comment line that mentions either anchor is passed
-  over, so a comment a candidate adds does not move the slice), and the identifiers the startup lines use there: `vault`, `references`,
+- The two anchor lines of `src/main/index.ts`, matched on code only: comments (line, block and trailing) are blanked
+  first, with strings kept, so a comment a candidate adds does not move the slice. The slice starts after the end of
+  the statement that holds the engine call (the first code line at or after it that ends with `;`), so a call wrapped
+  over several lines is read whole. The identifiers the startup lines use there: `vault`, `references`,
   `collectorSettings` and `githubStore`. Every name `index.ts` imports from `./github-account-store` or `./vault`
   (named, renamed with `as`, or a namespace) is bound as well, to the candidate's own export, so a wiring that calls a
   helper one of those modules exports runs as the app would run it.
@@ -109,6 +114,9 @@ injected and fixed, so only the vault sees the move.
   helper declared in `index.ts` itself, or a name imported from another module) throws a ReferenceError in every row
   that runs a start, so such a fix fails even when it is correct. The case's `instructions` state this limit to the
   candidate.
+- **A regex literal in `index.ts` above the anchors that holds a quote or a comment opener.** The test blanks comments
+  with strings kept but does not parse regex literals, so such a literal could hide an anchor, and every row that runs
+  a start would fail. The base's `index.ts` has no regex literal.
 - **Errors other than EACCES, EBUSY and EIO.** EPERM and others are not exercised; the rule is the same, any errno code
   but ENOENT.
 - **Time limits beyond ten years.** The later starts run ten years after the crash, so a fix that drops a kept pair
@@ -125,6 +133,10 @@ Stage 4a of calibration run 4 measures `fix@T3` alone. The journey test is the g
 there is no `pin` case. No review ground truth is adjudicated for this subject at this base (run 2's other findings
 in these files are not part of this pack), so there is no `review` case.
 
-The kit's fix prompt (`run.template.js`) gives the candidate the finding's `cause` along with its summary and its
-required behaviour. Keeping the cause from the candidate needs a kit change, which this pack does not make. The
-manifest's cause says where the loss happens (the reconcile during the unreadable start), never how to fix it.
+The kit's fix prompt (`run.template.js`) prints the finding's `cause` along with its summary and its required
+behaviour, and in this fix-only pack nothing else reads `cause`: `grade.sh` and `observations.py` do not, and only a
+review case's judging would. So the manifest's `cause` names no mechanism, location or module: it says the cause is
+withheld and points to this README, whose journey states it (the lead's decision at integration; the kit is
+unchanged). No pack file reaches a candidate: a checkout is a history-less tree of `base0` alone, made outside the pack
+(`historyless-checkout.sh --pack` and the launch refuse a shared path), and `grade.sh` places the journey test only
+when it grades.
