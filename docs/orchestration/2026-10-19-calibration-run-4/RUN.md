@@ -286,3 +286,37 @@ read only, for the subject trees the packs export.
 - The owner shuts the host down at about 10:25Z. A workflow still running then is stopped first. The unit's on-disk
   state and the exact restart steps are in the lead's side-session note `run4-resume.md`, the resume point.
 
+
+## 2026-10-25 21:20 UTC (lead) - sr-pack-4a rounds 3-5: two more FIX verdicts, an answer key and a kit guard; round 5 in flight
+
+- Restart 11:16Z (new lead session, after the owner's PC shutdown). Reading 11:14Z: five_hour 0.03, seven_day 0.13. The
+  worktree matched the stop state; round 3 continued as wf_20fa4ac7-c1b (376,575 tokens; the stopped first agent
+  wf_29220d8f-432 used 192,537 more, read from its transcript).
+- Round 3: fixer f6f0e2d (real cause restored, hidden by `cases.fix.cause_in_prompt: false`; IC-2, IC-3, IC-5 closed;
+  F5 at its root: no vitest cache written into the MoonAliza clone; HostPackX21 with the clone 16 OK). Refute-first check 3
+  (20990ce) FIX, one S2, IC3-1: `base0` was MoonAliza 16f637f's tree as it is, and that tree holds MoonAliza's own
+  orchestration record of the fix (`docs/orchestration/.../briefs/fix-x2-1.md`: the cause with file:line, the accepted
+  design, the rejected wrong fixes). A candidate grepping for the finding id would read the answer, so hiding the cause
+  from the prompt hid nothing. The lead verified it: every file of the tree naming X2-1, `unreadAtOpen` or `keepStaged`
+  is under `docs/orchestration/`.
+- Lead decision D-IC3-1: `make-repo.sh` exports both trees without `docs/orchestration/` (the brief's H3 intent, "the
+  candidate never sees it", over its literal "export the base tree 16f637f"). Round 4 (wf_d79ad3bf-0ab, 313,883
+  tokens): fixer 1f64138 (new ids base0 4eaf584a, accepted0 ebe2f45a; only reachable objects copied; a red-first test that
+  base0 names neither the finding, its fix nor its cause; HostPackX21 17 OK; clone unchanged). Check 4 (bd6506e) FIX:
+  IC4-1 S3, IC4-2 S4, IC4-3 S4.
+- IC4-1: the pack README allowed linking a MoonAliza clone's `node_modules` into a checkout, and the kit's
+  `historyless-checkout.sh --link` guard (on main) refuses only a directory touching the pack or the pack repository, so
+  from a checkout `node_modules/..` reached the clone's fix brief and its history with the accepted fix (Item 2 broken).
+  That is a shared-tooling defect, so under the owner's rule the kit is fixed, not only the README: `--link` refuses a
+  directory inside any git repository, as lead integration 2 on `build/sr-kit-cases` (#120). IC4-2: the no-hint test's
+  non-vacuity check passed on path names alone. IC4-3: the id LIMIT-1 was undefined (round 3's disclosed limit: the
+  cause check is textual, so a paraphrase gets past it).
+- Round 5, wf_a6b3de8d-2b3: kit fix, kit check, sr-pack-4a rebased onto it with IC4-1..3 fixed, check 5. Stopped about
+  19:10Z for the owner's PC restart, with the kit change staged; relaunched about 19:50Z as wf_8183009b-f61 (reading
+  seven_day 0.24). At 21:20Z the kit commit 69d1d03 has landed on `build/sr-kit-cases` (not pushed) and the kit check
+  is running.
+- Pending: on ACCEPT of both checks, push `build/sr-kit-cases` (#120, body updated with lead integration 2) and
+  `build/sr-pack-4a` (a draft PR against main, stacked on #120), record sr-pack-4a's outcome (dispatch seq 2), and a
+  RUN.md entry. Tokens known for sr-pack-4a so far: 1,046,687 + 301,864 + 192,537 + 376,575 + 313,883 = 2,231,546,
+  plus round 5's pack part (round 2's partial is unknown). Then plan step 5 (sr-policy-7, sr-packs-t1) waits for the
+  owner. Resume point: the lead's side-session note `run4-resume.md`.
