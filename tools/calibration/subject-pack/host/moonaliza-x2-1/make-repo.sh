@@ -13,16 +13,25 @@
 #                    TARGET into its copy of the manifest.
 #
 # The repository holds two root commits, each on its own branch and tagged:
-#   base0      MoonAliza 16f637f's tree, unchanged: the fix case's base (X2-1 present)
-#   accepted0  MoonAliza 01a8604's tree plus this pack's accepted journey test at tests/zz_accepted_x2_1.test.ts: the
-#              accepted fix of X2-1 (fix-x2-1), and the test grade.sh places in a candidate's checkout
-# Neither commit has a parent, so neither carries MoonAliza's history. The ids depend on nothing on the host: the trees
-# are MoonAliza's tree objects (content-addressed), the test is stored as its bytes (no filter, no line-ending
-# conversion) with mode 100644, and the identity, dates, messages and encoding of each commit are fixed here.
+#   base0      MoonAliza 16f637f's tree without its docs/orchestration/ directory: the fix case's base (X2-1 present)
+#   accepted0  MoonAliza 01a8604's tree without its docs/orchestration/ directory, plus this pack's accepted journey test
+#              at tests/zz_accepted_x2_1.test.ts: the accepted fix of X2-1 (fix-x2-1), and the test grade.sh places in a
+#              candidate's checkout
+# docs/orchestration/ is left out of both trees (lead decision D-IC3-1, integration check 3 IC3-1). It holds MoonAliza's
+# orchestration records, not subject code, and in 16f637f those records name X2-1, state its cause and give the accepted
+# fix line by line, while a candidate's checkout is base0's tree and the candidate may read all of it. The whole directory
+# goes, not a list of its files: any record there may describe the fix. Only the objects the two filtered trees reach are
+# copied into the pack repository, so the records are not in it at all, and base0..accepted0 (the journey test aside) is
+# checked to be 16f637f..01a8604 outside docs/orchestration/.
+# Neither commit has a parent, so neither carries MoonAliza's history. The ids depend on nothing on the host: every tree
+# but the two root trees and the two docs trees is MoonAliza's own tree object, those four are written by git mktree from
+# MoonAliza's entries (content-addressed), the test is stored as its bytes (no filter, no line-ending conversion) with
+# mode 100644, and the identity, dates, messages and encoding of each commit are fixed here.
 #
 # Prints "<tag> <commit id>" for each commit. Exit 0 when the ids equal manifest.json's (or there is no manifest beside
-# this script); 1 when git fails, the clone lacks an object, or the ids differ from the manifest's, and TARGET is then
-# removed, so a rerun is not refused; 2 on a bad argument, an existing TARGET or a clone without the two commits.
+# this script); 1 when git fails, the clone lacks an object, a tree has no docs/orchestration/ directory, the diff check
+# fails or the ids differ from the manifest's, and TARGET is then removed, so a rerun is not refused; 2 on a bad argument,
+# an existing TARGET or a clone without the two commits.
 set -euo pipefail
 
 refuse() {
@@ -54,17 +63,42 @@ git init -q --bare --object-format=sha1 -- "$TARGET"
 REPO=$(cd -- "$TARGET" && pwd -P)
 INDEX="$REPO/make-repo.index"
 
-# copy TREE: TREE and every tree and blob under it, from the clone into the pack repository (no commit is copied)
-copy() {
-  { echo "$1"; git -C "$SRC" ls-tree -r -t "$1" | awk '$2 != "commit" { print $3 }'; } \
-    | git -C "$SRC" pack-objects --stdout -q | git -C "$REPO" unpack-objects -q
+EXCLUDED=docs/orchestration   # left out of both trees (D-IC3-1)
+
+fail() {
+  echo "make-repo: $*" >&2
+  exit 1
 }
-copy "$BASE_TREE"
-copy "$ACCEPTED_TREE"
+
+# filter TREE: prints the id of TREE without EXCLUDED, written into the pack repository. First every object that tree
+# reaches is copied from the clone: each entry of TREE's recursive listing except the docs tree itself and EXCLUDED with
+# everything under it (an object that also sits at another path is copied for that path; no commit is copied). Then the
+# docs tree without its orchestration entry, and the root tree with that docs tree, are written with git mktree from the
+# clone's own entries. The clone is only read (cat-file, ls-tree, pack-objects --stdout). It runs in a command
+# substitution, where bash does not inherit errexit, so each step checks its own status (pipefail holds).
+filter() {
+  local tree=$1 rec path meta rest docs
+  [ "$(git -C "$SRC" cat-file -t "$tree:$EXCLUDED" 2>/dev/null)" = tree ] || fail "tree $tree has no $EXCLUDED/ directory"
+  git -C "$SRC" ls-tree -r -t -z "$tree" | while IFS= read -r -d '' rec; do
+    path=${rec#*$'\t'}
+    case $path in docs | "$EXCLUDED" | "$EXCLUDED"/*) continue ;; esac
+    meta=${rec%%$'\t'*}   # <mode> <type> <id>
+    rest=${meta#* }
+    [ "${rest%% *}" = commit ] || echo "${meta##* }"
+  done | git -C "$SRC" pack-objects --stdout -q | git -C "$REPO" unpack-objects -q || fail "could not copy the objects of $tree"
+  docs=$(git -C "$SRC" ls-tree -z "$tree:docs" | while IFS= read -r -d '' rec; do
+    [ "${rec#*$'\t'}" = "${EXCLUDED#docs/}" ] || printf '%s\0' "$rec"
+  done | git -C "$REPO" mktree -z) || fail "could not write the docs tree of $tree"
+  git -C "$SRC" ls-tree -z "$tree" | while IFS= read -r -d '' rec; do
+    if [ "${rec#*$'\t'}" = docs ]; then printf '040000 tree %s\tdocs\0' "$docs"; else printf '%s\0' "$rec"; fi
+  done | git -C "$REPO" mktree -z
+}
+BASE_FILTERED=$(filter "$BASE_TREE")
+ACCEPTED_FILTERED=$(filter "$ACCEPTED_TREE")
 
 # the accepted tree with the journey test added as its bytes, mode 100644
 rm -f -- "$INDEX"
-GIT_INDEX_FILE=$INDEX git -C "$REPO" read-tree "$ACCEPTED_TREE"
+GIT_INDEX_FILE=$INDEX git -C "$REPO" read-tree "$ACCEPTED_FILTERED"
 BLOB=$(git -C "$REPO" hash-object -w --no-filters -- "$TEST")
 GIT_INDEX_FILE=$INDEX git -C "$REPO" update-index --add --cacheinfo "100644,$BLOB,tests/zz_accepted_x2_1.test.ts"
 WITH_TEST=$(GIT_INDEX_FILE=$INDEX git -C "$REPO" write-tree)
@@ -75,10 +109,21 @@ commit() {
   GIT_AUTHOR_DATE=$2 GIT_COMMITTER_DATE=$2 git -C "$REPO" -c i18n.commitEncoding=UTF-8 \
     commit-tree --no-gpg-sign -m "$3" "$1"
 }
-BASE=$(commit "$BASE_TREE" "1767225600 +0000" \
-  "base: the tree of MoonAliza 16f637f, before fix-x2-1")
+BASE=$(commit "$BASE_FILTERED" "1767225600 +0000" \
+  "base: the tree of MoonAliza 16f637f without docs/orchestration/, before fix-x2-1")
 ACCEPTED=$(commit "$WITH_TEST" "1767312000 +0000" \
-  "accepted: the tree of MoonAliza 01a8604 (fix-x2-1) with the pack's accepted journey test, tests/zz_accepted_x2_1.test.ts")
+  "accepted: the tree of MoonAliza 01a8604 (fix-x2-1) without docs/orchestration/, with the pack's accepted journey test, tests/zz_accepted_x2_1.test.ts")
+
+# the change from base0 to accepted0, the journey test aside, is MoonAliza's 16f637f..01a8604 outside docs/orchestration/
+# (raw recursive diffs, NUL-separated, compared by their hash; the diff is not empty)
+diff_hash() {
+  git -C "$1" diff-tree -r -z --no-renames "$2" "$3" -- . ":(exclude)$4" | git -C "$REPO" hash-object --stdin
+}
+WANT=$(diff_hash "$SRC" "$BASE_TREE" "$ACCEPTED_TREE" "$EXCLUDED")
+HAVE=$(diff_hash "$REPO" "$BASE" "$ACCEPTED" tests/zz_accepted_x2_1.test.ts)
+[ "$WANT" = "$HAVE" ] || fail "base0..accepted0 is not 16f637f..01a8604 outside $EXCLUDED/"
+[ "$WANT" != "$(git -C "$REPO" hash-object --stdin </dev/null)" ] || fail "16f637f..01a8604 outside $EXCLUDED/ is empty"
+echo "make-repo: base0..accepted0 is 16f637f..01a8604 outside $EXCLUDED/" >&2
 
 # plain refs: `git tag` turns into a signed annotated tag on a host with tag.gpgSign set
 git -C "$REPO" update-ref refs/heads/base "$BASE"

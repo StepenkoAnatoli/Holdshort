@@ -1,5 +1,5 @@
 {
- "_lineage": "the host pack of calibration run 4 stage 4a (fix@T3, subject X2-1 of calibration run 2, cluster C-B), in the pack format of ../../README.md; the commit ids are the ones make-repo.sh builds from MoonAliza 16f637f and 01a8604 and this pack's accepted journey test",
+ "_lineage": "the host pack of calibration run 4 stage 4a (fix@T3, subject X2-1 of calibration run 2, cluster C-B), in the pack format of ../../README.md; the commit ids are the ones make-repo.sh builds from MoonAliza 16f637f and 01a8604, each without its docs/orchestration/ directory, and this pack's accepted journey test",
  "_cases": "one case, fix at T3: stage 4a of calibration run 4 measures fix@T3 alone, so the pack carries no pin case (the accepted journey test is the grade's pin, never a candidate's task) and no review case (no review ground truth is adjudicated for this subject at this base)",
  "pack": "moonaliza-x2-1",
  "pack_version": "1",
@@ -12,25 +12,25 @@
   "reference": "docs/specification/github-sign-in.md (4.3 the replace steps, 4.4 the startup checks, 4.5 the crash windows), the comments of src/main/github-account-store.ts and src/main/vault.ts, tests/github-account-store.test.ts (its crash-window helpers, restart and unreadStart) and tests/vault.test.ts (the shipped harnesses)"
  },
  "commit_rule": null,
- "accepted_fix": "8ddd4f4b919ab8d20f2df351ad1c1ea936616152",
+ "accepted_fix": "ebe2f45a683989b91bac4d1bf46ebba138597fa9",
  "findings": [
   {
    "id": "X2-1",
    "severity": "S3",
    "present_at": [
-    "09fe935e94d43d787d00268fa2a8e67015891668"
+    "4eaf584a0b72b36e71ca8f318ad9d9b4d04e8a2e"
    ],
    "summary": "a sign-in or refresh that crashes after the account file names its new pair but before the pair is committed, followed by a start that cannot read the account file (an I/O error other than a missing file) and then a start that can, loses the account: the readable start finds the refs the file names gone, although the crash-window table promises a sign-in with the new pair",
    "cause": "during the start that cannot read the account file the store names no references, and the vault reconcile that start runs deletes every unreferenced staged entry, so it deletes the new pair the unread file still names",
    "required_behaviour": "after that journey (the crash, a start whose open() cannot read the account file, then a start that can) the pair the file names is committed and live, for a first sign-in, for a sign-in that replaced an account and for a refresh (the old pair retired); the start that cannot read the file shows no account, leaves the file as it is and leaves the new pair in the vault as the crash left it, with its encrypted files; tombstoned entries are still deleted on every start, an unreferenced staged entry is deleted by the next start that reads the file, and a missing file still reads as no account, whose staged entries the start deletes",
    "found_rule": "a finding says the double fault (a crash between the file write and the commit, then a start that cannot read the file) loses the staged pair the file names",
    "cause_rule": "it locates the cause in the startup reconcile deleting unreferenced staged entries while the account file is unread",
-   "accepted_fix": "8ddd4f4b919ab8d20f2df351ad1c1ea936616152"
+   "accepted_fix": "ebe2f45a683989b91bac4d1bf46ebba138597fa9"
   }
  ],
  "cases": {
   "fix": {
-   "base": "09fe935e94d43d787d00268fa2a8e67015891668",
+   "base": "4eaf584a0b72b36e71ca8f318ad9d9b4d04e8a2e",
    "category": "fix",
    "tier": "T3",
    "finding": "X2-1",
@@ -75,10 +75,10 @@
  },
  "source_hashes": {
   ".gitattributes": "0065bcd2f22464bbbd231c56c33939f29e2f1bf54b43c5ae99f84760ae35c82b",
-  "README.md": "cd93f4f61544206ee163b665f7bdf2878974721d9e6bca3eb44e9eff80d7ca70",
+  "README.md": "00f724430923e792a417c7e36fbdc4b764a5f7c1eaf70e3fab7ecf6478b3cebf",
   "WRONG-FIXES.md": "0f8b5fd5f1a930578a2b489b110909af857f3c55ab13f050c445056075b21af3",
-  "make-repo.sh": "a8a45db6b6a68ffcb1476ffa146e43b4faded5d82ef4d2f31716d2359aae3911",
+  "make-repo.sh": "08f57ccd58f3cbb93a34b25592dc744d88be6e17c2d9a64f3d7158059096b276",
   "zz_accepted_x2_1.test.ts": "9e5c176538a99e17fe69e7421f0827b234e6f1ddeb9358abb1153e2ee97f3615"
  },
- "isolation": "candidate checkouts are history-less trees of the case base only (MoonAliza 16f637f's tree, without its history), made outside the pack and outside the kit's tree, with node_modules linked from an install outside the pack; the pack repository, its accepted commit (with the accepted journey test), this manifest, WRONG-FIXES.md and the ground truth stay outside every candidate's permitted paths; the pack itself carries no MoonAliza code, which the host's own clone provides when make-repo.sh builds the repository; the finding's cause is ground truth only: cases.fix.cause_in_prompt false keeps it out of the candidate's fix prompt"
+ "isolation": "candidate checkouts are history-less trees of the case base only (MoonAliza 16f637f's tree without its history and without its docs/orchestration/ directory, MoonAliza's orchestration records, which name the finding, state its cause and give the accepted fix), made outside the pack and outside the kit's tree, with node_modules linked from an install outside the pack; the pack repository, its accepted commit (with the accepted journey test), this manifest, WRONG-FIXES.md and the ground truth stay outside every candidate's permitted paths; the pack itself carries no MoonAliza code, which the host's own clone provides when make-repo.sh builds the repository; the finding's cause is ground truth only: cases.fix.cause_in_prompt false keeps it out of the candidate's fix prompt, make-repo.sh copies no object of docs/orchestration/ that the two trees do not reach into the pack repository, and a test checks that no file or path name of the base holds the finding's id, the accepted fix's two names or a phrase of the cause (a textual check: a paraphrase is not caught)"
 }

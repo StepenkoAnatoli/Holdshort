@@ -3919,6 +3919,14 @@ X21_REFS = "new Set([...references, ...collectorSettings.references(), ...github
 # behaviour or instructions that restated the cause would put one of them into the prompt (sr-kit-cases N-1)
 X21_CAUSE_PHRASES = ("during the start that cannot read", "the store names no references", "the vault reconcile that start runs",
                      "deletes every unreferenced staged entry", "so it deletes the new pair", "the unread file still names")
+# integration 4 (IC3-1, lead decision D-IC3-1): MoonAliza's own orchestration records (docs/orchestration/ of 16f637f) name
+# X2-1, state its cause and give the accepted fix line by line, so make-repo.sh exports both trees without that directory.
+# The commits the pack is built from, the directory it leaves out, and the hints no file or path name of base0 may hold
+# (lower case: the finding's id in both spellings, the accepted fix's two names, the cause's own phrases)
+X21_BASE_SRC = "16f637f1a1eaf9879933a0020d676971a26b3c4b"
+X21_ACCEPTED_SRC = "01a8604fa9c60fae9ae906e1e949a3f2cadb07de"
+X21_EXCLUDED = "docs/orchestration/"
+X21_HINTS = ("x2-1", "x2_1", "unreadatopen", "keepstaged", *X21_CAUSE_PHRASES)
 
 # re-review 2 RR2-1: the engine call of index.ts (base and accepted), and three shapes of a correct fix's index.ts that the
 # journey test's slice of the startup lines must survive: the call wrapped over three lines, block comments whose inner
@@ -4304,6 +4312,38 @@ def x21_clone_state(clone: Path, env: dict) -> tuple[str, list[str], dict]:
     return status, sorted(p.name for p in (clone / "node_modules").glob(".vite*")), x21_tree(clone)
 
 
+def x21_ls_tree(repo: Path, rev: str, env: dict) -> dict[str, tuple[str, str, str]]:
+    """Every file of rev's tree, read only: {path: (mode, type, object id)}."""
+    out = subprocess.run(["git", "-C", str(repo), "ls-tree", "-r", "-z", rev], env=env, capture_output=True, check=True).stdout
+    entries = {}
+    for rec in filter(None, out.split(b"\0")):
+        meta, path = rec.split(b"\t", 1)
+        mode, kind, oid = meta.decode("ascii").split()
+        entries[path.decode("utf-8")] = (mode, kind, oid)
+    return entries
+
+
+def x21_hint_hits(repo: Path, rev: str, env: dict) -> list[str]:
+    """integration 4 (IC3-1, D-IC3-1): the paths of rev's tree whose name or bytes hold a hint of X2-1, its accepted fix or
+    its cause (X21_HINTS), case-insensitive, with every run of whitespace read as one space (a phrase wrapped over two lines
+    still counts). Read only: git ls-tree and git cat-file --batch."""
+    blobs = [(path, oid) for path, (_, kind, oid) in x21_ls_tree(repo, rev, env).items() if kind == "blob"]
+    out = subprocess.run(["git", "-C", str(repo), "cat-file", "--batch"], input="".join(f"{oid}\n" for _, oid in blobs).encode("ascii"),
+                         env=env, capture_output=True, check=True).stdout
+    hits, at = [], 0
+    for path, oid in blobs:
+        header_end = out.index(b"\n", at)
+        got, kind, size = out[at:header_end].decode("ascii").split()
+        assert (got, kind) == (oid, "blob"), (path, got, kind)
+        body = out[header_end + 1:header_end + 1 + int(size)]
+        at = header_end + 1 + int(size) + 1
+        text = " ".join(body.decode("utf-8", "replace").lower().split())
+        if any(h in path.lower() or h in text for h in X21_HINTS):
+            hits.append(path)
+    assert at == len(out), "every object read"
+    return hits
+
+
 def x21_wrong_rows() -> dict[str, list[str]]:
     """WRONG-FIXES.md's table: {id: [the wrong idea, the pin row that catches it, the grade]}."""
     rows = {}
@@ -4355,6 +4395,9 @@ class HostPackX21(unittest.TestCase):
         self.assertEqual(m["checkout"]["links"], ["node_modules", ".build"])
         self.assertIn("history-less", m["isolation"])
         self.assertIn("no MoonAliza code", m["isolation"])
+        # integration 4 (D-IC3-1): the isolation text states the exclusion and the limit of the check that guards it
+        for words in ("without its docs/orchestration/ directory", "copies no object of docs/orchestration/", "a paraphrase is not caught"):
+            self.assertIn(words, m["isolation"], words)
         fmt = (KIT / "subject-pack" / "README.md").read_text(encoding="utf-8")
         for k in ("subject", "commit_rule", "accepted_fix", "findings", "cases", "paths", "commands", "checkout", "source_hashes", "isolation"):
             self.assertIn(k, m, k)
@@ -4453,6 +4496,12 @@ class HostPackX21(unittest.TestCase):
         for word in ("./github-account-store", "./vault", "ReferenceError", "`method: 'vault.references'`", "one block"):
             self.assertIn(word, limits, word)
         self.assertNotIn("regex literal", limits, "the parser reads regex literals: that limit is gone")
+        # integration 4 (D-IC3-1): the README states that both trees leave docs/orchestration/ out, and the check's limit
+        why = " ".join(md_section(text, "Why there is no pin and no review case").split())
+        for words in ("**MoonAliza's orchestration records are left out of both trees.**", "without the whole directory",
+                      "only the objects the two filtered trees reach", "a paraphrase of the cause elsewhere in the tree is not caught"):
+            self.assertIn(words, why, words)
+        self.assertIn("without its `docs/orchestration/` directory", " ".join(build.split()))
 
     def test_wrong_fixes_lists_every_wrong_fix_the_tests_grade(self):
         rows = x21_wrong_rows()
@@ -4469,7 +4518,8 @@ class HostPackX21(unittest.TestCase):
                      "test_every_wrong_fix_grades_fail_on_the_accepted_journey_test_alone", "test_the_accepted_and_two_alternative_fixes_grade_pass",
                      "test_the_launch_refusals_hold_with_this_manifest_and_a_fix_only_protocol", "test_make_repo_removes_its_target_when_the_ids_differ",
                      "test_the_accepted_fix_reshaped_in_index_ts_stays_green",
-                     "test_a_grade_and_run_one_write_nothing_into_the_node_modules_a_checkout_links"):
+                     "test_a_grade_and_run_one_write_nothing_into_the_node_modules_a_checkout_links",
+                     "test_base0_names_neither_the_finding_nor_its_fix_nor_its_cause"):
             method = getattr(type(self), name)
             if x21_clone():
                 self.assertFalse(getattr(method, "__unittest_skip__", False), name)
@@ -4549,7 +4599,28 @@ class HostPackX21(unittest.TestCase):
         g = lambda *a: sh(["git", *a], self.pack / "repo", self.env).stdout.strip()
         for tag in ("base0", "accepted0"):
             self.assertEqual(g("rev-list", "--count", tag), "1", f"{tag} is a root commit")
-        self.assertEqual(g("rev-parse", "base0^{tree}"), sh(["git", "rev-parse", "16f637f1a1eaf9879933a0020d676971a26b3c4b^{tree}"], x21_clone(), self.env).stdout.strip())
+        # integration 4 (D-IC3-1): base0 is MoonAliza 16f637f's tree minus docs/orchestration/, and accepted0 is 01a8604's tree
+        # minus docs/orchestration/ plus the journey test: every other file is there, with its mode and its blob
+        self.assertIn("make-repo: base0..accepted0 is 16f637f..01a8604 outside docs/orchestration/", self.built.stderr)
+        repo, forbidden, reached = self.pack / "repo", set(), set()
+        for tag, rev in (("base0", X21_BASE_SRC), ("accepted0", X21_ACCEPTED_SRC)):
+            full = x21_ls_tree(x21_clone(), rev, self.env)
+            want = {p: e for p, e in full.items() if not p.startswith(X21_EXCLUDED)}
+            self.assertGreater(len(full) - len(want), 100, f"MoonAliza {rev} has its docs/orchestration/ records")
+            have = x21_ls_tree(repo, tag, self.env)
+            if tag == "accepted0":
+                self.assertEqual(have.pop("tests/zz_accepted_x2_1.test.ts")[0], "100644")
+            self.assertEqual(have, want, f"{tag} is MoonAliza {rev}'s tree minus docs/orchestration/")
+            reached |= {line.split()[2] for line in g("ls-tree", "-r", "-t", tag).splitlines()}
+            listing = sh(["git", "ls-tree", "-r", "-t", rev, "--", "docs/orchestration"], x21_clone(), self.env).stdout.split("\n")
+            forbidden |= {line.split()[2] for line in listing if line} | {sh(["git", "rev-parse", f"{rev}^{{tree}}", f"{rev}:docs"], x21_clone(), self.env).stdout.split()[i] for i in (0, 1)}
+        # only what the filtered trees reach is copied: no blob, tree or the old root and docs trees of the excluded records is
+        # in the pack repository, and every blob in it is a file of base0 or accepted0
+        objects = dict(line.split() for line in g("cat-file", "--batch-all-objects", "--batch-check=%(objectname) %(objecttype)").splitlines())
+        brief = sh(["git", "rev-parse", f"{X21_BASE_SRC}:{X21_EXCLUDED}2026-10-13-github-sign-in/briefs/fix-x2-1.md"], x21_clone(), self.env).stdout.strip()
+        self.assertIn(brief, forbidden - reached, "MoonAliza's brief of the fix is among the excluded objects")
+        self.assertEqual(sorted((forbidden - reached) & set(objects)), [], "an excluded object is in the pack repository")
+        self.assertEqual(sorted(o for o, kind in objects.items() if kind == "blob" and o not in reached), [], "a blob the two trees do not reach")
         self.assertEqual(g("diff", "--name-status", "base0", "accepted0", "--", "tests/zz_accepted_x2_1.test.ts"), "A\ttests/zz_accepted_x2_1.test.ts")
         self.assertEqual(subprocess.run(["git", "-C", str(self.pack / "repo"), "show", "accepted0:tests/zz_accepted_x2_1.test.ts"],
                                         capture_output=True, check=True).stdout, (X21 / "zz_accepted_x2_1.test.ts").read_bytes())
@@ -4559,6 +4630,21 @@ class HostPackX21(unittest.TestCase):
         p = subprocess.run(["bash", str(self.pack / "make-repo.sh"), str(x21_clone()), str(self.pack / "repo")], env=self.env,
                            capture_output=True, text=True, timeout=60)
         self.assertEqual(p.returncode, 2, "an existing target is refused")
+
+    @NEEDS_X21
+    def test_base0_names_neither_the_finding_nor_its_fix_nor_its_cause(self):
+        # integration 4 (IC3-1, D-IC3-1): a candidate's checkout is base0's tree, and the prompt lets it read anything there,
+        # so no file and no path name of base0 may hold X2-1 (either spelling), the accepted fix's names or a phrase of the
+        # cause, and base0 has no docs/orchestration/ path. The same scan of MoonAliza 16f637f finds hints, all of them under
+        # docs/orchestration/ (the scan is not vacuous, and the directory is the whole of the leak)
+        self.assertEqual(self.built.returncode, 0, self.built.stdout + self.built.stderr)
+        self.assertEqual([h for h in X21_HINTS if h != h.lower()], [], "the scan lower-cases what it reads")
+        repo = self.pack / "repo"
+        self.assertEqual([p for p in x21_ls_tree(repo, "base0", self.env) if p.startswith(X21_EXCLUDED)], [], "base0 has no docs/orchestration/ path")
+        self.assertEqual(x21_hint_hits(repo, "base0", self.env), [], "base0 holds a hint of X2-1, its fix or its cause")
+        in_clone = x21_hint_hits(x21_clone(), X21_BASE_SRC, self.env)
+        self.assertIn(X21_EXCLUDED + "2026-10-13-github-sign-in/briefs/fix-x2-1.md", in_clone)
+        self.assertEqual([p for p in in_clone if not p.startswith(X21_EXCLUDED)], [], "MoonAliza 16f637f holds a hint outside docs/orchestration/")
 
     @NEEDS_X21
     def test_make_repo_removes_its_target_when_the_ids_differ(self):

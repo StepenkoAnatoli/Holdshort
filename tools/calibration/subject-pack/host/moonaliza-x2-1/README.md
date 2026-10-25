@@ -54,11 +54,13 @@ missing file reads as no account, and the start deletes its staged entries.
 1. **Repository.** Copy this directory outside the kit's tree, then run
    `bash make-repo.sh <moonaliza-clone> <pack dir>/repo` from the copy. The clone must hold `16f637f` and `01a8604`
    (branch `build/github-sign-in`); nothing is written to it. The script makes a bare repository with two root
-   commits, each with fixed identity, dates and messages: `base0` is MoonAliza 16f637f's tree as it is, and `accepted0`
-   is 01a8604's tree plus `tests/zz_accepted_x2_1.test.ts`. Neither commit carries MoonAliza's history. The ids depend
-   on nothing on the host, so they are the ones `manifest.json` names, and the script checks this (on a mismatch it
-   exits 1 and removes what it built, so a rerun is not refused); with the manifest's `repository` (`repo`), the copy
-   resolves.
+   commits, each with fixed identity, dates and messages: `base0` is MoonAliza 16f637f's tree without its
+   `docs/orchestration/` directory, and `accepted0` is 01a8604's tree without that directory, plus
+   `tests/zz_accepted_x2_1.test.ts` (the last section says why the directory goes). Neither commit carries MoonAliza's
+   history. The script checks that `base0..accepted0`, the journey test aside, is MoonAliza's `16f637f..01a8604` outside
+   `docs/orchestration/`. The ids depend on nothing on the host, so they are the ones `manifest.json` names, and the
+   script checks this (on a mismatch it exits 1 and removes what it built, so a rerun is not refused); with the
+   manifest's `repository` (`repo`), the copy resolves.
 2. **Dependencies.** Install MoonAliza's dependencies (`npm ci` in a MoonAliza checkout of `16f637f`, Node 24) outside
    the pack and outside every checkout. The manifest's `commands.test` and `commands.run_one` write nothing into the
    `node_modules` a checkout links. By default vitest keeps its results cache in vite's cache dir,
@@ -153,3 +155,17 @@ required behaviour and the case's `instructions`, which the prompt prints as the
 grade's limits, not the cause. No pack file reaches a candidate: a checkout is a history-less tree of `base0` alone,
 made outside the pack (`historyless-checkout.sh --pack` and the launch refuse a shared path), and `grade.sh` places the
 journey test only when it grades.
+
+**MoonAliza's orchestration records are left out of both trees.** At 16f637f, `docs/orchestration/` holds MoonAliza's
+own records of its runs, and some of them name X2-1, state its cause with file and line, and give the accepted fix line
+by line (`docs/orchestration/2026-10-13-github-sign-in/briefs/fix-x2-1.md` among them). A checkout is `base0`'s tree,
+and a candidate may read anything in it, so `make-repo.sh` exports both trees without the whole directory (the records
+are not subject code, and any of them may describe the fix) and copies into the pack repository only the objects the two
+filtered trees reach, so the records are not in it at all. No graded command reads that directory: the subject's tests,
+eslint and the journey test give the same results without it. `tools/test_calibration_kit.py` checks that each tree is
+MoonAliza's tree minus `docs/orchestration/` (the journey test aside), that no excluded object and no blob the two trees
+do not reach is in the pack repository, and that no file and no path name of `base0` holds, in any case, `X2-1`,
+`x2_1`, the accepted fix's two new names or a phrase of the cause (whitespace collapsed; the same scan of MoonAliza
+16f637f finds hints only under `docs/orchestration/`). That check is textual: a paraphrase of the cause elsewhere in the
+tree is not caught by it. MoonAliza's own code, spec and tests describe how the reconcile treats staged entries, as the
+base must; the grade's limits are stated to the candidate in the `instructions`.
