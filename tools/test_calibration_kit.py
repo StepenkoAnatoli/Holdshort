@@ -3913,15 +3913,25 @@ X21_COMMITS = "        if (entry.state === 'staged' && committedReferences.has(r
 X21_GETTER_AT = "  openedAppChanged(): boolean { return this.appChanged; }"
 X21_KEEP_SIGNATURE = "  reconcile(committedReferences: ReadonlySet<string>, options: { keepStaged?: boolean } = {}): Promise<void> {"
 X21_REFS = "new Set([...references, ...collectorSettings.references(), ...githubStore.references()])"
-# integration D-F2: words of the mechanism, its location and its modules, which the manifest's cause (printed in the
-# candidate's fix prompt) must not name
-X21_CAUSE_WITHHELD = ("reconcile", "staged", "unreferenced", "keepStaged", "references", "vault.ts", "index.ts")
+# integration 3 (the owner on F2: "fix it instead"): the manifest keeps the real cause, and cases.fix.cause_in_prompt false
+# keeps it out of the candidate's fix prompt. These phrases are the cause's own words: each is checked to be in the manifest's
+# cause, and together they hold every word of the cause that the finding's summary does not, so a summary, a required
+# behaviour or instructions that restated the cause would put one of them into the prompt (sr-kit-cases N-1)
+X21_CAUSE_PHRASES = ("during the start that cannot read", "the store names no references", "the vault reconcile that start runs",
+                     "deletes every unreferenced staged entry", "so it deletes the new pair", "the unread file still names")
 
 # re-review 2 RR2-1: the engine call of index.ts (base and accepted), and three shapes of a correct fix's index.ts that the
 # journey test's slice of the startup lines must survive: the call wrapped over three lines, block comments whose inner
-# lines name either anchor (above the call and between the anchors), and line comments that name either anchor
+# lines name either anchor (above the call and between the anchors), and line comments that name either anchor.
+# Integration 3 (IC-2, IC-3 and the hunt for more) adds the shapes after "line comments". Each probe is the accepted fix with
+# more eslint-clean edits, so each is a correct fix that the journey test must grade green.
 X21_ENGINE_CALL = "  const references = z.array(z.string()).parse(await engine.control({ method: 'vault.references' }));\n"
 X21_LAST_FINISH = "  await githubStore.finishStartup();\n"
+X21_ATTACH = "  void supervisor.attach();\n"
+X21_ACCEPTED_RECONCILE = ("  await vault.reconcile(new Set([...references, ...collectorSettings.references(), ...githubStore.references()]), "
+                          "{ keepStaged: githubStore.unreadAtOpen() });\n")  # the accepted fix's startup reconcile in index.ts
+X21_KEEP_ARG = "{ keepStaged: githubStore.unreadAtOpen() }"
+X21_STORE_IMPORT = "import { GitHubAccountStore } from './github-account-store';\n"
 X21_SLICE_PROBES = {
     "wrapped engine call": [("src/main/index.ts", X21_ENGINE_CALL,
                              "  const references = z.array(z.string()).parse(\n    await engine.control({ method: 'vault.references' }),\n  );\n")],
@@ -3933,6 +3943,42 @@ X21_SLICE_PROBES = {
     "line comments": [
         ("src/main/index.ts", X21_ENGINE_CALL, "  // X2-1: method: 'vault.references' gives the engine's references\n" + X21_ENGINE_CALL),
         ("src/main/index.ts", X21_LAST_FINISH, X21_LAST_FINISH + "  // X2-1: settled before supervisor.attach() runs\n")],
+    # IC-3: a string above the engine call that holds a comment opener (a slice that blanks comments must keep strings)
+    "a string holding a comment opener above the engine call": [
+        ("src/main/index.ts", X21_ENGINE_CALL, "  const _glob = 'logs/*.json'; void _glob;\n" + X21_ENGINE_CALL)],
+    # IC-2a: the engine call without its ';' (the subject's eslint has no semi rule)
+    "the engine call without its semicolon": [("src/main/index.ts", X21_ENGINE_CALL, X21_ENGINE_CALL.replace("}));\n", "}))\n"))],
+    # IC-2b: the call split over two statements, references declared by the second
+    "the engine call split over two statements": [
+        ("src/main/index.ts", X21_ENGINE_CALL,
+         "  const raw = await engine.control({ method: 'vault.references' });\n  const references = z.array(z.string()).parse(raw);\n")],
+    # the hunt (integration 3): no ';' on any startup line, the call's expression continued on the next line, a statement after
+    # the call on its line, a string holding a bracket between the anchors, the last startup statement on the line of
+    # supervisor.attach(), a regex literal holding a comment opener above the call, and an imported helper whose import
+    # carries comments between its names
+    "no semicolon on any startup line": [
+        ("src/main/index.ts", line, line.replace(";\n", "\n"))
+        for line in (X21_ENGINE_CALL, X21_ACCEPTED_RECONCILE, "  await collectorSettings.finishStartup();\n", X21_LAST_FINISH)],
+    "the engine call continued on the next line": [
+        ("src/main/index.ts", X21_ENGINE_CALL,
+         "  const references = await engine.control({ method: 'vault.references' })\n    .then(reply => z.array(z.string()).parse(reply));\n")],
+    "a statement after the engine call on its line": [
+        ("src/main/index.ts", X21_ENGINE_CALL, X21_ENGINE_CALL[:-1] + " const keep = githubStore.unreadAtOpen();\n"),
+        ("src/main/index.ts", X21_KEEP_ARG, "{ keepStaged: keep }")],
+    "a string holding a bracket between the anchors": [
+        ("src/main/index.ts", X21_LAST_FINISH, X21_LAST_FINISH + "  const _mark = 'startup ['; void _mark;\n")],
+    "the last startup statement on the line of supervisor.attach()": [
+        ("src/main/index.ts", X21_LAST_FINISH + X21_ATTACH, "  await githubStore.finishStartup(); void supervisor.attach();\n")],
+    "a regex literal holding a comment opener above the engine call": [
+        ("src/main/index.ts", X21_ENGINE_CALL, "  const _slashes = /\\/*/g; void _slashes;\n" + X21_ENGINE_CALL)],
+    "an imported helper whose import carries comments between its names": [
+        ("src/main/github-account-store.ts", "export class GitHubAccountStore {\n",
+         "/** X2-1: the startup reconcile's options for this store. */\n"
+         "export function keepOnUnread(store: Pick<GitHubAccountStore, 'unreadAtOpen'>): { keepStaged: boolean } {\n"
+         "  return { keepStaged: store.unreadAtOpen() };\n}\n\nexport class GitHubAccountStore {\n"),
+        ("src/main/index.ts", X21_STORE_IMPORT,
+         "import {\n  GitHubAccountStore, // the account file and its pair\n  keepOnUnread, /* X2-1 */\n} from './github-account-store';\n"),
+        ("src/main/index.ts", X21_KEEP_ARG, "keepOnUnread(githubStore)")],
 }
 
 
@@ -4208,8 +4254,9 @@ def x21_candidate(cand: Path, change: dict, env: dict, message: str) -> None:
 
 
 def x21_shell_modules(clone: Path, target: Path) -> Path:
-    """A node_modules of its own whose every entry links to the clone's: vitest writes its caches (.vite, .vite-temp)
-    into the node_modules a checkout links, and the clone is read only."""
+    """A node_modules of its own whose every entry links to the clone's (the clone is read only). By default vitest and
+    vite write .vite and .vite-temp into the node_modules a checkout links; the manifest's commands now write nothing
+    there (F5), and this folder is the defence in depth: a command that wrote would hit it, which the class checks."""
     target.mkdir(parents=True)
     for entry in sorted((clone / "node_modules").iterdir()):
         if entry.name not in (".vite", ".vite-temp"):
@@ -4219,6 +4266,42 @@ def x21_shell_modules(clone: Path, target: Path) -> Path:
 
 def x21_manifest() -> dict:
     return json.loads((X21 / "manifest.json").read_text(encoding="utf-8"))
+
+
+def x21_launch_config(root: Path, m: dict, pack: Path, **host) -> dict:
+    """The workflow template's config for this manifest and a protocol whose only case is fix (stage 4a), checkouts under root."""
+    co = root / "launch" / "checkouts"
+    c = run_config(root / "launch", **{"pack_dir": str(pack), "checkout_root": str(co), "adjudication_checkout": str(co / "cal-adjudication"), **host})
+    c["manifest"] = m
+    p = c["protocol"]
+    p["cases"] = [{"id": "fix", "category": "fix", "tier": "T3", "base": "base0", "grading": "mechanical (grade.sh fix)",
+                   "pass_rule": m["cases"]["fix"]["pass_rule"]}]
+    p["subject_pack"] = {"pack": m["pack"], "pack_version": m["pack_version"], "kind": "host", "manifest_sha256": text_hash(X21 / "manifest.json")}
+    return c
+
+
+def x21_tree(root: Path) -> dict[str, tuple[int, int]]:
+    """Every entry under root, .git included, symlinks not followed: {relative path: (mtime_ns, size)}. A run that writes,
+    creates or removes anything under root changes it; reading changes nothing."""
+    import os
+    state = {}
+    for here, dirs, files in os.walk(root):
+        for name in dirs + files:
+            path = Path(here) / name
+            try:
+                st = path.lstat()
+            except OSError:
+                continue
+            state[path.relative_to(root).as_posix()] = (st.st_mtime_ns, 0 if name in dirs else st.st_size)
+    return state
+
+
+def x21_clone_state(clone: Path, env: dict) -> tuple[str, list[str], dict]:
+    """The clone as a run must leave it (owner F5): git status with ignored files (without optional locks, so the check
+    itself writes no index), the node_modules/.vite* entries, and every entry's mtime and size."""
+    status = subprocess.run(["git", "--no-optional-locks", "-C", str(clone), "status", "--porcelain", "--ignored"], env=env,
+                            capture_output=True, text=True, check=True).stdout
+    return status, sorted(p.name for p in (clone / "node_modules").glob(".vite*")), x21_tree(clone)
 
 
 def x21_wrong_rows() -> dict[str, list[str]]:
@@ -4265,8 +4348,10 @@ class HostPackX21(unittest.TestCase):
         self.assertEqual(p["accepted_test"], {"from": "tests/zz_accepted_x2_1.test.ts", "to": "tests/zz_accepted_x2_1.test.ts"})
         self.assertRegex(p["accepted_test"]["to"], p["new_test_pattern"], "grade.sh leaves the accepted test out of the candidate's new tests")
         c = m["commands"]
-        self.assertEqual((c["test"], c["test_report"], c["lint"], c["timeout_seconds"]),
-                         ("npx vitest run {files} --testTimeout=60000 --reporter=json --outputFile={report}", "vitest-json", "npx eslint {files}", 900))
+        # integration 3 (F5): --no-cache and --configLoader runner keep vitest and vite from writing into the node_modules a checkout links
+        self.assertEqual((c["test"], c["run_one"], c["test_report"], c["lint"], c["timeout_seconds"]),
+                         ("npx vitest run {files} --no-cache --configLoader runner --testTimeout=60000 --reporter=json --outputFile={report}",
+                          "npx vitest run {file} --no-cache --configLoader runner", "vitest-json", "npx eslint {files}", 900))
         self.assertEqual(m["checkout"]["links"], ["node_modules", ".build"])
         self.assertIn("history-less", m["isolation"])
         self.assertIn("no MoonAliza code", m["isolation"])
@@ -4277,18 +4362,37 @@ class HostPackX21(unittest.TestCase):
         for k in m["paths"]:
             self.assertIn(f"`paths.{k}`", fmt, k)
 
-    def test_the_cause_names_no_mechanism_and_the_readme_keeps_it(self):
-        # integration D-F2: the kit's fix prompt prints findings[].cause (run.template.js) and this fix-only pack has no
-        # grader that reads it, so the manifest's cause withholds the mechanism; the pack's README keeps it for humans
+    @NEEDS_NODE
+    def test_the_fix_prompt_carries_the_finding_but_not_its_cause(self):
+        # integration 3 (F2, IC-1, IC-4, IC-5): the manifest keeps the real cause and sets cases.fix.cause_in_prompt false, so the
+        # kit's fix prompt, rendered here through run.template.js, has the summary and the required behaviour but none of the
+        # cause's phrases, and names no pack path or pack file; sr-kit-cases N-1: the template prints the summary, the required
+        # behaviour and the instructions verbatim, so those must not restate the cause in other words either
         m = x21_manifest()
         [f] = m["findings"]
-        cause = f["cause"].lower()
-        for word in X21_CAUSE_WITHHELD:
-            self.assertNotIn(word.lower(), cause, f"the cause the candidate reads names {word!r}")
-        self.assertIn("README.md", f["cause"], "the cause says where the ground truth lives")
+        self.assertIs(m["cases"]["fix"].get("cause_in_prompt"), False)
+        words = lambda text: re.findall(r"[a-z0-9']+", text.lower())
+        flat = lambda text: " ".join(words(text))
+        for phrase in X21_CAUSE_PHRASES:
+            self.assertIn(phrase, f["cause"], "a phrase of the real cause")
+        self.assertEqual(set(words(f["cause"])) - set(words(f["summary"])) - set(words(" ".join(X21_CAUSE_PHRASES))), set(),
+                         "the phrases hold every word of the cause that the summary does not")
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        out = execute_template(x21_launch_config(root, m, X21), root)
+        self.assertIsNone(out["error"])
+        [call] = out["calls"]
+        prompt = call["prompt"]
+        self.assertIn(f"THE FINDING ({f['id']}, {f['severity']}): {f['summary']}. Required behaviour: {f['required_behaviour']}.", prompt)
+        self.assertIn(m["cases"]["fix"]["instructions"], prompt)
+        self.assertNotIn("Cause:", prompt)
+        for phrase in (f["cause"], *X21_CAUSE_PHRASES):
+            self.assertNotIn(flat(phrase), flat(prompt), "the fix prompt restates the cause")
+        for secret in (str(X21), X21.as_posix(), X21.name, "subject-pack", *pack_files(X21)):
+            self.assertNotIn(secret, prompt, "the fix prompt names the pack")
         journey = md_section((X21 / "README.md").read_text(encoding="utf-8"), "The journey")
-        for word in ("reconcile", "unreferenced staged entry", "names no references"):
-            self.assertIn(word, journey, word)
+        self.assertIn(f"**The cause** (`findings[].cause`): {f['cause']}.", " ".join(journey.split()), "the README states the manifest's cause")
 
     def test_the_instructions_state_the_grade_limit_without_pointing_at_the_fix(self):
         # integration D-R3: the limit review 1 F1 needed disclosed stays (the grade drives each start in the wiring's order,
@@ -4296,8 +4400,12 @@ class HostPackX21(unittest.TestCase):
         text = x21_manifest()["cases"]["fix"]["instructions"]
         for words in ("the vault reconcile", "finishStartup", "The grade runs the startup lines"):
             self.assertNotIn(words, text, words)
-        for words in ("whichever files your change touches", "the store's open()", "from the line that reads the engine's references up to supervisor.attach()",
-                      "vault, references, collectorSettings, githubStore", "./github-account-store", "./vault", "any other name of index.ts"):
+        # integration 3 (IC-2): the check parses index.ts, so the region is stated in statements, with the limits that are left
+        for words in ("whichever files your change touches", "the store's open()", "the statements that follow the one that reads the engine's references",
+                      "method: 'vault.references'", "a later statement that declares references if that call is split",
+                      "up to the statement that calls supervisor.attach()", "in the one block that holds both",
+                      "vault, references, collectorSettings, githubStore", "./github-account-store", "./vault", "any other name of index.ts",
+                      "renames one of those four names"):
             self.assertIn(words, text, words)
 
     def test_the_source_hashes_cover_every_pack_file(self):
@@ -4324,24 +4432,27 @@ class HostPackX21(unittest.TestCase):
             self.assertNotIn(name, test, f"the accepted journey test names the accepted fix's {name}")
         # review 1 F1, F3, F7: the wiring binds index.ts's imports from the modules in scope, a later start runs a month after the
         # crash, and a third errno code is exercised; the README states the limit that is left
-        self.assertIn("const extra = imported(source);", test)
         self.assertIn("for (const code of ['EACCES', 'EBUSY', 'EIO'])", test)
         self.assertEqual(test.count("later(3650);"), 2, "the journey rows and the orphan row run their later starts ten years on")
         self.assertNotIn("later(30)", test)
         # re-review 1 R1, R4: a readable start after a sign-out deletes a crashed sign-in's orphan pair, and the startup lines
         # are anchored on code lines (the engine call and the supervisor call), never on a comment that mentions them
         self.assertIn("test('a sign-out, then a sign-in that crashed after staging, before the file write: the next readable start deletes", test)
-        # re-review 2 RR2-1: the anchors match code with every comment blanked (block comments too), and the slice starts
-        # after the end of the statement that holds the engine call, so a wrapped call is read whole
-        self.assertIn("const codeLines = codeOnly(source);", test)
-        self.assertIn("source.indexOf('*/', i + 2)", test)
-        self.assertIn(r"""const call = codeLines.findIndex(line => /method:\s*['"]vault\.references['"]/.test(line));""", test)
-        self.assertIn(r"codeLines.findIndex((line, index) => index >= call && /;\s*$/.test(line));", test)
-        self.assertIn(r"codeLines.findIndex((line, index) => index > from && /supervisor\.attach\(/.test(line));", test)
-        self.assertNotIn("isCode", test)
+        # re-review 2 RR2-1, integration 3 IC-2: the startup statements are found in index.ts parsed by TypeScript, so no comment,
+        # string, regex literal, line break or missing ';' moves them; the slice runs from the end of the statement that holds the
+        # engine call (or of a later one that declares references) to the start of the statement that calls supervisor.attach()
+        self.assertIn("import ts from 'typescript';", test)
+        self.assertIn("const file = ts.createSourceFile('index.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);", test)
+        self.assertIn("const to = call < 0 ? -1 : statements.findIndex((s, index) => index > call && find(s, isAttach) !== undefined);", test)
+        self.assertIn("const from = call >= 0 && !declaresReferences(statements[call]!) && declared >= 0 ? declared : call;", test)
+        self.assertIn("const body = source.slice(statements[from]!.end, statements[to]!.getStart(file));", test)
+        self.assertIn("const extra = imported(file);", test)
+        for gone in ("codeOnly", "codeLines", "isCode", "matchAll"):  # no text matching of index.ts is left
+            self.assertNotIn(gone, test)
         limits = md_section(text, "What the pack does not discriminate")
-        for word in ("./github-account-store", "./vault", "ReferenceError"):
+        for word in ("./github-account-store", "./vault", "ReferenceError", "`method: 'vault.references'`", "one block"):
             self.assertIn(word, limits, word)
+        self.assertNotIn("regex literal", limits, "the parser reads regex literals: that limit is gone")
 
     def test_wrong_fixes_lists_every_wrong_fix_the_tests_grade(self):
         rows = x21_wrong_rows()
@@ -4357,7 +4468,8 @@ class HostPackX21(unittest.TestCase):
         for name in ("test_make_repo_builds_the_manifest_ids", "test_the_accepted_journey_test_is_red_at_base_and_green_at_accepted",
                      "test_every_wrong_fix_grades_fail_on_the_accepted_journey_test_alone", "test_the_accepted_and_two_alternative_fixes_grade_pass",
                      "test_the_launch_refusals_hold_with_this_manifest_and_a_fix_only_protocol", "test_make_repo_removes_its_target_when_the_ids_differ",
-                     "test_the_accepted_fix_reshaped_in_index_ts_stays_green"):
+                     "test_the_accepted_fix_reshaped_in_index_ts_stays_green",
+                     "test_a_grade_and_run_one_write_nothing_into_the_node_modules_a_checkout_links"):
             method = getattr(type(self), name)
             if x21_clone():
                 self.assertFalse(getattr(method, "__unittest_skip__", False), name)
@@ -4382,20 +4494,33 @@ class HostPackX21(unittest.TestCase):
         cls.ids = dict(line.split() for line in cls.built.stdout.splitlines() if len(line.split()) == 2)
         cls.modules = x21_shell_modules(x21_clone(), cls.root / "modules" / "node_modules")
         cls.n = 0
+        # integration 3 (F5): the clone is read only; every test of this class together leaves it as it was
+        cls.clone_before = x21_clone_state(x21_clone(), cls.env)
 
     @classmethod
     def tearDownClass(cls):
-        if getattr(cls, "tmp", None):
+        if not getattr(cls, "tmp", None):
+            return
+        try:
+            after = x21_clone_state(x21_clone(), cls.env)
+            if after != cls.clone_before:
+                status, vite, tree = after
+                changed = sorted(k for k in set(tree) | set(cls.clone_before[2]) if tree.get(k) != cls.clone_before[2].get(k))
+                raise AssertionError(f"F5: this class changed the MoonAliza clone: status {status!r}, node_modules/.vite* {vite}, entries {changed[:20]}")
+            left = sorted(p.name for p in cls.modules.glob(".vite*"))
+            if left:
+                raise AssertionError(f"F5: a run wrote {left} into the node_modules the checkouts link")
+        finally:
             cls.tmp.cleanup()
 
-    def at(self, name: str) -> Path:
+    def at(self, name: str, modules: Path | None = None) -> Path:
         """A fresh history-less checkout of the pack commit <name>0, outside the pack, node_modules linked."""
         self.assertEqual(self.built.returncode, 0, self.built.stdout + self.built.stderr)
         type(self).n += 1
         target = self.root / "checkouts" / f"{name}-{self.n}"
         # a MoonAliza tree takes over a minute to check out on the lead's host, more while grades run beside it
         p = checkout(self.pack / "repo", self.ids[f"{name}0"], target, self.env, "--pack", str(self.pack),
-                     "--link", f"node_modules={self.modules}", timeout=900)
+                     "--link", f"node_modules={modules or self.modules}", timeout=900)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         return target
 
@@ -4409,9 +4534,10 @@ class HostPackX21(unittest.TestCase):
         return json.loads(p.stdout)
 
     def vitest(self, cand: Path, *files: str) -> dict:
+        """The manifest's own test command (F5: the one that writes nothing into node_modules), run on files of a checkout."""
         report = cand.parent / f"{cand.name}-report.json"
-        subprocess.run(["bash", "-c", 'npx vitest run "$@" --reporter=json --outputFile="$R" >/dev/null 2>&1', "vitest", *files],
-                       cwd=cand, env={**self.env, "R": str(report)}, timeout=900)
+        cmd = x21_manifest()["commands"]["test"].replace("{files}", " ".join(shlex.quote(f) for f in files)).replace("{report}", shlex.quote(report.as_posix()))
+        subprocess.run(["bash", "-c", cmd + " >/dev/null 2>&1"], cwd=cand, env=self.env, timeout=900)
         return json.loads(report.read_text(encoding="utf-8"))
 
     @NEEDS_X21
@@ -4466,14 +4592,21 @@ class HostPackX21(unittest.TestCase):
     def test_the_accepted_fix_reshaped_in_index_ts_stays_green(self):
         # re-review 2 RR2-1: a correct fix whose engine call is wrapped, or whose index.ts carries a comment naming an anchor,
         # is still correct; the journey test's slice of the startup lines must not turn it red
+        # integration 3: every probe is checked eslint-clean (as the grade requires), and the files it touched are reset between probes
         cand = self.at("accepted")
         (cand / "tests" / "zz_accepted_x2_1.test.ts").write_bytes((X21 / "zz_accepted_x2_1.test.ts").read_bytes())
-        index = subprocess.run(["git", "-C", str(self.pack / "repo"), "show", "accepted0:src/main/index.ts"], capture_output=True, check=True).stdout
+        lint = x21_manifest()["commands"]["lint"]
         for name, edits in X21_SLICE_PROBES.items():
             with self.subTest(name):
-                (cand / "src" / "main" / "index.ts").write_bytes(index)
+                touched = sorted({path for path, _, _ in edits})
+                for path in touched:
+                    (cand / path).write_bytes(subprocess.run(["git", "-C", str(self.pack / "repo"), "show", f"accepted0:{path}"],
+                                                             capture_output=True, check=True).stdout)
                 for path, old, new in edits:
                     x21_edit(cand, path, old, new)
+                p = subprocess.run(["bash", "-c", lint.replace("{files}", " ".join(touched))], cwd=cand, env=self.env, capture_output=True,
+                                   text=True, timeout=900)
+                self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
                 run = self.vitest(cand, "tests/zz_accepted_x2_1.test.ts")
                 failed = [a["title"] for r in run["testResults"] for a in r["assertionResults"] if a["status"] != "passed"]
                 self.assertEqual((run["numFailedTests"], run["numTotalTests"]), (0, 18), failed)
@@ -4524,31 +4657,46 @@ class HostPackX21(unittest.TestCase):
                 self.assertTrue(g["acceptedPinGreen"] and g["guardRed"] and g["candidateGreen"] and g["scopeOk"], name)
 
     @NEEDS_X21
+    def test_a_grade_and_run_one_write_nothing_into_the_node_modules_a_checkout_links(self):
+        # integration 3 (F5): a host links each checkout's node_modules to an install it does not own (the README's build step;
+        # the builder's first runs linked the read-only clone's own). Vite writes its cache dir (node_modules/.vite, where vitest
+        # keeps its results cache) and its bundled config (node_modules/.vite-temp) through that link unless the commands say
+        # --no-cache and --configLoader runner. A grade of the accepted change, the candidate's run_one and the manifest's test
+        # command, run on a checkout whose node_modules is a fresh link folder, leave that folder and the clone unchanged.
+        modules = x21_shell_modules(x21_clone(), self.root / f"f5-{self.n}" / "node_modules")
+        clone_before, links_before = x21_clone_state(x21_clone(), self.env), x21_tree(modules)
+        cand = self.at("base", modules)
+        for f in (*x21_manifest()["paths"]["source"], "tests/github-account-store.test.ts", "tests/vault.test.ts",
+                  "tests/github-main-wiring.test.ts", "docs/ARCHITECTURE.md"):
+            (cand / f).write_bytes(subprocess.run(["git", "-C", str(self.pack / "repo"), "show", f"accepted0:{f}"], capture_output=True, check=True).stdout)
+        sh(["git", "add", "-A"], cand, self.env)
+        sh(["git", "commit", "-q", "--no-verify", "-m", "fix: X2-1 - the accepted change"], cand, self.env)
+        self.assertTrue(self.grade_fix(cand)["PASS"])
+        one = subprocess.run(["bash", "-c", x21_manifest()["commands"]["run_one"].replace("{file}", "tests/vault.test.ts")], cwd=cand,
+                             env=self.env, capture_output=True, text=True, timeout=900)
+        self.assertEqual(one.returncode, 0, one.stdout + one.stderr)
+        self.assertEqual(self.vitest(cand, "tests/vault.test.ts")["numFailedTests"], 0)
+        links_after = x21_tree(modules)
+        self.assertEqual(sorted(set(links_after) ^ set(links_before)), [], "nothing is added to or removed from the linked node_modules")
+        self.assertEqual(links_after, links_before)
+        self.assertEqual(x21_clone_state(x21_clone(), self.env), clone_before, "the clone is unchanged")
+
+    @NEEDS_X21
     @NEEDS_NODE
     def test_the_launch_refusals_hold_with_this_manifest_and_a_fix_only_protocol(self):
         m = x21_manifest()
         co = self.root / "launch" / "checkouts"
-
-        def cfg(**host):
-            c = run_config(self.root / "launch", **{"pack_dir": str(self.pack), "checkout_root": str(co),
-                                                    "adjudication_checkout": str(co / "cal-adjudication"), **host})
-            c["manifest"] = m
-            p = c["protocol"]
-            p["cases"] = [{"id": "fix", "category": "fix", "tier": "T3", "base": "base0", "grading": "mechanical (grade.sh fix)",
-                           "pass_rule": m["cases"]["fix"]["pass_rule"]}]
-            p["subject_pack"] = {"pack": m["pack"], "pack_version": m["pack_version"], "kind": "host",
-                                 "manifest_sha256": text_hash(X21 / "manifest.json")}
-            return c
+        cfg = lambda **host: x21_launch_config(self.root, m, self.pack, **host)
 
         out = execute_template(cfg(), self.root)
         self.assertIsNone(out["error"])
         self.assertEqual(sorted(c["label"] for c in out["calls"]), ["fix:alpha-low"])
         prompt = out["calls"][0]["prompt"]
         f = m["findings"][0]
-        for text in (f["summary"], f["required_behaviour"], m["cases"]["fix"]["instructions"], "npx vitest run <file>",
+        for text in (f["summary"], f["required_behaviour"], m["cases"]["fix"]["instructions"], "npx vitest run <file> --no-cache --configLoader runner",
                      "npx eslint src/main/github-account-store.ts src/main/vault.ts src/main/index.ts tests/github-account-store.test.ts"):
             self.assertIn(text, prompt)
-        self.assertIn(f"Cause: {f['cause']}.", prompt)  # integration D-F2: the kit prints the cause, which names no mechanism
+        self.assertNotIn("Cause:", prompt)  # integration 3: cases.fix.cause_in_prompt false keeps the cause out
         for secret in (str(self.pack), "make-repo", "zz_accepted", "WRONG-FIXES", self.ids["accepted0"], self.ids["base0"]):
             self.assertNotIn(secret, prompt)  # Item 2: the prompt names only the checkout
         for host in ({"checkout_root": str(self.pack / "checkouts")}, {"adjudication_checkout": str(self.pack / "repo" / "adj")},

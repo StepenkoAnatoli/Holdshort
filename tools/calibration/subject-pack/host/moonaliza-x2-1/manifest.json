@@ -12,7 +12,7 @@
   "reference": "docs/specification/github-sign-in.md (4.3 the replace steps, 4.4 the startup checks, 4.5 the crash windows), the comments of src/main/github-account-store.ts and src/main/vault.ts, tests/github-account-store.test.ts (its crash-window helpers, restart and unreadStart) and tests/vault.test.ts (the shipped harnesses)"
  },
  "commit_rule": null,
- "accepted_fix": "27860d2cf07a847a16b3a239d570161b14961f05",
+ "accepted_fix": "8ddd4f4b919ab8d20f2df351ad1c1ea936616152",
  "findings": [
   {
    "id": "X2-1",
@@ -21,11 +21,11 @@
     "09fe935e94d43d787d00268fa2a8e67015891668"
    ],
    "summary": "a sign-in or refresh that crashes after the account file names its new pair but before the pair is committed, followed by a start that cannot read the account file (an I/O error other than a missing file) and then a start that can, loses the account: the readable start finds the refs the file names gone, although the crash-window table promises a sign-in with the new pair",
-   "cause": "withheld: the candidate's fix prompt at T3 carries this field and the case is graded mechanically, so it states no cause; the ground truth of the cause is in the pack's README.md (section The journey), which no candidate checkout holds",
+   "cause": "during the start that cannot read the account file the store names no references, and the vault reconcile that start runs deletes every unreferenced staged entry, so it deletes the new pair the unread file still names",
    "required_behaviour": "after that journey (the crash, a start whose open() cannot read the account file, then a start that can) the pair the file names is committed and live, for a first sign-in, for a sign-in that replaced an account and for a refresh (the old pair retired); the start that cannot read the file shows no account, leaves the file as it is and leaves the new pair in the vault as the crash left it, with its encrypted files; tombstoned entries are still deleted on every start, an unreferenced staged entry is deleted by the next start that reads the file, and a missing file still reads as no account, whose staged entries the start deletes",
    "found_rule": "a finding says the double fault (a crash between the file write and the commit, then a start that cannot read the file) loses the staged pair the file names",
    "cause_rule": "it locates the cause in the startup reconcile deleting unreferenced staged entries while the account file is unread",
-   "accepted_fix": "27860d2cf07a847a16b3a239d570161b14961f05"
+   "accepted_fix": "8ddd4f4b919ab8d20f2df351ad1c1ea936616152"
   }
  ],
  "cases": {
@@ -35,7 +35,8 @@
    "tier": "T3",
    "finding": "X2-1",
    "pass_rule": "the candidate's tests are green at its head AND red again with the three source files restored to the base AND the accepted journey test is green against the candidate's source AND every changed file is one of the three source files, the two test files, the wiring test or the map, or a newly added test file matching the pattern AND eslint is clean on those files",
-   "instructions": "Drive each start of the journey in the order src/main/index.ts runs it; the account file's format stays as it is; a new test file, if you add one, is named tests/<name>.test.ts with x2 in its name. The acceptance check drives every start the same way, whichever files your change touches: the store's open(), then the startup lines of src/main/index.ts, from the line that reads the engine's references up to supervisor.attach(), run on their own, where only vault, references, collectorSettings, githubStore and the names index.ts imports from ./github-account-store or ./vault are in scope; a startup line that uses any other name of index.ts fails that check.",
+   "instructions": "Drive each start of the journey in the order src/main/index.ts runs it; the account file's format stays as it is; a new test file, if you add one, is named tests/<name>.test.ts with x2 in its name. The acceptance check drives every start the same way, whichever files your change touches: the store's open(), then the startup statements of src/main/index.ts run on their own: the statements that follow the one that reads the engine's references (the engine call whose argument has method: 'vault.references', or a later statement that declares references if that call is split), up to the statement that calls supervisor.attach(), in the one block that holds both. There only vault, references, collectorSettings, githubStore and the names index.ts imports from ./github-account-store or ./vault are in scope; a startup statement that uses any other name of index.ts fails that check, and so does a change that renames one of those four names, moves the engine call or supervisor.attach() out of that block or changes the method: 'vault.references' literal.",
+   "cause_in_prompt": false,
    "commit_prefix": "fix(github): X2-1 - "
   }
  },
@@ -60,9 +61,9 @@
   }
  },
  "commands": {
-  "test": "npx vitest run {files} --testTimeout=60000 --reporter=json --outputFile={report}",
+  "test": "npx vitest run {files} --no-cache --configLoader runner --testTimeout=60000 --reporter=json --outputFile={report}",
   "test_report": "vitest-json",
-  "run_one": "npx vitest run {file}",
+  "run_one": "npx vitest run {file} --no-cache --configLoader runner",
   "lint": "npx eslint {files}",
   "timeout_seconds": 900
  },
@@ -74,10 +75,10 @@
  },
  "source_hashes": {
   ".gitattributes": "0065bcd2f22464bbbd231c56c33939f29e2f1bf54b43c5ae99f84760ae35c82b",
-  "README.md": "195f94213225a9e7195027ba4c214b2339dbf72565c40e840b3443fde1076eef",
-  "WRONG-FIXES.md": "2b9a10a8e528fa47691f2e771ef176d0f9f1921f7f561b88d92fb2e1e6b88b30",
+  "README.md": "cd93f4f61544206ee163b665f7bdf2878974721d9e6bca3eb44e9eff80d7ca70",
+  "WRONG-FIXES.md": "0f8b5fd5f1a930578a2b489b110909af857f3c55ab13f050c445056075b21af3",
   "make-repo.sh": "a8a45db6b6a68ffcb1476ffa146e43b4faded5d82ef4d2f31716d2359aae3911",
-  "zz_accepted_x2_1.test.ts": "ccbab1b5de0734180e7b9908678cd5687fa50ae6d5333d018d7e725580433592"
+  "zz_accepted_x2_1.test.ts": "9e5c176538a99e17fe69e7421f0827b234e6f1ddeb9358abb1153e2ee97f3615"
  },
- "isolation": "candidate checkouts are history-less trees of the case base only (MoonAliza 16f637f's tree, without its history), made outside the pack and outside the kit's tree, with node_modules linked from an install outside the pack; the pack repository, its accepted commit (with the accepted journey test), this manifest, WRONG-FIXES.md and the ground truth stay outside every candidate's permitted paths; the pack itself carries no MoonAliza code, which the host's own clone provides when make-repo.sh builds the repository"
+ "isolation": "candidate checkouts are history-less trees of the case base only (MoonAliza 16f637f's tree, without its history), made outside the pack and outside the kit's tree, with node_modules linked from an install outside the pack; the pack repository, its accepted commit (with the accepted journey test), this manifest, WRONG-FIXES.md and the ground truth stay outside every candidate's permitted paths; the pack itself carries no MoonAliza code, which the host's own clone provides when make-repo.sh builds the repository; the finding's cause is ground truth only: cases.fix.cause_in_prompt false keeps it out of the candidate's fix prompt"
 }

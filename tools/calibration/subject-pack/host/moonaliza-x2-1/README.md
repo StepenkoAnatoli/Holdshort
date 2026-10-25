@@ -13,8 +13,9 @@ wrong-fix matrix and `make-repo.sh`, which builds the pack repository from a Moo
 ## Files
 
 - `manifest.json`: the pack manifest (the format of `../../README.md`): one finding, X2-1, and one case, `fix` at T3.
-  `findings[].summary` and `required_behaviour` state the journey, never the accepted change. `cause` withholds the
-  cause (the kit's fix prompt prints it to the candidate) and points to the journey below, which states it.
+  `findings[].summary` and `required_behaviour` state the journey, never the accepted change, and never its cause.
+  `cause` states the cause, and `cases.fix.cause_in_prompt` (`false`) keeps it out of the candidate's fix prompt (the
+  last section).
 - `make-repo.sh`: `make-repo.sh <moonaliza-clone> <target>` builds the pack repository (below).
 - `zz_accepted_x2_1.test.ts`: the accepted journey test. `make-repo.sh` adds it to the accepted commit at
   `tests/zz_accepted_x2_1.test.ts` (`paths.accepted_test.from`), and `grade.sh` places it at the same path
@@ -36,14 +37,17 @@ wrong-fix matrix and `make-repo.sh`, which builds the pack repository from a Moo
 3. The start after that can read the file.
 
 At the base (MoonAliza `16f637f`), step 2's reconcile deletes the staged pair because no reference names it, so step 3
-finds the refs the file names gone and signs the user out. **The cause** (the ground truth, which the manifest's
-`cause` withholds; see the last section): during step 2 the store names no references, and the vault reconcile that
-start runs deletes every unreferenced staged entry, so it deletes the new pair the unread file still names. The crash-window table (spec 4.5, "the file write, before
-commit") promises a sign-in with the new pair. Required: after step 3 the pair the file names is committed and live.
-Step 2 shows no account, leaves the file as it is, and leaves the pair in the vault as the crash left it, with its
-encrypted files. Three things stay as they are. Tombstoned entries are deleted on every start. An unreferenced staged
-entry is deleted by the next start that reads the file. A missing file reads as no account, and the start deletes its
-staged entries.
+finds the refs the file names gone and signs the user out.
+
+**The cause** (`findings[].cause`): during the start that cannot read the account file the store names no references,
+and the vault reconcile that start runs deletes every unreferenced staged entry, so it deletes the new pair the unread
+file still names.
+
+The crash-window table (spec 4.5, "the file write, before commit") promises a sign-in with the new pair. Required:
+after step 3 the pair the file names is committed and live. Step 2 shows no account, leaves the file as it is, and
+leaves the pair in the vault as the crash left it, with its encrypted files. Three things stay as they are. Tombstoned
+entries are deleted on every start. An unreferenced staged entry is deleted by the next start that reads the file. A
+missing file reads as no account, and the start deletes its staged entries.
 
 ## How a host builds the repository and the checkouts
 
@@ -56,10 +60,15 @@ staged entries.
    exits 1 and removes what it built, so a rerun is not refused); with the manifest's `repository` (`repo`), the copy
    resolves.
 2. **Dependencies.** Install MoonAliza's dependencies (`npm ci` in a MoonAliza checkout of `16f637f`, Node 24) outside
-   the pack and outside every checkout. vitest writes its caches into the `node_modules` a checkout links
-   (`node_modules/.vite`, `node_modules/.vite-temp`), so link an install the host may write to, never a read-only
-   clone's. A directory of its own whose entries are symlinks to an install's entries is enough.
-   `tools/test_calibration_kit.py` builds one so that the clone stays untouched.
+   the pack and outside every checkout. The manifest's `commands.test` and `commands.run_one` write nothing into the
+   `node_modules` a checkout links. By default vitest keeps its results cache in vite's cache dir,
+   `node_modules/.vite` of the checkout (vitest 5.0.1, vite 8.3.0), and vite bundles `vitest.config.ts` into
+   `node_modules/.vite-temp`; both are written through the link, into the install. The vitest CLI cannot move the
+   cache dir (it refuses `--cacheDir` and `--cache.dir`), so both commands say `--no-cache` (no results cache: it only
+   orders the test files, so a grade does not depend on an earlier run) and `--configLoader runner` (vite loads the
+   config with its module runner, which writes no file). A read-only install, such as a MoonAliza clone's, can then
+   be linked as it is. `tools/test_calibration_kit.py` still links a directory of its own whose entries are symlinks
+   to the clone's, and checks that a grade and `run_one` leave both that directory and the clone unchanged.
 3. **Checkouts.** Make one per cell with
    `historyless-checkout.sh --pack <pack dir> --link node_modules=<installed outside the pack> <pack dir>/repo <base0 id> <checkout> <branch>`,
    outside the pack. On Windows, run it under Git Bash with `MSYS=winsymlinks:nativestrict`, so that `--link` makes a
@@ -69,17 +78,20 @@ staged entries.
    The subject's vitest config sets a 15 s `testTimeout`, and on the lead's Windows host some of its long tests time
    out under load (grades side by side) and even in a lone grade on a cold cache, which turns a correct candidate's
    run red. So `commands.test` raises the timeout to 60 s (`--testTimeout=60000`), and the accepted journey test gives
-   each of its rows 120 s. `commands.run_one`, the command a candidate is told to run, stays the subject's own.
+   each of its rows 120 s. `commands.run_one`, the command a candidate is told to run, keeps the subject's own
+   timeout and adds only the two flags of step 2.
 
 ## The names the journey test assumes
 
 The journey test drives a start as the app runs one: a new `Vault` and `GitHubAccountStore` on the crash's data
-directory, the store's `open()`, then the startup lines of the candidate's own `src/main/index.ts`. Those are the lines
-after the one that reads the engine's references (the engine call with `method: 'vault.references'`), up to the one that
-attaches the supervisor (`supervisor.attach(`), run with the start's vault, store and engine references and a collector holding no token. The
-test reads them from the candidate's file and transpiles them with esbuild (a dependency of the subject), so whatever
-name a fix gives its flag, the test runs the wiring the fix wrote. It assumes only names the base already has, which
-belong to the required behaviour, not to any fix:
+directory, the store's `open()`, then the startup statements of the candidate's own `src/main/index.ts`. Those are the
+statements after the one that reads the engine's references (the statement holding the engine call whose argument has
+`method: 'vault.references'`, or a later one that declares `references` when the call's result is parsed in a
+statement of its own), up to the statement that calls `supervisor.attach()`, in the one block that holds both. They
+run with the start's vault, store and engine references and a collector holding no token. The test parses the
+candidate's file with TypeScript and transpiles the statements with esbuild (both dependencies of the subject), so
+whatever name a fix gives its flag, and however it lays out its lines, the test runs the wiring the fix wrote. It
+assumes only names the base already has, which belong to the required behaviour, not to any fix:
 
 - `Vault`: the constructor, `initialize`, `saveStaged`, `commit`, `tombstone`, `has`, and `reconcile` called with the
   references alone (the vault-default row). The candidate's own wiring calls `reconcile` however it chooses.
@@ -87,13 +99,14 @@ belong to the required behaviour, not to any fix:
   `openedAppChanged`.
 - The account file at `<data>/github/account.json` and the vault index at `<data>/vault/index.json`, read as JSON: the
   crash-window table speaks of both.
-- The two anchor lines of `src/main/index.ts`, matched on code only: comments (line, block and trailing) are blanked
-  first, with strings kept, so a comment a candidate adds does not move the slice. The slice starts after the end of
-  the statement that holds the engine call (the first code line at or after it that ends with `;`), so a call wrapped
-  over several lines is read whole. The identifiers the startup lines use there: `vault`, `references`,
-  `collectorSettings` and `githubStore`. Every name `index.ts` imports from `./github-account-store` or `./vault`
-  (named, renamed with `as`, or a namespace) is bound as well, to the candidate's own export, so a wiring that calls a
-  helper one of those modules exports runs as the app would run it.
+- The two anchors of `src/main/index.ts`, found as the parser reads the file: the engine call by its
+  `method: 'vault.references'` argument and the `supervisor.attach()` call. A comment, a string, a regex literal, a line
+  break or a missing `;` a candidate adds does not move them, and a call wrapped over several lines, or a statement
+  that shares a line with an anchor, is read whole. The identifiers the startup statements use there: `vault`,
+  `references`, `collectorSettings` and `githubStore`. Every name `index.ts` imports from `./github-account-store` or
+  `./vault` (named, renamed with `as`, a default or a namespace; type-only imports bind nothing) is bound as well, to
+  the candidate's own export, so a wiring that calls a helper one of those modules exports runs as the app would run
+  it.
 
 It names nothing the accepted fix added. A vault-level row that called the accepted fix's new option directly would
 fail every other correct fix, so the journey rows assert what such a row would: the entries are kept, with their files
@@ -106,17 +119,18 @@ injected and fixed, so only the vault sees the move.
 
 ## What the pack does not discriminate
 
-- **Wiring that moves.** A fix that reconciles somewhere other than between the two anchor lines of `index.ts`, or that
-  renames `vault`, `githubStore` or `collectorSettings` there, fails the journey test even when it is correct. The
-  base's startup order is part of the required behaviour, so such a fix is out of the task's scope.
-- **Other names in the startup lines.** The test runs those lines on their own, with the four names above and what
-  `index.ts` imports from `./github-account-store` or `./vault`. A line there that uses any other name of `index.ts` (a
-  helper declared in `index.ts` itself, or a name imported from another module) throws a ReferenceError in every row
-  that runs a start, so such a fix fails even when it is correct. The case's `instructions` state this limit to the
-  candidate.
-- **A regex literal in `index.ts` above the anchors that holds a quote or a comment opener.** The test blanks comments
-  with strings kept but does not parse regex literals, so such a literal could hide an anchor, and every row that runs
-  a start would fail. The base's `index.ts` has no regex literal.
+- **Wiring that moves.** A fix that reconciles somewhere other than between the two anchors of `index.ts`, that
+  moves the engine call or the `supervisor.attach()` call out of the one block that holds both (into a `try` block, say,
+  or a helper function), that reads the references with something other than the `method: 'vault.references'` literal
+  (a constant holding it, say), or that renames `vault`, `references`, `githubStore` or `collectorSettings` there, fails
+  the journey test even when it is correct: the startup statements are not found, or they meet a name that is not in
+  scope. The base's startup order is part of the required behaviour, so such a fix is out of the task's scope, and the
+  case's `instructions` state these limits to the candidate.
+- **Other names in the startup statements.** The test runs those statements on their own, with the four names above
+  and what `index.ts` imports from `./github-account-store` or `./vault`. A statement there that uses any other name of
+  `index.ts` (a helper declared in `index.ts` itself, `engine`, or a name imported from another module, such as `z`)
+  throws a ReferenceError in every row that runs a start, so such a fix fails even when it is correct. The case's
+  `instructions` state this limit to the candidate.
 - **Errors other than EACCES, EBUSY and EIO.** EPERM and others are not exercised; the rule is the same, any errno code
   but ENOENT.
 - **Time limits beyond ten years.** The later starts run ten years after the crash, so a fix that drops a kept pair
@@ -133,10 +147,9 @@ Stage 4a of calibration run 4 measures `fix@T3` alone. The journey test is the g
 there is no `pin` case. No review ground truth is adjudicated for this subject at this base (run 2's other findings
 in these files are not part of this pack), so there is no `review` case.
 
-The kit's fix prompt (`run.template.js`) prints the finding's `cause` along with its summary and its required
-behaviour, and in this fix-only pack nothing else reads `cause`: `grade.sh` and `observations.py` do not, and only a
-review case's judging would. So the manifest's `cause` names no mechanism, location or module: it says the cause is
-withheld and points to this README, whose journey states it (the lead's decision at integration; the kit is
-unchanged). No pack file reaches a candidate: a checkout is a history-less tree of `base0` alone, made outside the pack
-(`historyless-checkout.sh --pack` and the launch refuse a shared path), and `grade.sh` places the journey test only
-when it grades.
+The manifest keeps the real cause in `findings[].cause`, and `cases.fix.cause_in_prompt` is `false`, so the kit's fix
+prompt (`run.template.js`) prints the finding's summary and required behaviour but not its cause. The summary, the
+required behaviour and the case's `instructions`, which the prompt prints as they are, state the journey and the
+grade's limits, not the cause. No pack file reaches a candidate: a checkout is a history-less tree of `base0` alone,
+made outside the pack (`historyless-checkout.sh --pack` and the launch refuse a shared path), and `grade.sh` places the
+journey test only when it grades.

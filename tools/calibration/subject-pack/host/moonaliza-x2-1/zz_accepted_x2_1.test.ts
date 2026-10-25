@@ -1,6 +1,6 @@
 // Lineage: the accepted journey test of the host pack moonaliza-x2-1 (tools/calibration/subject-pack/host/moonaliza-x2-1); make-repo.sh
 // adds it to the accepted commit at tests/zz_accepted_x2_1.test.ts and grade.sh places it in a candidate's checkout, where it runs against
-// the candidate's source. It names only what the base already has (Vault, GitHubAccountStore and the startup lines of src/main/index.ts),
+// the candidate's source. It names only what the base already has (Vault, GitHubAccountStore and the startup statements of src/main/index.ts),
 // never a name the accepted fix added, so a different correct fix passes it too.
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
@@ -10,6 +10,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { transformSync } from 'esbuild';
+import ts from 'typescript';
 import * as vaultModule from '../src/main/vault';
 import * as storeModule from '../src/main/github-account-store';
 import { Vault } from '../src/main/vault';
@@ -18,7 +19,7 @@ import { GitHubAccountStore, type GitHubAccount } from '../src/main/github-accou
 // X2-1: a crash after the account file names a new pair but before the pair is committed leaves the pair staged in the vault. If the next
 // start cannot read the file (an I/O error, not a missing file), the store knows no references, and the startup reconcile must not delete
 // the staged pair the file names; the next start that reads the file then finds the pair and commits it. The start is driven as the app
-// runs it: the store's open(), then the lines src/main/index.ts runs between the engine's references and the supervisor (the reconcile
+// runs it: the store's open(), then the statements src/main/index.ts runs between the engine's references and the supervisor (the reconcile
 // and both finishStartup calls), taken from the candidate's own index.ts, so the test holds whatever names that wiring uses. A later start
 // runs with the wall clock moved ten years past the crash, so no age limit on a kept pair can pass for a start after a long time away.
 
@@ -77,55 +78,56 @@ function failingReads(path: string, code: string): () => void {
 type Wiring = (vault: Vault, references: string[], collectorSettings: unknown, githubStore: GitHubAccountStore) => Promise<void>;
 const START = ['vault', 'references', 'collectorSettings', 'githubStore'];
 // The two other modules in scope, as the candidate's source exports them: a name index.ts imports from one of them is in scope in the
-// startup lines, so it is bound here to the same export (a helper the wiring calls, say).
+// startup statements, so it is bound here to the same export (a helper the wiring calls, say).
 const MODULES: Record<string, Record<string, unknown>> = { './github-account-store': storeModule, './vault': vaultModule };
-/** The names src/main/index.ts imports from the modules in scope (named, renamed with `as`, or a namespace), each with its export. */
-function imported(source: string): Map<string, unknown> {
+/** The names src/main/index.ts imports from the modules in scope (named, renamed with `as`, a default or a namespace), each with its
+ *  export, read from the parsed file, so comments and line breaks inside an import do not matter; type-only imports bind nothing. */
+function imported(file: ts.SourceFile): Map<string, unknown> {
   const names = new Map<string, unknown>();
-  for (const match of source.matchAll(/^import\s+(?!type\s)([^;]*?)\s+from\s+['"]([^'"]+)['"]/gm)) {
-    const clause = match[1] ?? ''; const module = MODULES[match[2] ?? '']; if (!module) continue;
-    for (const spec of (/\{([^}]*)\}/.exec(clause)?.[1] ?? '').split(',')) {
-      // a `type X` specifier does not match
-      const [, exported, local] = /^\s*([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?\s*$/.exec(spec) ?? [];
-      if (exported) names.set(local ?? exported, module[exported]);
+  for (const statement of file.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    const module = MODULES[statement.moduleSpecifier.text]; const clause = statement.importClause;
+    if (!module || !clause || clause.isTypeOnly) continue;
+    if (clause.name) names.set(clause.name.text, module.default);
+    const bindings = clause.namedBindings;
+    if (bindings && ts.isNamespaceImport(bindings)) names.set(bindings.name.text, module);
+    if (bindings && ts.isNamedImports(bindings)) {
+      for (const element of bindings.elements) if (!element.isTypeOnly) names.set(element.name.text, module[(element.propertyName ?? element.name).text]);
     }
-    const namespace = /\*\s*as\s+([A-Za-z_$][\w$]*)/.exec(clause)?.[1]; if (namespace) names.set(namespace, module);
   }
   for (const name of START) names.delete(name);
   return names;
 }
-/** The lines of `source` with every comment (line, block or trailing) blanked to spaces and every string kept, so that only code matches
- *  an anchor: a comment a candidate adds, whatever its shape, cannot move the slice. */
-function codeOnly(source: string): string[] {
-  let out = ''; let i = 0;
-  while (i < source.length) {
-    const c = source[i] ?? ''; const next = source[i + 1];
-    if (c === '/' && (next === '/' || next === '*')) {
-      const end = next === '/' ? source.indexOf('\n', i) : source.indexOf('*/', i + 2);
-      const stop = end < 0 ? source.length : next === '/' ? end : end + 2;
-      out += source.slice(i, stop).replace(/[^\n]/g, ' '); i = stop;
-    } else if (c === "'" || c === '"' || c === '`') {
-      let j = i + 1; while (j < source.length && source[j] !== c) j += source[j] === '\\' ? 2 : 1;
-      out += source.slice(i, j + 1); i = j + 1;
-    } else { out += c; i += 1; }
-  }
-  return out.split('\n');
+/** The first node under `node` (itself included) that passes `test`, depth first. */
+function find(node: ts.Node, test: (node: ts.Node) => boolean): ts.Node | undefined {
+  return test(node) ? node : ts.forEachChild(node, child => find(child, test));
 }
-/** The startup lines of the candidate's src/main/index.ts: every line after the statement that reads the engine's references (the engine
- *  call with method 'vault.references', up to the first code line at or after it that ends with `;`, so a call wrapped over several lines
- *  counts whole), up to the line that attaches the supervisor, run with the start's vault, store and engine references, a collector with
- *  no token, and what index.ts imports from the modules in scope. No other name of index.ts reaches them here. Both anchors match code
- *  only (codeOnly), so a candidate's comment cannot move them. */
+/** The engine call that reads the references: a call with an object argument whose `method` is the string 'vault.references'. */
+const isEngineCall = (node: ts.Node): boolean => ts.isCallExpression(node) && node.arguments.some(arg => ts.isObjectLiteralExpression(arg)
+  && arg.properties.some(p => ts.isPropertyAssignment(p) && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) && p.name.text === 'method'
+    && ts.isStringLiteralLike(p.initializer) && p.initializer.text === 'vault.references'));
+const isAttach = (node: ts.Node): boolean => ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
+  && node.expression.name.text === 'attach' && ts.isIdentifier(node.expression.expression) && node.expression.expression.text === 'supervisor';
+const declaresReferences = (statement: ts.Statement): boolean => ts.isVariableStatement(statement)
+  && statement.declarationList.declarations.some(d => ts.isIdentifier(d.name) && d.name.text === 'references');
+/** The startup statements of the candidate's src/main/index.ts, found in the file as TypeScript parses it (so no comment, string, regex
+ *  literal, line break or missing `;` moves them): in the block that holds the statement with the engine call, every statement after that
+ *  one (or after a later one that declares `references`, when the call's result is parsed in a statement of its own) up to the statement
+ *  that calls supervisor.attach(), run with the start's vault, store and engine references, a collector with no token, and what index.ts
+ *  imports from the modules in scope. No other name of index.ts reaches them here. */
 function wiring(): Wiring {
   const source = readFileSync(new URL('../src/main/index.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-  const lines = source.split('\n');
-  const codeLines = codeOnly(source);
-  const call = codeLines.findIndex(line => /method:\s*['"]vault\.references['"]/.test(line));
-  const from = call < 0 ? -1 : codeLines.findIndex((line, index) => index >= call && /;\s*$/.test(line));
-  const to = from < 0 ? -1 : codeLines.findIndex((line, index) => index > from && /supervisor\.attach\(/.test(line));
-  if (from < 0 || to < 0) throw new Error('the startup lines of src/main/index.ts were not found');
-  const body = lines.slice(from + 1, to).join('\n');
-  const extra = imported(source);
+  const file = ts.createSourceFile('index.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  let statement = find(file, isEngineCall);
+  while (statement && !ts.isBlock(statement.parent) && !ts.isSourceFile(statement.parent)) statement = statement.parent;
+  const statements: readonly ts.Statement[] = statement ? (statement.parent as ts.Block | ts.SourceFile).statements : [];
+  const call = statements.indexOf(statement as ts.Statement);
+  const to = call < 0 ? -1 : statements.findIndex((s, index) => index > call && find(s, isAttach) !== undefined);
+  if (call < 0 || to < 0) throw new Error('the startup statements of src/main/index.ts were not found');
+  const declared = statements.findIndex((s, index) => index > call && index < to && declaresReferences(s));
+  const from = call >= 0 && !declaresReferences(statements[call]!) && declared >= 0 ? declared : call;
+  const body = source.slice(statements[from]!.end, statements[to]!.getStart(file));
+  const extra = imported(file);
   const { code } = transformSync(`(async (${[...START, ...extra.keys()].join(', ')}) => {\n${body}\n});`, { loader: 'ts' });
   const run = new Function(`return ${code.trim().replace(/;$/, '')}`)() as (...args: unknown[]) => Promise<void>;
   return (vault, references, collectorSettings, githubStore) => run(vault, references, collectorSettings, githubStore, ...extra.values());
@@ -166,7 +168,7 @@ async function firstSession() {
   };
 }
 
-/** A later start as the app runs it: a new vault and store on `dir`, open(), then index.ts's startup lines. With `unread`, every read of
+/** A later start as the app runs it: a new vault and store on `dir`, open(), then index.ts's startup statements. With `unread`, every read of
  *  the account file fails with that code for the whole start. */
 async function start(dir: string, options: { unread?: string; clientId?: string; engine?: string[] } = {}) {
   const file = join(dir, 'github', 'account.json');
