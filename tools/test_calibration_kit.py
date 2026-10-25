@@ -496,6 +496,43 @@ def native_links(env: dict) -> dict:
     return env if "winsymlinks" in msys else {**env, "MSYS": f"{msys} winsymlinks:nativestrict".strip()}
 
 
+def unc(path: Path) -> str | None:
+    """path's spelling through the administrative share //localhost/<drive>$ (a UNC path, served over loopback), or None
+    when the host has no such spelling (not Windows, or not on a drive letter)."""
+    import os
+    p = str(Path(path).resolve())
+    if os.name != "nt" or len(p) < 3 or p[1:3] != ":\\":
+        return None
+    return f"//localhost/{p[0]}$/" + p[3:].replace("\\", "/")
+
+
+def bash_native(path: Path, env: dict) -> str:
+    """The spelling of path that historyless-checkout.sh walks for native programs: cygpath -m of the shell's physical
+    path where cygpath exists (Git Bash, Cygwin), else the physical path itself."""
+    p = subprocess.run(["bash", "-c", 'p=$(cd -- "$1" && pwd -P) || exit 1; if command -v cygpath >/dev/null 2>&1; then cygpath -m -- "$p"; '
+                        'else printf "%s\\n" "$p"; fi', "native", str(path)], env=env, capture_output=True, text=True, timeout=60)
+    assert p.returncode == 0, p.stderr
+    return p.stdout.strip()
+
+
+# A cygpath that answers like the real one (or, where there is none, with the path itself), except that a path whose
+# Windows spelling lies under $STUB_MOUNT is reported under $STUB_TARGET: a mount whose Windows parents differ from the
+# shell's, which a test cannot make for real (Git Bash's mount table is shared by every Git Bash process of the user).
+STUB_CYGPATH = """#!/bin/sh
+[ "$1" = -m ] && [ "$2" = -- ] && [ $# -eq 3 ] || { echo "stub cygpath: unexpected arguments: $*" >&2; exit 9; }
+if [ -x /usr/bin/cygpath ]; then w=$(/usr/bin/cygpath -m -- "$3") || exit 1; else w=$3; fi
+if [ -n "${STUB_MOUNT:-}" ]; then
+  case "$w" in "$STUB_MOUNT" | "$STUB_MOUNT"/*) w=$STUB_TARGET${w#"$STUB_MOUNT"} ;; esac
+fi
+printf '%s\\n' "$w"
+"""
+
+
+def tree_bytes(root: Path) -> dict:
+    """Every file under root (its .git too) with its bytes: a snapshot that reading it cannot change."""
+    return {str(p.relative_to(root)): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file() and not p.is_symlink()}
+
+
 class Scripts(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -579,11 +616,11 @@ class Scripts(unittest.TestCase):
         self.assertIn("holds the accepted fix", p.stderr)
         self.assertFalse(target.exists())
 
-    def assert_link_refused(self, c, d, reason, *flags, name="node_modules"):
+    def assert_link_refused(self, c, d, reason, *flags, name="node_modules", env=None):
         """--link name=d is refused with exit 2 and the reason, and nothing is made: not the target, not its parent."""
         parent = self.root / f"refused-{len(list(self.root.glob('refused-*')))}"
         target = parent / "cand"
-        p = checkout(c["repo"], c["base"], target, self.env, *flags, "--link", f"{name}={d}")
+        p = checkout(c["repo"], c["base"], target, env or self.env, *flags, "--link", f"{name}={d}")
         self.assertEqual(p.returncode, 2, f"{d} {flags}: {p.stdout}{p.stderr}")
         self.assertIn(reason, p.stderr, f"{d} {flags}")
         self.assertFalse(parent.exists(), f"{d} {flags}")
@@ -687,6 +724,132 @@ class Scripts(unittest.TestCase):
         p = checkout(c["repo"], c["base"], target, native_links(self.env), "--pack", str(pack), "--link", f"node_modules={deps}")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertEqual((target / "node_modules").resolve(), deps.resolve())
+
+    @NEEDS_PY_LINKS
+    def test_historyless_checkout_refuses_a_unc_path(self):
+        # LC2-1: on Git Bash //host/share/... is a UNC path; the checks once ran on /host/share/..., which does not exist,
+        # so a link into a repository or the source repository spelled through //localhost/C$ was accepted
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        u = unc(self.root)
+        if u is None or not Path(u).is_dir():
+            self.skipTest("no UNC spelling of the temporary directory: not Windows, or the share //localhost/<drive>$ is unreachable")
+        other, wt, bare = self.other_repositories()
+        free = self.root / "installed" / "node_modules"  # outside every repository: accepted when spelled locally
+        free.mkdir(parents=True)
+        local = "is not a local path"
+        win = lambda p: unc(p).replace("/", "\\")
+        for flags in (("--pack", str(pack)), ()):
+            self.assert_link_refused(c, unc(other / "node_modules"), local, *flags)  # once checked as /localhost/...: "ok", a dangling link
+            self.assert_link_refused(c, unc(free), local, *flags)  # fail closed: a UNC path is refused, not walked
+        cases = [
+            ("lib", win(other / "node_modules")),  # a top-level link into a work tree, spelled UNC
+            ("src", win(c["repo"])),  # the source repository itself, spelled UNC (its history holds the accepted fix)
+            ("free", win(free)),  # a directory outside every repository, spelled UNC: refused all the same
+        ]
+        for i, (entry, to) in enumerate(cases):
+            deps = self.root / f"deps-unc-{i}"
+            (deps / "plain").mkdir(parents=True)
+            (deps / entry).symlink_to(to, target_is_directory=True)
+            read = subprocess.run(["bash", "-c", 'readlink -- "$1"', "readlink", str(deps / entry)], capture_output=True, text=True, timeout=60)
+            self.assertTrue(read.stdout.startswith("//localhost/"), read.stdout + read.stderr)  # the shell sees the UNC spelling
+            for flags in (("--pack", str(pack)), ()):
+                self.assert_link_refused(c, deps, local, *flags)
+        # the pack, the source repository and the target's parent are compared with the links or the pack, so a UNC
+        # spelling of any of them is refused too, before anything is made
+        for src, flags, what in ((c["repo"], ("--pack", unc(pack)), "the pack"), (unc(c["repo"]), ("--pack", str(pack)), "the source repository")):
+            parent = self.root / f"refused-{len(list(self.root.glob('refused-*')))}"
+            p = checkout(src, c["base"], parent / "cand", self.env, *flags, "--link", f"node_modules={free}")
+            self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+            self.assertIn(f"{what} ", p.stderr)
+            self.assertIn(local, p.stderr)
+            self.assertFalse(parent.exists(), what)
+        p = checkout(c["repo"], c["base"], unc(self.root) + "/cand-unc", self.env, "--pack", str(pack))
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn(local, p.stderr)
+        self.assertFalse((self.root / "cand-unc").exists())
+        # spelled locally, the same directory is accepted
+        target = self.root / "accepted" / "cand"
+        p = checkout(c["repo"], c["base"], target, native_links(self.env), "--pack", str(pack), "--link", f"node_modules={free}")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+    def test_historyless_checkout_compares_the_pack_by_identity_not_spelling(self):
+        # LC2-2: on a case-insensitive filesystem a spelling in another case names the same directory
+        pack, c = make_pack(self.root, self.env)
+        (pack / "extra").mkdir()  # a directory in the pack, outside its repository
+        upper = self.root / "PACK"
+        if not (upper.is_dir() and upper.samefile(pack)):
+            self.skipTest("the filesystem is case-sensitive: no other-case spelling names the pack")
+        self.assertIsNone(repo_holding(pack / "extra"), TEMP_IN_REPO.format(pack / "extra", repo_holding(pack / "extra")))
+        root_upper = self.root.parent / self.root.name.swapcase()
+        self.assertTrue(root_upper.samefile(self.root))
+        shares = "holds the accepted fix"
+        for d, pack_flag in ((upper, pack),  # the pack itself, in another case
+                             (upper / "extra", pack),  # a directory in the pack, in another case
+                             (pack / "extra", upper),  # the pack spelled in another case
+                             (root_upper, pack)):  # a directory holding the pack, in another case
+            self.assert_link_refused(c, d, shares, "--pack", str(pack_flag))
+        if makes_links(lambda link, target: link.symlink_to(target)):  # a top-level link into the pack, in another case
+            deps = self.root / "deps-case"
+            (deps / "plain").mkdir(parents=True)
+            (deps / "lib").symlink_to(upper / "extra", target_is_directory=True)
+            self.assert_link_refused(c, deps, shares, "--pack", str(pack))
+        # a target inside the pack, with the pack spelled in another case
+        p = checkout(c["repo"], c["base"], pack / "cand-case", self.env, "--pack", str(upper))
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn("is inside the pack", p.stderr)
+        self.assertFalse((pack / "cand-case").exists())
+
+    def test_historyless_checkout_walks_the_windows_parents_of_a_mounted_directory(self):
+        # a mount such as Git Bash's / or /tmp: the shell walks its own parents, native programs the Windows ones, and
+        # the checks walk both (a stub cygpath models the mount; on a host without cygpath the stub is the only one)
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        other, wt, bare = self.other_repositories()
+        mnt = self.root / "mnt"
+        (mnt / "deps").mkdir(parents=True)  # outside every repository, as the shell sees it
+        (other / "inside" / "deps").mkdir(parents=True)
+        (pack / "deps").mkdir()
+        stub = self.root / "stub-bin"
+        stub.mkdir()
+        (stub / "cygpath").write_bytes(STUB_CYGPATH.encode())
+        (stub / "cygpath").chmod(0o755)
+        import os
+        env = {**native_links(self.env), "PATH": str(stub) + os.pathsep + self.env.get("PATH", ""), "STUB_MOUNT": bash_native(mnt, self.env)}
+        for to, reason, with_pack in ((other / "inside", "is inside the git repository", False),  # the Windows parents hold a repository
+                                      (c["repo"], "holds the accepted fix", False),  # the Windows spelling is in the source repository
+                                      (pack, "holds the accepted fix", True)):  # ... or in the pack (compared by identity), under --pack
+            mounted = dict(env, STUB_TARGET=bash_native(to, self.env))
+            for flags in (("--pack", str(pack)), *([] if with_pack else [()])):
+                self.assert_link_refused(c, mnt / "deps", reason, *flags, env=mounted)
+        self.assert_link_refused(c, mnt / "deps", "is not a local path", env=dict(env, STUB_TARGET="//server/share/x"))  # a mount of a UNC path
+        target = self.root / "accepted" / "cand"  # the stub with no mount: the same directory is accepted
+        p = checkout(c["repo"], c["base"], target, {**env, "STUB_MOUNT": ""}, "--pack", str(pack), "--link", f"node_modules={mnt / 'deps'}")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+    def test_historyless_checkout_ignores_the_hosts_git_repository_variables(self):
+        # LC2-3: with GIT_DIR / GIT_WORK_TREE naming another repository, git init re-initialised it and reset --hard
+        # rewrote its work tree; the script drops the variables git lists as local to a repository
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        g2 = self.root / "g2"  # holds the base commit, so a lookup through GIT_DIR finds it
+        sh(["git", "clone", "-q", str(c["repo"]), str(g2)], self.root, self.env)
+        (g2 / "local.txt").write_text("not in the source\n")
+        free = self.root / "installed" / "node_modules"
+        free.mkdir(parents=True)
+        before = tree_bytes(g2)
+        dotgit = g2 / ".git"
+        env = {**native_links(self.env), "GIT_DIR": str(dotgit), "GIT_WORK_TREE": str(g2), "GIT_INDEX_FILE": str(dotgit / "index"),
+               "GIT_OBJECT_DIRECTORY": str(dotgit / "objects"), "GIT_COMMON_DIR": str(dotgit)}
+        for i, flags in enumerate((("--pack", str(pack), "--link", f"node_modules={free}"), ())):
+            target = self.root / f"cand-env-{i}"
+            p = checkout(c["repo"], c["base"], target, env, *flags)
+            self.assertEqual(tree_bytes(g2), before, f"{flags}: {p.stdout}{p.stderr}")  # nothing in the other repository changed
+            self.assertEqual(p.returncode, 0, f"{flags}: {p.stdout}{p.stderr}")
+            g = lambda *a: sh(["git", *a], target, self.env).stdout.strip()
+            self.assertEqual(g("rev-list", "--all", "--count"), "1")
+            self.assertEqual(g("rev-parse", "HEAD^{tree}"), sh(["git", "rev-parse", f"{c['base']}^{{tree}}"], c["repo"], self.env).stdout.strip())
+            self.assertEqual(g("status", "--porcelain"), "")
 
     def test_historyless_checkout_refuses_an_existing_target_and_one_inside_the_pack(self):
         pack, c = make_pack(self.root, self.env)

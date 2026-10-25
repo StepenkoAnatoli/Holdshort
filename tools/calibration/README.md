@@ -54,7 +54,13 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    candidate the clone's accepted fix and orchestration records. So run the install in a directory that is no
    repository, such as a history-less checkout of the case base made outside the pack. Each symlink among the
    directory's own entries is checked the same way where it resolves (a linked directory is followed before a `..`
-   after it, as a POSIX kernel does), and one that does not resolve is refused.
+   after it, as a POSIX kernel does), and one that does not resolve is refused. Paths are compared by identity, not
+   spelling (another case on a case-insensitive filesystem names the same directory), along the parents both Git
+   Bash and native Windows programs walk (a mount such as Git Bash's `/` or `/tmp` has Windows parents of its own). A
+   UNC path (`//host/share/...`) is refused wherever a check needs it (the directory, a symlink's target, the pack,
+   its repository, the checkout's parent under `--pack`), since its parents cannot be checked reliably: install on a
+   local drive. The script ignores the
+   host's `GIT_DIR`, `GIT_WORK_TREE` and git's other repository variables.
    Nothing deeper is checked: a symlink or a repository further down the dependency tree is not followed, and keeping
    those out is the host's duty.
 4. **Fill.** Write `run-config.json` = `{"manifest": <manifest.json>, "protocol": <protocol.json without its sources>,

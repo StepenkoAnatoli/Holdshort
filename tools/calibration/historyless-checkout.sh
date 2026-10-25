@@ -26,9 +26,24 @@
 #   --pack DIR   refuse when TARGET is inside DIR or DIR inside TARGET (proposal Item 2: no candidate checkout shares
 #                a filesystem path with the pack)
 #
+# How paths are compared: "inside" and "holds" are decided by identity ([ -ef ]) along a path's ancestors, not by
+# spelling, so another spelling of the same directory (another case on a case-insensitive filesystem) cannot pass. The
+# ancestors are those '..' reaches in the shell's namespace and, where cygpath exists (Git Bash, Cygwin), in the
+# Windows spelling native programs walk (a mount such as Git Bash's / or /tmp has Windows parents the shell does not
+# show). A UNC path (//host/share/...) is refused wherever a check needs it - DIR, a symlink's target, SOURCE_REPO and
+# PACK_DIR when they are compared, TARGET's parent under --pack: its spellings need not compare as one directory and
+# '..' at a share root differs between the shell and Windows, so it cannot be checked reliably. The host's git
+# repository variables (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, ...: git rev-parse --local-env-vars) are dropped, so
+# every git command works on the repository it names and none on another.
+#
 # Exit 0 with one "ok" line when TARGET holds exactly one commit whose tree is COMMIT's tree; 2 on bad arguments or a
 # refused target; 1 when git fails or the proof does not hold.
 set -euo pipefail
+# git honours GIT_DIR and the like over -C: with them naming another repository, git init re-initialised it and
+# update-ref and reset --hard rewrote it (LC2-3). Drop every variable git itself lists as local to a repository.
+GIT_LOCAL_VARS=$(git rev-parse --local-env-vars) || { echo "historyless-checkout: git rev-parse --local-env-vars failed" >&2; exit 1; }
+# shellcheck disable=SC2086 # one variable name per word
+unset $GIT_LOCAL_VARS
 
 usage() {
   echo "usage: historyless-checkout.sh [--link NAME=DIR]... [--pack PACK_DIR] SOURCE_REPO COMMIT TARGET BRANCH" >&2
@@ -57,35 +72,66 @@ DIR=$3
 BRANCH=$4
 
 [ -e "$DIR" ] || [ -L "$DIR" ] && refuse "target exists: $DIR"
-# phys DIR: the physical path of DIR with a leading '//' collapsed to '/' (bash keeps '//' from pwd -P for //, //. and
-# //x/.., which are all the root; a guard that compares spellings would let a //-spelled path past it - N3)
-phys() { local p; p=$(cd -- "$1" 2>/dev/null && pwd -P) || return 1; printf '%s' "${p/#\/\//\/}"; }
+# canon P: P with the leading '//' that bash keeps from pwd -P resolved: '//' alone is the root (N3; on Git Bash the
+# network root, which a check of '/' refuses all the same, since '/' holds everything), and '//x...' becomes '/x...'
+# only when both name the same directory (POSIX: '//x' is '/x'). On Git Bash '//host/share/...' is a UNC path and
+# '/host/share/...' another path, so it is kept, for ancestors to refuse (LC2-1)
+canon() {
+  case "$1" in
+    //) printf / ;;
+    //*) if [ "$1" -ef "${1#/}" ]; then printf '%s' "${1#/}"; else printf '%s' "$1"; fi ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+# phys DIR: the physical path of DIR (canon of pwd -P)
+phys() { local p; p=$(cd -- "$1" 2>/dev/null && pwd -P) || return 1; canon "$p"; }
 SRC_ABS=$(phys "$SRC") || refuse "no source repository: $SRC"
-TREE=$(git -C "$SRC_ABS" rev-parse --verify --quiet "$COMMIT^{tree}") || refuse "not a commit in $SRC: $COMMIT"
-git check-ref-format --branch "$BRANCH" >/dev/null 2>&1 || refuse "not a branch name: $BRANCH"
 # within A B: A is B or lies under it (both physical paths from phys, so the root is spelled '/' and holds everything)
 within() { [ "$2" = / ] && return 0; case "$1/" in "$2"/*) return 0 ;; esac; return 1; }
-# repo_holding P: print the nearest of the physical path P and its ancestors that holds a .git entry (a directory, the
-# file of a linked worktree or submodule, or a link) or is a git directory (HEAD, objects/ and refs/, the test git
-# itself applies: a bare repository, or the inside of a .git directory); status 1 when there is none. It walks the
-# parents '..' walks, and reads the filesystem only: git's own discovery stops at a filesystem boundary, refuses a
-# repository another user owns, and honours GIT_DIR and GIT_CEILING_DIRECTORIES, none of which stop a '..' (IC4-1)
-repo_holding() {
-  local p=$1
-  while :; do
-    if [ -e "${p%/}/.git" ] || [ -L "${p%/}/.git" ] \
-      || { [ -f "${p%/}/HEAD" ] && [ -d "${p%/}/objects" ] && [ -d "${p%/}/refs" ]; }; then
-      printf '%s' "$p"
-      return 0
-    fi
-    [ "$p" = / ] && return 1
-    p=$(dirname -- "$p")
-  done
+# is_repo D: the directory D holds a .git entry (a directory, the file of a linked worktree or submodule, or a link) or
+# is a git directory (HEAD, objects/ and refs/, the test git itself applies: a bare repository, or the inside of a .git
+# directory). It reads the filesystem only: git's own discovery stops at a filesystem boundary, refuses a repository
+# another user owns, and honours GIT_CEILING_DIRECTORIES, none of which stop a '..' (IC4-1)
+is_repo() {
+  [ -e "${1%/}/.git" ] || [ -L "${1%/}/.git" ] || { [ -f "${1%/}/HEAD" ] && [ -d "${1%/}/objects" ] && [ -d "${1%/}/refs" ]; }
 }
+WINPATHS=""
+if command -v cygpath >/dev/null 2>&1; then
+  WINPATHS=1
+else
+  case "$(uname -s 2>/dev/null)" in CYGWIN* | MINGW* | MSYS*) refuse "cygpath is missing: the Windows parents of a path cannot be checked" ;; esac
+fi
+# ancestors P: set ANC to the physical path P and every directory above it, nearest first, as '..' reaches them: in
+# the shell's spelling, then (with cygpath) in the Windows spelling cygpath -m gives, which native programs walk (a
+# mount such as Git Bash's / or /tmp is a directory whose Windows parents differ from the shell's). Status 1 when a
+# spelling is not a local absolute path: a UNC path //host/share/... (its spellings need not compare as one directory,
+# and '..' at a share root differs between the shell and Windows - LC2-1), or anything else unexpected
+ancestors() {
+  local p q
+  local -a spell=("$1")
+  ANC=()
+  if [ -n "$WINPATHS" ]; then
+    q=$(cygpath -m -- "$1") || return 1
+    spell+=("$q")
+  fi
+  for p in "${spell[@]}"; do
+    case "$p" in //*) ANC=(); return 1 ;; /* | [A-Za-z]:/*) ;; *) ANC=(); return 1 ;; esac
+    case "$p" in / | [A-Za-z]:/) ;; */) p=${p%/} ;; esac
+    while :; do
+      ANC+=("$p")
+      q=${p%/*}
+      case "$q" in "") q=/ ;; [A-Za-z]:) q=$q/ ;; esac
+      [ "$q" = "$p" ] && break
+      p=$q
+    done
+  done
+  return 0
+}
+LOCAL_ONLY="is not a local path (a UNC path //host/share/..., or a mount of one), whose parents cannot be checked reliably (Item 2)"
 # physd D: the physical path of the directory D the way the kernel walks it: cd -P follows each link before the '..'
 # after it (phys's plain cd drops 'link/..' by spelling first, so 'link/../y' could name a different y than the
 # kernel reaches)
-physd() { local p; p=$(cd -P -- "$1" 2>/dev/null && pwd -P) || return 1; printf '%s' "${p/#\/\//\/}"; }
+physd() { local p; p=$(cd -P -- "$1" 2>/dev/null && pwd -P) || return 1; canon "$p"; }
 # resolve E: print the physical path the symlink E resolves to: a directory through physd, a file as its directory's
 # physical path and its name, following a chain of links (at most 40) hop by hop, each hop's directory made physical
 # before a relative target is joined to it, as the kernel does; status 1 when E does not resolve
@@ -105,22 +151,44 @@ resolve() {
   printf '%s' "$p"
 }
 
+# G_OF / G_ANC: the guarded paths (SOURCE_REPO when there are links, PACK_DIR) paired with each of their ancestors
+G_OF=()
+G_ANC=()
+# add_guard G WHAT: record the physical path G and its ancestors as guarded; refuse when G is not a local path
+add_guard() {
+  local a
+  ancestors "$1" || refuse "$2 $1 $LOCAL_ONLY"
+  for a in "${ANC[@]}"; do G_OF+=("$1"); G_ANC+=("$a"); done
+}
+[ ${#LINKS[@]} -eq 0 ] || add_guard "$SRC_ABS" "the source repository"
 PACK_ABS=""
 if [ -n "$PACK" ]; then
   PACK_ABS=$(phys "$PACK") || refuse "no pack directory: $PACK"
+  add_guard "$PACK_ABS" "the pack"
 fi
-# guard_link NAME P WHAT: refuse when the physical path P shares a path with SOURCE_REPO or PACK_DIR, or is inside a
-# git repository (WHAT names P in the message)
+# the source lookup follows the checks above, so a UNC source is refused as one (git itself reports "dubious ownership")
+TREE=$(git -C "$SRC_ABS" rev-parse --verify --quiet "$COMMIT^{tree}") || refuse "not a commit in $SRC: $COMMIT"
+git check-ref-format --branch "$BRANCH" >/dev/null 2>&1 || refuse "not a branch name: $BRANCH"
+# guard_link NAME P WHAT: refuse when the physical path P is not a local path, shares a path with SOURCE_REPO or
+# PACK_DIR (it is one of them or lies under it - one of its ancestors is the same directory - or holds one - one of
+# the guarded path's ancestors is P), or is inside a git repository (it or one of its ancestors is one); WHAT names P
 guard_link() {
-  local guarded hit
-  for guarded in "$SRC_ABS" ${PACK_ABS:+"$PACK_ABS"}; do
-    if within "$2" "$guarded" || within "$guarded" "$2"; then
-      refuse "--link $1: $3 shares a path with $guarded, which holds the accepted fix (Item 2)"
+  local a g i
+  ancestors "$2" || refuse "--link $1: $3 $LOCAL_ONLY"
+  for g in "$SRC_ABS" ${PACK_ABS:+"$PACK_ABS"}; do
+    for a in "${ANC[@]}"; do
+      if [ "$a" -ef "$g" ]; then refuse "--link $1: $3 shares a path with $g, which holds the accepted fix (Item 2)"; fi
+    done
+  done
+  for i in ${G_OF[@]+"${!G_OF[@]}"}; do
+    if [ "${G_ANC[$i]}" -ef "$2" ]; then refuse "--link $1: $3 shares a path with ${G_OF[$i]}, which holds the accepted fix (Item 2)"; fi
+  done
+  for a in "${ANC[@]}"; do
+    if is_repo "$a"; then
+      refuse "--link $1: $3 is inside the git repository $a; a dependency tree inside a repository lets the checkout reach that repository's history and files through '..' (Item 2)"
     fi
   done
-  if hit=$(repo_holding "$2"); then
-    refuse "--link $1: $3 is inside the git repository $hit; a dependency tree inside a repository lets the checkout reach that repository's history and files through '..' (Item 2)"
-  fi
+  return 0
 }
 LINK_NAMES=()
 LINK_DIRS=()
@@ -146,9 +214,14 @@ done
 
 PARENT=$(dirname -- "$DIR")
 mkdir -p -- "$PARENT"
-TARGET_ABS="$(phys "$PARENT")/$(basename -- "$DIR")"
+PARENT_ABS=$(phys "$PARENT")
+TARGET_ABS="$PARENT_ABS/$(basename -- "$DIR")"
 if [ -n "$PACK_ABS" ]; then
-  within "$TARGET_ABS" "$PACK_ABS" && refuse "target $TARGET_ABS is inside the pack $PACK_ABS"
+  # TARGET does not exist, so it is inside the pack exactly when its parent is the pack or lies under it
+  ancestors "$PARENT_ABS" || refuse "target $TARGET_ABS: its parent $LOCAL_ONLY"
+  for a in "${ANC[@]}"; do
+    if [ "$a" -ef "$PACK_ABS" ]; then refuse "target $TARGET_ABS is inside the pack $PACK_ABS"; fi
+  done
   within "$PACK_ABS" "$TARGET_ABS" && refuse "the pack $PACK_ABS is inside the target $TARGET_ABS"
 fi
 
