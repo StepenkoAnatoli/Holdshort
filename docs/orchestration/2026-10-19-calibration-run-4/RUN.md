@@ -229,3 +229,60 @@ read only, for the subject trees the packs export.
   (wf_fb88b23e-3e1's are unknown and not counted).
 - Open: sr-pack-4a (wf_d882a0aa-d1d) still running. Then sr-policy-7 and sr-packs-t1 decide from the branch carrying
   sr-kit-cases, with FU-1..FU-3 (evidence rule e, rule f, table gate cells) needing a unit before the T1 runs.
+
+## 2026-10-25 (lead) - sr-pack-4a: two fix rounds spent, FIX with one S2; lead decisions; integration launched
+
+- wf_d882a0aa-d1d (6 agents, 1,046,687 tokens): build c43b04c, review FIX (F1 S2 wiring helper, F2 S2 cause in the
+  prompt, F3 S3 a missing 24 h clock row), fix 1, re-review 1, fix 2 (head b1af660), re-review 2 FIX: F2 open; R1, R2,
+  R4 and the rest verified; new RR2-1 S4 (a correct fix formatted over lines fails 17/18). Re-review 2's report is
+  uncommitted (its agent returned before the hook could run).
+- Lead decisions:
+  - F2: `run.template.js` prints `Cause:` into the fix prompt. The kit is not changed: that would alter the shared
+    prompt runs 1-3 used, and it collides with #120. In this fix-only pack nothing but the prompt reads `cause`, so the
+    manifest's cause is reworded to name no mechanism, and a test pins that. Kit follow-up: a grader-only cause field.
+  - R3: the candidate instruction is reworded to drop the location hint, keeping the F1 limit disclosed.
+  - RR2-1: fixed, because a correct fix graded FAIL would corrupt the 4a cells.
+  - Ratified: F4 `--testTimeout=60000` (measured timeouts under load; it changes nothing that is graded) and F6 (the
+    hygiene exemption stops at `subject-pack/host/`, where packs name their subject by design).
+  - F5: vitest left git-ignored caches `node_modules/.vite` and `.vite-temp` in the read-only MoonAliza clone; the
+    owner decides whether to delete them.
+- Lead integration (not a third unit round): wf_ebafb09d-6a1, an integration fixer, then a refute-first check.
+- Integration round 1 (wf_ebafb09d-6a1, 301,864 tokens): 19aeda2 (cause reworded, instruction reworded, slicing
+  fixed; HostPackX21 with the clone 15 OK), check d154326 FIX: IC-1 S3 (the new cause pointed the candidate at the
+  pack's README, which the kit forbids in the prompt), IC-2 S4 (a correct fix with no `;`, or split in two
+  statements, fails 17/18), IC-3/IC-4 S4 (untested guard, a word-blocklist test), IC-5 S4 (the deviation is undocumented).
+- Integration round 2 (wf_6557048d-00a): a fixed one-sentence cause pinned by exact text, plus a check on the
+  rendered prompt; slicing robust to both shapes, with a hunt for other correct shapes; the IC-3 probe; the IC-5
+  README line. Then a refute-first check with at least five shapes.
+- Owner, 2026-10-25, about F2: "fix it instead" (fix the kit, do not reword the cause). Round 2 stopped; its partial
+  diff was set aside, and the worktree is clean at d154326. Plan: the kit fix as lead integration on build/sr-kit-cases
+  (#120), then rebase sr-pack-4a onto it, restore the real cause, and hide it through the kit. Resume point: the
+  lead's side-session note `run4-resume.md`.
+
+## 2026-10-25 06:10 UTC (lead) - new lead session; the kit fix launched; F5 decided
+
+- The lead moved to a fresh session (the earlier one ran out of context). Reading 05:55Z (desktop `get_usage`):
+  five_hour 0.06, seven_day 0.08, weekly Fable 0.
+- Step 1 of the plan: lead integration on `build/sr-kit-cases` (#120), workflow wf_95043af6-f02 (opus, high). It adds
+  an optional manifest key, `cases.fix.cause_in_prompt` (boolean, default true). With true or absent, the fix prompt
+  stays byte-identical, so runs 1-3 and the shared pack are unchanged. With false, the prompt omits the "Cause:"
+  clause, and graders still see the cause. A refute-first check follows.
+- F5, owner, 2026-10-25: "ok, delete the .vite caches in the moonaliza clone." The caches (`node_modules/.vite`,
+  `.vite-temp`) were deleted by the previous lead session. The clone's git status is clean, and the vite/vitest
+  packages are untouched. Root fix in sr-pack-4a's next round: the pack's vitest commands and HostPackX21 must write no
+  cache into the clone (cache dir outside it). Deleting the caches after the run is acceptable only if that cannot be
+  done. Owner rule: fix the real defect, never take the easier workaround.
+
+## 2026-10-25 09:00 UTC (lead) - kit fix on #120 accepted; sr-pack-4a round 3 in flight; pause for the owner's shutdown
+
+- Step 1 done: wf_95043af6-f02 (282,911 tokens). c72419a adds `cases.fix.cause_in_prompt`. The launch step refuses a
+  non-boolean value, and refuses the key on a pin, review or gate case or on a finding. The refute-first check at
+  09b476d was ACCEPT (two S4s open: LC-1, the docs overstate who reads the cause; LC-2, a false outside cases.fix is
+  ignored). Lead re-check at 09b476d: kit suite 116 OK, 1 skipped; evidence check 0 failures; table check 0; secrets
+  clean. Pushed; the #120 body has a lead-integration section.
+- Step 2 in flight: wf_29220d8f-432 (opus, high), sr-pack-4a lead integration round 3. Its plan: rebase onto 09b476d
+  (done, not pushed), restore the real cause with the key false, close IC-2, IC-3 and IC-5, F5 at the root (no vitest
+  cache in the MoonAliza clone), HostPackX21 with the clone, then a refute-first check.
+- The owner shuts the host down at about 10:25Z. A workflow still running then is stopped first. The unit's on-disk
+  state and the exact restart steps are in the lead's side-session note `run4-resume.md`, the resume point.
+
