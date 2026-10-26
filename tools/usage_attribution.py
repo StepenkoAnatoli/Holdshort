@@ -17,8 +17,12 @@ Rules this enforces:
     added a second time;
   * an interrupted run keeps its start and records no completion, instead of
     inventing a duration;
-  * `export()` refuses any record carrying a field outside the whitelist, so a
-    prompt, tool output or credential cannot ride along into tracked evidence;
+  * `export()` refuses any record carrying a field outside the whitelist and
+    re-derives every record it is given through `observation()`, refusing any
+    value that differs from what `observation()` would have recorded. A record
+    read from JSONL is held to the same rules as one built in memory, so free
+    text cannot ride along inside a whitelisted field: identifiers are single
+    bounded tokens and `settings` values are short tokens or numbers;
   * a dollar figure always carries its price revision and its billing
     assumptions, and is `null` when the counters it needs are unknown. An
     account-wide usage percentage is not a per-run measurement and is not
@@ -36,6 +40,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import statistics
 import sys
 from datetime import datetime, timezone
@@ -47,6 +52,10 @@ SUBSET_PAIRS = (("cached_input_tokens", "input_tokens"), ("reasoning_output_toke
 SETTING_KEYS = frozenset({"effort", "reasoning", "max_output_tokens"})
 CLOCKS = ("utc", "utc+monotonic")
 BOUNDARIES = ("transport", "provider-request", "harness-cell")
+# Identifiers name a run, a task or a model; a prompt or an answer is not one.
+IDENTIFIER = re.compile(r"[^\s\x00-\x1f\x7f]{1,200}")
+# `effort` / `reasoning` are levels such as `high` or `xhigh`, never sentences.
+SETTING_TOKEN = re.compile(r"[a-z0-9][a-z0-9._-]{0,31}")
 RECORD_FIELDS = frozenset({
     "schema_version", "run_id", "task_id", "policy_sha256", "requested_model",
     "observed_model", "model_match", "settings", "started_at", "completed_at",
@@ -61,6 +70,13 @@ class AttributionError(ValueError):
 def _text(value, what: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise AttributionError(f"{what} must be a non-empty string")
+    return value
+
+
+def _identifier(value, what: str) -> str:
+    if not isinstance(value, str) or not IDENTIFIER.fullmatch(value):
+        raise AttributionError(f"{what} must be 1-200 characters with no whitespace or control "
+                               "characters")
     return value
 
 
@@ -105,7 +121,16 @@ def _settings(value) -> dict:
     if unknown:
         raise AttributionError(f"unmodeled settings {unknown}; only {sorted(SETTING_KEYS)} are recorded")
     for key, item in value.items():
-        if item is not None and not isinstance(item, (str, int, float, bool)):
+        if item is None or type(item) in (bool, int):
+            continue
+        if type(item) is float:
+            if not math.isfinite(item):
+                raise AttributionError(f"settings.{key} must be a finite number")
+        elif type(item) is str:
+            if not SETTING_TOKEN.fullmatch(item):
+                raise AttributionError(f"settings.{key} must be a short lowercase token such as "
+                                       "'high'; free text is not a setting")
+        else:
             raise AttributionError(f"settings.{key} must be a scalar or null")
     if value.get("max_output_tokens") is not None:
         ceiling = value["max_output_tokens"]
@@ -119,13 +144,13 @@ def observation(*, run_id: str, task_id: str, policy_sha256: str, requested_mode
                 counters: dict | None, clock: str = "utc", boundary: str = "transport",
                 settings: dict | None = None, interrupted: bool = False) -> dict:
     """One attributed task observation; refused rather than repaired."""
-    _text(run_id, "run_id")
-    _text(task_id, "task_id")
+    _identifier(run_id, "run_id")
+    _identifier(task_id, "task_id")
     if (not isinstance(policy_sha256, str) or len(policy_sha256) != 64
             or any(c not in "0123456789abcdef" for c in policy_sha256)):
         raise AttributionError("policy_sha256 must be a lowercase sha256 hex digest")
-    _text(requested_model, "requested_model")
-    _text(observed_model, "observed_model")
+    _identifier(requested_model, "requested_model")
+    _identifier(observed_model, "observed_model")
     if clock not in CLOCKS:
         raise AttributionError(f"clock must be one of {list(CLOCKS)}")
     if boundary not in BOUNDARIES:
@@ -163,8 +188,20 @@ def observation(*, run_id: str, task_id: str, policy_sha256: str, requested_mode
     }
 
 
+def _canonical(value) -> str:
+    # JSON text, so `1`, `1.0` and `true` stay different values (Python's `==` merges them)
+    return json.dumps(value, sort_keys=True, allow_nan=False)
+
+
 def export(records) -> list[dict]:
-    """The tracked-evidence projection: a whitelist, not a redaction pass."""
+    """The tracked-evidence projection: a whitelist, not a redaction pass.
+
+    Key names are not enough: a record read back from JSONL was never built by
+    `observation()`, so each one is rebuilt through it from its own fields and must
+    come out identical. A derived value (`model_match`, `latency_ms`) that disagrees
+    with its inputs, a value `observation()` would refuse, or a non-canonical form
+    refuses the whole export instead of being repaired.
+    """
     out = []
     for index, record in enumerate(records):
         if not isinstance(record, dict):
@@ -176,7 +213,26 @@ def export(records) -> list[dict]:
         missing = sorted(RECORD_FIELDS - set(record))
         if missing:
             raise AttributionError(f"record {index} is missing {missing}")
-        out.append({field: record[field] for field in sorted(RECORD_FIELDS)})
+        try:
+            rebuilt = observation(
+                run_id=record["run_id"], task_id=record["task_id"],
+                policy_sha256=record["policy_sha256"], requested_model=record["requested_model"],
+                observed_model=record["observed_model"], started_at=record["started_at"],
+                completed_at=record["completed_at"], counters=record["counters"],
+                clock=record["clock"], boundary=record["boundary"], settings=record["settings"],
+                interrupted=record["interrupted"])
+        except AttributionError as error:
+            raise AttributionError(f"record {index}: {error}") from None
+        try:
+            differs = sorted(field for field in RECORD_FIELDS
+                             if _canonical(record[field]) != _canonical(rebuilt[field]))
+        except ValueError:
+            raise AttributionError(f"record {index} holds a non-finite number") from None
+        if differs:
+            raise AttributionError(f"record {index} disagrees with the observation its own fields "
+                                   f"give in {differs}; derived and canonical values are not "
+                                   "taken on trust")
+        out.append({field: rebuilt[field] for field in sorted(RECORD_FIELDS)})
     return out
 
 
@@ -214,7 +270,7 @@ def estimate_cost(record: dict, rates: dict, *, price_revision: str) -> dict:
             raise AttributionError(f"rates.{key} must be a finite nonnegative number")
     if not isinstance(record, dict) or not isinstance(record.get("counters"), dict):
         raise AttributionError("record must carry a counters object")
-    usage = record["counters"]
+    usage = _counters(record["counters"])
     common = {"price_revision": price_revision, "currency": "USD",
               "unit": "per million tokens", "billing_assumptions": []}
     if usage["input_tokens"] is None or usage["output_tokens"] is None:

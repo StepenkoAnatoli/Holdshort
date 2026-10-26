@@ -1,6 +1,6 @@
 # Run-level usage and latency attribution
 
-Status: **first slice** of issue #61 (`tools/usage_attribution.py`, 18 synthetic
+Status: **first slice** of issue #61 (`tools/usage_attribution.py`, 21 synthetic
 tests in the regression gate). The record schema, validation, export whitelist,
 per-model aggregation and cost function exist and are pinned; the dispatcher
 does not emit these records yet, so no issue claim rests on a live run.
@@ -14,10 +14,10 @@ every observation here is bound to one task:
 
 | Field | Meaning | Rule |
 | --- | --- | --- |
-| `run_id`, `task_id` | the run and the unit of work | non-empty strings |
+| `run_id`, `task_id` | the run and the unit of work | 1-200 characters, no whitespace or control characters |
 | `policy_sha256` | the policy/packet digest in force | lowercase sha256 |
-| `requested_model` / `observed_model` | what was asked for / what the host reported | both recorded; `model_match` is derived, never guessed |
-| `settings` | `effort`, `reasoning`, `max_output_tokens` | exact key set; scalars only; anything else refuses |
+| `requested_model` / `observed_model` | what was asked for / what the host reported | same rule as the ids; both recorded; `model_match` is derived, never guessed |
+| `settings` | `effort`, `reasoning`, `max_output_tokens` | only these keys; each value is null, a boolean, an integer, a finite number or a short lowercase token (`[a-z0-9][a-z0-9._-]{0,31}`, e.g. `high`); `max_output_tokens` is a positive integer; anything else refuses |
 | `started_at`, `completed_at` | UTC instants, `Z` accepted | timezone required; completion before start refuses |
 | `latency_ms` | derived from the instants | null for an interrupted run, never 0 |
 | `clock` | `utc` or `utc+monotonic` | names what produced the instants |
@@ -42,6 +42,22 @@ measurement as a monotonic interval around one transport call.
 `export()` is a whitelist, not a redaction pass: a record carrying any field
 outside the schema (a prompt, an answer, a key) refuses instead of being
 scrubbed. Only selected metadata leaves the host.
+
+The whitelist covers values, not only key names. Records the CLI reads from
+JSONL were never built by `observation()`, so `export()` rebuilds each one
+through `observation()` from its own fields and refuses the whole export when
+the result differs in any field, compared as JSON so `1`, `1.0` and `true` stay
+distinct. That refuses free text inside `settings`, an invalid digest, clock or
+boundary, a non-boolean `interrupted`, a subset larger than its total, a
+`latency_ms` or `model_match` that disagrees with its inputs, and a
+non-canonical instant (export expects the UTC `+00:00` form `observation()`
+writes). `python tools/usage_attribution.py records.jsonl` exits 2 on any of
+these. `estimate_cost` re-checks the counters it prices the same way.
+
+What the rules cannot see: an identifier is a free token, so a credential
+shaped like an id (no whitespace, at most 200 characters) would still pass. The
+secret scan (`tools/check_secrets.py`) on tracked evidence is the layer for
+that.
 
 ## Dollars
 
