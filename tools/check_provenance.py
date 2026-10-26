@@ -102,15 +102,17 @@ def check(repo: Path, *, task_id: str, branch: str, permitted: list[str],
         raise Violation(f"{len(offenders)} file(s) outside permitted-effects "
                         f"{permitted}: {offenders[:10]}")
     if worktree:
-        listed = _must(repo, "worktree", "list", "--porcelain", "-z", what="worktree list")
+        # plain `--porcelain` (no `-z`, which older Git releases reject), parsed line by line as
+        # host_dry_run.py and guard_launch.py do: an unparsed worktree can only fail the claim
+        listed = _must(repo, "worktree", "list", "--porcelain", what="worktree list")
         here = {}
         current = None
-        for field in listed.split("\0"):
-            if field.startswith("worktree "):
-                current = os.path.normcase(os.path.normpath(field[9:]))
+        for line in listed.splitlines():
+            if line.startswith("worktree "):
+                current = os.path.normcase(os.path.normpath(line[9:]))
                 here[current] = None
-            elif field.startswith("branch ") and current is not None:
-                here[current] = field[7:]
+            elif line.startswith("branch ") and current is not None:
+                here[current] = line[7:]
         claimed = os.path.normcase(os.path.normpath(worktree))
         if claimed not in here:
             raise Violation(f"worktree {worktree!r} not listed on this checkout")
