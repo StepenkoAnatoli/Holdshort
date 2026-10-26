@@ -383,8 +383,11 @@ class ResponseMapping(unittest.TestCase):
         mixed = response(usage=omitted)
         mixed["candidates"][0]["content"]["parts"][0]["inlineData"] = {"mimeType": "image/png",
                                                                        "data": "AA=="}
+        blocked = response(usage=omitted)
+        blocked["promptFeedback"] = {"blockReason": "SAFETY"}
         for name, document in (("above the ceiling", above), ("no finishReason", unfinished),
-                               ("two candidates", two), ("text beside a payload", mixed)):
+                               ("two candidates", two), ("text beside a payload", mixed),
+                               ("a blocked prompt", blocked)):
             with self.subTest(name):
                 with self.assertRaises(ga.GeminiRefused) as caught:
                     ga.parse_response(document, model=MODEL, max_output_tokens=64)

@@ -264,6 +264,9 @@ def parse_response(document, *, model: str, max_output_tokens: int) -> GeminiRes
                 counts = _billable_usage(document.get("usageMetadata"))
             except GeminiRefused:
                 pass  # the block is the reason; an unknown charge carries no counts
+            else:
+                if _unreported_output(document):
+                    counts = (counts[0], None)
         raise GeminiRefused("provider blocked the prompt; nothing was answered",
                             input_tokens=counts[0], output_tokens=counts[1])
     if not identified:
@@ -272,13 +275,10 @@ def parse_response(document, *, model: str, max_output_tokens: int) -> GeminiRes
         raise GeminiRefused("provider model identity does not match the qualified model")
     usage = document.get("usageMetadata")
     input_tokens, output_tokens = _billable_usage(usage)
-    # validated above, so an omitted candidate count is a proven zero
-    candidate_tokens = usage.get("candidatesTokenCount", 0) if usage is not None else None
-    if candidate_tokens == 0 and _generated_text(document.get("candidates")):
-        # Text is not generated in zero tokens: a usage block that reports none for an
-        # answer under-reports it. The output charge is unknown (None, never 0); the
-        # prompt count stays known, and the dispatcher keeps it as a cost floor. This
-        # holds before every other refusal, which would carry the reported zero.
+    if _unreported_output(document):
+        # The output charge is unknown (None, never 0); the prompt count stays known,
+        # and the dispatcher keeps it as a cost floor. This holds before every other
+        # refusal, which would carry the reported zero.
         raise GeminiRefused("provider reports no candidate tokens for generated text; output "
                             "usage is unknown", input_tokens=input_tokens, output_tokens=None)
 
@@ -329,6 +329,18 @@ def _part_text(part):
     if "text" in part:
         return part["text"]
     return "" if part else None
+
+
+def _unreported_output(document) -> bool:
+    """Whether the usage block reports no candidate tokens beside generated text.
+
+    Text is not generated in zero tokens, so such a block under-reports the answer.
+    Call it only once _billable_usage has accepted the block: an omitted candidate
+    count is then a proven zero.
+    """
+    usage = document.get("usageMetadata")
+    return (usage is not None and usage.get("candidatesTokenCount", 0) == 0
+            and _generated_text(document.get("candidates")))
 
 
 def _generated_text(candidates) -> bool:
