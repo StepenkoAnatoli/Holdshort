@@ -82,6 +82,7 @@ CHECKS = [
     ("test_dispatch_budget", [sys.executable, "tools/test_dispatch_budget.py"]),
     ("test_dispatch_adapter", [sys.executable, "tools/test_dispatch_adapter.py"]),
     ("test_billing_qualification", [sys.executable, "tools/test_billing_qualification.py"]),
+    ("test_offline_deepseek_adapter", [sys.executable, "tools/test_offline_deepseek_adapter.py"]),
     ("test_eval_pool", [sys.executable, "tools/test_eval_pool.py"]),
     ("test_pricing", [sys.executable, "tools/test_pricing.py"]),
     ("test_pilot_close", [sys.executable, "tools/test_pilot_close.py"]),

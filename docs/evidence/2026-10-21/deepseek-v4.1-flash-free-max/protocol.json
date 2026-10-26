@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "kit_version": "1",
+  "status": "prepared; not frozen (no freeze commit, no run)",
+  "run_id": null,
+  "frozen_at": null,
+  "revision": "0a6d341beab0e7d4b0448fe30a7b0949e16680c2",
+  "host": "OpenCode host, offline preparation only. No OpenCode calibration harness exists in this repository; tools/calibration/run.template.js is written for the Claude Code workflow harness. No agent was launched.",
+  "subject_pack": {
+    "pack": "shared-bounded-reader",
+    "pack_version": "1",
+    "kind": "shared",
+    "manifest_sha256": "0840bd6eac9baa6bf9e6b552949ddd7c5e3758a8102a28d5b5890f5a8573c565"
+  },
+  "profiles": [
+    {
+      "key": "deepseek-v4.1-flash-free-max",
+      "model": "opencode/deepseek-v4.1-flash-free",
+      "effort": "max"
+    }
+  ],
+  "review_only_profiles": [],
+  "runs_per_profile_per_task": 1,
+  "retry_limit": 0,
+  "cases": [
+    {
+      "id": "pin",
+      "category": "pin-tests",
+      "tier": "T1",
+      "base": "b41a7f9c2c38c3caef06ceb0a3987e19098f759b",
+      "grading": "mechanical (grade.sh pin)",
+      "pass_rule": "the candidate's new tests fail at the base tree AND pass with the accepted source AND no file under the source directory changes AND lint is clean"
+    },
+    {
+      "id": "fix",
+      "category": "fix",
+      "tier": "T1",
+      "base": "b41a7f9c2c38c3caef06ceb0a3987e19098f759b",
+      "grading": "mechanical (grade.sh fix)",
+      "pass_rule": "the candidate's tests are green at its head AND red with the source restored to the base AND the accepted test is green against the candidate's source AND every changed file is in scope AND lint is clean"
+    },
+    {
+      "id": "review",
+      "category": "review",
+      "tier": "T1",
+      "base": "46c1cb9c8dc8029a45e3f5c02c5092224c701df2",
+      "grading": "grader agent against the manifest's ground truth under classification.md; then one clustering agent and three lenses (reproduce, reachability, refute) per cluster of other S1-S3 findings, majority",
+      "grader_fields": [
+        "truth (found, causeNamed, severity per ground-truth finding)",
+        "others (classification, mechanism)",
+        "falseBlocking",
+        "copiedFromHistory",
+        "notes"
+      ],
+      "pass_rule": "PASS when every ground-truth finding is found AND adjudicated falseBlocking is 0 AND copiedFromHistory is false; PARTIAL when some but not all are found under the same two conditions; FAIL otherwise",
+      "pass_rule_set_at": "prepared before any launch; not frozen"
+    }
+  ],
+  "sources": {
+    "tools/calibration/classification.md": "7ac50fef660220c4fcb19420c227bfc87ce9772a8d231085b1f7d1631ca7b5e2",
+    "tools/calibration/cluster.prompt.md": "4ca30e79f21b268b9e1c7d1c9442372f0b09c4df60e3526edbcbb24fbd488d10",
+    "tools/calibration/grade.sh": "520e5ac4755c6d70264e2e75b142c44e7a44ed0f6456c2a44f6fe1beed165aa5",
+    "tools/calibration/grader.prompt.md": "92f6df216f23ad80219ef872584cd6e2269a532feab62d09f5d00d964a148adb",
+    "tools/calibration/historyless-checkout.sh": "57031fc3c305b8e725aec03c5f5f3200b892877b65a2f40ca378beac4222ed53",
+    "tools/calibration/lens.prompt.md": "f815068d3e53b93765daf6ab4117827aee82e13b8ad9c5c3c4d388165e069f61",
+    "tools/calibration/request.py": "fe9d7a7ceee74f76d68b2e5a6431ab5d5360a074f632c3bc4e2e28e8758dc5f5",
+    "tools/calibration/run.template.js": "ddf12e9e6947f4170d95d9281eaa27bd7c136fa27b33d90adeddeb1b3c1fd877",
+    "tools/calibration/subject-pack/shared/manifest.json": "0840bd6eac9baa6bf9e6b552949ddd7c5e3758a8102a28d5b5890f5a8573c565",
+    "tools/calibration/subject-pack/shared/make-repo.sh": "df8574e32f0d15d2153cdb4acbde1f5454b37331d230c61abab137b55e9d299a",
+    "tools/offline_deepseek_adapter.py": "4efae66efa4fa436892bb507084d47f56d7013b442c151c12bcc1a886007a7cd",
+    "tools/profiles/deepseek-v4.1-flash-free-max.json": "57307c40928f1e745755f2440fbb4198d210b2d949f05316e82c94dd0d292436",
+    "tools/prices-deepseek-v4.1-flash-free-max.json": "c1d18a204b7674ccdf139dfcb34f4eae60b429fd77c46a0bffdfa9f64c4d9aeb"
+  },
+  "sources_missing": {
+    "run.js": "not built: the kit's only workflow template is Claude Code-specific and no OpenCode calibration harness exists in this repository; a live launch is blocked"
+  },
+  "source_hash_convention": "SHA-256 of UTF-8 text with CRLF/CR normalized to LF",
+  "metrics": [
+    "pass per case and the grader fields plus PASS/PARTIAL/FAIL (review), with raw and adjudicated falseBlocking",
+    "lint_clean per case",
+    "tokens and wall time per agent from the harness run file",
+    "self-reported mistakes verbatim",
+    "estimated cash per cell, estimate-only",
+    "usage-window movement over the run (readings with nothing in flight before and after)"
+  ],
+  "accounting": {
+    "mode": "estimate-only",
+    "prices_source": "tools/prices-deepseek-v4.1-flash-free-max.json, revision deepseek-v4.1-flash-free-max-prices-3; target vendor list price is $0.00/$0.00 per MTok; the table uses the metered sibling's $0.30 input / $1.20 output per MTok as a conservative bound",
+    "rates_per_mtok": {
+      "opencode/deepseek-v4.1-flash-free": {
+        "input": 0.3,
+        "output": 1.2
+      }
+    },
+    "statement": "estimate-only: the target's vendor list price is $0.00 per MTok (not measured cost); the table applies the metered sibling's $0.30 input / $1.20 output per MTok as a conservative bound. Cache pricing is not modelled as a discount: every prompt token, cached or not, is bounded at the higher of the input ($0.30) and cached ($0.006) rates; unknown tokens null; not a bill."
+  },
+  "timing": "not observed: no run was launched; no harness run file exists",
+  "privacy": "shared synthetic subject pack only; no host code; no credentials; candidate checkouts and the pack stay outside the evidence folder; no provider call",
+  "limits": [
+    "The protocol is prepared, not frozen: frozen_at and run_id are null, and no freeze commit was made.",
+    "No OpenCode calibration harness exists in this repository; run.template.js is Claude Code-specific, so a live launch is blocked.",
+    "No target credential is available; the existing live adapter reads only ANTHROPIC_API_KEY and refuses without it.",
+    "No target-specific spend authorization exists; the existing pilot caps cover a different, Anthropic-only scope.",
+    "tools/live_billing_qualification.json is deliberately unqualified and is bound to Anthropic's request mode; it does not approve the OpenCode endpoint.",
+    "No independently qualified judging profile exists; the judging profile is not selected.",
+    "No calibration run, observations, scores, or qualification evidence exists for this target.",
+    "The shared pack v1 discriminates one T1 pin case, one T1 fix case and one T1 review case only; it is not broad category coverage.",
+    "The target's 200,000 context and 32,000 output limits are vendor catalog limits; the 168,000 input reservation ceiling is derived arithmetic, not a provider tokenizer limit.",
+    "The OpenCode gateway's exact acceptance of DeepSeek's reasoning_effort and thinking fields is not documented; no live probe was made.",
+    "The target's free list price is $0.00, but the free label's duration and future price are not documented; the conservative bound uses the metered sibling's published list price."
+  ],
+  "classification": {
+    "prongs": [
+      "holds",
+      "reachable",
+      "forbidden"
+    ],
+    "document": "tools/calibration/classification.md",
+    "lens_schema": "tools/calibration/lens.prompt.md (it carries all three prongs; a lens votes real only on all three)"
+  },
+  "judging_profile": {
+    "key": "judging-profile-not-selected",
+    "model": "not selected",
+    "effort": "not selected",
+    "qualification": null,
+    "limitation": "judging profile not independently qualified, host-declared by the host owner; no reviewer has been selected"
+  },
+  "relayed_operator_text": {
+    "text": null,
+    "statement": "the harness relays no operator text into workers"
+  },
+  "usage_window_readings": {
+    "before": "not measured: no run was launched; no provider usage window was read",
+    "after": "not measured: no run was launched; no provider usage window was read"
+  },
+  "amendments": []
+}

@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "profile_id": "deepseek-v4.1-flash-free-max",
+  "display_name": "DeepSeek V4.1 Flash Free",
+  "model_id": "deepseek-v4.1-flash-free",
+  "host_model_id": "opencode/deepseek-v4.1-flash-free",
+  "provider": {
+    "id": "opencode",
+    "name": "OpenCode Console",
+    "request_style": "openai-chat-completions",
+    "endpoint": "https://opencode.ai/inference/openai/v1/chat/completions",
+    "base_url": "https://opencode.ai/inference/openai/v1",
+    "source_url": "https://opencode.ai/v2/docs/console/models"
+  },
+  "effort": {
+    "selected": "max",
+    "host_variants": ["low", "high", "max"],
+    "request_reasoning_effort": "max",
+    "request_thinking": {"type": "enabled"},
+    "documented_defaults": {
+      "thinking": "enabled",
+      "reasoning_effort": "high"
+    },
+    "documented_mapping": "the requested effort max maps to the actual effort max; thinking mode is enabled by default",
+    "wire_ambiguity": "the OpenCode Console docs name the endpoint and the model as OpenAI-compatible, but do not document the gateway's acceptance of DeepSeek's top-level thinking object or reasoning_effort field; no live probe was made"
+  },
+  "limits": {
+    "context_tokens": 200000,
+    "max_output_tokens": 32000,
+    "input_token_reservation_ceiling": 168000,
+    "reservation_ceiling_derivation": "200,000 context - 32,000 max output = 168,000; this is a conservative local reservation bound, not a measured tokenization or a provider-enforced input limit",
+    "max_tokens_requested": 32000,
+    "vendor_default_warning": "DeepSeek's direct API documents a 128K default max_tokens when reasoning_effort is max; the free OpenCode catalog limit is 32K output. This profile pins the lower documented catalog limit and never assumes 128K.",
+    "source_url": "https://raw.githubusercontent.com/anomalyco/models.dev/32bb721dd51673f50ff21812a65902804975fb5c/providers/opencode/models/deepseek-v4.1-flash-free.toml",
+    "source_values": "context = 200_000; output = 32_000 (values from the linked TOML, not a verbatim quote)"
+  },
+  "price_file": "prices-deepseek-v4.1-flash-free-max.json",
+  "price_sha256": "c1d18a204b7674ccdf139dfcb34f4eae60b429fd77c46a0bffdfa9f64c4d9aeb",
+  "capabilities": {
+    "reasoning": true,
+    "tools": true,
+    "structured_output": {
+      "supported": "json_object",
+      "conditions": "set response_format to {\"type\": \"json_object\"}; include the word JSON in a system or user message and provide an example; set a reasonable max_tokens; the API may still return empty content",
+      "not_supported": "json_schema"
+    },
+    "thinking_mode": {
+      "enabled": true,
+      "interleaved_reasoning_field": "reasoning_content",
+      "tool_calls": "supported in thinking mode; tool_choice required and named choices are not supported while thinking is enabled",
+      "temperature": "no effect in thinking mode"
+    }
+  },
+  "qualification": {
+    "status": "unqualified",
+    "live_qualified": false,
+    "calibration_status": "not run",
+    "reason": "no live model/provider call, no calibration scores, no independently qualified judging profile, no target credential, no OpenCode endpoint approval in the live billing record, and no target-specific spend authorization",
+    "evidence_note": "docs/evidence/2026-10-21/deepseek-v4.1-flash-free-max-prep.md"
+  },
+  "spend_authorization": {
+    "authorized": false,
+    "reason": "the host supplied no target-specific spend ceiling; the existing pilot caps are for an Anthropic-only scope and do not authorize this target",
+    "max_cost_per_task_usd": null,
+    "max_cost_per_pilot_usd": null,
+    "expires_at": null
+  },
+  "docs": [
+    {
+      "url": "https://opencode.ai/v2/docs/console/models",
+      "retrieved_at": "2026-10-21",
+      "facts": [
+        "DeepSeek V4.1 Flash Free has model ID deepseek-v4.1-flash-free and endpoint https://opencode.ai/inference/openai/v1/chat/completions using @ai-sdk/openai-compatible.",
+        "The Console pricing table lists DeepSeek V4.1 Flash Free as Free for input, output and cached read."
+      ]
+    },
+    {
+      "url": "https://raw.githubusercontent.com/anomalyco/models.dev/32bb721dd51673f50ff21812a65902804975fb5c/providers/opencode/models/deepseek-v4.1-flash-free.toml",
+      "retrieved_at": "2026-10-21",
+      "facts": [
+        "base_model = deepseek/deepseek-v4.1-flash",
+        "structured_output = true",
+        "reasoning_options type = effort with values low, high, max",
+        "interleaved field = reasoning_content",
+        "cost input = 0, output = 0, cache_read = 0",
+        "limit context = 200_000 and output = 32_000",
+        "provider api = https://opencode.ai/inference/openai/v1"
+      ]
+    },
+    {
+      "url": "https://api-docs.deepseek.com/guides/thinking_mode",
+      "retrieved_at": "2026-10-21",
+      "facts": [
+        "Thinking mode is enabled by default, with the default effort being high.",
+        "The OpenAI-format control is {\"thinking\": {\"type\": \"enabled/disabled\"}} and {\"reasoning_effort\": \"low/high/max\"}.",
+        "The requested effort max maps to the actual effort max.",
+        "Thinking mode does not support temperature, presence_penalty, or frequency_penalty; setting them has no effect.",
+        "With tools present, reasoning_content from previous turns must be passed back in later requests."
+      ]
+    },
+    {
+      "url": "https://api-docs.deepseek.com/api/create-chat-completion",
+      "retrieved_at": "2026-10-21",
+      "facts": [
+        "reasoning_effort accepts none, low, high, max; none disables thinking, the others enable it; the default is high.",
+        "max_tokens when reasoning_effort is max defaults to 128K; the total input and generated tokens are limited by the model context length.",
+        "required and named tool_choice are not supported in thinking mode; the API returns 400.",
+        "response_format supports text and json_object.",
+        "finish_reason values include stop, length, content_filter, tool_calls, insufficient_system_resource and aborted.",
+        "usage carries prompt_tokens, completion_tokens, total_tokens, prompt_tokens_details.cached_tokens, prompt_cache_hit_tokens, prompt_cache_miss_tokens and completion_tokens_details.reasoning_tokens."
+      ]
+    },
+    {
+      "url": "https://api-docs.deepseek.com/guides/json_mode",
+      "retrieved_at": "2026-10-21",
+      "facts": [
+        "To enable JSON Output, set response_format to {\"type\": \"json_object\"} and include the word json in the system or user prompt with an example of the desired format.",
+        "Set max_tokens reasonably to prevent the JSON string from being truncated.",
+        "The API may occasionally return empty content when using JSON Output."
+      ]
+    }
+  ],
+  "ambiguities": [
+    "The OpenCode Console documentation names the endpoint and model but does not document the gateway's exact wire mapping for DeepSeek's thinking object or reasoning_effort. The offline adapter models DeepSeek's documented body shape; any live use must verify the gateway and remain blocked until then.",
+    "The target's free list price is $0.00, but the free label's duration and future price are not documented. The profile keeps a separate metered-sibling bound ($0.30 input / $1.20 output per MTok) for budget reservations; zero price does not bypass qualification or authorization.",
+    "Context 200,000 and output 32,000 are catalog limits. The 168,000 input reservation ceiling is derived arithmetic, not a provider-enforced tokenizer limit.",
+    "DeepSeek's direct API can default max_tokens to 128K with reasoning_effort max, above the free catalog's 32K output cap. The adapter pins 32K.",
+    "JSON Output can return empty content or truncate when finish_reason is length; the adapter treats both as failures, never as successful structured output.",
+    "Tool-call history in thinking mode must preserve reasoning_content; the adapter rejects a tools request whose assistant history omits it.",
+    "No OpenCode calibration harness exists in this repository. tools/calibration/run.template.js is written for the Claude Code workflow harness, so no run was launched.",
+    "The checked-in live billing qualification remains deliberately unqualified and is bound to Anthropic's request mode; it does not approve the OpenCode endpoint."
+  ]
+}
