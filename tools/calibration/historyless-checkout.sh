@@ -26,10 +26,14 @@
 #                subject clone's accepted fix and orchestration records (IC4-1). Each symlink among DIR's own entries
 #                (its top level, dot entries too) is checked the same way on the real path it resolves to (followed
 #                hop by hop as a POSIX kernel does: a linked directory before the '..' after it), and one that does
-#                not resolve is refused; both layers below do this. Nothing deeper is checked: a symlink or a
-#                repository further down inside DIR is not followed, and is the host's to avoid. NAME is a plain
-#                relative path (no leading '/', no '..', no '\' or ':'), and none of its segments may name .git in
-#                any spelling Windows resolves to it (any case, trailing dots or spaces, GIT~1)
+#                not resolve is refused; both layers below do this, the native one on every path the shell resolves
+#                too. Nothing deeper is checked: a symlink or a repository further down inside DIR is not followed,
+#                and is the host's to avoid. NAME is a plain relative path (no leading '/', no '..', no '\' or ':'),
+#                and none of its segments may name .git in any spelling Windows resolves to it (any case, trailing
+#                dots or spaces, GIT~1). Each link is made only where NAME does not exist yet in the checkout and its
+#                real parent lies inside TARGET and outside TARGET/.git, in both layers: a symlink the base tree
+#                tracks (checked out as one with core.symlinks=true, such as g -> .git) or an earlier --link can lead
+#                it elsewhere (LC5-3). Refused otherwise, and the checkout made so far is removed, never through a link
 #   --pack DIR   refuse when TARGET is inside DIR or DIR inside TARGET (proposal Item 2: no candidate checkout shares
 #                a filesystem path with the pack), in both layers below
 #
@@ -55,25 +59,36 @@
 #                has Windows parents the shell does not show). This is what bash and the MSYS tools a candidate runs
 #                see, and on a POSIX host it is also what every other program sees.
 #   the native layer (Windows only: Git Bash, MSYS2, Cygwin): each path - SOURCE_REPO when there are links, PACK_DIR,
-#                each DIR, each entry at DIR's top that is a symlink, junction or other reparse point, and TARGET's
-#                nearest existing parent - resolved the way native programs (git, node, Python) resolve it, by a
+#                each DIR, each entry at DIR's top that is a symlink, junction or other reparse point, every path the
+#                shell layer resolves a symlink at DIR's top to, TARGET's nearest existing parent, and each link's
+#                parent in the checkout - resolved the way native programs (git, node, Python) resolve it, by a
 #                Windows Python's os.path.realpath(path, strict=True) (GetFinalPathNameByHandle), and the same checks
 #                (identity with os.path.samefile, the .git walk) run on that final path and its parents. Git Bash
 #                cannot see some links native programs follow: one to a volume-GUID or GLOBALROOT path is a plain
 #                directory to it (no -L, no readlink, pwd -P keeps the link's own path), and only this layer follows it
-#                (LC3-1). It fails closed: a path it cannot resolve, or that resolves to anything but a drive-letter
-#                path (a UNC path, a volume with no drive letter), is refused, and so is every checkout when no
+#                (LC3-1). And some links only Git Bash sees: an MSYS sys or shortcut symlink (MSYS=winsymlinks:sys or
+#                :lnk) is a plain file to Windows, yet it can lead to such a path, which the shell then checks in its
+#                own view, so the path the shell resolved it to is checked here again (LC5-1). It fails closed: a path
+#                it cannot resolve, or that resolves to anything but a drive-letter path (a UNC path, a volume with no
+#                drive letter), is refused, and so is every checkout when no
 #                Windows Python 3.10+ (python3 or python; os.path.realpath has strict since 3.10) is on PATH. Its
 #                refusals say "as native programs resolve it".
 # The host's git repository variables (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, ...: git rev-parse --local-env-vars)
 # are dropped, so every git command works on the repository it names and none on another; and git init copies no
 # template (--template=), so neither GIT_TEMPLATE_DIR nor init.templateDir can add objects/info/alternates (another
 # repository's objects) or hooks to the checkout. The final proof counts every object the checkout's git can read.
+# The globbing the checks rely on is set here (set +f, shopt -u nullglob failglob), so SHELLOPTS or BASHOPTS from the
+# environment cannot turn off the loop over DIR's top (LC5-2).
 #
 # Exit 0 with one "ok" line when TARGET holds exactly one commit whose tree is COMMIT's tree, and no object but that
-# commit and the objects of that tree; 2 on bad arguments or a refused target (nothing is made then); 1 when git fails
-# or the proof does not hold.
+# commit and the objects of that tree; 2 on bad arguments or a refused target (nothing is made then: a refusal after
+# the checkout is made removes it); 1 when git fails or the proof does not hold.
 set -euo pipefail
+# bash takes SHELLOPTS and BASHOPTS from the environment: with noglob the loop over DIR's top saw only its literal
+# patterns and checked no entry, with failglob it died on the first unmatched one (LC5-2). Set the globbing the loops
+# rely on: patterns expand, and one that matches nothing stays literal
+set +f
+shopt -u nullglob failglob
 # git honours GIT_DIR and the like over -C: with them naming another repository, git init re-initialised it and
 # update-ref and reset --hard rewrote it (LC2-3). Drop every variable git itself lists as local to a repository.
 GIT_LOCAL_VARS=$(git rev-parse --local-env-vars) || { echo "historyless-checkout: git rev-parse --local-env-vars failed" >&2; exit 1; }
@@ -247,6 +262,11 @@ guard_link() {
 }
 LINK_NAMES=()
 LINK_DIRS=()
+# REAL_NAMES / REAL_SHOWN / REAL_PATHS: each symlink at a DIR's top the shell resolved, and the path it resolved to,
+# which the native layer checks again (LC5-1)
+REAL_NAMES=()
+REAL_SHOWN=()
+REAL_PATHS=()
 for spec in ${LINKS[@]+"${LINKS[@]}"}; do
   case "$spec" in
     *=*) ;;
@@ -274,6 +294,9 @@ for spec in ${LINKS[@]+"${LINKS[@]}"}; do
     [ -L "$entry" ] || continue
     real=$(resolve "$entry") || refuse "--link $name: $entry, a symlink in $dep, does not resolve"
     guard_link "$name" "$real" "$entry, a symlink in $dep resolving to $real,"
+    REAL_NAMES+=("$name")
+    REAL_SHOWN+=("$entry, a symlink in $dep resolving to $real")
+    REAL_PATHS+=("$real")
   done
   LINK_NAMES+=("$name")
   LINK_DIRS+=("$dep")
@@ -316,9 +339,13 @@ for a in "${ANC[@]}"; do
 done
 
 # native_guard ITEM...: the native layer (see the header). Each ITEM is four words, KIND NAME SHOWN PATH: KIND is S (the
-# source repository), P (the pack), L (a --link DIR, NAME its name) or T (the target, PATH its nearest existing
-# parent); SHOWN is the path as the shell spells it, for the messages; PATH is its Windows spelling. Exit 0 when every
-# check passes; 2 with the refusal on stdout; anything else is a failure of the check itself, and refused as well
+# source repository), P (the pack), L (a --link DIR, NAME its name), E (the path the shell resolved a symlink at that
+# DIR's top to: a link only the shell sees, such as an MSYS sys or shortcut symlink, may lead to a path only native
+# programs resolve - LC5-1), T (the target, PATH its nearest existing parent), C (the checkout, once made) or K (the
+# parent a --link's symlink is about to be made in, which must lie inside the checkout C and outside its .git -
+# LC5-3); SHOWN is the path as the shell spells it, for the messages; PATH is its Windows spelling. Exit 0 when every
+# check passes; 2 with the refusal on stdout; anything else is a failure of the check itself, and refused as well.
+# native_guard --discard PATH removes the directory PATH (see discard below)
 native_guard() {
   MSYS2_ARG_CONV_EXCL='*' "$NATIVE_PY" -I - "$@" <<'PY'
 import os
@@ -410,6 +437,7 @@ def run(items):
             if is_repo(a):
                 raise Refused(f"{prefix}{what}, {AS} ({real}), is inside the git repository {a}; a dependency tree inside a repository lets the checkout reach {THROUGH}")
 
+    made = None
     for kind, name, shown, path in items:
         if kind == "L":
             prefix = f"--link {name}: "
@@ -421,6 +449,18 @@ def run(items):
                 if is_link(e):
                     what = f"{e.path}, a link at the top of {shown}"
                     check(prefix, what, final(e.path, prefix + what))
+        elif kind == "E":
+            prefix = f"--link {name}: "
+            check(prefix, shown, final(path, prefix + shown))
+        elif kind == "C":
+            made = final(path, f"the checkout {shown}")
+        elif kind == "K":
+            prefix = f"--link {name}: "
+            real = final(path, prefix + shown)
+            if any(same(a, os.path.join(made, ".git")) for a in parents(real)):
+                raise Refused(f"{prefix}{shown}, {AS} ({real}), is inside the checkout's git directory; a link there would sit among its hooks and objects")
+            if not any(same(a, made) for a in parents(real)):
+                raise Refused(f"{prefix}{shown}, {AS} ({real}), is not inside the checkout {made}; the link would be made in a host directory")
         elif kind == "T":
             real = final(path, f"target {shown}: its nearest existing parent")
             for k, gshown, g in guards:
@@ -431,7 +471,32 @@ def run(items):
                     raise Refused(f"target {shown}, {AS} (its parent lies in {real}), is inside the git repository {a}; a checkout inside a repository reaches {THROUGH}")
 
 
+def discard(d):
+    """remove the directory d and everything under it, never through a link: a symlink, junction or other reparse
+    point (or an entry that cannot be read) is removed as an entry, never entered"""
+    with os.scandir(d) as it:
+        entries = list(it)
+    for e in entries:
+        if is_link(e):
+            try:
+                os.unlink(e.path)
+            except OSError:
+                os.rmdir(e.path)
+        elif e.is_dir(follow_symlinks=False):
+            discard(e.path)
+        else:
+            try:
+                os.unlink(e.path)
+            except PermissionError:
+                os.chmod(e.path, stat.S_IWRITE)
+                os.unlink(e.path)
+    os.rmdir(d)
+
+
 args = sys.argv[1:]
+if args[:1] == ["--discard"]:
+    discard(args[1])
+    sys.exit(0)
 try:
     run([args[i:i + 4] for i in range(0, len(args), 4)])
 except Refused as r:
@@ -450,6 +515,7 @@ if [ -n "$WINDOWS" ]; then
   [ ${#LINKS[@]} -eq 0 ] || add_native S - "$SRC_ABS" "$SRC_ABS"
   [ -z "$PACK_ABS" ] || add_native P - "$PACK_ABS" "$PACK_ABS"
   for i in ${LINK_NAMES[@]+"${!LINK_NAMES[@]}"}; do add_native L "${LINK_NAMES[$i]}" "${LINK_DIRS[$i]}" "${LINK_DIRS[$i]}"; done
+  for i in ${REAL_NAMES[@]+"${!REAL_NAMES[@]}"}; do add_native E "${REAL_NAMES[$i]}" "${REAL_SHOWN[$i]}" "${REAL_PATHS[$i]}"; done
   add_native T - "$TARGET_ABS" "$EXIST_ABS"
   NOUT=$(native_guard "${NARGS[@]}") && NRC=0 || NRC=$?
   NOUT=${NOUT%$'\r'}
@@ -464,6 +530,25 @@ fi
 TREE=$(git -C "$SRC_ABS" rev-parse --verify --quiet "$COMMIT^{tree}") || refuse "not a commit in $SRC: $COMMIT"
 git check-ref-format --branch "$BRANCH" >/dev/null 2>&1 || refuse "not a branch name: $BRANCH"
 
+# MADE: the first directory this run makes (TARGET, or the first of its parents that does not exist yet), which discard
+# removes when a check that needs the checkout refuses
+MADE=$TARGET_ABS
+[ -z "$REST" ] || MADE=${EXIST_ABS%/}/${REST%%/*}
+# discard: remove MADE, never through a link. Git Bash's rm -rf walks into a symlink to a volume-GUID path, which it
+# takes for a plain directory, and deletes the files where it leads (a base tree may track such a symlink), so on
+# Windows the native layer's Python removes the tree, each link as an entry; elsewhere rm -rf, which follows no symlink
+discard() {
+  if [ -n "$WINDOWS" ]; then
+    native_guard --discard "$(cygpath -m -- "$MADE")" || { echo "historyless-checkout: could not remove $MADE" >&2; exit 1; }
+  else
+    rm -rf -- "$MADE"
+  fi
+}
+# refuse_made REASON: refuse after the checkout was made: remove it, then refuse (nothing is left)
+refuse_made() {
+  discard
+  refuse "$@"
+}
 mkdir -p -- "$PARENT_ABS"
 # no template (--template=): GIT_TEMPLATE_DIR or init.templateDir could copy objects/info/alternates, naming another
 # repository's objects, or hooks into the new .git (LC3-2)
@@ -475,8 +560,40 @@ BASE=$(git -C "$TARGET_ABS" -c user.name=calibration -c user.email=calibration@l
   commit-tree --no-gpg-sign -m "calibration base: a tree with no history" "$TREE")
 git -C "$TARGET_ABS" update-ref "refs/heads/$BRANCH" "$BASE"
 git -C "$TARGET_ABS" reset -q --hard "$BASE"
+# each link lands inside the checkout and outside its .git (LC5-3): NAME's spelling is checked above, but the base tree
+# may track a symlink (with core.symlinks=true it is checked out as one, g -> .git say), and an earlier --link is a
+# symlink to a host directory, so NAME's parent is checked where it really is, in both layers, before each link is
+# made; and NAME must not exist yet, since ln -s puts the link inside an existing directory, or where a symlink to one
+# leads
 for i in ${LINK_NAMES[@]+"${!LINK_NAMES[@]}"}; do
-  ln -s "${LINK_DIRS[$i]}" "$TARGET_ABS/${LINK_NAMES[$i]}"
+  name=${LINK_NAMES[$i]}
+  at=$TARGET_ABS/$name
+  if [ -e "$at" ] || [ -L "$at" ]; then
+    refuse_made "--link $name: the checkout already holds $name (from the base tree or an earlier --link); the link would be made inside it or where it leads"
+  fi
+  up=$(dirname -- "$at")
+  real=$(physd "$up") || refuse_made "--link $name: its parent $up is no directory in the checkout"
+  ancestors "$real" || refuse_made "--link $name: its parent $real $LOCAL_ONLY"
+  inside=""
+  for a in "${ANC[@]}"; do
+    if [ "$a" -ef "$TARGET_ABS/.git" ]; then
+      refuse_made "--link $name: its parent $real is inside the checkout's git directory; a link there would sit among its hooks and objects"
+    fi
+    if [ "$a" -ef "$TARGET_ABS" ]; then inside=1; fi
+  done
+  [ -n "$inside" ] || refuse_made "--link $name: its parent $real is not inside the checkout $TARGET_ABS; the link would be made in a host directory"
+  if [ -n "$WINDOWS" ]; then
+    wt=$(cygpath -m -- "$TARGET_ABS") || refuse_made "the checkout $TARGET_ABS: no Windows spelling"
+    wr=$(cygpath -m -- "$real") || refuse_made "--link $name: its parent $real: no Windows spelling"
+    NOUT=$(native_guard C - "$TARGET_ABS" "$wt" K "$name" "$real" "$wr") && NRC=0 || NRC=$?
+    NOUT=${NOUT%$'\r'}
+    case $NRC in
+      0) ;;
+      2) refuse_made "$NOUT" ;;
+      *) refuse_made "the native path check failed (exit $NRC), so the paths cannot be checked as native programs resolve them${NOUT:+: $NOUT}" ;;
+    esac
+  fi
+  ln -s "${LINK_DIRS[$i]}" "$at"
   mkdir -p -- "$TARGET_ABS/.git/info"
   printf '/%s\n' "${LINK_NAMES[$i]}" >> "$TARGET_ABS/.git/info/exclude"
 done

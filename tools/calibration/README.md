@@ -61,12 +61,17 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    is refused wherever a check needs it (the directory, a symlink's target, the pack, its repository, the checkout's
    parent), since its parents cannot be checked reliably: install on a local drive. The checkout itself must not be
    inside any git repository either (it would reach that repository through `..` the same way), and a refused
-   checkout makes nothing, not even its parent directories. Every check runs twice. The shell layer uses the path Git
+   checkout makes nothing, not even its parent directories (a refusal after the checkout is made, by the link rule
+   below, removes it again, each link in it as an entry, never followed). Every check runs twice. The shell layer uses the path Git
    Bash resolves and the parents it walks, plus the Windows parents of that path (a mount such as Git Bash's `/` or
    `/tmp` has Windows parents of its own). On Windows, the native layer then resolves each path the way native
    programs (git, node, Python) resolve it, through a Windows Python's `os.path.realpath`, and checks that path and its
    parents again. Git Bash cannot see some links native programs follow, such as one whose target is a volume-GUID or
-   `GLOBALROOT` path, so only the native layer catches those. The native layer fails closed: a path it cannot resolve,
+   `GLOBALROOT` path, so only the native layer catches those. The native layer also checks every path the shell layer
+   resolves, as native programs resolve that path: Git Bash follows MSYS's own symlinks too (a system file or a `.lnk`
+   shortcut, made under `MSYS=winsymlinks:sys` or `:lnk`), which native programs take for plain files, so where such a
+   link at the linked directory's top leads by Git Bash's reading (a volume-GUID link, a `subst` drive) is checked
+   where native programs find it. The native layer fails closed: a path it cannot resolve,
    or one that resolves to anything but a drive-letter path, is refused, and so is every checkout when no Windows
    Python 3.10+ (the version whose `os.path.realpath` takes `strict`) is on `PATH` as `python3` or `python`. The
    script ignores the host's `GIT_DIR`, `GIT_WORK_TREE` and git's other repository variables, and copies no git template (so `GIT_TEMPLATE_DIR` or `init.templateDir` cannot
@@ -74,7 +79,11 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    object the checkout's git can read.
    Nothing deeper is checked: a symlink or a repository further down the dependency tree is not followed, and keeping
    those out is the host's duty. A `--link` name is a plain relative path, and none of its parts may name `.git` in
-   any spelling Windows resolves to it (any case, trailing dots or spaces, `GIT~1`).
+   any spelling Windows resolves to it (any case, trailing dots or spaces, `GIT~1`). Each link is made only where its
+   name does not exist yet in the checkout and its real parent lies inside the checkout and outside its `.git`, in both
+   layers: the base tree may track a symlink (checked out as one with `core.symlinks=true`, such as `g -> .git`), and
+   an earlier `--link` is one too. The script sets the globbing its checks rely on itself, so a `SHELLOPTS` or
+   `BASHOPTS` the host exports (`noglob`, `nullglob`, `failglob`) does not change what they see.
    **What the guard covers, and what is the host's duty.** It covers every path the checkout gets from the script:
    no parent of the checkout, no linked directory or its parents, and no link at a linked directory's top level or the
    parents of where it leads reaches a git repository, the pack or its repository, by any spelling native programs

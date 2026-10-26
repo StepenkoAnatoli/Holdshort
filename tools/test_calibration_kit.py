@@ -574,6 +574,58 @@ def bash_sees_link(link: Path, env: dict) -> bool:
     return p.returncode == 0
 
 
+def msys_link(link: Path, to: str, mode: str, env: dict) -> None:
+    """Make link with Git Bash's `ln -s` under MSYS=winsymlinks:<mode>: "sys" writes a system file holding the target,
+    "lnk" a Windows shortcut (link.lnk). Git Bash and every MSYS program follow both; to Windows each is a plain file,
+    no reparse point, so Python and node see no link. to is the target as the shell spells it."""
+    p = subprocess.run(["bash", "-c", 'ln -s -- "$1" "$2"', "ln", to, str(link)], env={**env, "MSYS": f"winsymlinks:{mode}"},
+                       capture_output=True, text=True, timeout=60)
+    assert p.returncode == 0, p.stderr
+
+
+def shell_spelling(path, env: dict) -> str:
+    """path as Git Bash spells it (cygpath -u), or unchanged where there is no cygpath."""
+    p = subprocess.run(["bash", "-c", 'if command -v cygpath >/dev/null 2>&1; then cygpath -u -- "$1"; else printf "%s\\n" "$1"; fi',
+                        "spell", str(path)], env=env, capture_output=True, text=True, timeout=60)
+    assert p.returncode == 0, p.stderr
+    return p.stdout.strip()
+
+
+def volume_junction(link: Path, to: Path) -> None:
+    """Make link a junction whose target is to's volume-GUID spelling (_winapi.CreateJunction would prefix that
+    spelling a second time). Git Bash takes such a junction for a volume mount point, a plain directory, so only a
+    check that counts every reparse point as a link sees it."""
+    import ctypes
+    import os
+    import struct
+    from ctypes import wintypes
+    rest = volume_spelling(to)[len(NT_PREFIX):]
+    sub, shown = (BS + "??" + BS + rest).encode("utf-16-le"), rest.encode("utf-16-le")
+    body = struct.pack("<HHHH", 0, len(sub), len(sub) + 2, len(shown)) + sub + b"\0\0" + shown + b"\0\0"
+    data = struct.pack("<IHH", 0xA0000003, len(body), 0) + body  # IO_REPARSE_TAG_MOUNT_POINT
+    os.mkdir(link)
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    k.CreateFileW.restype = wintypes.HANDLE
+    # GENERIC_WRITE, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT
+    h = k.CreateFileW(str(link), 0x40000000, 0, None, 3, 0x02000000 | 0x00200000, None)
+    assert h != wintypes.HANDLE(-1).value, ctypes.WinError(ctypes.get_last_error())
+    try:
+        done = wintypes.DWORD()
+        ok = k.DeviceIoControl(wintypes.HANDLE(h), 0x000900A4, data, len(data), None, 0, ctypes.byref(done), None)  # FSCTL_SET_REPARSE_POINT
+        assert ok, ctypes.WinError(ctypes.get_last_error())
+    finally:
+        k.CloseHandle(wintypes.HANDLE(h))
+
+
+def native_entries(d: Path) -> dict:
+    """Each entry of d with whether Windows takes it for a link (a symlink or any other reparse point)."""
+    import os
+    import stat
+    with os.scandir(d) as it:
+        return {e.name: e.is_symlink() or bool(getattr(e.stat(follow_symlinks=False), "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+                for e in it}
+
+
 class Scripts(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -1226,6 +1278,16 @@ class Scripts(unittest.TestCase):
         self.assertTrue(bash_sees_link(deps / "j", self.env), "Git Bash sees the junction")
         for flags in (("--pack", str(pack)), ()):
             self.assert_link_refused(c, deps, "other; a ", *flags, native=True)
+        # a junction whose own target is a volume-GUID path: Git Bash takes it for a volume mount point, a plain
+        # directory, so the shell never resolves it; only the native layer, counting it as a reparse point, follows it
+        deps = self.root / "deps-volume-junction"
+        (deps / "plain").mkdir(parents=True)
+        volume_junction(deps / "j", other / "node_modules")
+        self.assertFalse(bash_sees_link(deps / "j", self.env), "Git Bash sees this junction; the case no longer needs the native layer")
+        with os.scandir(deps) as it:
+            self.assertFalse(next(e for e in it if e.name == "j").is_symlink(), "a junction is no symlink to Python")
+        for flags in (("--pack", str(pack)), ()):
+            self.assert_link_refused(c, deps, "other; a ", *flags, native=True)
         free = self.root / "installed" / "node_modules"  # control: a junction outside every repository is accepted
         free.mkdir(parents=True)
         ok = self.root / "deps-junction-ok"
@@ -1257,6 +1319,23 @@ class Scripts(unittest.TestCase):
             p = subprocess.run([sys.executable, "-I", "-c", f"{code}\nFAIL = {fail}\nD = {str(empty)!r}\n{harness}"],
                                capture_output=True, text=True, timeout=60)
             self.assertEqual((p.returncode, p.stdout), (0, expected), p.stderr)
+        # LC5-4 (U1): an entry at DIR's top whose stat fails counts as a link, so the native layer resolves and checks it
+        # rather than skipping it. A DirEntry's methods cannot be patched, so a stand-in with the same two methods is used
+        entry = textwrap.dedent("""
+            import errno
+            import types
+            class Entry:
+                def is_symlink(self):
+                    return False
+                def stat(self, follow_symlinks=True):
+                    if FAIL:
+                        raise PermissionError(errno.EACCES, "denied", "x")
+                    return types.SimpleNamespace(st_file_attributes=0)
+            sys.stdout.write(f"{is_link(Entry())}")
+            """)
+        for fail, expected in ((False, "False"), (True, "True")):
+            p = subprocess.run([sys.executable, "-I", "-c", f"{code}\nFAIL = {fail}\n{entry}"], capture_output=True, text=True, timeout=60)
+            self.assertEqual((p.returncode, p.stdout), (0, expected), p.stderr)
 
     def test_historyless_checkout_refuses_a_link_name_that_names_dot_git(self):
         # LC4-4: --link .git/hooks=DIR put a host directory in the checkout's own git directory, whose hooks a candidate's
@@ -1270,6 +1349,10 @@ class Scripts(unittest.TestCase):
             self.assert_link_refused(c, free, "may not name .git", "--pack", str(pack), name=name)
         for name in ("a" + BS + "b", BS + "x", "c:x", "x:y"):  # a Windows separator, a drive or a stream
             self.assert_link_refused(c, free, "a plain relative name", name=name)
+        # LC5-4 (U2): every --link's NAME is checked, not only the first one's
+        for name in (".git/hooks", ".GIT"):
+            self.assert_link_refused(c, free, "may not name .git", "--pack", str(pack), "--link", f"a={free}", name=name)
+        self.assert_link_refused(c, free, "a plain relative name", "--link", f"a={free}", "--link", f"b={free}", name="c:x")
         target = self.root / "accepted" / "cand"  # names that only look alike are linked
         p = checkout(c["repo"], c["base"], target, native_links(self.env), "--pack", str(pack), "--link", f".github={free}",
                      "--link", f"git={free}", "--link", f"gitdir={free}")
@@ -1320,6 +1403,155 @@ class Scripts(unittest.TestCase):
             self.assertIn("no native path resolver", p.stderr)
             self.assertIn("Python 3.10+", p.stderr)
             self.assertFalse(parent.exists())
+
+    def subst_drive(self, path: Path) -> str | None:
+        """A drive letter that subst maps to path for the rest of this test (removed at cleanup), or None when no letter
+        is free. subst refuses a letter in use, so two tests running at once never share one."""
+        import os
+        for letter in "RSTUVWXYQPONMLKJIHG":
+            if os.path.exists(f"{letter}:{BS}"):
+                continue
+            if subprocess.run(["subst", f"{letter}:", str(Path(path).resolve())], capture_output=True, text=True, timeout=60).returncode == 0:
+                self.addCleanup(subprocess.run, ["subst", f"{letter}:", "/D"], capture_output=True, timeout=60)
+                return letter
+        return None
+
+    @NEEDS_PY_LINKS
+    def test_historyless_checkout_checks_where_a_link_only_the_shell_sees_leads_as_native_programs_resolve_it(self):
+        # LC5-1: Git Bash makes "sys" symlinks (MSYS=winsymlinks:sys) and shortcut symlinks (:lnk). Git Bash and every MSYS
+        # tool follow them, but to Windows they are plain files, so the native layer's scan of DIR's top saw no link. The
+        # shell layer resolved such a link and checked the path in its own view, which cannot see through a volume-GUID
+        # link or a subst drive. So a link at DIR's top to such a path into a repository passed both layers, and a
+        # candidate's `cd node_modules/s && git log` read that repository's history. Every path the shell resolves is
+        # now also checked as native programs resolve it
+        import os
+        if os.name != "nt" or volume_spelling(self.root) is None:
+            self.skipTest("not Windows, or the temporary directory's volume has no GUID name: no MSYS-only link, no native layer")
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        other, wt, bare = self.other_repositories()
+        free = self.root / "installed" / "node_modules"  # outside every repository
+        (free / "pkg").mkdir(parents=True)
+        letter = self.subst_drive(other / "node_modules")
+        if letter is None:
+            self.skipTest("no free drive letter for subst")
+        self.assertTrue(Path(f"{letter}:{BS}pkg").is_dir())
+        links = self.root / "L"
+        links.mkdir()
+        for name, to in (("g", other / "node_modules"), ("g-free", free)):
+            (links / name).symlink_to(volume_spelling(to), target_is_directory=True)
+            self.assertFalse(bash_sees_link(links / name, self.env), f"{name}: Git Bash sees this link")
+        cases = [("sys", shell_spelling(links / "g", self.env)),  # a sys symlink to a GUID link into a work tree
+                 ("lnk", shell_spelling(links / "g", self.env)),  # a shortcut symlink to it
+                 ("sys", f"/{letter.lower()}/pkg"),  # a sys symlink to a subst drive mapped into a work tree
+                 ("lnk", f"/{letter.lower()}/pkg")]  # a shortcut symlink to it
+        both = (("--pack", str(pack)), ())
+        for i, (mode, to) in enumerate(cases):
+            deps = self.root / f"deps-msys-{i}"
+            (deps / "plain").mkdir(parents=True)
+            msys_link(deps / "s", to, mode, self.env)
+            self.assertTrue(bash_sees_link(deps / "s", self.env), f"{mode} {to}: Git Bash does not see the link")
+            self.assertFalse(any(native_entries(deps).values()), f"{mode} {to}: Windows sees a link: {native_entries(deps)}")
+            for flags in both:
+                self.assert_link_refused(c, deps, "other; a dependency tree inside a repository", *flags, native=True)
+        # controls: the same links to a directory outside every repository are accepted, and the checkout is made
+        letter_free = self.subst_drive(free)
+        controls = [("sys", shell_spelling(links / "g-free", self.env)), ("lnk", shell_spelling(links / "g-free", self.env)),
+                    ("sys", shell_spelling(free, self.env)), *([("sys", f"/{letter_free.lower()}/pkg")] if letter_free else [])]
+        for i, (mode, to) in enumerate(controls):
+            deps = self.root / f"deps-msys-ok-{i}"
+            (deps / "plain").mkdir(parents=True)
+            msys_link(deps / "s", to, mode, self.env)
+            for j, flags in enumerate(both):
+                target = self.root / f"out-{i}-{j}" / "cand"
+                p = checkout(c["repo"], c["base"], target, native_links(self.env), *flags, "--link", f"node_modules={deps}")
+                self.assertEqual(p.returncode, 0, f"{mode} {to} {flags}: {p.stdout}{p.stderr}")
+                self.assertEqual(sh(["git", "rev-list", "--all", "--count"], target, self.env).stdout.strip(), "1")
+
+    def test_historyless_checkout_resets_the_shell_options_its_loops_depend_on(self):
+        # LC5-2: bash takes SHELLOPTS and BASHOPTS from the environment. With noglob the loop over DIR's top saw only the
+        # literal patterns, so no entry was checked; with failglob the script died on the first unmatched pattern. The
+        # script now sets the globbing options it relies on itself
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        other, wt, bare = self.other_repositories()
+        deps = self.root / "deps-opts"  # a link only the shell checks (on Windows a sys symlink; elsewhere any symlink)
+        (deps / "plain").mkdir(parents=True)
+        msys_link(deps / "s", shell_spelling(other / "node_modules", self.env), "sys", self.env)
+        self.assertTrue(bash_sees_link(deps / "s", self.env))
+        clean = self.root / "deps-clean"
+        (clean / "plain").mkdir(parents=True)
+        for extra in ({"SHELLOPTS": "noglob"}, {"SHELLOPTS": "braceexpand:noglob"}, {"BASHOPTS": "failglob"}, {"BASHOPTS": "nullglob"},
+                      {"SHELLOPTS": "noglob", "BASHOPTS": "failglob:nullglob"}):
+            env = {**native_links(self.env), **extra}
+            for flags in (("--pack", str(pack)), ()):
+                self.assert_link_refused(c, deps, "other; a dependency tree inside a repository", *flags, env=env)
+            target = self.root / f"out-{len(list(self.root.glob('out-*')))}" / "cand"  # a clean DIR is accepted under each
+            p = checkout(c["repo"], c["base"], target, env, "--pack", str(pack), "--link", f"node_modules={clean}")
+            self.assertEqual(p.returncode, 0, f"{extra}: {p.stdout}{p.stderr}")
+
+    @NEEDS_PY_LINKS
+    def test_historyless_checkout_makes_each_link_inside_the_checkout_outside_its_git_directory(self):
+        # LC5-3: NAME's spelling was checked, but not where the link lands. A base tree may track a symlink (mode 120000)
+        # that a host with core.symlinks=true checks out as a link: with g -> .git, --link g/hooks=DIR put a host directory
+        # among the checkout's hooks, which a candidate's commit runs. Each link's real parent must now lie inside the
+        # checkout and outside its .git, in both layers, and NAME must not exist yet (ln -s would put the link inside an
+        # existing directory, or where a symlink leads); a refusal removes what was made, and never through a link
+        import os
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        repo = c["repo"]
+        far = self.root / "far"  # a host directory outside every repository: nothing may be written in it, or deleted
+        far.mkdir()
+        (far / "keep").write_text("keep\n")
+        g = lambda *a: sh(["git", *a], repo, self.env).stdout.strip()
+        blob = lambda text: subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=repo, env=self.env, input=text,
+                                           capture_output=True, text=True, timeout=60, check=True).stdout.strip()
+        tracked = [("g", ".git")]  # a tracked symlink to the checkout's own git directory
+        guid = volume_spelling(far)
+        if guid is not None:  # and tracked directory symlinks to volume-GUID paths, which Git Bash takes for directories:
+            # v to the host directory far, w to .git/refs in the checkout a refused run makes (assert_link_refused's target:
+            # each refusal removes it, so it is always refused-0/cand). Not .git itself: the shell's -ef sees through a
+            # link to it. git stores a symlink's target with '/'
+            tracked += [("v", guid.replace(BS, "/")), ("w", volume_spelling(self.root / "refused-0" / "cand" / ".git" / "refs").replace(BS, "/"))]
+            (repo / ".gitattributes").write_text("v symlink=dir\nw symlink=dir\n")
+            g("add", ".gitattributes")
+        for path, to in tracked:
+            g("update-index", "--add", "--cacheinfo", f"120000,{blob(to)},{path}")
+        g("commit", "-q", "-m", "tracked symlinks")
+        c2 = {**c, "base": g("rev-parse", "HEAD")}
+        cfg = self.root / "gitconfig-symlinks"
+        cfg.write_text((self.root / "gitconfig").read_text() + "[core]\n\tsymlinks = true\n")
+        env = dict(native_links(self.env), GIT_CONFIG_GLOBAL=str(cfg))
+        hooks = self.root / "installed" / "hooks"
+        hooks.mkdir(parents=True)
+        lib = self.root / "installed" / "lib"
+        lib.mkdir()
+        before = {d: sorted(os.listdir(d)) for d in (far, hooks, lib)}
+        shell_cases = [("g/hooks", hooks, (), "is inside the checkout's git directory"),  # through the tracked link
+                       ("g", hooks, (), "the checkout already holds g"),  # ln -s would follow g into .git
+                       ("src", hooks, (), "the checkout already holds src"),  # ln -s would put the link inside src/
+                       ("a/b", hooks, ("--link", f"a={lib}"), "is not inside the checkout"),  # in the host's directory lib
+                       ("a", hooks, ("--link", f"a={lib}"), "the checkout already holds a")]  # likewise, through link a
+        for name, d, extra, reason in shell_cases:
+            for flags in (("--pack", str(pack), *extra), extra):
+                self.assert_link_refused(c2, d, reason, *flags, name=name, env=env)
+        if guid is not None:  # Git Bash takes v and w for directories inside the checkout; native programs follow them
+            for flags in (("--pack", str(pack)), ()):
+                self.assert_link_refused(c2, hooks, "is not inside the checkout", *flags, name="v/x", env=env, native=True)  # to far
+                self.assert_link_refused(c2, hooks, "is inside the checkout's git directory", *flags, name="w/hooks", env=env, native=True)
+        self.assertEqual({d: sorted(os.listdir(d)) for d in (far, hooks, lib)}, before, "a refused link was made in a host directory, "
+                         "or the removal of the refused checkout deleted files through a link")
+        # controls: with the tracked links checked out, a link beside them is made, and its parent is the checkout
+        target = self.root / "accepted" / "cand"
+        p = checkout(c2["repo"], c2["base"], target, env, "--pack", str(pack), "--link", f"node_modules={lib}", "--link", f"src/vendor={hooks}")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertTrue((target / "g").is_symlink())
+        self.assertEqual((target / "src" / "vendor").resolve(), hooks.resolve())
+        # the links are hidden from git status (Git for Windows reads the targets of v and w back without their prefix, so
+        # it shows them as modified; that is git's own round trip, not a link)
+        status = sh(["git", "status", "--porcelain"], target, self.env).stdout.splitlines()
+        self.assertEqual([line for line in status if line not in (" M v", " M w")], [])
 
     def test_historyless_checkout_refuses_an_existing_target_and_one_inside_the_pack(self):
         pack, c = make_pack(self.root, self.env)
