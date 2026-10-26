@@ -60,7 +60,7 @@ endpoint, the gateway's wire behavior, or any model.
 
 | Check | Result |
 |---|---|
-| `python tools/test_offline_deepseek_adapter.py` | 39 tests, OK. Scripted `MockTransport` only; every usage number is a synthetic fixture. |
+| `python tools/test_offline_deepseek_adapter.py` | 39 tests, OK. Scripted `MockTransport` only; every usage number is a synthetic fixture. (41 after the 2026-10-26 review fixes, which pin the cost bound's value.) |
 | `python tools/offline_deepseek_adapter.py --check self-check` | `offline self-check: 8/8 passed; no network; no live model qualification` |
 | `python tools/offline_deepseek_adapter.py --check profile` | Prints identity, effort `max`, 200,000/32,000, 168,000 reservation, `"qualified": false`, price revision and hash; exit 0. |
 | `python tools/dispatch_adapter.py --check key` | Exit 2: no `ANTHROPIC_API_KEY` found; existing live dispatch refused. This is the old Anthropic-only adapter, not an OpenCode approval. |
@@ -75,11 +75,14 @@ endpoint, the gateway's wire behavior, or any model.
 | `python -m unittest test_calibration_kit.RunTemplate -v` | 11 tests, OK. |
 | New adapter test registered in `tools/run_regression.py` | Added one line after `test_billing_qualification`; the kit's gate-order test still passes. |
 
-The two launch-refusal checks were run sequentially; they both write the same prep-root\n`filled-run.mjs`, so running them in parallel would race on that file. Each reported `calls: 0`.\n\nThe mock covers: request mapping pinned to the profile (model, max_tokens, `reasoning_effort: max`,
+The two launch-refusal checks were run sequentially; they both write the same prep-root
+`filled-run.mjs`, so running them in parallel would race on that file. Each reported `calls: 0`.
+
+The mock covers: request mapping pinned to the profile (model, max_tokens, `reasoning_effort: max`,
 thinking enabled, no key), tools and `tool_choice: auto`, required/named tool choice refusal, tool
 history requiring `reasoning_content`, JSON Output conditions and `json_schema` refusal, empty/truncated
 JSON refusal with preserved usage, missing usage refusal, inconsistent usage refusal, over-ceiling usage
-refusal, partial `finish_reason` failure with preserved usage and cost bound, transport exception with no
+refusal, partial `finish_reason` failure with preserved usage and cost bound, the exact value of the cost bound (including a cached rate above the input rate), transport exception with no
 retry, no scripted response refusal, non-mock transport refusal, response model identity, wrong choice
 shape, invalid tool-call arguments, price/hash tamper, CRLF-insensitive price hashing, qualified-profile refusal, spend-authorization
 refusal, zero conservative bound refusal, and no network client import.
@@ -105,12 +108,17 @@ qualification-table discovery cannot mistake it for a run. Its protocol is in
 `docs/evidence/2026-10-21/deepseek-v4.1-flash-free-max/protocol.json`; it is prepared but **not
 frozen**.
 
-## Current default gates: exact status
+## Default gates: clean checkout and the author's checkout
 
-The default evidence check and qualification table do **not** currently pass. The cause is an existing
-untracked folder, `docs/evidence/2026-10-21/nemotron3-free-calibration-1`, which contains a protocol and
-`BLOCKED.md` but no `scores.json`, `observations.json` or `adjudication.json`. It also has `run_id: null`.
-It is not part of this DeepSeek work and was not modified.
+On a clean checkout of this branch both default gates pass:
+`python tools/check_calibration_evidence.py` reports 3 folder(s), 0 failure(s), 14 limitation(s) and
+exits 0, and `python tools/qualification_table.py --check` reports that
+`docs/evidence/qualification-table.md` is the generated table.
+
+The results below were observed on the author's checkout, not on the repository. That checkout also
+held an untracked folder, `docs/evidence/2026-10-21/nemotron3-free-calibration-1`, which is not in the
+repository. It contained a protocol and `BLOCKED.md` but no `scores.json`, `observations.json` or
+`adjudication.json`, and had `run_id: null`. It is not part of this DeepSeek work and was not modified.
 
 ```text
 python tools/check_calibration_evidence.py
@@ -121,18 +129,19 @@ FAIL docs/evidence/2026-10-21/nemotron3-free-calibration-1 protocol-frozen: run_
 check_calibration_evidence: 4 folder(s), 4 failure(s), 15 limitation(s)
 ```
 
-Consequences:
+Consequences on the author's checkout only:
 
-- `python tools/qualification_table.py --check` refuses for the same four failures and writes nothing.
+- `python tools/qualification_table.py --check` refused for the same four failures and wrote nothing.
 - `python tools/check_calibration_evidence.py` with only the three original folders → 3 folder(s),
   0 failure(s), 14 limitation(s), exit 0. The original evidence check still passes for its original
-  folders; only default discovery is broken by the extra `nemotron3-free-calibration-1` folder.
+  folders; only default discovery was broken, by the extra untracked `nemotron3-free-calibration-1`
+  folder.
 - `python tools/qualification_table.py --check docs/evidence/2026-10-17/claude-code-calibration
   docs/evidence/2026-10-17/claude-code-calibration-2
   docs/evidence/2026-10-18/claude-code-calibration-3` → `docs/evidence/qualification-table.md is the
   generated table`, exit 0. The three previously valid folders and the committed table are unaffected.
 - `python tools/test_qualification_table.py` → 20 tests, 3 failures, 17 OK. The three failures all
-  invoke the default discovery and hit the same `nemotron3-free-calibration-1` folder.
+  invoked the default discovery and hit the same untracked `nemotron3-free-calibration-1` folder.
 - `python tools/test_check_calibration_evidence.py` was **not completed** on this host (killed after
   300 s). Two failures were observed before the timeout: default discovery expects exactly the three
   historical folders and now sees the fourth; and the committed-evidence fixtures differ from a
@@ -191,7 +200,8 @@ Repository:
 
 - `tools/offline_deepseek_adapter.py` — offline profile loader, fail-closed mock transport contract,
   request/response checks, price bound arithmetic, `--check profile|live|self-check`.
-- `tools/test_offline_deepseek_adapter.py` — 39 hermetic tests, no network.
+- `tools/test_offline_deepseek_adapter.py` — 41 hermetic tests, no network (39 at preparation; the
+  2026-10-26 review fixes added two that pin the cost bound's value).
 - `tools/profiles/deepseek-v4.1-flash-free-max.json` — the target profile and documented ambiguities.
 - `tools/prices-deepseek-v4.1-flash-free-max.json` — target list price `$0.00` plus the metered-sibling
   conservative bound and an explicit `spend_authorization.authorized: false`.
@@ -203,19 +213,20 @@ Repository:
 - `docs/evidence/2026-10-21/profile-unresolved-prep-blocked.md` — marked superseded; retained for
   history.
 
-Outside the repository (not committed):
+Outside the repository (not committed), under a preparation directory written here as `<prep-root>`:
 
-- `C:\Users\PC\Desktop\gittoken\holdshort-prep-20261021\pack\` — the built shared pack and its `repo`.
-- `C:\Users\PC\Desktop\gittoken\holdshort-prep-20261021\checkouts\` — the four history-less checkouts.
-- `C:\Users\PC\Desktop\gittoken\holdshort-prep-20261021\bin\python3.exe` — host shim for the pack's
+- `<prep-root>\pack\` — the built shared pack and its `repo`.
+- `<prep-root>\checkouts\` — the four history-less checkouts.
+- `<prep-root>\bin\python3.exe` — host shim for the pack's
   `python3` command, because this Windows host's `python3` alias is not executable from Git Bash.
-- `C:\Users\PC\Desktop\gittoken\holdshort-prep-20261021\filled-run.mjs` — the last test copy used to
+- `<prep-root>\filled-run.mjs` — the last test copy used to
   demonstrate launch refusal. It is **not** evidence and is not a launchable run.
 
-Pre-existing untracked work that was **not** modified: `checkouts/`, `pack-repo/`,
-`tools/nemotron3_adapter.py`, `docs/evidence/2026-10-21/nemotron3-*`. In particular,
-`nemotron3-free-calibration-1` is the reason the default evidence check and qualification table
-currently fail.
+Pre-existing untracked work on the author's checkout that was **not** modified and is not in the
+repository: `checkouts/`, `pack-repo/`, `tools/nemotron3_adapter.py`,
+`docs/evidence/2026-10-21/nemotron3-*`. In particular, the untracked `nemotron3-free-calibration-1`
+folder is why the default evidence check and qualification table failed on that checkout; on a clean
+checkout they pass.
 
 ## What would unblock a future run
 
@@ -234,7 +245,7 @@ currently fail.
 ## Bottom line
 
 The target profile and price bound are prepared from official vendor documentation. The mock adapter
-and its 39 tests pass, the pack and four history-less checkouts are built, and both launch-refusal
+and its tests pass (41 since the 2026-10-26 review fixes), the pack and four history-less checkouts are built, and both launch-refusal
 paths were exercised with `calls: 0`. The protocol is intentionally unfrozen, the target is unqualified,
-and the default evidence/qualification gates currently fail because of an unrelated pre-existing
-Nemotron calibration folder. **No model was qualified in this work.**
+and the default evidence/qualification gates pass on a clean checkout (on the author's checkout they
+failed only because of an unrelated untracked Nemotron calibration folder). **No model was qualified in this work.**

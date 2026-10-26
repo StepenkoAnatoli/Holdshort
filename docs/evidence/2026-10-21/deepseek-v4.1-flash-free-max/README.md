@@ -11,8 +11,9 @@ completed calibration evidence folder and must not be added to the qualification
   produced.
 - The folder name deliberately does not match the evidence checker's calibration-folder discovery
   (`*-calibration-*`), so it cannot be mistaken for a run. It does not affect the default
-  `qualification_table.py --check`; that default currently fails for an unrelated pre-existing
-  `nemotron3-free-calibration-1` folder (see the prep note).
+  `qualification_table.py --check`, which passes on a clean checkout. (On the author's checkout it
+  failed for an unrelated untracked `nemotron3-free-calibration-1` folder that is not in the
+  repository; see the prep note.)
 - The shared pack's `manifest.json` hash is `0840bd6eac9baa6bf9e6b552949ddd7c5e3758a8102a28d5b5890f5a8573c565`
   under the protocol's CRLF-normalized convention.
 - The target profile is in `tools/profiles/deepseek-v4.1-flash-free-max.json`; its conservative

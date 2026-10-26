@@ -92,7 +92,7 @@
         "output": 1.2
       }
     },
-    "statement": "estimate-only: the target's vendor list price is $0.00 per MTok (not measured cost); the table applies the metered sibling's $0.30 input / $1.20 output per MTok as a conservative bound. Cache pricing is not modelled; unknown tokens null; not a bill."
+    "statement": "estimate-only: the target's vendor list price is $0.00 per MTok (not measured cost); the table applies the metered sibling's $0.30 input / $1.20 output per MTok as a conservative bound. Cache pricing is not modelled as a discount: every prompt token, cached or not, is bounded at the higher of the input ($0.30) and cached ($0.006) rates; unknown tokens null; not a bill."
   },
   "timing": "not observed: no run was launched; no harness run file exists",
   "privacy": "shared synthetic subject pack only; no host code; no credentials; candidate checkouts and the pack stay outside the evidence folder; no provider call",
