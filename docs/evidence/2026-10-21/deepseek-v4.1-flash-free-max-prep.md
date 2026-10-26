@@ -60,7 +60,7 @@ endpoint, the gateway's wire behavior, or any model.
 
 | Check | Result |
 |---|---|
-| `python tools/test_offline_deepseek_adapter.py` | 39 tests, OK. Scripted `MockTransport` only; every usage number is a synthetic fixture. (41 after the 2026-10-26 review fixes, which pin the cost bound's value.) |
+| `python tools/test_offline_deepseek_adapter.py` | 39 tests, OK. Scripted `MockTransport` only; every usage number is a synthetic fixture. (42 after the 2026-10-26 review fixes, which pin the cost bound's value and the output ceiling.) |
 | `python tools/offline_deepseek_adapter.py --check self-check` | `offline self-check: 8/8 passed; no network; no live model qualification` |
 | `python tools/offline_deepseek_adapter.py --check profile` | Prints identity, effort `max`, 200,000/32,000, 168,000 reservation, `"qualified": false`, price revision and hash; exit 0. |
 | `python tools/dispatch_adapter.py --check key` | Exit 2: no `ANTHROPIC_API_KEY` found; existing live dispatch refused. This is the old Anthropic-only adapter, not an OpenCode approval. |
@@ -82,7 +82,7 @@ The mock covers: request mapping pinned to the profile (model, max_tokens, `reas
 thinking enabled, no key), tools and `tool_choice: auto`, required/named tool choice refusal, tool
 history requiring `reasoning_content`, JSON Output conditions and `json_schema` refusal, empty/truncated
 JSON refusal with preserved usage, missing usage refusal, inconsistent usage refusal, over-ceiling usage
-refusal, partial `finish_reason` failure with preserved usage and cost bound, the exact value of the cost bound (including a cached rate above the input rate), transport exception with no
+refusal, partial `finish_reason` failure with preserved usage and cost bound, the exact value of the cost bound on answers and on billed refusals (including a cached rate above the input rate and both ceilings exactly), the 32,000 cap on the requested output, transport exception with no
 retry, no scripted response refusal, non-mock transport refusal, response model identity, wrong choice
 shape, invalid tool-call arguments, price/hash tamper, CRLF-insensitive price hashing, qualified-profile refusal, spend-authorization
 refusal, zero conservative bound refusal, and no network client import.
@@ -200,8 +200,8 @@ Repository:
 
 - `tools/offline_deepseek_adapter.py` — offline profile loader, fail-closed mock transport contract,
   request/response checks, price bound arithmetic, `--check profile|live|self-check`.
-- `tools/test_offline_deepseek_adapter.py` — 41 hermetic tests, no network (39 at preparation; the
-  2026-10-26 review fixes added two that pin the cost bound's value).
+- `tools/test_offline_deepseek_adapter.py` — 42 hermetic tests, no network (39 at preparation; the
+  2026-10-26 review fixes added three that pin the cost bound's value and the output ceiling).
 - `tools/profiles/deepseek-v4.1-flash-free-max.json` — the target profile and documented ambiguities.
 - `tools/prices-deepseek-v4.1-flash-free-max.json` — target list price `$0.00` plus the metered-sibling
   conservative bound and an explicit `spend_authorization.authorized: false`.
@@ -245,7 +245,7 @@ checkout they pass.
 ## Bottom line
 
 The target profile and price bound are prepared from official vendor documentation. The mock adapter
-and its tests pass (41 since the 2026-10-26 review fixes), the pack and four history-less checkouts are built, and both launch-refusal
+and its tests pass (42 since the 2026-10-26 review fixes), the pack and four history-less checkouts are built, and both launch-refusal
 paths were exercised with `calls: 0`. The protocol is intentionally unfrozen, the target is unqualified,
 and the default evidence/qualification gates pass on a clean checkout (on the author's checkout they
 failed only because of an unrelated untracked Nemotron calibration folder). **No model was qualified in this work.**

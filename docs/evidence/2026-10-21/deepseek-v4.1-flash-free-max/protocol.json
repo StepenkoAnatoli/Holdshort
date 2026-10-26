@@ -68,8 +68,8 @@
     "tools/calibration/subject-pack/shared/manifest.json": "0840bd6eac9baa6bf9e6b552949ddd7c5e3758a8102a28d5b5890f5a8573c565",
     "tools/calibration/subject-pack/shared/make-repo.sh": "df8574e32f0d15d2153cdb4acbde1f5454b37331d230c61abab137b55e9d299a",
     "tools/offline_deepseek_adapter.py": "4efae66efa4fa436892bb507084d47f56d7013b442c151c12bcc1a886007a7cd",
-    "tools/profiles/deepseek-v4.1-flash-free-max.json": "b345186eefe2249f12664205aa8b496f2923cde95fe723815853f101fe20cba6",
-    "tools/prices-deepseek-v4.1-flash-free-max.json": "615fde66287d2d871ebe5d50412cb5cd5fc647e83a9d0118ed247a83b59374de"
+    "tools/profiles/deepseek-v4.1-flash-free-max.json": "57307c40928f1e745755f2440fbb4198d210b2d949f05316e82c94dd0d292436",
+    "tools/prices-deepseek-v4.1-flash-free-max.json": "c1d18a204b7674ccdf139dfcb34f4eae60b429fd77c46a0bffdfa9f64c4d9aeb"
   },
   "sources_missing": {
     "run.js": "not built: the kit's only workflow template is Claude Code-specific and no OpenCode calibration harness exists in this repository; a live launch is blocked"

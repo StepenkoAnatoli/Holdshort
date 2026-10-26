@@ -35,7 +35,7 @@
     "source_values": "context = 200_000; output = 32_000 (values from the linked TOML, not a verbatim quote)"
   },
   "price_file": "prices-deepseek-v4.1-flash-free-max.json",
-  "price_sha256": "615fde66287d2d871ebe5d50412cb5cd5fc647e83a9d0118ed247a83b59374de",
+  "price_sha256": "c1d18a204b7674ccdf139dfcb34f4eae60b429fd77c46a0bffdfa9f64c4d9aeb",
   "capabilities": {
     "reasoning": true,
     "tools": true,
