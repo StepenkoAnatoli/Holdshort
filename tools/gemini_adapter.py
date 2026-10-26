@@ -9,8 +9,10 @@ egress. It does three things and nothing else:
   1. maps a provider-neutral request to Gemini's `generateContent` body, refusing
      every setting the mapping does not model instead of silently dropping it;
   2. maps the response back to billable usage, keeping usage null when the
-     provider exposes no counter and never double-counting the cached-prompt and
-     thinking subsets (issue #59 acceptance);
+     provider exposes no counter, never double-counting the cached-prompt subset
+     (already inside promptTokenCount) and never dropping the thinking tokens
+     (separate from candidatesTokenCount, billed as output) (issue #59 acceptance);
+     a refusal raised after a billed response carries its counts;
   3. freezes the trial plan over the *same* subject pack and oracle as the
      comparison cohort, so a later run is comparable rather than a new task set.
 
@@ -45,8 +47,13 @@ COHORT = "shared-bounded-reader"
 KNOWN_ENDPOINTS = ("https://generativelanguage.googleapis.com",)
 
 SUPPORTED_SETTINGS = frozenset({"response_schema", "system_instruction", "temperature"})
-USAGE_FIELDS = frozenset({"promptTokenCount", "candidatesTokenCount", "totalTokenCount",
-                          "cachedContentTokenCount", "thoughtsTokenCount"})
+USAGE_COUNTERS = ("promptTokenCount", "candidatesTokenCount", "totalTokenCount",
+                  "cachedContentTokenCount", "thoughtsTokenCount")
+# Per-modality breakdowns (ModalityTokenCount lists) of the counter each one names.
+USAGE_DETAILS = {"promptTokensDetails": "promptTokenCount",
+                 "cacheTokensDetails": "cachedContentTokenCount",
+                 "candidatesTokensDetails": "candidatesTokenCount"}
+USAGE_FIELDS = frozenset(USAGE_COUNTERS) | frozenset(USAGE_DETAILS)
 MAX_OUTPUT_TOKENS_DEFAULT = 4096
 
 HARNESS = {
@@ -61,10 +68,19 @@ HARNESS = {
 
 
 class GeminiRefused(RuntimeError):
-    """Fail-closed refusal: the caller must not substitute a model or a route."""
+    """Fail-closed refusal: the caller must not substitute a model or a route.
 
-    #: token counts parsed for a refused-but-billed response; never a zero fill
-    usage = (None, None)
+    A refusal raised after a billed response carries that response's counts as
+    `input_tokens` / `output_tokens`: the attributes `live_dispatcher` reads from any
+    failed send (its `DispatchFailure` contract). They stay None, never 0, when the
+    charge is unknown; only the output is None when the prompt count is still known.
+    A refusal before anything is sent carries a known zero for both.
+    """
+
+    def __init__(self, message, *, input_tokens=None, output_tokens=None):
+        super().__init__(message)
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
 
 
 class GeminiResult(NamedTuple):
@@ -90,7 +106,9 @@ class MockTransport:
     def __call__(self, mapped, model):
         self.calls.append((mapped, model))
         if not self._queue:
-            raise GeminiRefused("mock transport has no queued response")
+            # nothing is sent, so the charge is a known zero
+            raise GeminiRefused("mock transport has no queued response", input_tokens=0,
+                                output_tokens=0)
         return self._queue.pop(0)
 
 
@@ -234,62 +252,150 @@ def parse_response(document, *, model: str, max_output_tokens: int) -> GeminiRes
     _positive_int(max_output_tokens, "max_output_tokens")
     if not isinstance(document, dict):
         raise GeminiRefused("provider response is not an object")
+    identified = document.get("modelVersion") == model
     feedback = document.get("promptFeedback")
     if isinstance(feedback, dict) and feedback.get("blockReason") is not None:
-        raise GeminiRefused("provider blocked the prompt; nothing was answered")
-    if document.get("modelVersion") != model:
-        # a different model is a different comparison, never a fallback
+        # A blocked prompt returns no candidates, and whether it names its model is
+        # undocumented, so the block is reported first. Its counts are carried only
+        # when they are this model's and known.
+        counts = (None, None)
+        if identified:
+            try:
+                counts = _billable_usage(document.get("usageMetadata"))
+            except GeminiRefused:
+                pass  # the block is the reason; an unknown charge carries no counts
+        raise GeminiRefused("provider blocked the prompt; nothing was answered",
+                            input_tokens=counts[0], output_tokens=counts[1])
+    if not identified:
+        # a different model is a different comparison, never a fallback; its counts
+        # are not this profile's spend, so they are not carried either
         raise GeminiRefused("provider model identity does not match the qualified model")
+    usage = document.get("usageMetadata")
+    input_tokens, output_tokens = _billable_usage(usage)
+    # validated above, so an omitted candidate count is a proven zero
+    candidate_tokens = usage.get("candidatesTokenCount", 0) if usage is not None else None
 
+    def refuse(reason: str) -> GeminiRefused:
+        # every refusal from here on follows a billed response with known counts
+        return GeminiRefused(reason, input_tokens=input_tokens, output_tokens=output_tokens)
+
+    if output_tokens is not None and output_tokens > max_output_tokens:
+        raise refuse("provider output exceeds the declared ceiling; usage is outside the "
+                     "qualified configuration")
     candidates = document.get("candidates")
     if not isinstance(candidates, list) or len(candidates) != 1:
-        raise GeminiRefused("exactly one candidate is part of the qualified configuration")
+        raise refuse("exactly one candidate is part of the qualified configuration")
     candidate = candidates[0]
     if not isinstance(candidate, dict):
-        raise GeminiRefused("provider candidate is not an object")
+        raise refuse("provider candidate is not an object")
     finish_reason = candidate.get("finishReason")
     if not isinstance(finish_reason, str) or not finish_reason:
-        raise GeminiRefused("provider candidate has no finishReason")
+        raise refuse("provider candidate has no finishReason")
     content = candidate.get("content")
     parts = content.get("parts") if isinstance(content, dict) else None
-    if (not isinstance(parts, list) or not parts
-            or any(not isinstance(part, dict) or not isinstance(part.get("text"), str)
-                   for part in parts)):
-        raise GeminiRefused("provider candidate has no text parts")
-    text = "".join(part["text"] for part in parts)
+    texts = [_part_text(part) for part in parts] if isinstance(parts, list) else []
+    if candidate_tokens == 0 and any(isinstance(text, str) and text for text in texts):
+        # Text is not generated in zero tokens: a usage block that reports none for an
+        # answer under-reports it. The output charge is unknown (None, never 0); the
+        # prompt count stays known, and the dispatcher keeps it as a cost floor.
+        raise GeminiRefused("provider reports no candidate tokens for generated text; output "
+                            "usage is unknown", input_tokens=input_tokens, output_tokens=None)
+    if not texts or any(not isinstance(text, str) for text in texts):
+        if finish_reason == "STOP":
+            raise refuse("provider candidate has no text parts")
+        # A void finish (MAX_TOKENS after thinking spent the budget, SAFETY) can carry
+        # no text at all. The cell is void either way; its billed usage must survive.
+        return GeminiResult("", input_tokens, output_tokens, finish_reason)
+    text = "".join(texts)
+    if finish_reason == "STOP" and not text.strip():
+        # a STOP candidate can hold a single empty part: nothing was answered
+        raise refuse("provider candidate has only empty text")
+    return GeminiResult(text, input_tokens, output_tokens, finish_reason)
 
-    usage = document.get("usageMetadata")
+
+def _part_text(part):
+    """The text a response part adds, or None when it holds another payload.
+
+    A part holding only a thoughtSignature carries no answer, so it adds no text.
+    Whether the API sends one outside streaming is unverified; a part with any other
+    payload (functionCall, inlineData, ...) still refuses.
+    """
+    if not isinstance(part, dict):
+        return None
+    if set(part) == {"thoughtSignature"} and isinstance(part["thoughtSignature"], str):
+        return ""
+    return part.get("text")
+
+
+def _billable_usage(usage):
+    """(input, output) as the dispatcher prices them, or (None, None) when absent.
+
+    Refuses, carrying no counts, whenever the charge is unknown.
+    """
     if usage is None:
-        return GeminiResult(text, None, None, finish_reason)
+        return None, None
     if not isinstance(usage, dict):
         raise GeminiRefused("provider usageMetadata is not an object")
     unmodeled = sorted(set(usage) - USAGE_FIELDS)
     if unmodeled:
         raise GeminiRefused(f"unmodeled provider usage fields {unmodeled}; total charge is unknown")
-    prompt, candidates_tokens = usage.get("promptTokenCount"), usage.get("candidatesTokenCount")
-    for value, what in ((prompt, "promptTokenCount"), (candidates_tokens, "candidatesTokenCount")):
+    # The API omits a zero counter ("an implicit presence integer with a 0 value",
+    # protobuf.dev/programming-guides/json/), so an absent counter reads as 0. That zero
+    # is never trusted for the prompt, and for the candidates only when the reported
+    # total proves it (googleapis/python-genai#782: a MAX_TOKENS answer whose thinking
+    # spent the budget has no candidatesTokenCount). Without a total, the omission
+    # could be a zero or a cut-short usage block, so the charge is unknown.
+    counts = {}
+    for name in USAGE_COUNTERS:
+        value = usage.get(name, 0)
         if type(value) is not int or value < 0:
-            raise GeminiRefused(f"provider {what} is missing or invalid; usage is unknown")
-    cached = usage.get("cachedContentTokenCount", 0)
-    thoughts = usage.get("thoughtsTokenCount", 0)
-    for value, what in ((cached, "cachedContentTokenCount"), (thoughts, "thoughtsTokenCount")):
-        if type(value) is not int or value < 0:
-            raise GeminiRefused(f"provider {what} is invalid; usage is unknown")
+            raise GeminiRefused(f"provider {name} is invalid; usage is unknown")
+        counts[name] = value
+    if "promptTokenCount" not in usage:
+        raise GeminiRefused("provider promptTokenCount is missing; usage is unknown")
+    if "candidatesTokenCount" not in usage and "totalTokenCount" not in usage:
+        raise GeminiRefused("provider candidatesTokenCount is missing and no total proves it "
+                            "zero; usage is unknown")
+    prompt, candidates_tokens = counts["promptTokenCount"], counts["candidatesTokenCount"]
+    cached, thoughts = counts["cachedContentTokenCount"], counts["thoughtsTokenCount"]
     if cached > prompt:
         raise GeminiRefused("cached prompt tokens exceed the prompt total; usage is unknown")
-    if thoughts > candidates_tokens:
-        raise GeminiRefused("thinking tokens exceed the candidate total; usage is unknown")
-    if "totalTokenCount" in usage:
-        total = usage["totalTokenCount"]
-        if type(total) is not int or total != prompt + candidates_tokens:
-            raise GeminiRefused("provider totalTokenCount disagrees with its parts; usage is unknown")
-    # The cached subset is already billed through promptTokenCount and the thinking
-    # subset through candidatesTokenCount: subtract, never add, or they double-count.
-    input_tokens, output_tokens = prompt - cached, candidates_tokens - thoughts
-    if output_tokens > max_output_tokens:
-        raise GeminiRefused("provider output exceeds the declared ceiling; usage is outside the "
-                            "qualified configuration")
-    return GeminiResult(text, input_tokens, output_tokens, finish_reason)
+    for field, counter in USAGE_DETAILS.items():
+        if field in usage and _text_tokens(usage[field], field) != counts[counter]:
+            raise GeminiRefused(f"provider {field} disagrees with {counter}; usage is unknown")
+    # ai.google.dev/api/generate-content (UsageMetadata): promptTokenCount already
+    # includes the cached content, while thoughtsTokenCount is separate from
+    # candidatesTokenCount (totalTokenCount = prompt + tool-use prompt + thoughts +
+    # candidates; the tool-use prompt count is refused above as unmodeled). Output is
+    # billed "including thinking tokens" (ai.google.dev/gemini-api/docs/pricing), so
+    # thoughts are added. Cached tokens stay in the input and are priced at the full
+    # input rate: a conservative upper bound, never a zero, because the dispatcher
+    # has no separate cached rate.
+    if "totalTokenCount" in usage and counts["totalTokenCount"] != prompt + candidates_tokens + thoughts:
+        raise GeminiRefused("provider totalTokenCount disagrees with its parts; usage is unknown")
+    return prompt, candidates_tokens + thoughts
+
+
+def _text_tokens(details, field: str) -> int:
+    """The token sum of a ModalityTokenCount list, refusing any modality but text.
+
+    The request sends only text and the dispatcher prices one input and one output
+    rate, while another modality has its own price (Gemini 2.5 Flash input: $0.30 for
+    text, image or video, $1.00 for audio; ai.google.dev/gemini-api/docs/pricing).
+    """
+    if not isinstance(details, list):
+        raise GeminiRefused(f"provider {field} is not a list; usage is unknown")
+    total = 0
+    for entry in details:
+        if (not isinstance(entry, dict) or not set(entry) <= {"modality", "tokenCount"}
+                or entry.get("modality") != "TEXT"):
+            raise GeminiRefused(f"provider {field} holds more than text tokens; the charge is "
+                                "unknown")
+        count = entry.get("tokenCount", 0)  # a zero count is omitted like a zero counter
+        if type(count) is not int or count < 0:
+            raise GeminiRefused(f"provider {field} holds an invalid token count; usage is unknown")
+        total += count
+    return total
 
 
 def _refuse_count(profile_id: str, request: str) -> int:
@@ -319,7 +425,7 @@ def build_dispatch_fn(*, authorization_path: Path = AUTHORIZATION_PATH,
     snapshot = _authorization_digest(authorization_path)
     profiles = record["profiles"]
 
-    def dispatch_fn(profile_id: str, request: str):
+    def prepare(profile_id: str, request: str):
         if _authorization_digest(authorization_path) != snapshot:
             raise GeminiRefused("authorization record changed; rebuild the adapter")
         profile = profiles.get(profile_id) if isinstance(profile_id, str) else None
@@ -328,15 +434,24 @@ def build_dispatch_fn(*, authorization_path: Path = AUTHORIZATION_PATH,
                                 "refusing instead of substituting a model")
         if max_output_tokens > profile["max_output_tokens"]:
             raise GeminiRefused("output ceiling exceeds the profile's qualified maximum")
-        mapped = to_request(profile["model"], request, max_output_tokens=max_output_tokens)
+        return profile, to_request(profile["model"], request, max_output_tokens=max_output_tokens)
+
+    def dispatch_fn(profile_id: str, request: str):
+        try:
+            profile, mapped = prepare(profile_id, request)
+        except GeminiRefused as err:
+            # Nothing was sent, so the charge is a known zero. None would make the
+            # dispatcher halt the pilot on an unknown with nothing to reconcile.
+            raise GeminiRefused(str(err), input_tokens=0, output_tokens=0) from err
+        # a transport refusal keeps its own counts: a real request may already be out
         document = transport(mapped, profile["model"])
         result = parse_response(document, model=profile["model"],
                                 max_output_tokens=max_output_tokens)
         if result.finish_reason != "STOP":
-            refusal = GeminiRefused(f"provider stopped with finishReason {result.finish_reason!r}; "
-                                    "the cell is void, not a graded answer")
-            refusal.usage = (result.input_tokens, result.output_tokens)
-            raise refusal
+            raise GeminiRefused(f"provider stopped with finishReason {result.finish_reason!r}; "
+                                "the cell is void, not a graded answer",
+                                input_tokens=result.input_tokens,
+                                output_tokens=result.output_tokens)
         return result.input_tokens, result.output_tokens
 
     dispatch_fn.max_tokens = max_output_tokens

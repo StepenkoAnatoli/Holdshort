@@ -8,8 +8,10 @@ provider is contacted. The acceptance list this pins:
     unsupported settings (issue #59 acceptance 1);
   * unknown capability, price, accounting or destination blocks execution
     instead of substituting a model (acceptance 2);
-  * usage stays null when the provider exposes no counter, and the cached-prompt
-    and thinking subsets are never double-counted (acceptance 4);
+  * usage stays null when the provider exposes no counter, the cached-prompt
+    subset is never double-counted and the thinking tokens are never dropped
+    (acceptance 4), and a refusal after a billed response carries its counts on
+    the attributes the dispatcher reads;
   * real egress stays disabled: the checked-in record is unqualified and the
     adapter has no transport of its own (acceptance 5);
   * the frozen trial plan uses the cohort's packet and oracle (acceptance 3).
@@ -19,6 +21,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import shutil
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -28,6 +31,8 @@ REPO = TOOLS.parent
 spec = importlib.util.spec_from_file_location("ga", TOOLS / "gemini_adapter.py")
 ga = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ga)
+sys.path.insert(0, str(TOOLS))
+import live_dispatcher as ld  # noqa: E402  (only for the settlement round trip below)
 
 MODEL = "gemini-3.0-pro-001"
 
@@ -146,14 +151,50 @@ class ResponseMapping(unittest.TestCase):
         self.assertIsNone(result.output_tokens)
         self.assertNotEqual((result.input_tokens, result.output_tokens), (0, 0))
 
-    def test_cached_and_thinking_subsets_are_subtracted_not_added(self):
+    def test_cached_and_thinking_tokens_are_billed_not_zeroed(self):
+        # ai.google.dev/api/generate-content UsageMetadata: promptTokenCount includes
+        # the cached content; totalTokenCount = prompt + tool-use prompt + thoughts +
+        # candidates, so thoughtsTokenCount is separate from candidatesTokenCount.
+        # Pricing bills output "including thinking tokens" and cached tokens at a
+        # nonzero rate. The dispatcher prices (input, output) at the input and output
+        # rates only, so input keeps the cached tokens (an upper bound) and output
+        # adds the thoughts; subtracting either bills real tokens at $0.
         result = ga.parse_response(
             response(usage={"promptTokenCount": 100, "candidatesTokenCount": 40,
-                            "cachedContentTokenCount": 60, "thoughtsTokenCount": 15,
-                            "totalTokenCount": 140}),
+                            "cachedContentTokenCount": 60, "thoughtsTokenCount": 300,
+                            "totalTokenCount": 440}),
+            model=MODEL, max_output_tokens=512)
+        self.assertEqual((result.input_tokens, result.output_tokens), (100, 340))
+        # without a reported total the same rule holds
+        result = ga.parse_response(
+            response(usage={"promptTokenCount": 100, "candidatesTokenCount": 40,
+                            "cachedContentTokenCount": 60, "thoughtsTokenCount": 15}),
             model=MODEL, max_output_tokens=64)
-        # billed prompt = 100 - 60, billed output = 40 - 15: the subsets are inside the totals
-        self.assertEqual((result.input_tokens, result.output_tokens), (40, 25))
+        self.assertEqual((result.input_tokens, result.output_tokens), (100, 55))
+        # the old prompt + candidates total is now a disagreement, not a match
+        with self.assertRaises(ga.GeminiRefused):
+            ga.parse_response(
+                response(usage={"promptTokenCount": 100, "candidatesTokenCount": 40,
+                                "thoughtsTokenCount": 300, "totalTokenCount": 140}),
+                model=MODEL, max_output_tokens=512)
+        # thinking counts against the output ceiling the dispatcher reserved
+        with self.assertRaises(ga.GeminiRefused) as caught:
+            ga.parse_response(
+                response(usage={"promptTokenCount": 1, "candidatesTokenCount": 40,
+                                "thoughtsTokenCount": 30}),
+                model=MODEL, max_output_tokens=64)
+        # ...and that refusal comes after a billed response, so it carries the counts
+        self.assertEqual((caught.exception.input_tokens, caught.exception.output_tokens), (1, 70))
+
+    def test_a_refusal_with_unknown_usage_carries_no_counts(self):
+        # parts that disagree with their total leave the charge unknown: null, never 0,
+        # so the dispatcher keeps the whole reservation instead of settling a guess
+        with self.assertRaises(ga.GeminiRefused) as caught:
+            ga.parse_response(response(usage={"promptTokenCount": 10, "candidatesTokenCount": 5,
+                                              "totalTokenCount": 99}),
+                              model=MODEL, max_output_tokens=64)
+        self.assertEqual((caught.exception.input_tokens, caught.exception.output_tokens),
+                         (None, None))
 
     def test_identity_mismatch_and_blocked_prompt_refuse(self):
         with self.assertRaises(ga.GeminiRefused):
@@ -174,7 +215,7 @@ class ResponseMapping(unittest.TestCase):
         for usage in ({"promptTokenCount": 10, "candidatesTokenCount": 5,
                        "cachedContentTokenCount": 11},
                       {"promptTokenCount": 10, "candidatesTokenCount": 5,
-                       "thoughtsTokenCount": 6},
+                       "thoughtsTokenCount": 6, "totalTokenCount": 15},
                       {"promptTokenCount": 10, "candidatesTokenCount": 5,
                        "totalTokenCount": 99},
                       {"promptTokenCount": 10, "candidatesTokenCount": 5,
@@ -191,10 +232,188 @@ class ResponseMapping(unittest.TestCase):
                               model=MODEL, max_output_tokens=64)
 
     def test_output_over_the_declared_ceiling_refuses(self):
-        with self.assertRaises(ga.GeminiRefused):
+        with self.assertRaises(ga.GeminiRefused) as caught:
             ga.parse_response(response(usage={"promptTokenCount": 1,
                                               "candidatesTokenCount": 65}),
                               model=MODEL, max_output_tokens=64)
+        self.assertEqual((caught.exception.input_tokens, caught.exception.output_tokens), (1, 65))
+
+    def test_refusals_after_a_billed_response_carry_its_counts(self):
+        usage = {"promptTokenCount": 7, "candidatesTokenCount": 3}
+        stop_without_text = response(usage=usage)
+        stop_without_text["candidates"][0]["content"] = {"role": "model"}
+        two_candidates = response(usage=usage)
+        two_candidates["candidates"].append(two_candidates["candidates"][0])
+        blocked = response(usage=usage)
+        blocked["promptFeedback"] = {"blockReason": "SAFETY"}
+        for name, document in (("no text", stop_without_text), ("two candidates", two_candidates),
+                               ("blocked", blocked)):
+            with self.subTest(name):
+                with self.assertRaises(ga.GeminiRefused) as caught:
+                    ga.parse_response(document, model=MODEL, max_output_tokens=64)
+                self.assertEqual((caught.exception.input_tokens, caught.exception.output_tokens),
+                                 (7, 3))
+        # a different model's counts are not this profile's spend: unknown, not borrowed
+        with self.assertRaises(ga.GeminiRefused) as caught:
+            ga.parse_response(response(usage=usage, version="gemini-other"), model=MODEL,
+                              max_output_tokens=64)
+        self.assertEqual((caught.exception.input_tokens, caught.exception.output_tokens),
+                         (None, None))
+
+    def test_the_usage_shape_the_api_sends_is_billed(self):
+        # The API omits zero counters (proto3 JSON mapping) and adds per-modality
+        # details (UsageMetadata, ai.google.dev/api/generate-content). A thinking model
+        # stopped at MAX_TOKENS, from googleapis/python-genai#782: no candidate count,
+        # prompt_token_count=1674, prompt_tokens_details=[TEXT 1674],
+        # thoughts_token_count=2000, total_token_count=3674.
+        void = response(finish="MAX_TOKENS", usage={
+            "promptTokenCount": 1674,
+            "promptTokensDetails": [{"modality": "TEXT", "tokenCount": 1674}],
+            "thoughtsTokenCount": 2000, "totalTokenCount": 3674})
+        void["candidates"][0]["content"] = {"role": "model"}
+        result = ga.parse_response(void, model=MODEL, max_output_tokens=2000)
+        self.assertEqual(result, ga.GeminiResult("", 1674, 2000, "MAX_TOKENS"))
+        for name, usage, text, expected in (
+            ("details on both sides", {
+                "promptTokenCount": 30, "candidatesTokenCount": 12, "totalTokenCount": 42,
+                "promptTokensDetails": [{"modality": "TEXT", "tokenCount": 30}],
+                "candidatesTokensDetails": [{"modality": "TEXT", "tokenCount": 12}]},
+             "answer", (30, 12)),
+            ("a cached prompt", {
+                "promptTokenCount": 100, "cachedContentTokenCount": 60, "candidatesTokenCount": 5,
+                "totalTokenCount": 105,
+                "promptTokensDetails": [{"modality": "TEXT", "tokenCount": 100}],
+                "cacheTokensDetails": [{"modality": "TEXT", "tokenCount": 60}]},
+             "answer", (100, 5)),
+            # a zero detail count is omitted the same way as a zero counter (no text was
+            # generated, so a zero output is consistent)
+            ("a zero detail", {
+                "promptTokenCount": 9, "totalTokenCount": 9,
+                "candidatesTokensDetails": [{"modality": "TEXT"}]}, "", (9, 0)),
+        ):
+            with self.subTest(name):
+                result = ga.parse_response(response(usage=usage, finish="MAX_TOKENS", text=text),
+                                           model=MODEL, max_output_tokens=64)
+                self.assertEqual((result.input_tokens, result.output_tokens), expected)
+
+    def test_usage_details_and_omitted_counters_stay_fail_closed(self):
+        # An omitted counter is a zero only when the reported total proves it. A detail
+        # list must hold text tokens (the only modality the request sends and the
+        # dispatcher prices) that add up to its counter. Anything else leaves the charge
+        # unknown: no counts, so the dispatcher holds the whole reservation.
+        def text(count):
+            return [{"modality": "TEXT", "tokenCount": count}]
+
+        base = {"promptTokenCount": 20, "candidatesTokenCount": 5, "totalTokenCount": 25}
+        for name, usage in (
+            ("no candidate count and no total (js-genai#1769)", {"promptTokenCount": 22649}),
+            ("no candidate count, total disagrees", {"promptTokenCount": 20, "totalTokenCount": 25}),
+            ("prompt details disagree", {**base, "promptTokensDetails": text(19)}),
+            ("cache details disagree", {**base, "cachedContentTokenCount": 10,
+                                        "cacheTokensDetails": text(11)}),
+            ("candidate details disagree", {**base, "candidatesTokensDetails": text(4)}),
+            ("an audio prompt", {**base, "promptTokensDetails": [{"modality": "AUDIO",
+                                                                  "tokenCount": 20}]}),
+            ("an image answer", {**base, "candidatesTokensDetails": [{"modality": "IMAGE",
+                                                                      "tokenCount": 5}]}),
+            ("no modality", {**base, "promptTokensDetails": [{"tokenCount": 20}]}),
+            ("details not a list", {**base, "promptTokensDetails": text(20)[0]}),
+            ("a detail with an extra key", {**base, "promptTokensDetails": [
+                {"modality": "TEXT", "tokenCount": 20, "audio": 1}]}),
+            ("a boolean detail count", {**base, "candidatesTokensDetails": [
+                {"modality": "TEXT", "tokenCount": True}]}),
+            ("a negative detail count", {**base, "promptTokensDetails": text(21) + text(-1)}),
+            ("a tool-use prompt", {**base, "toolUsePromptTokenCount": 3, "totalTokenCount": 28}),
+            ("tool-use details", {**base, "toolUsePromptTokensDetails": text(0)}),
+            ("a service tier", {**base, "serviceTier": "priority"}),
+        ):
+            with self.subTest(name):
+                with self.assertRaises(ga.GeminiRefused) as caught:
+                    ga.parse_response(response(usage=usage, finish="MAX_TOKENS"), model=MODEL,
+                                      max_output_tokens=64)
+                self.assertEqual((caught.exception.input_tokens, caught.exception.output_tokens),
+                                 (None, None))
+
+    def test_a_stop_answer_with_empty_text_is_void(self):
+        # js-genai#1769: a STOP candidate can hold a single empty part. Nothing was
+        # answered, so it is not graded; its tokens were billed, so the refusal carries them
+        for text, usage, counts in (
+            ("", {"promptTokenCount": 20, "candidatesTokenCount": 0, "totalTokenCount": 20},
+             (20, 0)),
+            (" \n\t", {"promptTokenCount": 20, "candidatesTokenCount": 1, "totalTokenCount": 21},
+             (20, 1)),
+        ):
+            with self.subTest(text=text):
+                with self.assertRaises(ga.GeminiRefused) as caught:
+                    ga.parse_response(response(usage=usage, text=text), model=MODEL,
+                                      max_output_tokens=64)
+                self.assertEqual((caught.exception.input_tokens, caught.exception.output_tokens),
+                                 counts)
+
+    def test_text_with_no_candidate_tokens_leaves_the_output_unknown(self):
+        # Text is not generated in zero tokens: a usage block that reports none for an
+        # answer under-reports it. The output charge is then unknown (None, never 0) while
+        # the prompt count stays known, so the dispatcher keeps it as a cost floor.
+        omitted = {"promptTokenCount": 20, "totalTokenCount": 20}
+        for name, usage, finish, text in (
+            ("omitted candidate count", omitted, "STOP", "answer"),
+            ("a zero beside thoughts", {"promptTokenCount": 20, "candidatesTokenCount": 0,
+                                        "thoughtsTokenCount": 7, "totalTokenCount": 27},
+             "STOP", "answer"),
+            ("a whitespace answer", omitted, "STOP", " \n"),
+            ("a partial answer", omitted, "MAX_TOKENS", "partial"),
+        ):
+            with self.subTest(name):
+                with self.assertRaises(ga.GeminiRefused) as caught:
+                    ga.parse_response(response(usage=usage, finish=finish, text=text), model=MODEL,
+                                      max_output_tokens=64)
+                self.assertEqual((caught.exception.input_tokens, caught.exception.output_tokens),
+                                 (20, None))
+
+    def test_a_signature_only_part_adds_no_text(self):
+        # A part holding only a thoughtSignature carries no answer (whether the API sends
+        # one outside streaming is unverified), so it adds no text instead of voiding the
+        # answer. A part with any other payload still refuses.
+        usage = {"promptTokenCount": 20, "candidatesTokenCount": 5, "totalTokenCount": 25}
+        document = response(usage=usage)
+        document["candidates"][0]["content"]["parts"].append({"thoughtSignature": "c2ln"})
+        self.assertEqual(ga.parse_response(document, model=MODEL, max_output_tokens=64),
+                         ga.GeminiResult("answer", 20, 5, "STOP"))
+        for name, parts in (
+            ("only a signature", [{"thoughtSignature": "c2ln"}]),
+            ("inline data", [{"text": "answer"}, {"inlineData": {"mimeType": "image/png",
+                                                                 "data": "AA=="}}]),
+        ):
+            with self.subTest(name):
+                document = response(usage=usage)
+                document["candidates"][0]["content"]["parts"] = parts
+                with self.assertRaises(ga.GeminiRefused) as caught:
+                    ga.parse_response(document, model=MODEL, max_output_tokens=64)
+                self.assertEqual((caught.exception.input_tokens, caught.exception.output_tokens),
+                                 (20, 5))
+
+    def test_a_blocked_prompt_is_reported_as_blocked(self):
+        # A blocked prompt returns no candidates, and whether it carries modelVersion is
+        # undocumented, so the block is named before the identity check. Its counts are
+        # carried only when they are this model's and known.
+        blocked = {"blockReason": "SAFETY"}
+        known = {"promptTokenCount": 9, "totalTokenCount": 9}
+        for name, document, counts in (
+            ("no modelVersion", {"promptFeedback": blocked, "usageMetadata": known}, (None, None)),
+            ("another model", {"modelVersion": "gemini-other", "promptFeedback": blocked,
+                               "usageMetadata": known}, (None, None)),
+            ("unknown usage", {"modelVersion": MODEL, "promptFeedback": blocked,
+                               "usageMetadata": {"promptTokenCount": 9, "totalTokenCount": 99}},
+             (None, None)),
+            ("this model, known usage", {"modelVersion": MODEL, "promptFeedback": blocked,
+                                         "usageMetadata": known}, (9, 0)),
+        ):
+            with self.subTest(name):
+                with self.assertRaises(ga.GeminiRefused) as caught:
+                    ga.parse_response(document, model=MODEL, max_output_tokens=64)
+                self.assertIn("blocked", str(caught.exception))
+                self.assertEqual((caught.exception.input_tokens, caught.exception.output_tokens),
+                                 counts)
 
 
 class EgressAndAuthorization(RecordCase):
@@ -263,7 +482,115 @@ class EgressAndAuthorization(RecordCase):
         with self.assertRaises(ga.GeminiRefused) as caught:
             adapter("cloud-G", "question")
         self.assertIn("MAX_TOKENS", str(caught.exception))
-        self.assertEqual(caught.exception.usage, (20, 4096))
+        # live_dispatcher reads exc.input_tokens / exc.output_tokens from a failed send
+        self.assertEqual((caught.exception.input_tokens, caught.exception.output_tokens),
+                         (20, 4096))
+
+    def test_void_finish_without_text_still_carries_its_usage(self):
+        # a thinking model that spends the whole budget can stop at MAX_TOKENS with no
+        # text part at all; the cell is void, but the tokens were billed. This is the
+        # shape the API sends (googleapis/python-genai#782): the zero candidate count
+        # is omitted and the prompt carries per-modality details.
+        document = response(finish="MAX_TOKENS", usage={
+            "promptTokenCount": 20, "promptTokensDetails": [{"modality": "TEXT", "tokenCount": 20}],
+            "thoughtsTokenCount": 4096, "totalTokenCount": 4116})
+        document["candidates"][0]["content"] = {"role": "model"}
+        adapter = self.adapter(calls=[], document=document)
+        with self.assertRaises(ga.GeminiRefused) as caught:
+            adapter("cloud-G", "question")
+        self.assertIn("MAX_TOKENS", str(caught.exception))
+        self.assertEqual((caught.exception.input_tokens, caught.exception.output_tokens),
+                         (20, 4096))
+
+    def test_dispatcher_settles_the_billed_usage_of_a_void_cell(self):
+        # Round trip through the real settlement path: before the fix the counts sat on
+        # an attribute the dispatcher never reads, so a billed void cell settled as
+        # unknown usage. The profile id is a prices-2 id so the dispatcher can price it.
+        # Thinking spent the whole output budget, in the shape the API sends for it
+        # (googleapis/python-genai#782): no candidatesTokenCount, prompt details, no text.
+        record = qualified_record(profiles={"cloud-C": {"model": MODEL, "max_output_tokens": 4096,
+                                                        "input_token_ceiling": 200000}})
+        void = response(finish="MAX_TOKENS", usage={
+            "promptTokenCount": 20, "promptTokensDetails": [{"modality": "TEXT", "tokenCount": 20}],
+            "thoughtsTokenCount": 4096, "totalTokenCount": 4116})
+        void["candidates"][0]["content"] = {"role": "model"}
+        adapter = self.adapter(record=record, calls=[], document=void)
+        # this module implements no count transport; a future host supplies one
+        adapter.count_tokens = lambda profile_id, request: 20
+        prices = ld.load_prices(TOOLS / "prices-2.json")
+        with tempfile.TemporaryDirectory() as td:
+            dispatcher = ld.LiveDispatcher(prices, Path(td) / "pilot_ledger.jsonl",
+                                           dispatch_fn=adapter, confirm_egress=True)
+            entry = dispatcher.attempt("T-void", "cloud-C", "question", work_bound=0.05,
+                                       review_bound=0, expected_in=20, expected_out=4096)
+            with dispatcher.budget.transaction() as doc:
+                halted, pending = doc.get("halted", False), doc["tasks"]["T-void"]["pending"]
+        self.assertEqual((entry.input_tokens, entry.output_tokens), (20, 4096), entry.reason)
+        self.assertEqual(entry.usage_status, "observed", entry.reason)
+        # the spend settled: nothing is left pending and the pilot is not stopped
+        self.assertIsNone(pending)
+        self.assertFalse(halted)
+        # prices-2 cloud-C: $0.10 per million input, $0.50 per million output
+        self.assertAlmostEqual(entry.cost_usd, (20 * 0.10 + 4096 * 0.50) / 1e6, delta=1e-15)
+
+    def test_dispatcher_keeps_a_floor_for_an_answer_with_unreported_output(self):
+        # An answer whose usage reports no candidate tokens: the dispatcher keeps the
+        # known prompt as a cost floor and stops the pilot for review, never settling
+        # the output at $0.
+        record = qualified_record(profiles={"cloud-C": {"model": MODEL, "max_output_tokens": 4096,
+                                                        "input_token_ceiling": 200000}})
+        answer = response(usage={"promptTokenCount": 20, "totalTokenCount": 20})
+        adapter = self.adapter(record=record, calls=[], document=answer)
+        adapter.count_tokens = lambda profile_id, request: 20
+        prices = ld.load_prices(TOOLS / "prices-2.json")
+        with tempfile.TemporaryDirectory() as td:
+            dispatcher = ld.LiveDispatcher(prices, Path(td) / "pilot_ledger.jsonl",
+                                           dispatch_fn=adapter, confirm_egress=True)
+            entry = dispatcher.attempt("T-answer", "cloud-C", "question", work_bound=0.05,
+                                       review_bound=0, expected_in=20, expected_out=4096)
+            with dispatcher.budget.transaction() as doc:
+                halted, pending = doc.get("halted", False), doc["tasks"]["T-answer"]["pending"]
+        self.assertEqual((entry.usage_status, entry.input_tokens, entry.output_tokens),
+                         ("unknown", 20, None), entry.reason)
+        self.assertEqual(pending["status"], "uncertain")
+        self.assertTrue(halted)
+
+    def test_a_refusal_before_anything_is_sent_is_a_known_zero(self):
+        # Nothing reached a provider, so the charge is a known zero. None would make the
+        # dispatcher halt the pilot on an unknown with nothing to reconcile.
+        record = qualified_record(profiles={"cloud-C": {"model": MODEL, "max_output_tokens": 4096,
+                                                        "input_token_ceiling": 200000}})
+        for name, profile_id, request, kwargs, change_record in (
+            ("ceiling above the profile maximum", "cloud-C", "q", {"max_output_tokens": 8192}, False),
+            ("unknown profile", "cloud-X", "q", {}, False),
+            ("empty request", "cloud-C", " ", {}, False),
+            ("authorization changed", "cloud-C", "q", {}, True),
+        ):
+            with self.subTest(name):
+                calls = []
+                adapter = self.adapter(record=record, calls=calls, document=response(), **kwargs)
+                if change_record:
+                    self.write(qualified_record(status="unqualified", destination=None, profiles={}))
+                with self.assertRaises(ga.GeminiRefused) as caught:
+                    adapter(profile_id, request)
+                self.assertEqual((caught.exception.input_tokens, caught.exception.output_tokens),
+                                 (0, 0))
+                self.assertEqual(calls, [])
+        # the mock sends nothing either, and the dispatcher settles that attempt at $0
+        adapter = ga.build_dispatch_fn(authorization_path=self.write(record),
+                                       transport=ga.MockTransport())
+        adapter.count_tokens = lambda profile_id, request: 20
+        prices = ld.load_prices(TOOLS / "prices-2.json")
+        with tempfile.TemporaryDirectory() as td:
+            dispatcher = ld.LiveDispatcher(prices, Path(td) / "pilot_ledger.jsonl",
+                                           dispatch_fn=adapter, confirm_egress=True)
+            entry = dispatcher.attempt("T-empty", "cloud-C", "question", work_bound=0.05,
+                                       review_bound=0, expected_in=20, expected_out=4096)
+            with dispatcher.budget.transaction() as doc:
+                halted, pending = doc.get("halted", False), doc["tasks"]["T-empty"]["pending"]
+        self.assertEqual((entry.usage_status, entry.cost_usd), ("observed", 0.0), entry.reason)
+        self.assertIsNone(pending)
+        self.assertFalse(halted)
 
     def test_mock_transport_replays_and_refuses_when_exhausted(self):
         transport = ga.MockTransport(response(usage={"promptTokenCount": 3,
