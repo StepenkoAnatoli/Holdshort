@@ -370,6 +370,27 @@ class ResponseMapping(unittest.TestCase):
                 self.assertEqual((caught.exception.input_tokens, caught.exception.output_tokens),
                                  (20, None))
 
+    def test_unreported_output_holds_whatever_else_refuses(self):
+        # The contradiction is checked before every other refusal: a refusal that came
+        # first carried the reported zero, so the text's tokens settled at $0
+        omitted = {"promptTokenCount": 20, "totalTokenCount": 20}
+        above = response(usage={"promptTokenCount": 20, "candidatesTokenCount": 0,
+                                "thoughtsTokenCount": 100, "totalTokenCount": 120})
+        unfinished = response(usage=omitted)
+        del unfinished["candidates"][0]["finishReason"]
+        two = response(usage=omitted)
+        two["candidates"].append({"finishReason": "STOP", "content": {"parts": [{"text": "b"}]}})
+        mixed = response(usage=omitted)
+        mixed["candidates"][0]["content"]["parts"][0]["inlineData"] = {"mimeType": "image/png",
+                                                                       "data": "AA=="}
+        for name, document in (("above the ceiling", above), ("no finishReason", unfinished),
+                               ("two candidates", two), ("text beside a payload", mixed)):
+            with self.subTest(name):
+                with self.assertRaises(ga.GeminiRefused) as caught:
+                    ga.parse_response(document, model=MODEL, max_output_tokens=64)
+                self.assertEqual((caught.exception.input_tokens, caught.exception.output_tokens),
+                                 (20, None))
+
     def test_a_signature_only_part_adds_no_text(self):
         # A part holding only a thoughtSignature carries no answer (whether the API sends
         # one outside streaming is unverified), so it adds no text instead of voiding the
@@ -383,6 +404,12 @@ class ResponseMapping(unittest.TestCase):
             ("only a signature", [{"thoughtSignature": "c2ln"}]),
             ("inline data", [{"text": "answer"}, {"inlineData": {"mimeType": "image/png",
                                                                  "data": "AA=="}}]),
+            # a payload beside text in the same part was graded with the payload dropped
+            ("text with inline data", [{"text": "answer", "inlineData": {"mimeType": "image/png",
+                                                                         "data": "AA=="}}]),
+            ("text with a function call", [{"text": "answer",
+                                            "functionCall": {"name": "f", "args": {}}}]),
+            ("a signature that is not a string", [{"text": "answer", "thoughtSignature": 7}]),
         ):
             with self.subTest(name):
                 document = response(usage=usage)

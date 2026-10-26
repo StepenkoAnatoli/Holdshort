@@ -274,6 +274,13 @@ def parse_response(document, *, model: str, max_output_tokens: int) -> GeminiRes
     input_tokens, output_tokens = _billable_usage(usage)
     # validated above, so an omitted candidate count is a proven zero
     candidate_tokens = usage.get("candidatesTokenCount", 0) if usage is not None else None
+    if candidate_tokens == 0 and _generated_text(document.get("candidates")):
+        # Text is not generated in zero tokens: a usage block that reports none for an
+        # answer under-reports it. The output charge is unknown (None, never 0); the
+        # prompt count stays known, and the dispatcher keeps it as a cost floor. This
+        # holds before every other refusal, which would carry the reported zero.
+        raise GeminiRefused("provider reports no candidate tokens for generated text; output "
+                            "usage is unknown", input_tokens=input_tokens, output_tokens=None)
 
     def refuse(reason: str) -> GeminiRefused:
         # every refusal from here on follows a billed response with known counts
@@ -294,12 +301,6 @@ def parse_response(document, *, model: str, max_output_tokens: int) -> GeminiRes
     content = candidate.get("content")
     parts = content.get("parts") if isinstance(content, dict) else None
     texts = [_part_text(part) for part in parts] if isinstance(parts, list) else []
-    if candidate_tokens == 0 and any(isinstance(text, str) and text for text in texts):
-        # Text is not generated in zero tokens: a usage block that reports none for an
-        # answer under-reports it. The output charge is unknown (None, never 0); the
-        # prompt count stays known, and the dispatcher keeps it as a cost floor.
-        raise GeminiRefused("provider reports no candidate tokens for generated text; output "
-                            "usage is unknown", input_tokens=input_tokens, output_tokens=None)
     if not texts or any(not isinstance(text, str) for text in texts):
         if finish_reason == "STOP":
             raise refuse("provider candidate has no text parts")
@@ -317,14 +318,31 @@ def _part_text(part):
     """The text a response part adds, or None when it holds another payload.
 
     A part holding only a thoughtSignature carries no answer, so it adds no text.
-    Whether the API sends one outside streaming is unverified; a part with any other
-    payload (functionCall, inlineData, ...) still refuses.
+    Whether the API sends one outside streaming is unverified. A part with any other
+    payload (functionCall, inlineData, ...), even beside text, or with a signature that
+    is not a string, still refuses.
     """
-    if not isinstance(part, dict):
+    if not isinstance(part, dict) or not set(part) <= {"text", "thoughtSignature"}:
         return None
-    if set(part) == {"thoughtSignature"} and isinstance(part["thoughtSignature"], str):
-        return ""
-    return part.get("text")
+    if "thoughtSignature" in part and not isinstance(part["thoughtSignature"], str):
+        return None
+    if "text" in part:
+        return part["text"]
+    return "" if part else None
+
+
+def _generated_text(candidates) -> bool:
+    """Whether any candidate holds non-empty text, however malformed the rest is."""
+    if not isinstance(candidates, list):
+        return False
+    for candidate in candidates:
+        content = candidate.get("content") if isinstance(candidate, dict) else None
+        parts = content.get("parts") if isinstance(content, dict) else None
+        if isinstance(parts, list) and any(
+                isinstance(part, dict) and isinstance(part.get("text"), str) and part["text"]
+                for part in parts):
+            return True
+    return False
 
 
 def _billable_usage(usage):

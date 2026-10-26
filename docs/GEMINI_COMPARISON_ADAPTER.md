@@ -9,7 +9,7 @@ comparison is a separate, explicitly authorized change (see *Bindings* below).
 
 Files: `tools/gemini_adapter.py` (mapping, gates and a `MockTransport` for dry
 runs and tests), `tools/gemini_comparison_authorization.json` (the unqualified
-host record), `tools/test_gemini_adapter.py` (37 mock tests, in the regression
+host record), `tools/test_gemini_adapter.py` (38 mock tests, in the regression
 gate).
 
 ## What it maps
@@ -34,7 +34,7 @@ Responses map back to text and billable usage:
 | --- | --- | --- |
 | `promptFeedback.blockReason` | checked first: a blocked prompt returns no candidates and may not name its model | prompt blocked |
 | `modelVersion` | must equal the qualified model | any other id (never a fallback) |
-| `candidates` | exactly one, with non-empty text for a `STOP` answer; a part holding only a `thoughtSignature` adds no text | zero or several candidates, a `STOP` answer with no text or only empty text, a part with any other payload |
+| `candidates` | exactly one, with non-empty text for a `STOP` answer; a part holding only a `thoughtSignature` adds no text | zero or several candidates, a `STOP` answer with no text or only empty text, a part with any other payload, even beside text, or with a signature that is not a string |
 | `finishReason` | must be `STOP` for a graded answer | `MAX_TOKENS`, `SAFETY`, `RECITATION`, `OTHER`, missing — the cell is void |
 | `usageMetadata` absent | `(None, None)` — usage stays **null**, never zero | — |
 | `promptTokenCount`, `candidatesTokenCount` | billable totals; an omitted `candidatesTokenCount` is a zero only when `totalTokenCount` proves it | prompt count missing; candidate count missing with no total; negative or non-integer; a zero candidate count beside generated text (output unknown, prompt kept) |
@@ -79,9 +79,10 @@ disagrees with its parts, a missing candidate count with no total, a detail list
 that disagrees or is not text, an unmodeled field, a different or unnamed model)
 both stay `None`, and the dispatcher holds the whole reservation instead of
 settling a guess. Text is not generated in zero tokens, so text beside a zero
-candidate count (reported or omitted) leaves only the output unknown: the prompt
-count is carried, the output is `None`, and the dispatcher keeps the prompt as a
-cost floor and stops the pilot for review. A refusal before anything is sent (a
+candidate count (reported or omitted), in any candidate, leaves only the output
+unknown, and this holds before every other refusal: the prompt count is carried,
+the output is `None`, and the dispatcher keeps the prompt as a cost floor and
+stops the pilot for review. A refusal before anything is sent (a
 changed authorization record, an unknown profile, a ceiling above the profile's
 maximum, an invalid request, an exhausted `MockTransport`) carries a known zero,
 `(0, 0)`, so the dispatcher settles it at $0 instead of halting with nothing to
