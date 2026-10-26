@@ -11,11 +11,10 @@ exports for social platforms.
   with H.264 video and an AAC silent audio track. It introduces local checks,
   observed fixture results, the five routing checks, a synthetic budget example,
   and contributor tasks. It is an explanatory slide video, not a recording of
-  live-provider operation. Outputs were observed locally on 14 October 2026:
-  packaging validation passed for three skills and the decision suite passed
-  94 assertions across 57 fixture IDs. The MP4 was rendered before the 2026-10-20 rename
-  (ADR-0003): it still shows SmartRouter and `tests/smart_router_decisions.py`, so re-render it
-  from its storyboard before posting it.
+  live-provider operation. Outputs were observed locally on 14 October 2026, and
+  again under the new names on 21 October 2026, when the MP4 was re-rendered after
+  the rename (ADR-0003): packaging validation passed for three skills and the
+  decision suite passed 94 assertions across 57 fixture IDs.
 
 Suggested destinations are the project README and the LLM evaluation issues.
 Keep the experimental-status context in captions and avoid savings or production

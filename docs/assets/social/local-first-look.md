@@ -3,10 +3,8 @@
 This silent vertical explainer introduces the policy and offline contributor path.
 It is not a screen recording, live-model benchmark, or demonstration of provider
 billing enforcement. Its graphical terminal panel reproduces locally observed
-checks from 14 October 2026.
-
-The current MP4 predates the 2026-10-20 rename (ADR-0003) and still shows SmartRouter and
-`tests/smart_router_decisions.py`. This storyboard uses the new names; re-render the video from it.
+checks: first observed on 14 October 2026, and again under the new names on
+21 October 2026, when the video was re-rendered after the rename (ADR-0003).
 
 | Time | Content |
 | --- | --- |

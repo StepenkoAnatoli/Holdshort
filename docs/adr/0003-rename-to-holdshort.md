@@ -59,8 +59,6 @@ files, change all files that says: smart router into Holdshort as suggested".
      branch names (`docs/corrected-smartrouter-development-plan`, `skills/smart-router-v1`), paths pinned to a
      commit before the rename (`tests/smart_router_decisions.py` at `fbe7bca` and `2f4b141`), commands recorded
      as run before it, and a path quoted from a brief (`/home/user/smartrouter`).
-   - The social video `docs/assets/social/local-first-look.mp4` until it is re-rendered; the two social PNGs
-     were re-exported from their renamed sources.
    - One verbatim chat quote in `hosts/claude-code/README.md` ("focus on smartrouter for now").
 5. The GitHub repository is renamed `StepenkoAnatoli/Holdshort` when this change merges. GitHub
    redirects the old URLs until a new repository takes the old name.
