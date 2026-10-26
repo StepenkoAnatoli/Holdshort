@@ -591,6 +591,30 @@ def shell_spelling(path, env: dict) -> str:
     return p.stdout.strip()
 
 
+# MSYS splits a Windows command line at a newline, so a Windows program cannot hand Git Bash an argument that holds one.
+# Such an argument is passed with @NL@ in each newline's place, and bash puts the newlines back before it runs anything.
+NL_WRAP = 'nl=$(printf "\\nx"); nl=${nl%x}; set -- "${@//@NL@/$nl}"; '
+UNPROVED = "is not proved to name the file it came from"
+
+
+def bash_nl(cmd: str, *args, env: dict) -> subprocess.CompletedProcess:
+    """bash -c cmd with args, each newline in them passed whole (NL_WRAP)."""
+    return subprocess.run(["bash", "-c", NL_WRAP + cmd, "nl", *[str(a).replace("\n", "@NL@") for a in args]], env=env,
+                          capture_output=True, text=True, timeout=120)
+
+
+def checkout_spelled(src, commit: str, target, env: dict, *flags) -> subprocess.CompletedProcess:
+    """checkout() with any argument that holds a newline passed whole."""
+    return bash_nl('exec bash "$@"', KIT / "historyless-checkout.sh", *flags, src, commit, target, "cal/test", env=env)
+
+
+def nl_path(path: Path) -> Path:
+    """path with a newline at the end of its name, as Python spells it: MSYS stores a newline in a name as U+F00A, so on
+    Windows the name ends in that character, which Git Bash reads as a newline."""
+    import os
+    return path.with_name(path.name + ("\uf00a" if os.name == "nt" else "\n"))
+
+
 def volume_junction(link: Path, to: Path) -> None:
     """Make link a junction whose target is to's volume-GUID spelling (_winapi.CreateJunction would prefix that
     spelling a second time). Git Bash takes such a junction for a volume mount point, a plain directory, so only a
@@ -911,19 +935,31 @@ class Scripts(unittest.TestCase):
 
     def test_historyless_checkout_walks_the_windows_parents_of_a_mounted_directory(self):
         # a mount such as Git Bash's / or /tmp: the shell walks its own parents, native programs the Windows ones, and
-        # the checks walk both (a stub cygpath models the mount; on a host without cygpath the stub is the only one)
+        # the checks walk both (a stub cygpath models the mount; on a host without cygpath the stub is the only one).
+        # A mount's Windows spelling is the same directory under other parents, so each spelling the stub gives is a
+        # link to mnt/deps (a junction on Windows, which needs no privilege): the script proves, by file identity, that
+        # the Windows spelling names the directory it came from (LC6-1)
+        import os
         pack, c = make_pack(self.root, self.env)
         self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
         other, wt, bare = self.other_repositories()
         mnt = self.root / "mnt"
         (mnt / "deps").mkdir(parents=True)  # outside every repository, as the shell sees it
-        (other / "inside" / "deps").mkdir(parents=True)
-        (pack / "deps").mkdir()
+        (other / "inside").mkdir()
+
+        def same_dir(link: Path) -> None:
+            if os.name == "nt":
+                import _winapi
+                _winapi.CreateJunction(str(mnt / "deps"), str(link))
+            else:
+                link.symlink_to(mnt / "deps", target_is_directory=True)
+
+        for to in (other / "inside", c["repo"], pack):
+            same_dir(to / "deps")
         stub = self.root / "stub-bin"
         stub.mkdir()
         (stub / "cygpath").write_bytes(STUB_CYGPATH.encode())
         (stub / "cygpath").chmod(0o755)
-        import os
         env = {**native_links(self.env), "PATH": str(stub) + os.pathsep + self.env.get("PATH", ""), "STUB_MOUNT": bash_native(mnt, self.env)}
         for to, reason, with_pack in ((other / "inside", "is inside the git repository", False),  # the Windows parents hold a repository
                                       (c["repo"], "holds the accepted fix", False),  # the Windows spelling is in the source repository
@@ -932,6 +968,15 @@ class Scripts(unittest.TestCase):
             for flags in (("--pack", str(pack)), *([] if with_pack else [()])):
                 self.assert_link_refused(c, mnt / "deps", reason, *flags, env=mounted)
         self.assert_link_refused(c, mnt / "deps", "is not a local path", env=dict(env, STUB_TARGET="//server/share/x"))  # a mount of a UNC path
+        # a Windows spelling that names another directory than the shell's is no spelling of it: its parents say nothing
+        # about the directory's, so it is refused as unproved, not walked. Walked, a free one was accepted, and one
+        # inside a repository would be refused for a repository that is not the directory's
+        free = self.root / "free-mount"
+        (free / "deps").mkdir(parents=True)
+        (other / "elsewhere" / "deps").mkdir(parents=True)
+        for to in (free, other / "elsewhere"):
+            for flags in (("--pack", str(pack)), ()):
+                self.assert_link_refused(c, mnt / "deps", UNPROVED, *flags, env=dict(env, STUB_TARGET=bash_native(to, self.env)))
         target = self.root / "accepted" / "cand"  # the stub with no mount: the same directory is accepted
         p = checkout(c["repo"], c["base"], target, {**env, "STUB_MOUNT": ""}, "--pack", str(pack), "--link", f"node_modules={mnt / 'deps'}")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
@@ -1467,6 +1512,248 @@ class Scripts(unittest.TestCase):
                 p = checkout(c["repo"], c["base"], target, native_links(self.env), *flags, "--link", f"node_modules={deps}")
                 self.assertEqual(p.returncode, 0, f"{mode} {to} {flags}: {p.stdout}{p.stderr}")
                 self.assertEqual(sh(["git", "rev-list", "--all", "--count"], target, self.env).stdout.strip(), "1")
+
+    def test_historyless_checkout_proves_each_path_string_names_the_file_it_came_from(self):
+        # LC6-1: every path the checks read is a string the shell made of a path ($(pwd -P), $(dirname), $(basename),
+        # $(readlink)), and a command substitution drops every trailing newline. With x/repo<LF>, a work tree, beside a
+        # free directory x/repo, a link at DIR's top to x/repo<LF> was resolved, checked and found free as x/repo, and a
+        # candidate's `cd node_modules/s && git log` read the work tree's history. Each such string is now proved, by
+        # file identity, to name the file it came from, or the path is refused; and the strings that name a file not
+        # made yet (the target, a link's parent) keep their exact spelling
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        other, wt, bare = self.other_repositories()
+        env = native_links(self.env)
+        x = self.root / "x"
+        x.mkdir()
+        work = nl_path(x / "repo")  # a work tree with history, beside a free twin x/repo
+        work.mkdir()
+        (work / "brief.md").write_text("SECRET-BRIEF\n")
+        sh(["git", "init", "-q"], work, self.env)
+        commit_all(work, self.env, "SECRET-FIX-COMMIT")
+        (x / "repo").mkdir()
+        (x / "repo" / "brief.md").write_text("free twin\n")
+        (x / "t").write_text("free\n")
+        sx = shell_spelling(x, self.env)
+        made = bash_nl('ln -s -- "$1" "$2"', shell_spelling(other / "README.md", self.env), sx + "/t\n", env={**env, "MSYS": "winsymlinks:sys"})
+        self.assertEqual(made.returncode, 0, made.stderr)  # x/t<LF>: a link to a file in the repository other, beside a free x/t
+        both = (("--pack", str(pack)), ())
+
+        def refused(reason, *flags, target=None, link=None, src=None):
+            parent = self.root / f"refused-{len(list(self.root.glob('refused-*')))}"
+            p = checkout_spelled(src or c["repo"], c["base"], target or parent / "cand", env, *flags, *(("--link", link) if link else ()))
+            self.assertEqual(p.returncode, 2, f"{src} {link} {target} {flags}: {p.stdout}{p.stderr}")
+            self.assertIn(reason, p.stderr, f"{src} {link} {target} {flags}")
+            self.assertNotIn(NATIVE, p.stderr, f"{src} {link} {target} {flags}: the layer that refused")
+            self.assertFalse(parent.exists(), f"{src} {link} {target} {flags}")
+
+        cases = [("sys", sx + "/repo\n"),  # a link at DIR's top to the work tree x/repo<LF>
+                 ("lnk", sx + "/repo\n"),  # ... a shortcut symlink (on a host without MSYS, a symlink all the same)
+                 ("sys", sx + "/repo\n/brief.md"),  # a link to a file in it: the join of $(dirname) and $(basename)
+                 ("sys", sx + "/t\n")]  # a link to the link x/t<LF>: the $(readlink) hop
+        for i, (mode, to) in enumerate(cases):
+            deps = self.root / f"deps-nl-{i}"
+            (deps / "plain").mkdir(parents=True)
+            ln = bash_nl('ln -s -- "$1" "$2"', to, shell_spelling(deps, self.env) + "/s", env={**env, "MSYS": f"winsymlinks:{mode}"})
+            self.assertEqual(ln.returncode, 0, ln.stderr)
+            for flags in both:
+                refused(UNPROVED, *flags, link=f"node_modules={deps}")
+        for flags in both:
+            refused(UNPROVED, *flags, link=f"node_modules={sx}/repo\n")  # DIR itself: $(pwd -P)
+        # the pack: --pack pk<LF> beside a free twin pk, with the target inside pk<LF>
+        pk = nl_path(self.root / "pk")
+        pk.mkdir()
+        (self.root / "pk").mkdir()
+        refused(UNPROVED, "--pack", shell_spelling(self.root, self.env) + "/pk\n", target=shell_spelling(self.root, self.env) + "/pk\n/cand")
+        self.assertEqual(list(pk.iterdir()) + list((self.root / "pk").iterdir()), [])
+        # a target whose nearest existing parent is x/p<LF>, a link into the repository other, beside a free x/p:
+        # checked, and made, at x/p
+        ln = bash_nl('ln -s -- "$1" "$2"', shell_spelling(other / "node_modules", self.env), sx + "/p\n", env={**env, "MSYS": "winsymlinks:sys"})
+        self.assertEqual(ln.returncode, 0, ln.stderr)
+        (x / "p").mkdir()
+        for flags in both:
+            refused("is inside the git repository", *flags, target=sx + "/p\n/cand")
+        self.assertEqual(list((x / "p").iterdir()), [])
+        # a link's parent: --link a<LF>=hostdir --link a<LF>/x=dep2 made the second link in hostdir (its parent was
+        # checked as the checkout's a, which did not exist, and made where a<LF> leads)
+        hostdir, dep2 = self.root / "hostdir", self.root / "dep2"
+        hostdir.mkdir()
+        (hostdir / "keep").write_text("keep\n")
+        dep2.mkdir()
+        for flags in both:
+            target = self.root / f"made-{len(flags)}" / "cand"
+            p = checkout_spelled(c["repo"], c["base"], target, env, *flags, "--link", f"a\n={hostdir}", "--link", f"a\n/x={dep2}")
+            self.assertEqual(p.returncode, 2, f"{flags}: {p.stdout}{p.stderr}")
+            self.assertIn("is not inside the checkout", p.stderr, flags)
+            self.assertFalse(target.exists(), flags)
+            self.assertEqual(sorted(q.name for q in hostdir.iterdir()), ["keep"], flags)
+        # controls: a target spelled with newlines is made exactly there, and a link to a free directory is accepted
+        target = nl_path(nl_path(nl_path(self.root / "n") / "m") / "cand")
+        p = checkout_spelled(c["repo"], c["base"], shell_spelling(self.root, self.env) + "/n\n/m\n/cand\n", env)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertTrue(target.is_dir())
+        self.assertFalse((self.root / "n").exists())
+        self.assertEqual(sh(["git", "rev-list", "--all", "--count"], target, self.env).stdout.strip(), "1")
+        # the source repository srcnl<LF> beside a clone srcnl: $(pwd -P) cannot spell a name that ends in a newline,
+        # so the source is refused, and the clone is not read in its place
+        for name in (nl_path(self.root / "srcnl"), self.root / "srcnl"):
+            sh(["git", "clone", "-q", str(c["repo"]), str(name)], self.root, self.env)
+        refused(UNPROVED, src=shell_spelling(self.root, self.env) + "/srcnl\n")
+        # a target whose last segment is '.' or '..' names another directory than the one made for it: 'nx/..' was
+        # host itself, where git init and reset --hard wrote the checkout
+        host = self.root / "host"
+        host.mkdir()
+        (host / "host.txt").write_bytes(b"HOST\n")
+        for last in (".", ".."):
+            refused(f"its last segment is '{last}'", target=shell_spelling(host, self.env) + f"/nx/{last}")
+            self.assertEqual(tree_bytes(host), {"host.txt": b"HOST\n"}, last)
+            self.assertFalse((host / "nx").exists(), last)
+        free = self.root / "installed" / "node_modules"
+        (free / "pkg").mkdir(parents=True)
+        deps = self.root / "deps-nl-ok"
+        (deps / "plain").mkdir(parents=True)
+        msys_link(deps / "s", shell_spelling(free, self.env), "sys", self.env)
+        for j, flags in enumerate(both):
+            target = self.root / f"ok-{j}" / "cand"
+            p = checkout_spelled(c["repo"], c["base"], target, env, *flags, "--link", f"node_modules={deps}")
+            self.assertEqual(p.returncode, 0, f"{flags}: {p.stdout}{p.stderr}")
+
+    @NEEDS_PY_LINKS
+    def test_historyless_checkout_proves_native_programs_read_each_path_string_as_the_same_file(self):
+        # LC6-1, the native layer: Windows drops a trailing space or dot from a name, so 'gs ' (a link into a
+        # repository) beside a free 'gs' was resolved by native programs as 'gs' and found free, while the checkout's
+        # node and git, and Git Bash, reached the repository; and a target 'co ' beside a host directory 'co' was made
+        # by git init in 'co', where reset --hard wrote the base tree. The native layer now proves, by file identity
+        # (the volume and the file id), that each string names what its literal spelling names, or refuses it; and git
+        # is given the target's proved spelling
+        import os
+        if os.name != "nt" or volume_spelling(self.root) is None:
+            self.skipTest("not Windows, or the temporary directory's volume has no GUID name: no trailing-space twin, no native layer")
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        other, wt, bare = self.other_repositories()
+        free = self.root / "installed" / "node_modules"
+        (free / "pkg").mkdir(parents=True)
+        env = native_links(self.env)
+        sp = self.root / "sp"  # names that end in a space: Python reaches them only by their literal spelling
+        lit = lambda q: NT_PREFIX + str(q)
+        both = (("--pack", str(pack)), ())
+        try:
+            sp.mkdir()
+            os.symlink(volume_spelling(other / "node_modules"), lit(sp / "gs "), target_is_directory=True)  # a link Git Bash cannot see
+            (sp / "gs").mkdir()  # ... beside a free twin
+            for flags in both:
+                self.assert_link_refused(c, shell_spelling(sp, self.env) + "/gs ", UNPROVED, *flags, env=env, native=True)
+            deps = self.root / "deps-sp"
+            (deps / "plain").mkdir(parents=True)
+            msys_link(deps / "s", shell_spelling(sp, self.env) + "/gs ", "sys", self.env)  # a link only the shell sees, to it
+            for flags in both:
+                self.assert_link_refused(c, deps, UNPROVED, *flags, env=env, native=True)
+            top = sp / "deps"  # a link at DIR's top named 's ' into the repository other, beside a free 's'
+            (top / "plain").mkdir(parents=True)
+            os.symlink(volume_spelling(other), lit(top / "s "), target_is_directory=True)
+            os.symlink(volume_spelling(free), lit(top / "s"), target_is_directory=True)
+            for flags in both:
+                self.assert_link_refused(c, top, UNPROVED, *flags, env=env, native=True)
+            # the target: its nearest existing parent 'gt ' (a link into other) beside a free 'gt'
+            os.symlink(volume_spelling(other / "node_modules"), lit(sp / "gt "), target_is_directory=True)
+            (sp / "gt").mkdir()
+            for flags in both:
+                self.assert_target_refused(c, shell_spelling(sp, self.env) + "/gt /cand", UNPROVED, *flags, made=other / "node_modules" / "cand", env=env, native=True)
+                self.assertEqual(os.listdir(sp / "gt"), [], flags)
+            # the target 'co ' beside a host directory 'co': nothing is written in 'co', and 'co ' is removed (by its
+            # literal spelling: removed as Windows reads the string, it would have been 'co')
+            (sp / "co").mkdir()
+            (sp / "co" / "host.txt").write_bytes(b"HOST\n")
+            for flags in (*both, ("--link", f"node_modules={free}")):
+                p = checkout(c["repo"], c["base"], shell_spelling(sp, self.env) + "/co ", env, *flags)
+                self.assertEqual(p.returncode, 2, f"{flags}: {p.stdout}{p.stderr}")
+                self.assertIn("the checkout ", p.stderr, flags)
+                self.assertIn(f"/co , {NATIVE}", p.stderr, flags)
+                self.assertIn(UNPROVED, p.stderr, flags)
+                self.assertEqual(sorted(os.listdir(lit(sp))), ["co", "deps", "gs", "gs ", "gt", "gt "], flags)
+                self.assertEqual(tree_bytes(sp / "co"), {"host.txt": b"HOST\n"}, flags)
+            # the source 'rs ' beside a twin 'rs' that git read instead
+            os.mkdir(lit(sp / "rs "))
+            sh(["git", "clone", "-q", str(c["repo"]), str(sp / "rs")], self.root, self.env)
+            target = self.root / "from-rs" / "cand"
+            p = checkout(shell_spelling(sp, self.env) + "/rs ", c["base"], target, env)
+            self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+            self.assertIn("the source repository ", p.stderr)
+            self.assertIn(f"/rs , {NATIVE}", p.stderr)
+            self.assertIn(UNPROVED, p.stderr)
+            self.assertFalse(target.parent.exists())
+        finally:
+            # by the literal spelling: 'gs ' is removed as 'gs ', never followed; git makes its object files read-only
+            def writable(func, path, _):
+                os.chmod(path, 0o700)
+                func(path)
+            shutil.rmtree(lit(sp), **({"onexc": writable} if sys.version_info >= (3, 12) else {"onerror": writable}))
+        self.assertFalse(sp.exists())
+
+    def test_historyless_checkout_proves_each_windows_spelling_it_hands_on(self):
+        # LC6-1: the native layer is given each path as cygpath -m spells it, and git the source and the target the
+        # same way; the shell proves, by file identity, that each such string names the path it came from. A stub
+        # cygpath that spells a path as another directory (which a real one should never do) shows that a string
+        # naming another directory is refused, never checked, handed to git, or removed in its place
+        import os
+        if os.name != "nt":
+            self.skipTest("not Windows: no Windows spelling is handed on")
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        stub = self.root / "stub-bin"
+        stub.mkdir()
+        (stub / "cygpath").write_bytes(STUB_CYGPATH.encode())
+        (stub / "cygpath").chmod(0o755)
+        env = {**native_links(self.env), "PATH": str(stub) + os.pathsep + self.env.get("PATH", "")}
+        elsewhere = self.root / "elsewhere"  # a host directory a wrong spelling names
+        elsewhere.mkdir()
+        (elsewhere / "host.txt").write_bytes(b"HOST\n")
+        # the target: the checkout is made, then given to the native layer and to git by its Windows spelling
+        parent = self.root / "new"
+        p = checkout(c["repo"], c["base"], parent / "cand", {**env, "STUB_MOUNT": bash_native(self.root, self.env) + "/new/cand",
+                                                            "STUB_TARGET": bash_native(elsewhere, self.env)})
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn(f"the checkout {shell_spelling(parent, self.env)}/cand: its Windows spelling", p.stderr)
+        self.assertIn(UNPROVED, p.stderr)
+        self.assertNotIn(NATIVE, p.stderr)
+        self.assertFalse(parent.exists())
+        self.assertEqual(tree_bytes(elsewhere), {"host.txt": b"HOST\n"})
+        # ... and removed by it: one that names another directory is not removed, nor is that directory
+        target = self.root / "cand-kept"
+        p = checkout(c["repo"], c["base"], target, {**env, "STUB_MOUNT": bash_native(self.root, self.env) + "/cand-kept",
+                                                    "STUB_TARGET": bash_native(elsewhere, self.env)})
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn(f"could not remove {shell_spelling(target, self.env)}", p.stderr)
+        self.assertEqual(tree_bytes(elsewhere), {"host.txt": b"HOST\n"})
+        self.assertEqual(os.listdir(target), [])
+        # the source repository, with no --link (the S item is its only check): git read the directory the string named
+        clone = self.root / "clone"
+        sh(["git", "clone", "-q", str(c["repo"]), str(clone)], self.root, self.env)
+        src = self.root / "src-empty"
+        src.mkdir()
+        target = self.root / "from-src" / "cand"
+        p = checkout(src, c["base"], target, {**env, "STUB_MOUNT": bash_native(src, self.env), "STUB_TARGET": bash_native(clone, self.env)})
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn(f"the source repository {shell_spelling(src, self.env)}: its Windows spelling", p.stderr)
+        self.assertIn(UNPROVED, p.stderr)
+        self.assertFalse(target.parent.exists())
+        # git is a native program: with MSYS's argument conversion off (MSYS_NO_PATHCONV, as some hosts set it), it
+        # reads a shell spelling such as /c/x as \c\x on its current drive, another directory. Given only the proved
+        # Windows spellings, it reads the source and writes the checkout where they are. The script runs from the root
+        # of a subst drive mapped into this test's directory, so a string read that way names a directory under it
+        drive = self.root / "drive"
+        drive.mkdir()
+        letter = self.subst_drive(drive)
+        if letter is None:
+            self.skipTest("no free drive letter for subst")
+        target = self.root / "no-conversion" / "cand"
+        p = subprocess.run(["bash", str(KIT / "historyless-checkout.sh"), str(c["repo"]), c["base"], str(target), "cal/test"],
+                           env={**native_links(self.env), "MSYS_NO_PATHCONV": "1", "MSYS2_ARG_CONV_EXCL": "*"}, cwd=f"{letter}:{BS}",
+                           capture_output=True, text=True, timeout=120)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(sh(["git", "rev-list", "--all", "--count"], target, self.env).stdout.strip(), "1")
+        self.assertEqual(os.listdir(drive), [])
 
     def test_historyless_checkout_resets_the_shell_options_its_loops_depend_on(self):
         # LC5-2: bash takes SHELLOPTS and BASHOPTS from the environment. With noglob the loop over DIR's top saw only the

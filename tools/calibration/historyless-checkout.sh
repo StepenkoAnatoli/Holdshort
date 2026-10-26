@@ -12,7 +12,8 @@
 #   TARGET       the candidate's checkout; must not exist, and must not be inside any git repository (TARGET's parent
 #                or one of its real ancestors is one, tested as for --link DIR below): through '..' the checkout would
 #                reach that repository's files and history (Item 2). Its missing parents are made only after every
-#                check has passed, as spelled, so that part may hold no '.' or '..' segment
+#                check has passed, as spelled, so that part may hold no '.' or '..' segment, and nor may its last
+#                segment (TARGET/.. names another directory than the one made for it)
 #   BRANCH       the branch the single commit is on
 #   --link NAME=DIR  symlink DIR (an installed dependency tree, a build cache) into TARGET/NAME and list NAME in
 #                TARGET/.git/info/exclude so a candidate's `git add -A` never commits it; repeatable. DIR must be
@@ -58,12 +59,13 @@
 #                Bash, Cygwin), the parents of its Windows spelling (cygpath -m: a mount such as Git Bash's / or /tmp
 #                has Windows parents the shell does not show). This is what bash and the MSYS tools a candidate runs
 #                see, and on a POSIX host it is also what every other program sees.
-#   the native layer (Windows only: Git Bash, MSYS2, Cygwin): each path - SOURCE_REPO when there are links, PACK_DIR,
-#                each DIR, each entry at DIR's top that is a symlink, junction or other reparse point, every path the
-#                shell layer resolves a symlink at DIR's top to, TARGET's nearest existing parent, and each link's
-#                parent in the checkout - resolved the way native programs (git, node, Python) resolve it, by a
-#                Windows Python's os.path.realpath(path, strict=True) (GetFinalPathNameByHandle), and the same checks
-#                (identity with os.path.samefile, the .git walk) run on that final path and its parents. Git Bash
+#   the native layer (Windows only: Git Bash, MSYS2, Cygwin): each path - SOURCE_REPO (always: git reads it),
+#                PACK_DIR, each DIR, each entry at DIR's top that is a symlink, junction or other reparse point, every
+#                path the shell layer resolves a symlink at DIR's top to, TARGET's nearest existing parent, the
+#                checkout once made, and each link's parent in the checkout - resolved the way native programs (git,
+#                node, Python) resolve it, by a Windows Python's os.path.realpath(path, strict=True)
+#                (GetFinalPathNameByHandle), and the same checks (identity with os.path.samefile, the .git walk) run
+#                on that final path and its parents. Git Bash
 #                cannot see some links native programs follow: one to a volume-GUID or GLOBALROOT path is a plain
 #                directory to it (no -L, no readlink, pwd -P keeps the link's own path), and only this layer follows it
 #                (LC3-1). And some links only Git Bash sees: an MSYS sys or shortcut symlink (MSYS=winsymlinks:sys or
@@ -133,9 +135,26 @@ canon() {
     *) printf '%s' "$1" ;;
   esac
 }
-# phys DIR: the physical path of DIR (canon of pwd -P)
-phys() { local p; p=$(cd -- "$1" 2>/dev/null && pwd -P) || return 1; canon "$p"; }
-SRC_ABS=$(phys "$SRC") || refuse "no source repository: $SRC"
+# Every path the checks below read is a string the shell made of a path ($(pwd -P), $(dirname), $(basename),
+# $(readlink), $(cygpath -m)), and a command substitution drops every trailing newline: the string made of a path whose
+# name ends in a newline names another file, or none, and the checks of it, in both layers, checked that other path
+# (LC6-1). So no such string is checked or handed on unless it is proved, by file identity, to name the file it came
+# from ([ a -ef b ]: the same device and inode, each followed to the end of its links as stat(2) does), and the path is
+# refused when that fails or cannot be proved. Two strings name a file that does not exist yet (TARGET, a link's
+# NAME), so there is nothing to compare them with: their spelling is kept exactly (spell_dir, spell_base), and the
+# part of them that exists is proved. The native layer proves its own strings the same way (final, below)
+UNPROVED="is not proved to name the file it came from: the string made of it (a command substitution drops a trailing newline; Windows drops a trailing space or dot) names another file or none, so it cannot be checked (LC6-1)"
+# unproved HOW STATUS WHAT ELSE: refuse with HOW (refuse, or refuse_made once the checkout is made) "WHAT $UNPROVED"
+# when STATUS is 3 (phys, physd, resolve and ancestors report so a string they could not prove), else ELSE
+unproved() { if [ "$2" -eq 3 ]; then "$1" "$3 $UNPROVED"; fi; "$1" "$4"; }
+# spell_dir VAR P / spell_base VAR P: set VAR to what dirname / basename print for P, exactly: each prints a sentinel
+# line after its result, so the substitution drops only the sentinel's newline, and the sentinel is cut off
+spell_dir() { local r; r=$(dirname -- "$2"; echo .); printf -v "$1" '%s' "${r%$'\n.'}"; }
+spell_base() { local r; r=$(basename -- "$2"; echo .); printf -v "$1" '%s' "${r%$'\n.'}"; }
+# phys DIR: the physical path of DIR (canon of pwd -P), proved to name DIR (status 3 when it does not; 1 when DIR is no
+# directory). cd's own output (a CDPATH match) is dropped; a CDPATH match is another directory than DIR, so not proved
+phys() { local p; p=$(cd -- "$1" >/dev/null 2>&1 && pwd -P) || return 1; [ "$p" -ef "$1" ] || return 3; canon "$p"; }
+SRC_ABS=$(phys "$SRC") || unproved refuse $? "the source repository $SRC" "no source repository: $SRC"
 # within A B: A is B or lies under it (both physical paths from phys, so the root is spelled '/' and holds everything)
 within() { [ "$2" = / ] && return 0; case "$1/" in "$2"/*) return 0 ;; esac; return 1; }
 # is_repo D: D may be a git repository, by a rule at least as wide as git's own (LC4-1). Git's discovery (setup.c,
@@ -178,17 +197,24 @@ fi
 # the shell's spelling, then (with cygpath) in the Windows spelling cygpath -m gives, which native programs walk (a
 # mount such as Git Bash's / or /tmp is a directory whose Windows parents differ from the shell's). Status 1 when a
 # spelling is not a local absolute path: a UNC path //host/share/... (its spellings need not compare as one directory,
-# and '..' at a share root differs between the shell and Windows - LC2-1), or anything else unexpected
+# and '..' at a share root differs between the shell and Windows - LC2-1), or anything else unexpected; status 3 when
+# the Windows spelling names another file than P (LC6-1)
 ancestors() {
-  local p q
+  local p q w=""
   local -a spell=("$1")
   ANC=()
   if [ -n "$WINPATHS" ]; then
-    q=$(cygpath -m -- "$1") || return 1
-    spell+=("$q")
+    w=$(cygpath -m -- "$1") || return 1
+    spell+=("$w")
   fi
   for p in "${spell[@]}"; do
-    case "$p" in //*) ANC=(); return 1 ;; /* | [A-Za-z]:/*) ;; *) ANC=(); return 1 ;; esac
+    case "$p" in //*) return 1 ;; /* | [A-Za-z]:/*) ;; *) return 1 ;; esac
+  done
+  # the Windows spelling names P, by file identity: a mount's Windows spelling is the same directory under other
+  # parents, and one that names another directory is no spelling of P (status 3). A path that does not exist yet (a
+  # target's parent) has nothing to compare with; its existing part is proved as the T item below
+  if [ -n "$w" ] && [ -e "$1" ] && ! [ "$w" -ef "$1" ]; then return 3; fi
+  for p in "${spell[@]}"; do
     case "$p" in / | [A-Za-z]:/) ;; */) p=${p%/} ;; esac
     while :; do
       ANC+=("$p")
@@ -203,23 +229,29 @@ ancestors() {
 LOCAL_ONLY="is not a local path (a UNC path //host/share/..., or a mount of one), whose parents cannot be checked reliably (Item 2)"
 # physd D: the physical path of the directory D the way the kernel walks it: cd -P follows each link before the '..'
 # after it (phys's plain cd drops 'link/..' by spelling first, so 'link/../y' could name a different y than the
-# kernel reaches)
-physd() { local p; p=$(cd -P -- "$1" 2>/dev/null && pwd -P) || return 1; canon "$p"; }
+# kernel reaches), proved to name D as phys does (status 3 when it does not; 1 when D is no directory)
+physd() { local p; p=$(cd -P -- "$1" >/dev/null 2>&1 && pwd -P) || return 1; [ "$p" -ef "$1" ] || return 3; canon "$p"; }
 # resolve E: print the physical path the symlink E resolves to: a directory through physd, a file as its directory's
 # physical path and its name, following a chain of links (at most 40) hop by hop, each hop's directory made physical
-# before a relative target is joined to it, as the kernel does; status 1 when E does not resolve
+# before a relative target is joined to it, as the kernel does; status 1 when E does not resolve. Each string it makes
+# ($(dirname) and $(basename) joined, and each link's $(readlink) target) must name the file the link it replaces leads
+# to ([ -ef ] follows both to the end of the chain); status 3 when one does not (LC6-1)
 resolve() {
-  local p=$1 t n=0 d
+  local p=$1 q t n=0 d
   [ -e "$p" ] || return 1
   if [ -d "$p" ]; then physd "$p"; return; fi
   while :; do
-    d=$(physd "$(dirname -- "$p")") || return 1
-    p=${d%/}/$(basename -- "$p")
+    d=$(physd "$(dirname -- "$p")") || return
+    q=${d%/}/$(basename -- "$p")
+    [ "$q" -ef "$p" ] || return 3
+    p=$q
     [ -L "$p" ] || break
     n=$((n + 1))
     [ "$n" -le 40 ] || return 1
     t=$(readlink -- "$p") || return 1
-    case "$t" in /*) p=$t ;; *) p=${d%/}/$t ;; esac
+    case "$t" in /*) q=$t ;; *) q=${d%/}/$t ;; esac
+    [ "$q" -ef "$p" ] || return 3
+    p=$q
   done
   printf '%s' "$p"
 }
@@ -230,13 +262,13 @@ G_ANC=()
 # add_guard G WHAT: record the physical path G and its ancestors as guarded; refuse when G is not a local path
 add_guard() {
   local a
-  ancestors "$1" || refuse "$2 $1 $LOCAL_ONLY"
+  ancestors "$1" || unproved refuse $? "$2 $1: its Windows spelling" "$2 $1 $LOCAL_ONLY"
   for a in "${ANC[@]}"; do G_OF+=("$1"); G_ANC+=("$a"); done
 }
 [ ${#LINKS[@]} -eq 0 ] || add_guard "$SRC_ABS" "the source repository"
 PACK_ABS=""
 if [ -n "$PACK" ]; then
-  PACK_ABS=$(phys "$PACK") || refuse "no pack directory: $PACK"
+  PACK_ABS=$(phys "$PACK") || unproved refuse $? "the pack $PACK" "no pack directory: $PACK"
   add_guard "$PACK_ABS" "the pack"
 fi
 # guard_link NAME P WHAT: refuse when the physical path P is not a local path, shares a path with SOURCE_REPO or
@@ -244,7 +276,7 @@ fi
 # the guarded path's ancestors is P), or is inside a git repository (it or one of its ancestors is one); WHAT names P
 guard_link() {
   local a g i
-  ancestors "$2" || refuse "--link $1: $3 $LOCAL_ONLY"
+  ancestors "$2" || unproved refuse $? "--link $1: $3: its Windows spelling" "--link $1: $3 $LOCAL_ONLY"
   for g in "$SRC_ABS" ${PACK_ABS:+"$PACK_ABS"}; do
     for a in "${ANC[@]}"; do
       if [ "$a" -ef "$g" ]; then refuse "--link $1: $3 shares a path with $g, which holds the accepted fix (Item 2)"; fi
@@ -288,11 +320,11 @@ for spec in ${LINKS[@]+"${LINKS[@]}"}; do
       .[Gg][Ii][Tt] | [Gg][Ii][Tt]~1) refuse "--link $name: a link name may not name .git (in any case or spelling): it would sit in the checkout's git directory or be a repository's .git" ;;
     esac
   done
-  dep=$(phys "${spec#*=}") || refuse "--link $name: no directory ${spec#*=}"
+  dep=$(phys "${spec#*=}") || unproved refuse $? "--link $name: ${spec#*=}" "--link $name: no directory ${spec#*=}"
   guard_link "$name" "$dep" "$dep"
   for entry in "$dep"/* "$dep"/.[!.]* "$dep"/..?*; do  # an unmatched pattern stays literal and is no symlink
     [ -L "$entry" ] || continue
-    real=$(resolve "$entry") || refuse "--link $name: $entry, a symlink in $dep, does not resolve"
+    real=$(resolve "$entry") || unproved refuse $? "--link $name: $entry, a symlink in $dep: the path it resolves to" "--link $name: $entry, a symlink in $dep, does not resolve"
     guard_link "$name" "$real" "$entry, a symlink in $dep resolving to $real,"
     REAL_NAMES+=("$name")
     REAL_SHOWN+=("$entry, a symlink in $dep resolving to $real")
@@ -304,28 +336,31 @@ done
 
 # the target: every check runs before anything is made (LC3-3). EXIST is TARGET's nearest existing parent; the parents
 # under it do not exist yet, so they hold no link and no repository, and they are made as spelled (no '.' or '..', so
-# that the spelling is the path)
-PARENT=$(dirname -- "$DIR")
-TNAME=$(basename -- "$DIR")
+# that the spelling is the path; each part spelled exactly, a trailing newline kept - LC6-1)
+spell_dir PARENT "$DIR"
+spell_base TNAME "$DIR"
+case "$TNAME" in
+  . | ..) refuse "target $DIR: its last segment is '$TNAME'; spell it without '.' or '..'" ;;
+esac
 EXIST=$PARENT
 REST=""
 while ! [ -d "$EXIST" ]; do
   if [ -e "$EXIST" ] || [ -L "$EXIST" ]; then refuse "target $DIR: $EXIST is not a directory"; fi
-  part=$(basename -- "$EXIST")
+  spell_base part "$EXIST"
   case "$part" in
     . | ..) refuse "target $DIR: the part of its parent that does not exist yet holds a '$part' segment; spell it without '.' or '..'" ;;
   esac
   REST=$part${REST:+/$REST}
-  next=$(dirname -- "$EXIST")
+  spell_dir next "$EXIST"
   [ "$next" != "$EXIST" ] || refuse "target $DIR: no parent of it exists"
   EXIST=$next
 done
-EXIST_ABS=$(phys "$EXIST") || refuse "target $DIR: no directory $EXIST"
+EXIST_ABS=$(phys "$EXIST") || unproved refuse $? "target $DIR: its nearest existing parent $EXIST" "target $DIR: no directory $EXIST"
 PARENT_ABS=${EXIST_ABS%/}${REST:+/$REST}
 PARENT_ABS=${PARENT_ABS:-/}
 TARGET_ABS=${PARENT_ABS%/}/$TNAME
 # TARGET does not exist, so it is inside a directory exactly when its parent is that directory or lies under it
-ancestors "$PARENT_ABS" || refuse "target $TARGET_ABS: its parent $LOCAL_ONLY"
+ancestors "$PARENT_ABS" || unproved refuse $? "target $TARGET_ABS: its parent's Windows spelling" "target $TARGET_ABS: its parent $LOCAL_ONLY"
 if [ -n "$PACK_ABS" ]; then
   for a in "${ANC[@]}"; do
     if [ "$a" -ef "$PACK_ABS" ]; then refuse "target $TARGET_ABS is inside the pack $PACK_ABS"; fi
@@ -356,21 +391,42 @@ sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace", newline="\n"
 AS = "as native programs resolve it"
 LOCAL = "which is not a local path (a UNC path, or a volume with no drive letter), whose parents cannot be checked reliably (Item 2)"
 THROUGH = "that repository's history and files through '..' (Item 2)"
+UNPROVED = "is not proved to name the file it came from: Windows drops a trailing space or dot from the name, so the string names another file or none, and cannot be checked (LC6-1)"
 
 
 class Refused(Exception):
     pass
 
 
+def drive(path):
+    """path is spelled with a drive letter, a colon and a separator (a slash or a backslash)"""
+    return len(path) >= 3 and path[0].isascii() and path[0].isalpha() and path[1] == ":" and path[2] in "/\\"
+
+
+def literal(path):
+    """path's literal spelling (the "\\\\?\\" prefix: Windows reads the name as it is, as the shell does, and drops no
+    trailing space or dot); None when path has no drive letter"""
+    return "\\\\?\\" + path.replace("/", "\\") if drive(path) else None
+
+
 def final(path, what):
     """path with every link of any kind followed, as native programs follow it (GetFinalPathNameByHandle), spelled
-    with a drive letter; refused when it does not resolve or resolves to another form"""
+    with a drive letter; refused when it does not resolve or resolves to another form, and when what native programs
+    reach by the string is not, by file identity (the volume and the file id), what its literal spelling names: then
+    the string names another file than the shell's, and the shell's checks do not hold for it (LC6-1)"""
     try:
         real = os.path.realpath(path, strict=True)
     except (OSError, ValueError) as e:
         raise Refused(f"{what}, {AS}, does not resolve ({e})")
-    if not (len(real) >= 3 and real[0].isascii() and real[0].isalpha() and real[1] == ":" and real[2] == os.sep):
+    if not drive(real) or real[2] != os.sep:
         raise Refused(f"{what} resolves, {AS}, to {real}, {LOCAL}")
+    lit = literal(path)
+    try:
+        proved = lit is not None and os.path.samestat(os.stat(lit), os.stat(real))
+    except (OSError, ValueError):
+        proved = False
+    if not proved:
+        raise Refused(f"{what}, {AS} ({real}), {UNPROVED}")
     return real
 
 
@@ -472,8 +528,9 @@ def run(items):
 
 
 def discard(d):
-    """remove the directory d and everything under it, never through a link: a symlink, junction or other reparse
-    point (or an entry that cannot be read) is removed as an entry, never entered"""
+    """remove the directory d (a literal spelling, so that a trailing space or dot is kept: the directory the shell
+    made, never a host directory Windows reads the string as) and everything under it, never through a link: a
+    symlink, junction or other reparse point (or an entry that cannot be read) is removed as an entry, never entered"""
     with os.scandir(d) as it:
         entries = list(it)
     for e in entries:
@@ -495,7 +552,9 @@ def discard(d):
 
 args = sys.argv[1:]
 if args[:1] == ["--discard"]:
-    discard(args[1])
+    if literal(args[1]) is None:
+        sys.exit(1)
+    discard(literal(args[1]))
     sys.exit(0)
 try:
     run([args[i:i + 4] for i in range(0, len(args), 4)])
@@ -504,30 +563,48 @@ except Refused as r:
     sys.exit(2)
 PY
 }
-if [ -n "$WINDOWS" ]; then
-  NARGS=()
-  # add_native KIND NAME SHOWN P: one item for native_guard, with the Windows spelling of the shell's physical path P
-  add_native() {
-    local w
-    w=$(cygpath -m -- "$4") || refuse "$3: no Windows spelling for $4"
-    NARGS+=("$1" "$2" "$3" "$w")
-  }
-  [ ${#LINKS[@]} -eq 0 ] || add_native S - "$SRC_ABS" "$SRC_ABS"
-  [ -z "$PACK_ABS" ] || add_native P - "$PACK_ABS" "$PACK_ABS"
-  for i in ${LINK_NAMES[@]+"${!LINK_NAMES[@]}"}; do add_native L "${LINK_NAMES[$i]}" "${LINK_DIRS[$i]}" "${LINK_DIRS[$i]}"; done
-  for i in ${REAL_NAMES[@]+"${!REAL_NAMES[@]}"}; do add_native E "${REAL_NAMES[$i]}" "${REAL_SHOWN[$i]}" "${REAL_PATHS[$i]}"; done
-  add_native T - "$TARGET_ABS" "$EXIST_ABS"
+# add_native HOW KIND NAME SHOWN P: add one item for native_guard to NARGS, with the Windows spelling of the shell's
+# physical path P, proved to name P (the native layer then proves that native programs read it as the same file);
+# refused with HOW (refuse, or refuse_made) when it has none or it names another file
+add_native() {
+  local w what
+  case "$2" in
+    S) what="the source repository $4" ;;
+    P) what="the pack $4" ;;
+    T) what="target $4: its nearest existing parent $5" ;;
+    C) what="the checkout $4" ;;
+    *) what="--link $3: $4" ;;
+  esac
+  w=$(cygpath -m -- "$5") || "$1" "$what: no Windows spelling"
+  [ "$w" -ef "$5" ] || "$1" "$what: its Windows spelling $w $UNPROVED"
+  NARGS+=("$2" "$3" "$4" "$w")
+}
+# native_check HOW: run native_guard on NARGS; refused with HOW when it refuses or fails
+native_check() {
   NOUT=$(native_guard "${NARGS[@]}") && NRC=0 || NRC=$?
   NOUT=${NOUT%$'\r'}
   case $NRC in
     0) ;;
-    2) refuse "$NOUT" ;;
-    *) refuse "the native path check failed (exit $NRC), so the paths cannot be checked as native programs resolve them${NOUT:+: $NOUT}" ;;
+    2) "$1" "$NOUT" ;;
+    *) "$1" "the native path check failed (exit $NRC), so the paths cannot be checked as native programs resolve them${NOUT:+: $NOUT}" ;;
   esac
+}
+# GIT_SRC: the source repository as git is given it: on Windows its proved Windows spelling (the S item, always: git
+# reads the source by that string), elsewhere its physical path
+GIT_SRC=$SRC_ABS
+if [ -n "$WINDOWS" ]; then
+  NARGS=()
+  add_native refuse S - "$SRC_ABS" "$SRC_ABS"
+  GIT_SRC=${NARGS[3]}
+  [ -z "$PACK_ABS" ] || add_native refuse P - "$PACK_ABS" "$PACK_ABS"
+  for i in ${LINK_NAMES[@]+"${!LINK_NAMES[@]}"}; do add_native refuse L "${LINK_NAMES[$i]}" "${LINK_DIRS[$i]}" "${LINK_DIRS[$i]}"; done
+  for i in ${REAL_NAMES[@]+"${!REAL_NAMES[@]}"}; do add_native refuse E "${REAL_NAMES[$i]}" "${REAL_SHOWN[$i]}" "${REAL_PATHS[$i]}"; done
+  add_native refuse T - "$TARGET_ABS" "$EXIST_ABS"
+  native_check refuse
 fi
 
 # the source lookup follows the path checks, so a UNC source is refused as one (git itself reports "dubious ownership")
-TREE=$(git -C "$SRC_ABS" rev-parse --verify --quiet "$COMMIT^{tree}") || refuse "not a commit in $SRC: $COMMIT"
+TREE=$(git -C "$GIT_SRC" rev-parse --verify --quiet "$COMMIT^{tree}") || refuse "not a commit in $SRC: $COMMIT"
 git check-ref-format --branch "$BRANCH" >/dev/null 2>&1 || refuse "not a branch name: $BRANCH"
 
 # MADE: the first directory this run makes (TARGET, or the first of its parents that does not exist yet), which discard
@@ -538,8 +615,11 @@ MADE=$TARGET_ABS
 # takes for a plain directory, and deletes the files where it leads (a base tree may track such a symlink), so on
 # Windows the native layer's Python removes the tree, each link as an entry; elsewhere rm -rf, which follows no symlink
 discard() {
+  local w
   if [ -n "$WINDOWS" ]; then
-    native_guard --discard "$(cygpath -m -- "$MADE")" || { echo "historyless-checkout: could not remove $MADE" >&2; exit 1; }
+    # the Windows spelling of MADE, proved to name it; the native layer removes it by its literal spelling, so a
+    # trailing space or dot is kept (Windows reads 'co ' as a host directory 'co' - LC6-1)
+    { w=$(cygpath -m -- "$MADE") && [ "$w" -ef "$MADE" ] && native_guard --discard "$w"; } || { echo "historyless-checkout: could not remove $MADE" >&2; exit 1; }
   else
     rm -rf -- "$MADE"
   fi
@@ -550,16 +630,27 @@ refuse_made() {
   refuse "$@"
 }
 mkdir -p -- "$PARENT_ABS"
+# TARGET is made by the shell, as spelled, and git is given a string proved to name it (GIT_TARGET): git init once made
+# it at its own reading of the string, and on Windows that drops a trailing space or dot, so a target 'co ' beside a
+# host directory 'co' was made in 'co', and reset --hard wrote the base tree there (LC6-1)
+mkdir -- "$TARGET_ABS"
+GIT_TARGET=$TARGET_ABS
+if [ -n "$WINDOWS" ]; then
+  NARGS=()
+  add_native refuse_made C - "$TARGET_ABS" "$TARGET_ABS"
+  native_check refuse_made
+  GIT_TARGET=${NARGS[3]}
+fi
 # no template (--template=): GIT_TEMPLATE_DIR or init.templateDir could copy objects/info/alternates, naming another
 # repository's objects, or hooks into the new .git (LC3-2)
-git init -q --template= -b "$BRANCH" "$TARGET_ABS"
+git init -q --template= -b "$BRANCH" "$GIT_TARGET" || refuse_made "git init failed in $TARGET_ABS (Git for Windows refuses a path with a segment that ends in a space or dot)"
 # the base tree and every tree and blob under it, and nothing else: no commit of the source is copied
-OBJECTS=$({ echo "$TREE"; git -C "$SRC_ABS" ls-tree -r -t "$TREE" | awk '$2 != "commit" { print $3 }'; } | LC_ALL=C sort -u)
-printf '%s\n' "$OBJECTS" | git -C "$SRC_ABS" pack-objects --stdout -q | git -C "$TARGET_ABS" unpack-objects -q
-BASE=$(git -C "$TARGET_ABS" -c user.name=calibration -c user.email=calibration@localhost \
+OBJECTS=$({ echo "$TREE"; git -C "$GIT_SRC" ls-tree -r -t "$TREE" | awk '$2 != "commit" { print $3 }'; } | LC_ALL=C sort -u)
+printf '%s\n' "$OBJECTS" | git -C "$GIT_SRC" pack-objects --stdout -q | git -C "$GIT_TARGET" unpack-objects -q
+BASE=$(git -C "$GIT_TARGET" -c user.name=calibration -c user.email=calibration@localhost \
   commit-tree --no-gpg-sign -m "calibration base: a tree with no history" "$TREE")
-git -C "$TARGET_ABS" update-ref "refs/heads/$BRANCH" "$BASE"
-git -C "$TARGET_ABS" reset -q --hard "$BASE"
+git -C "$GIT_TARGET" update-ref "refs/heads/$BRANCH" "$BASE"
+git -C "$GIT_TARGET" reset -q --hard "$BASE"
 # each link lands inside the checkout and outside its .git (LC5-3): NAME's spelling is checked above, but the base tree
 # may track a symlink (with core.symlinks=true it is checked out as one, g -> .git say), and an earlier --link is a
 # symlink to a host directory, so NAME's parent is checked where it really is, in both layers, before each link is
@@ -571,9 +662,9 @@ for i in ${LINK_NAMES[@]+"${!LINK_NAMES[@]}"}; do
   if [ -e "$at" ] || [ -L "$at" ]; then
     refuse_made "--link $name: the checkout already holds $name (from the base tree or an earlier --link); the link would be made inside it or where it leads"
   fi
-  up=$(dirname -- "$at")
-  real=$(physd "$up") || refuse_made "--link $name: its parent $up is no directory in the checkout"
-  ancestors "$real" || refuse_made "--link $name: its parent $real $LOCAL_ONLY"
+  spell_dir up "$at"
+  real=$(physd "$up") || unproved refuse_made $? "--link $name: its parent $up" "--link $name: its parent $up is no directory in the checkout"
+  ancestors "$real" || unproved refuse_made $? "--link $name: its parent $real: its Windows spelling" "--link $name: its parent $real $LOCAL_ONLY"
   inside=""
   for a in "${ANC[@]}"; do
     if [ "$a" -ef "$TARGET_ABS/.git" ]; then
@@ -583,15 +674,10 @@ for i in ${LINK_NAMES[@]+"${!LINK_NAMES[@]}"}; do
   done
   [ -n "$inside" ] || refuse_made "--link $name: its parent $real is not inside the checkout $TARGET_ABS; the link would be made in a host directory"
   if [ -n "$WINDOWS" ]; then
-    wt=$(cygpath -m -- "$TARGET_ABS") || refuse_made "the checkout $TARGET_ABS: no Windows spelling"
-    wr=$(cygpath -m -- "$real") || refuse_made "--link $name: its parent $real: no Windows spelling"
-    NOUT=$(native_guard C - "$TARGET_ABS" "$wt" K "$name" "$real" "$wr") && NRC=0 || NRC=$?
-    NOUT=${NOUT%$'\r'}
-    case $NRC in
-      0) ;;
-      2) refuse_made "$NOUT" ;;
-      *) refuse_made "the native path check failed (exit $NRC), so the paths cannot be checked as native programs resolve them${NOUT:+: $NOUT}" ;;
-    esac
+    NARGS=()
+    add_native refuse_made C - "$TARGET_ABS" "$TARGET_ABS"
+    add_native refuse_made K "$name" "$real" "$real"
+    native_check refuse_made
   fi
   ln -s "${LINK_DIRS[$i]}" "$at"
   mkdir -p -- "$TARGET_ABS/.git/info"
@@ -600,8 +686,8 @@ done
 
 # proof: exactly one commit reachable from any ref, its tree is the base tree, and the checkout's git can read no object
 # but that commit and the objects of that tree (--batch-all-objects reads alternates too)
-[ "$(git -C "$TARGET_ABS" rev-list --all --count)" = 1 ] || { echo "historyless-checkout: more than one commit in $TARGET_ABS" >&2; exit 1; }
-[ "$(git -C "$TARGET_ABS" rev-parse HEAD^{tree})" = "$TREE" ] || { echo "historyless-checkout: tree differs from $COMMIT" >&2; exit 1; }
-[ "$(git -C "$TARGET_ABS" cat-file --batch-all-objects --batch-check='%(objectname)' | LC_ALL=C sort -u)" = "$(printf '%s\n%s\n' "$OBJECTS" "$BASE" | LC_ALL=C sort -u)" ] \
+[ "$(git -C "$GIT_TARGET" rev-list --all --count)" = 1 ] || { echo "historyless-checkout: more than one commit in $TARGET_ABS" >&2; exit 1; }
+[ "$(git -C "$GIT_TARGET" rev-parse HEAD^{tree})" = "$TREE" ] || { echo "historyless-checkout: tree differs from $COMMIT" >&2; exit 1; }
+[ "$(git -C "$GIT_TARGET" cat-file --batch-all-objects --batch-check='%(objectname)' | LC_ALL=C sort -u)" = "$(printf '%s\n%s\n' "$OBJECTS" "$BASE" | LC_ALL=C sort -u)" ] \
   || { echo "historyless-checkout: $TARGET_ABS can read objects other than the base commit and its tree (objects/info/alternates?)" >&2; exit 1; }
 echo "ok $TARGET_ABS: one commit, the tree of $COMMIT, branch $BRANCH"

@@ -76,7 +76,15 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    Python 3.10+ (the version whose `os.path.realpath` takes `strict`) is on `PATH` as `python3` or `python`. The
    script ignores the host's `GIT_DIR`, `GIT_WORK_TREE` and git's other repository variables, and copies no git template (so `GIT_TEMPLATE_DIR` or `init.templateDir` cannot
    give the checkout another repository's objects through `objects/info/alternates`). Its final proof counts every
-   object the checkout's git can read.
+   object the checkout's git can read. Every path string the checks read, or hand on to the native layer and to git,
+   is proved by file identity (`[ a -ef b ]` in the shell, the same file by `os.stat` natively) to name the file it
+   came from, and the path is refused ("is not proved to name the file it came from") when that fails or cannot be
+   proved: a shell command substitution drops a trailing newline, and Windows drops a trailing space or dot from a
+   name, so `x/repo` followed by a newline or a space was checked, read or written as its twin `x/repo`. The
+   checkout's own name, which does not exist yet, is kept exactly as spelled, and its last segment may not be `.` or
+   `..`. Git for Windows takes no path with a segment that ends in a space or dot, so such a checkout is refused too.
+   Git is given the source and the checkout only by those proved Windows spellings, so a host that turns off MSYS's
+   argument conversion (`MSYS_NO_PATHCONV=1`) does not make it read `/c/x` as `\c\x` on its current drive.
    Nothing deeper is checked: a symlink or a repository further down the dependency tree is not followed, and keeping
    those out is the host's duty. A `--link` name is a plain relative path, and none of its parts may name `.git` in
    any spelling Windows resolves to it (any case, trailing dots or spaces, `GIT~1`). Each link is made only where its
