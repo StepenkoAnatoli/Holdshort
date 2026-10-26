@@ -49,8 +49,10 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    without letting a candidate commit it. Install the dependencies outside the pack and outside every git repository:
    `--link` refuses a directory whose real path is inside the pack or its repository, or holds either, since a link
    there is a path to the accepted fix; and it refuses a directory inside any git repository (it or one of its real
-   ancestors holds a `.git` directory or file, or is a git directory such as a bare repository), since through `..`
-   the checkout reaches that repository's files and history: a subject clone's `node_modules` would hand the
+   ancestors holds a `.git` entry of any type, or may be a git directory: it holds an entry named `HEAD`, `commondir`
+   or `gitdir`, or both an `objects` and a `refs` entry, a rule wider than git's own repository test, so that every
+   directory git would take for a repository, a bare one or a linked worktree's admin directory too, is refused),
+   since through `..` the checkout reaches that repository's files and history: a subject clone's `node_modules` would hand the
    candidate the clone's accepted fix and orchestration records. So run the install in a directory that is no
    repository, such as a history-less checkout of the case base made outside the pack. Each symlink among the
    directory's own entries is checked the same way where it resolves (a linked directory is followed before a `..`
@@ -66,12 +68,23 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    parents again. Git Bash cannot see some links native programs follow, such as one whose target is a volume-GUID or
    `GLOBALROOT` path, so only the native layer catches those. The native layer fails closed: a path it cannot resolve,
    or one that resolves to anything but a drive-letter path, is refused, and so is every checkout when no Windows
-   Python 3.8+ is on `PATH` as `python3` or `python`. The script ignores the host's `GIT_DIR`, `GIT_WORK_TREE` and
-   git's other repository variables, and copies no git template (so `GIT_TEMPLATE_DIR` or `init.templateDir` cannot
+   Python 3.10+ (the version whose `os.path.realpath` takes `strict`) is on `PATH` as `python3` or `python`. The
+   script ignores the host's `GIT_DIR`, `GIT_WORK_TREE` and git's other repository variables, and copies no git template (so `GIT_TEMPLATE_DIR` or `init.templateDir` cannot
    give the checkout another repository's objects through `objects/info/alternates`). Its final proof counts every
    object the checkout's git can read.
    Nothing deeper is checked: a symlink or a repository further down the dependency tree is not followed, and keeping
-   those out is the host's duty.
+   those out is the host's duty. A `--link` name is a plain relative path, and none of its parts may name `.git` in
+   any spelling Windows resolves to it (any case, trailing dots or spaces, `GIT~1`).
+   **What the guard covers, and what is the host's duty.** It covers every path the checkout gets from the script:
+   no parent of the checkout, no linked directory or its parents, and no link at a linked directory's top level or the
+   parents of where it leads reaches a git repository, the pack or its repository, by any spelling native programs
+   resolve. It knows a repository only by its markers, and the pack only by the paths given, so it cannot see the
+   subject's files outside a repository. These are the host's to keep away from the linked directories and the
+   checkout: a plain copy or export (`git archive`) of the subject, a work tree whose git directory lies elsewhere
+   (`core.worktree` leaves no `.git` in it), a link or a repository deeper in a dependency tree, and anything else
+   known only by its content. A refusal never means "remove the `.git` and retry": a clone stripped of its `.git`
+   still hands over the subject's files, its orchestration records and briefs among them. Install where no subject
+   file is, as above: a history-less checkout of the case base made outside the pack.
 4. **Fill.** Write `run-config.json` = `{"manifest": <manifest.json>, "protocol": <protocol.json without its sources>,
    "host": {...}}` (the host keys are listed in the header of `run.template.js`; the protocol goes in without `sources`
    because the sources record the filled script's hash). Every host path in it (`checkout_root`, `adjudication_checkout`, `pack_dir`) is absolute and already resolved: the launch step compares the strings and follows no symlink and no `..`, so a relative path, or one that resolves elsewhere after the launch, is outside its guard (the checkout script resolves real paths where the checkouts are made). Fill the template, hash `run.js` into the protocol's

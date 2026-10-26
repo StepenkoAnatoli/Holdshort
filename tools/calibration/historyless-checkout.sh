@@ -19,15 +19,29 @@
 #                installed outside the pack and outside every git repository (proposal Item 2: no path from a
 #                checkout reaches the accepted fix). Refused when its real path is inside SOURCE_REPO or PACK_DIR or
 #                holds either, and when it is inside a git repository: DIR or one of its real ancestors holds a .git
-#                entry (a directory, or the file of a linked worktree or submodule) or is a git directory (HEAD,
-#                objects/ and refs/, as in a bare repository) - through '..' the checkout reaches that repository's
-#                files and history, such as a subject clone's accepted fix and orchestration records (IC4-1). Each
-#                symlink among DIR's own entries (its top level, dot entries too) is checked the same way on the
-#                real path it resolves to (followed hop by hop as a POSIX kernel does: a linked directory before the
-#                '..' after it), and one that does not resolve is refused; both layers below do this. Nothing deeper is
-#                checked: a symlink or a repository further down inside DIR is not followed, and is the host's to avoid.
+#                entry (a directory, or the file of a linked worktree or submodule) or may be a git directory (it
+#                holds an entry named HEAD, commondir or gitdir, or both an objects and a refs entry, each of any
+#                type: a bare repository, a linked worktree's admin directory; a rule wider than git's own, see
+#                is_repo below) - through '..' the checkout reaches that repository's files and history, such as a
+#                subject clone's accepted fix and orchestration records (IC4-1). Each symlink among DIR's own entries
+#                (its top level, dot entries too) is checked the same way on the real path it resolves to (followed
+#                hop by hop as a POSIX kernel does: a linked directory before the '..' after it), and one that does
+#                not resolve is refused; both layers below do this. Nothing deeper is checked: a symlink or a
+#                repository further down inside DIR is not followed, and is the host's to avoid. NAME is a plain
+#                relative path (no leading '/', no '..', no '\' or ':'), and none of its segments may name .git in
+#                any spelling Windows resolves to it (any case, trailing dots or spaces, GIT~1)
 #   --pack DIR   refuse when TARGET is inside DIR or DIR inside TARGET (proposal Item 2: no candidate checkout shares
 #                a filesystem path with the pack), in both layers below
+#
+# What the guard covers, and what it cannot: no path the checkout gets from this script - TARGET's own parents, each
+# DIR and its parents, each link at DIR's top and the parents of where it leads - reaches a git repository, the pack
+# or SOURCE_REPO, by any spelling native programs resolve (both layers below). It knows a repository only by its
+# markers (is_repo), and the pack and SOURCE_REPO only by the paths given. So these are the host's duty, and the
+# guard cannot see them: a plain copy or export (git archive) of the subject's files, a work tree whose git directory
+# lies elsewhere (core.worktree, which leaves no .git in the tree), a link or a repository deeper inside DIR, and
+# anything else it could know only by its content. A refusal never means "remove the .git and retry": a stripped
+# clone of the subject still hands over its files (orchestration records, a brief). Install dependencies where no
+# subject file is, such as a history-less checkout of the case base made outside the pack.
 #
 # How paths are compared: "inside" and "holds" are decided by identity ([ -ef ]) along a path's ancestors, not by
 # spelling, so another spelling of the same directory (another case on a case-insensitive filesystem) cannot pass. A
@@ -49,7 +63,8 @@
 #                directory to it (no -L, no readlink, pwd -P keeps the link's own path), and only this layer follows it
 #                (LC3-1). It fails closed: a path it cannot resolve, or that resolves to anything but a drive-letter
 #                path (a UNC path, a volume with no drive letter), is refused, and so is every checkout when no
-#                Windows Python 3.8+ (python3 or python) is on PATH. Its refusals say "as native programs resolve it".
+#                Windows Python 3.10+ (python3 or python; os.path.realpath has strict since 3.10) is on PATH. Its
+#                refusals say "as native programs resolve it".
 # The host's git repository variables (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, ...: git rev-parse --local-env-vars)
 # are dropped, so every git command works on the repository it names and none on another; and git init copies no
 # template (--template=), so neither GIT_TEMPLATE_DIR nor init.templateDir can add objects/info/alternates (another
@@ -108,12 +123,21 @@ phys() { local p; p=$(cd -- "$1" 2>/dev/null && pwd -P) || return 1; canon "$p";
 SRC_ABS=$(phys "$SRC") || refuse "no source repository: $SRC"
 # within A B: A is B or lies under it (both physical paths from phys, so the root is spelled '/' and holds everything)
 within() { [ "$2" = / ] && return 0; case "$1/" in "$2"/*) return 0 ;; esac; return 1; }
-# is_repo D: the directory D holds a .git entry (a directory, the file of a linked worktree or submodule, or a link) or
-# is a git directory (HEAD, objects/ and refs/, the test git itself applies: a bare repository, or the inside of a .git
-# directory). It reads the filesystem only: git's own discovery stops at a filesystem boundary, refuses a repository
-# another user owns, and honours GIT_CEILING_DIRECTORIES, none of which stop a '..' (IC4-1)
+# is_repo D: D may be a git repository, by a rule at least as wide as git's own (LC4-1). Git's discovery (setup.c,
+# setup_git_directory_gently_1) takes a directory whose .git entry is a gitfile (read_gitfile_gently) or a directory
+# is_git_directory accepts, or a directory is_git_directory accepts itself (a bare repository, the inside of a .git
+# directory, a linked worktree's admin directory). is_git_directory needs a HEAD that validate_headref accepts (a
+# symlink into refs/, even a dangling one, or a file holding a ref or an object id), then objects and refs in the
+# common directory, which a commondir file, GIT_COMMON_DIR or GIT_OBJECT_DIRECTORY can move, and which Git for Windows
+# tests with an access() that ignores X_OK, so a file named refs passes. Only the HEAD entry is needed under every
+# environment a candidate may run with, so D counts as a repository when it holds any entry, of any type, named .git,
+# HEAD, commondir or gitdir (a linked worktree's admin files), or both an objects and a refs entry (objects a '..'
+# reaches and reads without git, even with HEAD gone). It reads the filesystem only: git's own discovery stops at a
+# filesystem boundary, refuses a repository another user owns, and honours GIT_CEILING_DIRECTORIES and
+# safe.bareRepository, none of which stop a '..' (IC4-1)
+has() { [ -e "${1%/}/$2" ] || [ -L "${1%/}/$2" ]; }
 is_repo() {
-  [ -e "${1%/}/.git" ] || [ -L "${1%/}/.git" ] || { [ -f "${1%/}/HEAD" ] && [ -d "${1%/}/objects" ] && [ -d "${1%/}/refs" ]; }
+  has "$1" .git || has "$1" HEAD || has "$1" commondir || has "$1" gitdir || { has "$1" objects && has "$1" refs; }
 }
 WINDOWS=""
 case "$(uname -s 2>/dev/null)" in CYGWIN* | MINGW* | MSYS*) WINDOWS=1 ;; esac
@@ -123,17 +147,17 @@ if command -v cygpath >/dev/null 2>&1; then
 elif [ -n "$WINDOWS" ]; then
   refuse "cygpath is missing: the Windows parents of a path cannot be checked"
 fi
-# NATIVE_PY: on Windows, the first of python3 and python that is a Windows Python 3.8+ (os.name nt: its
+# NATIVE_PY: on Windows, the first of python3 and python that is a Windows Python 3.10+ (os.name nt: its
 # os.path.realpath resolves through GetFinalPathNameByHandle, as native programs do; an MSYS2 or Cygwin Python resolves
 # as the shell does). With none, the native layer cannot run, and the checkout is refused (fail closed)
 NATIVE_PY=""
 if [ -n "$WINDOWS" ]; then
   for py in python3 python; do
     command -v "$py" >/dev/null 2>&1 || continue
-    probe=$("$py" -I -c 'import os, sys; sys.stdout.write(os.name if sys.version_info >= (3, 8) else "old")' 2>/dev/null) || continue
+    probe=$("$py" -I -c 'import os, sys; sys.stdout.write(os.name if sys.version_info >= (3, 10) else "old")' 2>/dev/null) || continue
     if [ "$probe" = nt ]; then NATIVE_PY=$py; break; fi
   done
-  [ -n "$NATIVE_PY" ] || refuse "no native path resolver: on Windows the checks also resolve each path as native programs do, which needs a Windows Python 3.8+ on PATH as python3 or python (an MSYS2 or Cygwin Python resolves as the shell does)"
+  [ -n "$NATIVE_PY" ] || refuse "no native path resolver: on Windows the checks also resolve each path as native programs do, which needs a Windows Python 3.10+ (os.path.realpath's strict argument) on PATH as python3 or python (an MSYS2 or Cygwin Python resolves as the shell does)"
 fi
 # ancestors P: set ANC to the physical path P and every directory above it, nearest first, as '..' reaches them: in
 # the shell's spelling, then (with cygpath) in the Windows spelling cygpath -m gives, which native programs walk (a
@@ -230,8 +254,20 @@ for spec in ${LINKS[@]+"${LINKS[@]}"}; do
   esac
   name=${spec%%=*}
   case "$name" in
-    "" | /* | *..* ) refuse "--link takes a plain relative name: $name" ;;
+    "" | /* | *..* | *\\* | *:* ) refuse "--link takes a plain relative name: $name" ;;
   esac
+  # no segment of NAME may name .git, by any spelling Windows resolves to it (any case, trailing dots or spaces, the
+  # 8.3 name GIT~1): the link would land in the checkout's own git directory (hooks a candidate's commit would run)
+  # or be a nested repository's .git (LC4-4)
+  rest=$name
+  while [ -n "$rest" ]; do
+    seg=${rest%%/*}
+    case "$rest" in */*) rest=${rest#*/} ;; *) rest="" ;; esac
+    while :; do case "$seg" in *. | *' ') seg=${seg%?} ;; *) break ;; esac; done
+    case "$seg" in
+      .[Gg][Ii][Tt] | [Gg][Ii][Tt]~1) refuse "--link $name: a link name may not name .git (in any case or spelling): it would sit in the checkout's git directory or be a repository's .git" ;;
+    esac
+  done
   dep=$(phys "${spec#*=}") || refuse "--link $name: no directory ${spec#*=}"
   guard_link "$name" "$dep" "$dep"
   for entry in "$dep"/* "$dep"/.[!.]* "$dep"/..?*; do  # an unmatched pattern stays literal and is no symlink
@@ -323,11 +359,22 @@ def parents(real):
 REPOS = {}
 
 
+def has(d, name):
+    """d holds an entry name of any type (a dangling link too); one that cannot be read counts as held"""
+    try:
+        os.lstat(os.path.join(d, name))
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    except OSError:
+        return True
+    return True
+
+
 def is_repo(d):
-    """d holds a .git entry or is a git directory (HEAD, objects/ and refs/), as is_repo in the shell layer"""
+    """d may be a git repository, by the rule of is_repo in the shell layer (wider than git's own test): any entry
+    named .git, HEAD, commondir or gitdir, or both an objects and a refs entry"""
     if d not in REPOS:
-        j = lambda n: os.path.join(d, n)
-        REPOS[d] = os.path.lexists(j(".git")) or (os.path.isfile(j("HEAD")) and os.path.isdir(j("objects")) and os.path.isdir(j("refs")))
+        REPOS[d] = any(has(d, n) for n in (".git", "HEAD", "commondir", "gitdir")) or (has(d, "objects") and has(d, "refs"))
     return REPOS[d]
 
 

@@ -28,7 +28,10 @@ names only the checkout, never the pack; `historyless-checkout.sh --pack`, `grad
 `historyless-checkout.sh --link` refuses a dependency directory inside the pack or its repository, or inside any git
 repository (installed dependencies live outside the pack and outside every repository: a subject clone's install
 reaches the clone's history through `..`; paths are compared by identity, on Windows also as native programs resolve
-them, and a UNC path is refused). It refuses a checkout inside any git repository for the same reason. The fix case gives the
+them, and a UNC path is refused). It refuses a checkout inside any git repository for the same reason. It knows a
+repository by its markers only, by a rule wider than git's own, so a copy or export of the subject's files, or a work
+tree whose git directory lies elsewhere, is the host's to keep away from the checkout and its linked directories (the
+kit README, step 3). The fix case gives the
 candidate the finding (its summary, cause and required behaviour; without the cause when `cases.fix.cause_in_prompt` is
 false), never the accepted change. A shared pack is small by
 construction: it discriminates the bounded T1 shape only, and a host that needs more runs its own pack.

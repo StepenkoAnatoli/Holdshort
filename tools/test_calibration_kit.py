@@ -474,12 +474,13 @@ NEEDS_SH_LINKS = unittest.skipUnless(
 
 
 def repo_holding(path: Path) -> Path | None:
-    """The nearest of path's real path and its ancestors that holds a .git entry (a directory, or the file a linked
-    worktree has) or is a git directory (HEAD, objects/ and refs/: a bare repository), as historyless-checkout.sh --link
-    looks; None when there is none."""
+    """The nearest of path's real path and its ancestors that historyless-checkout.sh takes for a repository: it holds
+    an entry of any type named .git, HEAD, commondir or gitdir, or both an objects and a refs entry; None when there is
+    none."""
+    import os
     p = Path(path).resolve()
     for d in (p, *p.parents):
-        if (d / ".git").exists() or (d / ".git").is_symlink() or ((d / "HEAD").is_file() and (d / "objects").is_dir() and (d / "refs").is_dir()):
+        if any(os.path.lexists(d / n) for n in (".git", "HEAD", "commondir", "gitdir")) or (os.path.lexists(d / "objects") and os.path.lexists(d / "refs")):
             return d
     return None
 
@@ -1100,6 +1101,225 @@ class Scripts(unittest.TestCase):
         target = self.root / "beside" / "co"  # beside the repositories, the checkout is made
         p = checkout(c["repo"], c["base"], target, self.env, "--pack", str(pack))
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+    REPRODUCED = ("commondir", "symlink HEAD", "refs file", "gitfile")
+
+    def git_directory_shapes(self) -> dict:
+        """Directories that hold no .git directory and are no plain bare repository, yet git takes them for a repository
+        (check 4, LC4-1: a linked worktree's admin directory, a HEAD that is a dangling symlink, a refs file), a work tree
+        whose .git file names a git directory elsewhere, and the shapes only the wider rule of historyless-checkout.sh
+        names. Each is first shown to be what it claims: git takes it for a repository (under the environment given), or
+        git does not and only the wider rule does. Needs other_repositories() first. Maps a name to the directory the
+        rule must find; each holds an empty deps/ to link or check out into."""
+        import os
+        other = self.root / "other"
+        common = (other / ".git").resolve().as_posix()
+        common_env = {**self.env, "GIT_COMMON_DIR": common}
+        nt = os.name == "nt"
+        cgd = self.root / "commondir-gd"  # HEAD and a commondir file naming another repository's git directory
+        cgd.mkdir()
+        (cgd / "HEAD").write_text("ref: refs/heads/main\n")
+        (cgd / "commondir").write_text(common + "\n")
+        sym = self.root / "symhead.git"  # HEAD a dangling symlink into refs/ (core.preferSymlinkRefs, then pack-refs)
+        sh(["git", "clone", "-q", "--bare", str(other), str(sym)], self.root, self.env)
+        sh(["git", "pack-refs", "--all"], sym, self.env)
+        (sym / "HEAD").unlink()
+        (sym / "HEAD").symlink_to("refs/heads/main")
+        rf = self.root / "refsfile.git"  # refs a file, the refs in packed-refs (Git for Windows' access() ignores X_OK)
+        sh(["git", "clone", "-q", "--bare", str(other), str(rf)], self.root, self.env)
+        sh(["git", "pack-refs", "--all"], rf, self.env)
+        shutil.rmtree(rf / "refs")
+        (rf / "refs").write_text("")
+        sep = self.root / "sep"  # a work tree whose .git file names a git directory elsewhere
+        (self.root / "store").mkdir()
+        sh(["git", "init", "-q", f"--separate-git-dir={self.root / 'store' / 'sep.git'}", str(sep)], self.root, self.env)
+        self.assertTrue((sep / ".git").is_file())
+        head = self.root / "head-only"  # git takes HEAD alone for a repository when GIT_COMMON_DIR names a common directory
+        head.mkdir()
+        (head / "HEAD").write_text("ref: refs/heads/main\n")
+        symonly = self.root / "symhead-only"  # and a dangling HEAD symlink alone, likewise
+        symonly.mkdir()
+        (symonly / "HEAD").symlink_to("refs/heads/main")
+        cd = self.root / "commondir-only"  # wider than git: a commondir file alone, a gitdir file alone (a linked
+        cd.mkdir()  # worktree's admin files), and objects and refs without HEAD (objects a '..' reads without git)
+        (cd / "commondir").write_text(common + "\n")
+        gd = self.root / "gitdir-only"
+        gd.mkdir()
+        (gd / "gitdir").write_text(common + "\n")
+        objref = self.root / "objects-refs"
+        (objref / "objects").mkdir(parents=True)
+        (objref / "refs").mkdir()
+        # name: (directory, the environment under which git takes it for a repository; False when git never does; None
+        # when not asserted: on a POSIX host access() honours X_OK, so a refs file is no repository to git there)
+        shapes = {"commondir": (cgd, self.env), "symlink HEAD": (sym, self.env), "refs file": (rf, self.env if nt else None),
+                  "gitfile": (sep, self.env), "HEAD only": (head, common_env), "dangling HEAD only": (symonly, common_env),
+                  "commondir only": (cd, False), "gitdir only": (gd, False), "objects and refs": (objref, False)}
+        for name, (d, git_view) in shapes.items():
+            (d / "deps").mkdir()
+            if git_view is None:
+                continue
+            p = sh(["git", "rev-parse", "--absolute-git-dir"], d / "deps", git_view or self.env, check=False)
+            if git_view is False:
+                self.assertNotEqual(p.returncode, 0, f"{name}: git takes {d} for a repository: {p.stdout}")
+            else:
+                self.assertEqual(p.returncode, 0, f"{name}: git does not take {d} for a repository: {p.stderr}")
+        return {name: d for name, (d, _) in shapes.items()}
+
+    @NEEDS_PY_LINKS
+    def test_historyless_checkout_refuses_every_directory_git_takes_for_a_repository(self):
+        # LC4-1: is_repo once asked for a regular HEAD file and objects/ and refs/ directories, so a linked worktree's
+        # admin directory (HEAD and commondir), a HEAD that is a dangling symlink into refs/ and a refs file passed as
+        # "outside every repository", though git takes each for one and the checkout read that repository's history.
+        # The rule is now wider than git's own; the shell layer refuses each shape as DIR, at DIR's top and as the
+        # target's parent
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        self.other_repositories()
+        for i, (name, d) in enumerate(self.git_directory_shapes().items()):
+            reason = f"{d.name}; a "  # the refusal names the nearest repository, then its reason
+            self.assert_link_refused(c, d / "deps", reason, "--pack", str(pack))
+            self.assert_target_refused(c, d / "deps" / "co", reason, made=d / "deps" / "co")
+            if name in self.REPRODUCED:  # a symlink the shell sees, at the top of a clean DIR
+                deps = self.root / f"deps-top-{i}"
+                (deps / "plain").mkdir(parents=True)
+                (deps / "s").symlink_to(d / "deps", target_is_directory=True)
+                self.assert_link_refused(c, deps, reason)
+
+    @NEEDS_PY_LINKS
+    def test_historyless_checkout_refuses_every_directory_git_takes_for_a_repository_as_native_programs_resolve_it(self):
+        # LC4-1 in the native layer: the same shapes reached through links Git Bash cannot see. LC4-4: a junction at
+        # DIR's top, which Git Bash sees, but which leads to such a link, so the shell resolves it to a plain directory
+        # outside every repository; only the native layer, which takes any reparse point for a link (a junction is no
+        # symlink to Python's is_symlink), follows it to the repository
+        import os
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        if volume_spelling(self.root) is None:
+            self.skipTest("no volume-GUID spelling of the temporary directory: not Windows, or its volume has no GUID name")
+        other, wt, bare = self.other_repositories()
+        links = self.root / "L"
+        links.mkdir()
+
+        def hidden_link(name, to):
+            link = links / name
+            link.symlink_to(volume_spelling(to), target_is_directory=True)
+            self.assertFalse(bash_sees_link(link, self.env), f"{name}: Git Bash sees this link; the case no longer needs the native layer")
+            return link
+
+        for i, (name, d) in enumerate(self.git_directory_shapes().items()):
+            reason = f"{d.name}; a "
+            v = hidden_link(f"v-{i}", d / "deps")
+            self.assert_link_refused(c, v, reason, "--pack", str(pack), native=True)
+            self.assert_target_refused(c, v / "co", reason, made=d / "deps" / "co", native=True)
+            if name in self.REPRODUCED:  # such a link at the top of a clean DIR
+                deps = self.root / f"deps-native-top-{i}"
+                (deps / "plain").mkdir(parents=True)
+                (deps / "s").symlink_to(volume_spelling(d / "deps"), target_is_directory=True)
+                self.assertFalse(bash_sees_link(deps / "s", self.env))
+                self.assert_link_refused(c, deps, reason, native=True)
+        import _winapi
+        deps = self.root / "deps-junction"
+        (deps / "plain").mkdir(parents=True)
+        _winapi.CreateJunction(str(hidden_link("v-junction", other / "node_modules")), str(deps / "j"))
+        with os.scandir(deps) as it:
+            self.assertFalse(next(e for e in it if e.name == "j").is_symlink(), "a junction is no symlink to Python")
+        self.assertTrue(bash_sees_link(deps / "j", self.env), "Git Bash sees the junction")
+        for flags in (("--pack", str(pack)), ()):
+            self.assert_link_refused(c, deps, "other; a ", *flags, native=True)
+        free = self.root / "installed" / "node_modules"  # control: a junction outside every repository is accepted
+        free.mkdir(parents=True)
+        ok = self.root / "deps-junction-ok"
+        (ok / "plain").mkdir(parents=True)
+        _winapi.CreateJunction(str(free), str(ok / "j"))
+        target = self.root / "out" / "cand"
+        p = checkout(c["repo"], c["base"], target, native_links(self.env), "--pack", str(pack), "--link", f"node_modules={ok}")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(sh(["git", "rev-list", "--all", "--count"], target, self.env).stdout.strip(), "1")
+
+    def test_historyless_checkout_native_layer_counts_an_entry_it_cannot_read_as_a_marker(self):
+        # the native layer fails closed: a marker entry whose lstat fails for any reason but "not there" counts as held,
+        # so an unreadable HEAD makes its directory a repository. Its code runs here with lstat failing for HEAD only
+        text = (KIT / "historyless-checkout.sh").read_text(encoding="utf-8")
+        code = text.split("<<'PY'\n", 1)[1].split("\nargs = sys.argv[1:]\n", 1)[0]
+        empty = self.root / "empty"
+        empty.mkdir()
+        harness = textwrap.dedent("""
+            import errno
+            _lstat = os.lstat
+            def _failing(p, *a, **k):
+                if os.path.basename(p) == "HEAD" and FAIL:
+                    raise PermissionError(errno.EACCES, "denied", p)
+                return _lstat(p, *a, **k)
+            os.lstat = _failing
+            sys.stdout.write(f"{is_repo(D)}")
+            """)
+        for fail, expected in ((False, "False"), (True, "True")):
+            p = subprocess.run([sys.executable, "-I", "-c", f"{code}\nFAIL = {fail}\nD = {str(empty)!r}\n{harness}"],
+                               capture_output=True, text=True, timeout=60)
+            self.assertEqual((p.returncode, p.stdout), (0, expected), p.stderr)
+
+    def test_historyless_checkout_refuses_a_link_name_that_names_dot_git(self):
+        # LC4-4: --link .git/hooks=DIR put a host directory in the checkout's own git directory, whose hooks a candidate's
+        # commit runs. No segment of NAME may name .git, by any spelling Windows resolves to it
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        free = self.root / "installed" / "hooks"
+        free.mkdir(parents=True)
+        for name in (".git", ".git/hooks", ".git/objects/info", ".GIT", ".Git/hooks", ".git.", ".git ", ".git. .", "GIT~1",
+                     "git~1/hooks", "vendor/.git", "a/./.git/x"):
+            self.assert_link_refused(c, free, "may not name .git", "--pack", str(pack), name=name)
+        for name in ("a" + BS + "b", BS + "x", "c:x", "x:y"):  # a Windows separator, a drive or a stream
+            self.assert_link_refused(c, free, "a plain relative name", name=name)
+        target = self.root / "accepted" / "cand"  # names that only look alike are linked
+        p = checkout(c["repo"], c["base"], target, native_links(self.env), "--pack", str(pack), "--link", f".github={free}",
+                     "--link", f"git={free}", "--link", f"gitdir={free}")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        for name in (".github", "git", "gitdir"):
+            self.assertTrue((target / name).exists(), name)
+        self.assertEqual(sh(["git", "status", "--porcelain"], target, self.env).stdout.strip(), "")
+
+    def test_historyless_checkout_needs_a_windows_python_3_10_for_the_native_layer(self):
+        # LC4-2: the native layer calls os.path.realpath(path, strict=True), and strict came in Python 3.10. A 3.9 passed
+        # the old probe (3.8+) and then failed every check; the probe now asks for 3.10 and says so
+        import os
+        if os.name != "nt":
+            self.skipTest("not Windows: there is no native layer")
+        pack, c = make_pack(self.root, self.env)
+        stub = self.root / "py39"
+        stub.mkdir()
+        emulate = stub / "emulate39.py"  # a Windows Python that reports 3.9 and has 3.9's realpath (no strict)
+        emulate.write_text(textwrap.dedent("""\
+            import os
+            import sys
+            sys.version_info = (3, 9, 18, "final", 0)
+            _realpath = os.path.realpath
+            os.path.realpath = lambda path: _realpath(path)
+            args = sys.argv[1:]
+            if args[:1] == ["-I"]:
+                args = args[1:]
+            if args[:1] == ["-c"]:
+                sys.argv = ["-c", *args[2:]]
+                exec(compile(args[1], "<string>", "exec"), {"__name__": "__main__"})
+            elif args[:1] == ["-"]:
+                sys.argv = ["-", *args[1:]]
+                exec(compile(sys.stdin.read(), "<stdin>", "exec"), {"__name__": "__main__"})
+            else:
+                sys.exit(9)
+            """))
+        run39 = lambda code: subprocess.run([sys.executable, "-I", str(emulate), "-I", "-c", code], capture_output=True, text=True, timeout=60)
+        self.assertEqual(run39("import sys; print(sys.version_info >= (3, 10))").stdout.strip(), "False")
+        self.assertIn("TypeError", run39("import os; os.path.realpath('.', strict=True)").stderr)  # as a 3.9 fails
+        (stub / "python3").write_bytes(f'#!/bin/sh\nexec "{Path(sys.executable).as_posix()}" -I "{emulate.as_posix()}" "$@"\n'.encode())
+        (stub / "python3").chmod(0o755)
+        names = ("python3", "python3.exe", "python", "python.exe")
+        dirs = [d for d in self.env.get("PATH", "").split(os.pathsep) if d and not any(os.path.lexists(os.path.join(d, n)) for n in names)]
+        for flags in ((), ("--pack", str(pack))):
+            parent = self.root / f"refused-{len(flags)}"
+            p = checkout(c["repo"], c["base"], parent / "cand", {**self.env, "PATH": os.pathsep.join([str(stub), *dirs])}, *flags)
+            self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+            self.assertIn("no native path resolver", p.stderr)
+            self.assertIn("Python 3.10+", p.stderr)
+            self.assertFalse(parent.exists())
 
     def test_historyless_checkout_refuses_an_existing_target_and_one_inside_the_pack(self):
         pack, c = make_pack(self.root, self.env)
