@@ -55,12 +55,21 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    repository, such as a history-less checkout of the case base made outside the pack. Each symlink among the
    directory's own entries is checked the same way where it resolves (a linked directory is followed before a `..`
    after it, as a POSIX kernel does), and one that does not resolve is refused. Paths are compared by identity, not
-   spelling (another case on a case-insensitive filesystem names the same directory), along the parents both Git
-   Bash and native Windows programs walk (a mount such as Git Bash's `/` or `/tmp` has Windows parents of its own). A
-   UNC path (`//host/share/...`) is refused wherever a check needs it (the directory, a symlink's target, the pack,
-   its repository, the checkout's parent under `--pack`), since its parents cannot be checked reliably: install on a
-   local drive. The script ignores the
-   host's `GIT_DIR`, `GIT_WORK_TREE` and git's other repository variables.
+   spelling (another case on a case-insensitive filesystem names the same directory). A UNC path (`//host/share/...`)
+   is refused wherever a check needs it (the directory, a symlink's target, the pack, its repository, the checkout's
+   parent), since its parents cannot be checked reliably: install on a local drive. The checkout itself must not be
+   inside any git repository either (it would reach that repository through `..` the same way), and a refused
+   checkout makes nothing, not even its parent directories. Every check runs twice. The shell layer uses the path Git
+   Bash resolves and the parents it walks, plus the Windows parents of that path (a mount such as Git Bash's `/` or
+   `/tmp` has Windows parents of its own). On Windows, the native layer then resolves each path the way native
+   programs (git, node, Python) resolve it, through a Windows Python's `os.path.realpath`, and checks that path and its
+   parents again. Git Bash cannot see some links native programs follow, such as one whose target is a volume-GUID or
+   `GLOBALROOT` path, so only the native layer catches those. The native layer fails closed: a path it cannot resolve,
+   or one that resolves to anything but a drive-letter path, is refused, and so is every checkout when no Windows
+   Python 3.8+ is on `PATH` as `python3` or `python`. The script ignores the host's `GIT_DIR`, `GIT_WORK_TREE` and
+   git's other repository variables, and copies no git template (so `GIT_TEMPLATE_DIR` or `init.templateDir` cannot
+   give the checkout another repository's objects through `objects/info/alternates`). Its final proof counts every
+   object the checkout's git can read.
    Nothing deeper is checked: a symlink or a repository further down the dependency tree is not followed, and keeping
    those out is the host's duty.
 4. **Fill.** Write `run-config.json` = `{"manifest": <manifest.json>, "protocol": <protocol.json without its sources>,

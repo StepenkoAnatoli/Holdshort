@@ -27,7 +27,8 @@ names only the checkout, never the pack; `historyless-checkout.sh --pack`, `grad
 `run.template.js` refuse a checkout that shares a filesystem path with the pack directory, and
 `historyless-checkout.sh --link` refuses a dependency directory inside the pack or its repository, or inside any git
 repository (installed dependencies live outside the pack and outside every repository: a subject clone's install
-reaches the clone's history through `..`; paths are compared by identity, and a UNC path is refused). The fix case gives the
+reaches the clone's history through `..`; paths are compared by identity, on Windows also as native programs resolve
+them, and a UNC path is refused). It refuses a checkout inside any git repository for the same reason. The fix case gives the
 candidate the finding (its summary, cause and required behaviour; without the cause when `cases.fix.cause_in_prompt` is
 false), never the accepted change. A shared pack is small by
 construction: it discriminates the bounded T1 shape only, and a host that needs more runs its own pack.

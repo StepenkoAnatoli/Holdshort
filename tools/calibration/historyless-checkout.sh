@@ -9,7 +9,10 @@
 #
 #   SOURCE_REPO  the pack's git repository (it holds COMMIT and, elsewhere in its history, the accepted fix)
 #   COMMIT       the case's base revision
-#   TARGET       the candidate's checkout; must not exist
+#   TARGET       the candidate's checkout; must not exist, and must not be inside any git repository (TARGET's parent
+#                or one of its real ancestors is one, tested as for --link DIR below): through '..' the checkout would
+#                reach that repository's files and history (Item 2). Its missing parents are made only after every
+#                check has passed, as spelled, so that part may hold no '.' or '..' segment
 #   BRANCH       the branch the single commit is on
 #   --link NAME=DIR  symlink DIR (an installed dependency tree, a build cache) into TARGET/NAME and list NAME in
 #                TARGET/.git/info/exclude so a candidate's `git add -A` never commits it; repeatable. DIR must be
@@ -21,23 +24,40 @@
 #                files and history, such as a subject clone's accepted fix and orchestration records (IC4-1). Each
 #                symlink among DIR's own entries (its top level, dot entries too) is checked the same way on the
 #                real path it resolves to (followed hop by hop as a POSIX kernel does: a linked directory before the
-#                '..' after it), and one that does not resolve is refused. Nothing deeper is checked: a symlink or a
-#                repository further down inside DIR is not followed, and is the host's to avoid.
+#                '..' after it), and one that does not resolve is refused; both layers below do this. Nothing deeper is
+#                checked: a symlink or a repository further down inside DIR is not followed, and is the host's to avoid.
 #   --pack DIR   refuse when TARGET is inside DIR or DIR inside TARGET (proposal Item 2: no candidate checkout shares
-#                a filesystem path with the pack)
+#                a filesystem path with the pack), in both layers below
 #
 # How paths are compared: "inside" and "holds" are decided by identity ([ -ef ]) along a path's ancestors, not by
-# spelling, so another spelling of the same directory (another case on a case-insensitive filesystem) cannot pass. The
-# ancestors are those '..' reaches in the shell's namespace and, where cygpath exists (Git Bash, Cygwin), in the
-# Windows spelling native programs walk (a mount such as Git Bash's / or /tmp has Windows parents the shell does not
-# show). A UNC path (//host/share/...) is refused wherever a check needs it - DIR, a symlink's target, SOURCE_REPO and
-# PACK_DIR when they are compared, TARGET's parent under --pack: its spellings need not compare as one directory and
-# '..' at a share root differs between the shell and Windows, so it cannot be checked reliably. The host's git
-# repository variables (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, ...: git rev-parse --local-env-vars) are dropped, so
-# every git command works on the repository it names and none on another.
+# spelling, so another spelling of the same directory (another case on a case-insensitive filesystem) cannot pass. A
+# UNC path (//host/share/...) is refused wherever a check needs it - DIR, a symlink's target, SOURCE_REPO and PACK_DIR
+# when they are compared, TARGET's parent: its spellings need not compare as one directory and '..' at a share root
+# differs between the shell and Windows, so it cannot be checked reliably. Every check runs in two layers, and a path
+# must pass both:
+#   the shell layer: the physical path the shell resolves (pwd -P; a symlink followed hop by hop, as a POSIX kernel
+#                does) and the parents '..' reaches from it in the shell's namespace, plus, where cygpath exists (Git
+#                Bash, Cygwin), the parents of its Windows spelling (cygpath -m: a mount such as Git Bash's / or /tmp
+#                has Windows parents the shell does not show). This is what bash and the MSYS tools a candidate runs
+#                see, and on a POSIX host it is also what every other program sees.
+#   the native layer (Windows only: Git Bash, MSYS2, Cygwin): each path - SOURCE_REPO when there are links, PACK_DIR,
+#                each DIR, each entry at DIR's top that is a symlink, junction or other reparse point, and TARGET's
+#                nearest existing parent - resolved the way native programs (git, node, Python) resolve it, by a
+#                Windows Python's os.path.realpath(path, strict=True) (GetFinalPathNameByHandle), and the same checks
+#                (identity with os.path.samefile, the .git walk) run on that final path and its parents. Git Bash
+#                cannot see some links native programs follow: one to a volume-GUID or GLOBALROOT path is a plain
+#                directory to it (no -L, no readlink, pwd -P keeps the link's own path), and only this layer follows it
+#                (LC3-1). It fails closed: a path it cannot resolve, or that resolves to anything but a drive-letter
+#                path (a UNC path, a volume with no drive letter), is refused, and so is every checkout when no
+#                Windows Python 3.8+ (python3 or python) is on PATH. Its refusals say "as native programs resolve it".
+# The host's git repository variables (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, ...: git rev-parse --local-env-vars)
+# are dropped, so every git command works on the repository it names and none on another; and git init copies no
+# template (--template=), so neither GIT_TEMPLATE_DIR nor init.templateDir can add objects/info/alternates (another
+# repository's objects) or hooks to the checkout. The final proof counts every object the checkout's git can read.
 #
-# Exit 0 with one "ok" line when TARGET holds exactly one commit whose tree is COMMIT's tree; 2 on bad arguments or a
-# refused target; 1 when git fails or the proof does not hold.
+# Exit 0 with one "ok" line when TARGET holds exactly one commit whose tree is COMMIT's tree, and no object but that
+# commit and the objects of that tree; 2 on bad arguments or a refused target (nothing is made then); 1 when git fails
+# or the proof does not hold.
 set -euo pipefail
 # git honours GIT_DIR and the like over -C: with them naming another repository, git init re-initialised it and
 # update-ref and reset --hard rewrote it (LC2-3). Drop every variable git itself lists as local to a repository.
@@ -95,11 +115,25 @@ within() { [ "$2" = / ] && return 0; case "$1/" in "$2"/*) return 0 ;; esac; ret
 is_repo() {
   [ -e "${1%/}/.git" ] || [ -L "${1%/}/.git" ] || { [ -f "${1%/}/HEAD" ] && [ -d "${1%/}/objects" ] && [ -d "${1%/}/refs" ]; }
 }
+WINDOWS=""
+case "$(uname -s 2>/dev/null)" in CYGWIN* | MINGW* | MSYS*) WINDOWS=1 ;; esac
 WINPATHS=""
 if command -v cygpath >/dev/null 2>&1; then
   WINPATHS=1
-else
-  case "$(uname -s 2>/dev/null)" in CYGWIN* | MINGW* | MSYS*) refuse "cygpath is missing: the Windows parents of a path cannot be checked" ;; esac
+elif [ -n "$WINDOWS" ]; then
+  refuse "cygpath is missing: the Windows parents of a path cannot be checked"
+fi
+# NATIVE_PY: on Windows, the first of python3 and python that is a Windows Python 3.8+ (os.name nt: its
+# os.path.realpath resolves through GetFinalPathNameByHandle, as native programs do; an MSYS2 or Cygwin Python resolves
+# as the shell does). With none, the native layer cannot run, and the checkout is refused (fail closed)
+NATIVE_PY=""
+if [ -n "$WINDOWS" ]; then
+  for py in python3 python; do
+    command -v "$py" >/dev/null 2>&1 || continue
+    probe=$("$py" -I -c 'import os, sys; sys.stdout.write(os.name if sys.version_info >= (3, 8) else "old")' 2>/dev/null) || continue
+    if [ "$probe" = nt ]; then NATIVE_PY=$py; break; fi
+  done
+  [ -n "$NATIVE_PY" ] || refuse "no native path resolver: on Windows the checks also resolve each path as native programs do, which needs a Windows Python 3.8+ on PATH as python3 or python (an MSYS2 or Cygwin Python resolves as the shell does)"
 fi
 # ancestors P: set ANC to the physical path P and every directory above it, nearest first, as '..' reaches them: in
 # the shell's spelling, then (with cygpath) in the Windows spelling cygpath -m gives, which native programs walk (a
@@ -166,9 +200,6 @@ if [ -n "$PACK" ]; then
   PACK_ABS=$(phys "$PACK") || refuse "no pack directory: $PACK"
   add_guard "$PACK_ABS" "the pack"
 fi
-# the source lookup follows the checks above, so a UNC source is refused as one (git itself reports "dubious ownership")
-TREE=$(git -C "$SRC_ABS" rev-parse --verify --quiet "$COMMIT^{tree}") || refuse "not a commit in $SRC: $COMMIT"
-git check-ref-format --branch "$BRANCH" >/dev/null 2>&1 || refuse "not a branch name: $BRANCH"
 # guard_link NAME P WHAT: refuse when the physical path P is not a local path, shares a path with SOURCE_REPO or
 # PACK_DIR (it is one of them or lies under it - one of its ancestors is the same directory - or holds one - one of
 # the guarded path's ancestors is P), or is inside a git repository (it or one of its ancestors is one); WHAT names P
@@ -212,33 +243,201 @@ for spec in ${LINKS[@]+"${LINKS[@]}"}; do
   LINK_DIRS+=("$dep")
 done
 
+# the target: every check runs before anything is made (LC3-3). EXIST is TARGET's nearest existing parent; the parents
+# under it do not exist yet, so they hold no link and no repository, and they are made as spelled (no '.' or '..', so
+# that the spelling is the path)
 PARENT=$(dirname -- "$DIR")
-mkdir -p -- "$PARENT"
-PARENT_ABS=$(phys "$PARENT")
-TARGET_ABS="$PARENT_ABS/$(basename -- "$DIR")"
+TNAME=$(basename -- "$DIR")
+EXIST=$PARENT
+REST=""
+while ! [ -d "$EXIST" ]; do
+  if [ -e "$EXIST" ] || [ -L "$EXIST" ]; then refuse "target $DIR: $EXIST is not a directory"; fi
+  part=$(basename -- "$EXIST")
+  case "$part" in
+    . | ..) refuse "target $DIR: the part of its parent that does not exist yet holds a '$part' segment; spell it without '.' or '..'" ;;
+  esac
+  REST=$part${REST:+/$REST}
+  next=$(dirname -- "$EXIST")
+  [ "$next" != "$EXIST" ] || refuse "target $DIR: no parent of it exists"
+  EXIST=$next
+done
+EXIST_ABS=$(phys "$EXIST") || refuse "target $DIR: no directory $EXIST"
+PARENT_ABS=${EXIST_ABS%/}${REST:+/$REST}
+PARENT_ABS=${PARENT_ABS:-/}
+TARGET_ABS=${PARENT_ABS%/}/$TNAME
+# TARGET does not exist, so it is inside a directory exactly when its parent is that directory or lies under it
+ancestors "$PARENT_ABS" || refuse "target $TARGET_ABS: its parent $LOCAL_ONLY"
 if [ -n "$PACK_ABS" ]; then
-  # TARGET does not exist, so it is inside the pack exactly when its parent is the pack or lies under it
-  ancestors "$PARENT_ABS" || refuse "target $TARGET_ABS: its parent $LOCAL_ONLY"
   for a in "${ANC[@]}"; do
     if [ "$a" -ef "$PACK_ABS" ]; then refuse "target $TARGET_ABS is inside the pack $PACK_ABS"; fi
   done
   within "$PACK_ABS" "$TARGET_ABS" && refuse "the pack $PACK_ABS is inside the target $TARGET_ABS"
 fi
+for a in "${ANC[@]}"; do
+  if is_repo "$a"; then
+    refuse "target $TARGET_ABS is inside the git repository $a; a checkout inside a repository reaches that repository's history and files through '..' (Item 2)"
+  fi
+done
 
-git init -q -b "$BRANCH" "$TARGET_ABS"
+# native_guard ITEM...: the native layer (see the header). Each ITEM is four words, KIND NAME SHOWN PATH: KIND is S (the
+# source repository), P (the pack), L (a --link DIR, NAME its name) or T (the target, PATH its nearest existing
+# parent); SHOWN is the path as the shell spells it, for the messages; PATH is its Windows spelling. Exit 0 when every
+# check passes; 2 with the refusal on stdout; anything else is a failure of the check itself, and refused as well
+native_guard() {
+  MSYS2_ARG_CONV_EXCL='*' "$NATIVE_PY" -I - "$@" <<'PY'
+import os
+import stat
+import sys
+
+sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace", newline="\n")
+AS = "as native programs resolve it"
+LOCAL = "which is not a local path (a UNC path, or a volume with no drive letter), whose parents cannot be checked reliably (Item 2)"
+THROUGH = "that repository's history and files through '..' (Item 2)"
+
+
+class Refused(Exception):
+    pass
+
+
+def final(path, what):
+    """path with every link of any kind followed, as native programs follow it (GetFinalPathNameByHandle), spelled
+    with a drive letter; refused when it does not resolve or resolves to another form"""
+    try:
+        real = os.path.realpath(path, strict=True)
+    except (OSError, ValueError) as e:
+        raise Refused(f"{what}, {AS}, does not resolve ({e})")
+    if not (len(real) >= 3 and real[0].isascii() and real[0].isalpha() and real[1] == ":" and real[2] == os.sep):
+        raise Refused(f"{what} resolves, {AS}, to {real}, {LOCAL}")
+    return real
+
+
+def parents(real):
+    """real and every directory above it, nearest first: those '..' reaches from a final path"""
+    out = [real]
+    while os.path.dirname(real) != real:
+        real = os.path.dirname(real)
+        out.append(real)
+    return out
+
+
+REPOS = {}
+
+
+def is_repo(d):
+    """d holds a .git entry or is a git directory (HEAD, objects/ and refs/), as is_repo in the shell layer"""
+    if d not in REPOS:
+        j = lambda n: os.path.join(d, n)
+        REPOS[d] = os.path.lexists(j(".git")) or (os.path.isfile(j("HEAD")) and os.path.isdir(j("objects")) and os.path.isdir(j("refs")))
+    return REPOS[d]
+
+
+def same(a, b):
+    if os.path.normcase(a) == os.path.normcase(b):
+        return True
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+def is_link(entry):
+    """a symlink, a junction or any other reparse point; an entry that cannot be read counts as one"""
+    try:
+        st = entry.stat(follow_symlinks=False)
+    except OSError:
+        return True
+    return entry.is_symlink() or bool(getattr(st, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def run(items):
+    if os.name != "nt":
+        raise Refused("no native path resolver: this Python is not a Windows one")
+    guards = [(kind, shown, final(path, ("the source repository " if kind == "S" else "the pack ") + shown))
+              for kind, name, shown, path in items if kind in ("S", "P")]
+
+    def check(prefix, what, real):
+        for kind, shown, g in guards:
+            if any(same(a, g) for a in parents(real)) or any(same(a, real) for a in parents(g)):
+                raise Refused(f"{prefix}{what}, {AS} ({real}), shares a path with {shown}, which holds the accepted fix (Item 2)")
+        for a in parents(real):
+            if is_repo(a):
+                raise Refused(f"{prefix}{what}, {AS} ({real}), is inside the git repository {a}; a dependency tree inside a repository lets the checkout reach {THROUGH}")
+
+    for kind, name, shown, path in items:
+        if kind == "L":
+            prefix = f"--link {name}: "
+            real = final(path, prefix + shown)
+            check(prefix, shown, real)
+            with os.scandir(real) as it:
+                entries = sorted(it, key=lambda e: e.name)
+            for e in entries:
+                if is_link(e):
+                    what = f"{e.path}, a link at the top of {shown}"
+                    check(prefix, what, final(e.path, prefix + what))
+        elif kind == "T":
+            real = final(path, f"target {shown}: its nearest existing parent")
+            for k, gshown, g in guards:
+                if k == "P" and any(same(a, g) for a in parents(real)):
+                    raise Refused(f"target {shown}, {AS} (its parent lies in {real}), is inside the pack {gshown}")
+            for a in parents(real):
+                if is_repo(a):
+                    raise Refused(f"target {shown}, {AS} (its parent lies in {real}), is inside the git repository {a}; a checkout inside a repository reaches {THROUGH}")
+
+
+args = sys.argv[1:]
+try:
+    run([args[i:i + 4] for i in range(0, len(args), 4)])
+except Refused as r:
+    sys.stdout.write(str(r))
+    sys.exit(2)
+PY
+}
+if [ -n "$WINDOWS" ]; then
+  NARGS=()
+  # add_native KIND NAME SHOWN P: one item for native_guard, with the Windows spelling of the shell's physical path P
+  add_native() {
+    local w
+    w=$(cygpath -m -- "$4") || refuse "$3: no Windows spelling for $4"
+    NARGS+=("$1" "$2" "$3" "$w")
+  }
+  [ ${#LINKS[@]} -eq 0 ] || add_native S - "$SRC_ABS" "$SRC_ABS"
+  [ -z "$PACK_ABS" ] || add_native P - "$PACK_ABS" "$PACK_ABS"
+  for i in ${LINK_NAMES[@]+"${!LINK_NAMES[@]}"}; do add_native L "${LINK_NAMES[$i]}" "${LINK_DIRS[$i]}" "${LINK_DIRS[$i]}"; done
+  add_native T - "$TARGET_ABS" "$EXIST_ABS"
+  NOUT=$(native_guard "${NARGS[@]}") && NRC=0 || NRC=$?
+  NOUT=${NOUT%$'\r'}
+  case $NRC in
+    0) ;;
+    2) refuse "$NOUT" ;;
+    *) refuse "the native path check failed (exit $NRC), so the paths cannot be checked as native programs resolve them${NOUT:+: $NOUT}" ;;
+  esac
+fi
+
+# the source lookup follows the path checks, so a UNC source is refused as one (git itself reports "dubious ownership")
+TREE=$(git -C "$SRC_ABS" rev-parse --verify --quiet "$COMMIT^{tree}") || refuse "not a commit in $SRC: $COMMIT"
+git check-ref-format --branch "$BRANCH" >/dev/null 2>&1 || refuse "not a branch name: $BRANCH"
+
+mkdir -p -- "$PARENT_ABS"
+# no template (--template=): GIT_TEMPLATE_DIR or init.templateDir could copy objects/info/alternates, naming another
+# repository's objects, or hooks into the new .git (LC3-2)
+git init -q --template= -b "$BRANCH" "$TARGET_ABS"
 # the base tree and every tree and blob under it, and nothing else: no commit of the source is copied
-{ echo "$TREE"; git -C "$SRC_ABS" ls-tree -r -t "$TREE" | awk '$2 != "commit" { print $3 }'; } \
-  | git -C "$SRC_ABS" pack-objects --stdout -q | git -C "$TARGET_ABS" unpack-objects -q
+OBJECTS=$({ echo "$TREE"; git -C "$SRC_ABS" ls-tree -r -t "$TREE" | awk '$2 != "commit" { print $3 }'; } | LC_ALL=C sort -u)
+printf '%s\n' "$OBJECTS" | git -C "$SRC_ABS" pack-objects --stdout -q | git -C "$TARGET_ABS" unpack-objects -q
 BASE=$(git -C "$TARGET_ABS" -c user.name=calibration -c user.email=calibration@localhost \
   commit-tree --no-gpg-sign -m "calibration base: a tree with no history" "$TREE")
 git -C "$TARGET_ABS" update-ref "refs/heads/$BRANCH" "$BASE"
 git -C "$TARGET_ABS" reset -q --hard "$BASE"
 for i in ${LINK_NAMES[@]+"${!LINK_NAMES[@]}"}; do
   ln -s "${LINK_DIRS[$i]}" "$TARGET_ABS/${LINK_NAMES[$i]}"
+  mkdir -p -- "$TARGET_ABS/.git/info"
   printf '/%s\n' "${LINK_NAMES[$i]}" >> "$TARGET_ABS/.git/info/exclude"
 done
 
-# proof: exactly one commit reachable from any ref, and its tree is the base tree
+# proof: exactly one commit reachable from any ref, its tree is the base tree, and the checkout's git can read no object
+# but that commit and the objects of that tree (--batch-all-objects reads alternates too)
 [ "$(git -C "$TARGET_ABS" rev-list --all --count)" = 1 ] || { echo "historyless-checkout: more than one commit in $TARGET_ABS" >&2; exit 1; }
 [ "$(git -C "$TARGET_ABS" rev-parse HEAD^{tree})" = "$TREE" ] || { echo "historyless-checkout: tree differs from $COMMIT" >&2; exit 1; }
+[ "$(git -C "$TARGET_ABS" cat-file --batch-all-objects --batch-check='%(objectname)' | LC_ALL=C sort -u)" = "$(printf '%s\n%s\n' "$OBJECTS" "$BASE" | LC_ALL=C sort -u)" ] \
+  || { echo "historyless-checkout: $TARGET_ABS can read objects other than the base commit and its tree (objects/info/alternates?)" >&2; exit 1; }
 echo "ok $TARGET_ABS: one commit, the tree of $COMMIT, branch $BRANCH"
