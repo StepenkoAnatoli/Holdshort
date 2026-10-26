@@ -1,0 +1,35 @@
+{
+  "_comment": "Offline price bounds for the DeepSeek V4.1 Flash Free (max effort) profile. These are vendor-published list prices, not measured cost. The target's free list price is $0.00; the conservative bound uses the metered sibling's published list price so a zero list price cannot hide cost or bypass a gate. No calibration or provider run produced these numbers.",
+  "revision": "deepseek-v4.1-flash-free-max-prices-3",
+  "currency": "USD",
+  "unit": "USD per million tokens",
+  "profile_id": "deepseek-v4.1-flash-free-max",
+  "model_id": "deepseek-v4.1-flash-free",
+  "provider": "opencode",
+  "retrieved_at": "2026-10-21",
+  "vendor_list_price": {
+    "label": "vendor list price, not measured cost",
+    "input_rate_per_mtok": 0.0,
+    "cached_input_rate_per_mtok": 0.0,
+    "output_rate_per_mtok": 0.0,
+    "source_url": "https://raw.githubusercontent.com/anomalyco/models.dev/32bb721dd51673f50ff21812a65902804975fb5c/providers/opencode/models/deepseek-v4.1-flash-free.toml",
+    "source_values": "cost input = 0; output = 0; cache_read = 0 (values from the linked TOML, not a verbatim quote)"
+  },
+  "conservative_bound": {
+    "label": "metered sibling's vendor list price; used only as a budget bound, not as the target's price",
+    "input_rate_per_mtok": 0.3,
+    "cached_input_rate_per_mtok": 0.006,
+    "output_rate_per_mtok": 1.2,
+    "source_url": "https://raw.githubusercontent.com/anomalyco/models.dev/32bb721dd51673f50ff21812a65902804975fb5c/providers/opencode/models/deepseek-v4.1-flash.toml",
+    "source_values": "cost input = 0.3; output = 1.2; cache_read = 0.006 (values from the linked TOML, not a verbatim quote)",
+    "reason": "the free label's duration is not documented and its zero list price may change without notice; a zero price must not bypass qualification, credential, endpoint, or budget gates"
+  },
+  "spend_authorization": {
+    "authorized": false,
+    "reason": "no target-specific spend allowance was supplied by the host; existing pilot caps cover a different, Anthropic-only scope",
+    "max_cost_per_task_usd": null,
+    "max_cost_per_pilot_usd": null,
+    "expires_at": null
+  },
+  "statement": "estimate-only bounds for offline planning. The target's vendor list price is $0.00 per MTok; the conservative bound is $0.30 input / $1.20 output per MTok from the metered sibling. Cached input is listed at $0.006 per MTok, but the bound prices every prompt token, cached or not, at the higher of the input and cached rates ($0.30), so a cache hit never lowers it. These are not bills, not observations, and not authorization to spend."
+}

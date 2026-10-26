@@ -39,6 +39,9 @@ name: regression-gate
 # dispatch and schedule, so requiring it would block every pull request that
 # could never produce it.
 #
+# gate-older-toolchain runs the same gate on ubuntu-22.04 (Git 2.34, Python 3.10),
+# the toolchain a contributor may actually have; see the job's comment.
+#
 # adapter-tests (display name claude-code-adapter-tests) runs the Claude Code host
 # adapter's Node suite (node --test hosts/claude-code/route.test.mjs) on every
 # trigger the gate job runs on, because the Python regression gate has no Node
@@ -76,6 +79,24 @@ jobs:
         with:
           python-version: "3.12"
       - name: Run the full regression gate (mirror of the pre-commit hook)
+        run: python tools/run_regression.py
+
+  # Portability guard: the toolchain a contributor may actually have. Ubuntu
+  # 22.04 ships Git 2.34 and Python 3.10, which is where `git ls-tree
+  # --format=` and `git worktree list -z` (both Git 2.36+) broke the gate while
+  # ubuntu-24.04 stayed green. Not a required context: it exists so a
+  # newer-Git-only option fails on the PR instead of in a contributor's clone.
+  gate-older-toolchain:
+    name: gate-older-toolchain
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.10"
+      - name: Full regression gate on Git 2.34 / Python 3.10
         run: python tools/run_regression.py
 
   watcher-once:
