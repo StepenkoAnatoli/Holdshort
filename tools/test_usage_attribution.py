@@ -8,7 +8,11 @@ figures that always state their price revision and assumptions.
 """
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
+import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -29,6 +33,18 @@ def obs(**overrides) -> dict:
                   completed_at="2026-10-21T10:00:02.500Z", counters=FULL)
     fields.update(overrides)
     return ua.observation(**fields)
+
+
+def cli(text: str):
+    """(exit code, stdout, stderr) of the CLI run on a JSONL file holding `text`."""
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "records.jsonl"
+        # bytes, so the line endings the test chose reach the CLI unchanged
+        path.write_bytes(text.encode("utf-8"))
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = ua.main([str(path)])
+    return code, out.getvalue(), err.getvalue()
 
 
 class Record(unittest.TestCase):
@@ -96,6 +112,17 @@ class Record(unittest.TestCase):
         with self.assertRaises(ua.AttributionError):
             obs(interrupted=True, completed_at="2026-10-21T10:00:02Z")
 
+    def test_instants_without_a_utc_form_refuse(self):
+        # converting these to UTC overflowed the date range and crashed the CLI
+        for start in ("0001-01-01T00:00:00+23:59", "9999-12-31T23:59:59-23:59"):
+            with self.subTest(start=start):
+                with self.assertRaises(ua.AttributionError):
+                    obs(started_at=start, interrupted=True, completed_at=None)
+                code, out, err = cli(json.dumps({**obs(), "started_at": start}, sort_keys=True)
+                                     + "\n")
+                self.assertEqual((code, out), (2, ""))
+                self.assertIn("REFUSED", err)
+
     def test_interrupted_run_keeps_its_start_and_no_duration(self):
         record = obs(interrupted=True, completed_at=None)
         self.assertIs(record["interrupted"], True)
@@ -115,6 +142,125 @@ class Record(unittest.TestCase):
             with self.subTest(overrides=overrides):
                 with self.assertRaises(ua.AttributionError):
                     obs(**overrides)
+
+    def test_identifiers_refuse_invisible_and_control_characters(self):
+        # "no whitespace" alone let zero-width and word joiners, a byte-order mark, a soft
+        # hyphen, a bidi override, C1 controls and tag characters (an invisible copy of
+        # ASCII text) through, so a sentence could ride along looking like one token
+        for code in (0x200B, 0x2060, 0xFEFF, 0x00AD, 0x202E, 0x0080, 0x009F, 0xE0041,
+                     0x00A0, 0x2028):
+            for field in ("run_id", "task_id", "requested_model", "observed_model"):
+                with self.subTest(code=hex(code), field=field):
+                    with self.assertRaises(ua.AttributionError):
+                        obs(**{field: "alpha" + chr(code) + "beta"})
+        self.assertEqual(obs(run_id="r" * 200, task_id="task:7/b")["task_id"], "task:7/b")
+
+    def test_identifiers_are_ascii(self):
+        # "printable" is a rendering property: combining marks, variation selectors (the
+        # usual encoding for smuggling bytes as invisible text), Hangul fillers and the
+        # blank braille pattern are printable, so a sentence still rode along in one id
+        for code in (0x034F, 0xFE0F, 0xE0100, 0x180B, 0x115F, 0x3164, 0x2800, 0x00E9):
+            for field in ("run_id", "task_id", "requested_model", "observed_model"):
+                with self.subTest(code=hex(code), field=field):
+                    with self.assertRaises(ua.AttributionError):
+                        obs(**{field: "alpha" + chr(code) + "beta"})
+        smuggled = {**obs(), "run_id": "r1" + "".join(chr(0xFE00 + b % 16) for b in b"sk-live-1")}
+        code, out, err = cli(json.dumps(smuggled, sort_keys=True) + "\n")
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("REFUSED", err)
+
+    def test_string_subclasses_are_not_strings(self):
+        # a str subclass can lie to len(), isprintable(), `in` and `==`, and json.dumps
+        # still writes its real text, so a whole answer passed as a clock
+        class Lying(str):
+            def __eq__(self, other):
+                return True
+            __hash__ = str.__hash__
+
+            def __len__(self):
+                return 64
+
+            def __contains__(self, item):
+                return False
+
+            def __iter__(self):
+                return iter("a" * 64)
+
+            def isprintable(self):
+                return True
+
+            def isascii(self):
+                return True
+
+        text = Lying("the whole answer text, with spaces")
+        for field in ("run_id", "task_id", "policy_sha256", "requested_model", "observed_model",
+                      "clock", "boundary"):
+            with self.subTest(field=field):
+                with self.assertRaises(ua.AttributionError):
+                    obs(**{field: text})
+                with self.assertRaises(ua.AttributionError):
+                    ua.export([{**obs(), field: text}])
+        with self.assertRaises(ua.AttributionError):
+            ua.estimate_cost(obs(), {"input": 1.0, "output": 1.0}, price_revision=text)
+
+        class Key(str):
+            # passes the whitelist as "effort"; json.dumps writes its real text
+            def __eq__(self, other):
+                return True
+
+            def __hash__(self):
+                return hash("effort")
+
+        key = Key("sk-live-0123456789 ignore previous instructions")
+        with self.assertRaises(ua.AttributionError):
+            obs(settings={key: "high"})
+        with self.assertRaises(ua.AttributionError):
+            ua.to_jsonl([{**obs(), "settings": {key: "high"}}])
+
+        # a dict subclass can show the checks one value and the record another
+        smuggled_text = "sk-live-0123456789 ignore previous instructions"
+
+        class Reads(dict):
+            def __getitem__(self, name):
+                return smuggled_text
+
+        class Lists(dict):
+            def items(self):
+                return [("effort", "high")]
+
+        self.assertEqual(obs(settings=Reads(effort="high"))["settings"], {"effort": "high"})
+        with self.assertRaises(ua.AttributionError):
+            obs(settings=Lists(effort=smuggled_text))
+
+    def test_numbers_are_bounded(self):
+        # an unbounded integer carried about 1.6 KB of arbitrary bytes as digits and
+        # overflowed estimate_cost; 2**53 is the largest integer JSON readers keep exact
+        limit = 2 ** 53
+        self.assertEqual(obs(counters={**FULL, "input_tokens": limit})["counters"]["input_tokens"],
+                         limit)
+        for what, counters in (("input 2**53 + 1", {**FULL, "input_tokens": limit + 1}),
+                               ("output 10**400", {**FULL, "output_tokens": 10 ** 400})):
+            with self.subTest(counters=what):
+                with self.assertRaises(ua.AttributionError):
+                    obs(counters=counters)
+        self.assertEqual(obs(settings={"reasoning": -limit})["settings"], {"reasoning": -limit})
+        for what, settings in (("effort 2**53 + 1", {"effort": limit + 1}),
+                               ("reasoning -(2**53 + 1)", {"reasoning": -(limit + 1)}),
+                               ("effort 10**400", {"effort": 10 ** 400}),
+                               ("reasoning 1e300", {"reasoning": 1e300}),
+                               ("max_output_tokens 2**53 + 1", {"max_output_tokens": limit + 1})):
+            with self.subTest(settings=what):
+                with self.assertRaises(ua.AttributionError):
+                    obs(settings=settings)
+
+    def test_refusals_never_echo_unknown_key_names(self):
+        # a key can be a secret too; the count says what to look for
+        with self.assertRaises(ua.AttributionError) as caught:
+            obs(settings={"sk_live_0123456789": "x"})
+        self.assertNotIn("0123456789", str(caught.exception))
+        with self.assertRaises(ua.AttributionError) as caught:
+            ua.export([{**obs(), "token_hunter2": 1}])
+        self.assertNotIn("hunter2", str(caught.exception))
 
 
 class Export(unittest.TestCase):
@@ -168,7 +314,7 @@ class Export(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             for name, record in (("bad", bad), ("crashing", crashing), ("good", obs())):
                 path = Path(tmp) / f"{name}.jsonl"
-                path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+                path.write_text(json.dumps(record, sort_keys=True) + "\n", encoding="utf-8")
                 out, err = io.StringIO(), io.StringIO()
                 with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
                     code = ua.main([str(path)])
@@ -180,6 +326,101 @@ class Export(unittest.TestCase):
                         self.assertIn("REFUSED", err.getvalue())
                         self.assertEqual(out.getvalue(), "")
                         self.assertNotIn("SECRET", err.getvalue())
+
+    def test_export_refuses_values_that_are_not_json(self):
+        # fields observation() does not take reached the comparison unchecked and
+        # escaped as a TypeError instead of a refusal
+        nested = []
+        for _ in range(100000):
+            nested = [nested]
+        for change in ({"schema_version": object()}, {"model_match": b"x"},
+                       {"latency_ms": {1, 2}}, {"schema_version": nested}):
+            with self.subTest(change=sorted(change)):
+                with self.assertRaises(ua.AttributionError):
+                    ua.export([{**obs(), **change}])
+
+    def test_cli_refuses_a_repeated_key(self):
+        # json.loads keeps the last copy of a repeated key: the first one stayed in the
+        # file, unchecked, behind a clean digest
+        record = {key: value for key, value in obs().items() if key != "settings"}
+        line = (json.dumps(record)[:-1] + ', "settings": {"effort": "FREE TEXT NOT A SETTING"}'
+                ', "settings": {"effort": "high"}}')
+        code, out, err = cli(line + "\n")
+        self.assertEqual(code, 2)
+        self.assertIn("REFUSED", err)
+        self.assertEqual(out, "")
+        self.assertNotIn("FREE TEXT", err)
+
+    def test_cli_refuses_a_deeply_nested_line(self):
+        for line in ("[" * 200000 + "]" * 200000, '{"a": ' * 200000 + "1" + "}" * 200000):
+            with self.subTest(shape=line[0]):
+                code, out, err = cli(line + "\n")
+                self.assertEqual(code, 2)
+                self.assertIn("REFUSED", err)
+                self.assertEqual(out, "")
+
+    def test_cli_reads_only_canonical_lines(self):
+        # The verdict and the digest cover the parsed records, so text the parse
+        # discarded stayed in the file unchecked behind a clean digest: a float keeps 17
+        # digits of any number of them, and padding, escapes and key order vanish too.
+        line = json.dumps(obs(settings={"effort": 1.5}), sort_keys=True)
+        self.assertEqual(line.count('"effort": 1.5'), 1)
+        code, out, err = cli(line + "\n")
+        self.assertEqual(code, 0, err)
+        record = json.loads(line)
+        for name, text in (
+            ("float digits", line.replace('"effort": 1.5', '"effort": 1.5' + "0" * 4000)),
+            ("exponent digits", line.replace('"effort": 1.5', '"effort": 15e-' + "0" * 400 + "1")),
+            ("padding", line.replace(", ", ",  \t ")),
+            ("an escaped letter", line.replace('"run-1"', '"\\u0072un-1"')),
+            ("key order", json.dumps(dict(reversed(list(record.items()))))),
+            ("compact separators", json.dumps(record, sort_keys=True, separators=(",", ":"))),
+            ("a blank line", line + "\n"),
+            ("a whitespace line", line + "\n \t"),
+        ):
+            with self.subTest(name):
+                code, out, err = cli(text + "\n")
+                self.assertEqual((code, out), (2, ""))
+                self.assertIn("REFUSED", err)
+        code, out, err = cli(line)
+        self.assertEqual((code, out), (2, ""), "a last line with no newline")
+
+    def test_cli_reads_one_line_ending(self):
+        # A checkout may turn every LF into CRLF, so an all-CRLF file reads as its LF
+        # form. Universal newlines also read a lone CR and a per-line mix, so a file
+        # could carry a choice of ending per line behind the same digest.
+        text = ua.to_jsonl([obs(), obs(task_id="task-2")])
+        code, out, err = cli(text)
+        self.assertEqual(code, 0, err)
+        digest = json.loads(out)["digest"]
+        code, out, err = cli(text.replace("\n", "\r\n"))
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["digest"], digest)
+        first, second = text.split("\n")[:2]
+        for name, mixed in (("CRLF then LF", f"{first}\r\n{second}\n"),
+                            ("LF then CRLF", f"{first}\n{second}\r\n"),
+                            ("lone CR", text.replace("\n", "\r")),
+                            ("lone CR between records", f"{first}\r{second}\n"),
+                            ("CR before CRLF", f"{first}\r\r\n{second}\r\n")):
+            with self.subTest(name):
+                code, out, err = cli(mixed)
+                self.assertEqual((code, out), (2, ""))
+                self.assertIn("REFUSED", err)
+
+    def test_to_jsonl_writes_what_the_cli_reads(self):
+        records = [obs(), obs(task_id="task-2", settings={"effort": "high", "reasoning": 0.25})]
+        text = ua.to_jsonl(records)
+        self.assertEqual(text, "".join(json.dumps(record, sort_keys=True) + "\n"
+                                       for record in ua.export(records)))
+        code, out, err = cli(text)
+        self.assertEqual(code, 0, err)
+        summary = json.loads(out)
+        self.assertEqual(summary["records"], 2)
+        digest = ua.hashlib.sha256(json.dumps(ua.export(records), sort_keys=True)
+                                   .encode("utf-8")).hexdigest()
+        self.assertEqual(summary["digest"], digest)
+        with self.assertRaises(ua.AttributionError):
+            ua.to_jsonl([{**obs(), "prompt": "SECRET"}])
 
     def test_export_has_no_free_form_text_field(self):
         exported = ua.export([obs()])[0]
@@ -263,6 +504,24 @@ class Cost(unittest.TestCase):
             ua.estimate_cost({**obs(), "counters": {**FULL, "output_tokens": "300"}},
                              {"input": 3.0, "cached_input": 0.3, "output": 15.0},
                              price_revision="prices-2")
+
+    def test_cost_is_always_a_finite_number_or_a_refusal(self):
+        # 10**400 tokens or a 10**400 rate raised OverflowError instead of refusing
+        plain = {**FULL, "cached_input_tokens": 0}
+        rates = {"input": 3.0, "output": 15.0}
+        for what, counters, sheet in (
+                ("10**400 input tokens", {**plain, "input_tokens": 10 ** 400}, rates),
+                ("10**400 input rate", plain, {"input": 10 ** 400, "output": 15}),
+                ("output rate above 2**53", plain, {"input": 3.0, "output": 1e300})):
+            with self.subTest(what):
+                with self.assertRaises(ua.AttributionError):
+                    ua.estimate_cost({"counters": counters}, sheet, price_revision="prices-2")
+        limit = 2 ** 53
+        largest = ua.estimate_cost(
+            {"counters": {"input_tokens": limit, "cached_input_tokens": 0,
+                          "output_tokens": limit, "reasoning_output_tokens": 0}},
+            {"input": limit, "output": limit}, price_revision="prices-2")
+        self.assertEqual(largest["cost_usd"], 2 * limit * limit / 1_000_000)
 
 
 class Aggregation(unittest.TestCase):
