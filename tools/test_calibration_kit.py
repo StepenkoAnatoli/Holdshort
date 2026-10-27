@@ -7,6 +7,7 @@ repositories it builds itself; nothing here calls a provider, reads a credential
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib.util
 import json
 import re
@@ -16,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import unittest
 from pathlib import Path
 
@@ -144,9 +146,10 @@ PROTOCOL_KEYS = {"_lineage", "schema_version", "kit_version", "status", "run_id"
                  "usage_window_readings", "amendments"}
 
 
-def fill_template(cfg: dict) -> str:
-    """The README's fill step: the run config into `null // {{RUN}}`, the prompt files into `null // {{PROMPTS}}`."""
-    text = (KIT / "run.template.js").read_text(encoding="utf-8")
+def fill_template(cfg: dict, template: str | None = None) -> str:
+    """The README's fill step: the run config into `null // {{RUN}}`, the prompt files into `null // {{PROMPTS}}`
+    (`template`: another template's text, e.g. an earlier commit's, in place of the kit's run.template.js)."""
+    text = template if template is not None else (KIT / "run.template.js").read_text(encoding="utf-8")
     prompts = {n: (KIT / f"{n}.prompt.md").read_text(encoding="utf-8") for n in ("grader", "lens", "cluster")}
     prompts["classification"] = (KIT / "classification.md").read_text(encoding="utf-8")
     assert text.count("null // {{RUN}}") == 1 and text.count("null // {{PROMPTS}}") == 1
@@ -199,9 +202,9 @@ console.log(JSON.stringify({ calls, result, error }));
 """
 
 
-def execute_template(cfg: dict, root: Path, canned: dict | None = None) -> dict:
+def execute_template(cfg: dict, root: Path, canned: dict | None = None, template: str | None = None) -> dict:
     """Run the filled template under node with stub harness globals (the harness wraps a script body the same way)."""
-    body = fill_template(cfg).replace("export const meta", "const meta", 1)
+    body = fill_template(cfg, template).replace("export const meta", "const meta", 1)
     src = STUB_HARNESS.replace("__CANNED__", json.dumps(canned or canned_outputs())).replace("__BODY__", body)
     path = root / "filled-run.mjs"
     path.write_text(src)
@@ -470,6 +473,183 @@ NEEDS_SH_LINKS = unittest.skipUnless(
     "bash's ln -s makes no symlink on this host (Git Bash without the privilege copies the directory)")
 
 
+def repo_holding(path: Path) -> Path | None:
+    """The nearest of path's real path and its ancestors that historyless-checkout.sh takes for a repository: it holds
+    an entry of any type named .git, HEAD, commondir or gitdir, or both an objects and a refs entry; None when there is
+    none."""
+    import os
+    p = Path(path).resolve()
+    for d in (p, *p.parents):
+        if any(os.path.lexists(d / n) for n in (".git", "HEAD", "commondir", "gitdir")) or (os.path.lexists(d / "objects") and os.path.lexists(d / "refs")):
+            return d
+    return None
+
+
+# A test that needs --link to accept a directory it made under the temporary directory refuses to run when that
+# directory is inside a repository: the script would refuse the link for that reason, not the test's (IC4-1).
+TEMP_IN_REPO = "the temporary directory {} is inside the git repository {}: set TEMP outside any repository to run this test"
+
+
+def native_links(env: dict) -> dict:
+    """env with Git Bash's `ln -s` making a native symlink (by default it copies the target). Only MSYS programs read
+    MSYS, so other hosts are unaffected."""
+    msys = env.get("MSYS", "")
+    return env if "winsymlinks" in msys else {**env, "MSYS": f"{msys} winsymlinks:nativestrict".strip()}
+
+
+def unc(path: Path) -> str | None:
+    """path's spelling through the administrative share //localhost/<drive>$ (a UNC path, served over loopback), or None
+    when the host has no such spelling (not Windows, or not on a drive letter)."""
+    import os
+    p = str(Path(path).resolve())
+    if os.name != "nt" or len(p) < 3 or p[1:3] != ":\\":
+        return None
+    return f"//localhost/{p[0]}$/" + p[3:].replace("\\", "/")
+
+
+def bash_native(path: Path, env: dict) -> str:
+    """The spelling of path that historyless-checkout.sh walks for native programs: cygpath -m of the shell's physical
+    path where cygpath exists (Git Bash, Cygwin), else the physical path itself."""
+    p = subprocess.run(["bash", "-c", 'p=$(cd -- "$1" && pwd -P) || exit 1; if command -v cygpath >/dev/null 2>&1; then cygpath -m -- "$p"; '
+                        'else printf "%s\\n" "$p"; fi', "native", str(path)], env=env, capture_output=True, text=True, timeout=60)
+    assert p.returncode == 0, p.stderr
+    return p.stdout.strip()
+
+
+# A cygpath that answers like the real one (or, where there is none, with the path itself), except that a path whose
+# Windows spelling lies under $STUB_MOUNT is reported under $STUB_TARGET: a mount whose Windows parents differ from the
+# shell's, which a test cannot make for real (Git Bash's mount table is shared by every Git Bash process of the user).
+STUB_CYGPATH = """#!/bin/sh
+[ "$1" = -m ] && [ "$2" = -- ] && [ $# -eq 3 ] || { echo "stub cygpath: unexpected arguments: $*" >&2; exit 9; }
+if [ -x /usr/bin/cygpath ]; then w=$(/usr/bin/cygpath -m -- "$3") || exit 1; else w=$3; fi
+if [ -n "${STUB_MOUNT:-}" ]; then
+  case "$w" in "$STUB_MOUNT" | "$STUB_MOUNT"/*) w=$STUB_TARGET${w#"$STUB_MOUNT"} ;; esac
+fi
+printf '%s\\n' "$w"
+"""
+
+
+def tree_bytes(root: Path) -> dict:
+    """Every file under root (its .git too) with its bytes: a snapshot that reading it cannot change."""
+    return {str(p.relative_to(root)): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file() and not p.is_symlink()}
+
+
+# On Windows historyless-checkout.sh checks each path twice: as the shell resolves it, and as native programs (git,
+# node, Python) resolve it, through a Windows Python's os.path.realpath. Only a refusal by the second layer carries this
+# phrase. The tests pin which layer refuses, so a check removed from one layer cannot pass unseen behind the other.
+NATIVE = "as native programs resolve it"
+BS = "\\"
+NT_PREFIX = BS + BS + "?" + BS  # the Win32 file-namespace prefix (two backslashes, '?', a backslash), built, not typed
+
+
+def volume_spelling(path: Path) -> str | None:
+    """path spelled through its volume's GUID name (the prefix, then Volume{<guid>}, then the rest of the path), a
+    symlink target Git Bash cannot see through; None when not Windows or the volume has no GUID name."""
+    import os
+    if os.name != "nt":
+        return None
+    import ctypes
+    p = str(Path(path).resolve())
+    buf = ctypes.create_unicode_buffer(64)
+    if len(p) < 3 or p[1:3] != ":" + BS or not ctypes.windll.kernel32.GetVolumeNameForVolumeMountPointW(p[:3], buf, 64):
+        return None
+    return buf.value + p[3:]  # the volume name ends with a backslash
+
+
+def globalroot_spelling(path: Path) -> str:
+    """path spelled through the object manager's root (the prefix, GLOBALROOT, DosDevices, then C: and the rest)."""
+    return NT_PREFIX + BS.join(("GLOBALROOT", "DosDevices", str(Path(path).resolve())))
+
+
+def mup_spelling(path: Path) -> str:
+    """path spelled as a UNC path in device form: GLOBALROOT, Device, Mup, then localhost, the drive's administrative
+    share (C$) and the rest. Native programs resolve it to the UNC path //localhost/C$/..."""
+    p = str(Path(path).resolve())
+    return NT_PREFIX + BS.join(("GLOBALROOT", "Device", "Mup", "localhost", p[0] + "$", p[3:]))
+
+
+def bash_sees_link(link: Path, env: dict) -> bool:
+    """Git Bash reports link as a symlink ([ -L ])."""
+    p = subprocess.run(["bash", "-c", '[ -L "$1" ]', "seen", str(link)], env=env, capture_output=True, text=True, timeout=60)
+    return p.returncode == 0
+
+
+def msys_link(link: Path, to: str, mode: str, env: dict) -> None:
+    """Make link with Git Bash's `ln -s` under MSYS=winsymlinks:<mode>: "sys" writes a system file holding the target,
+    "lnk" a Windows shortcut (link.lnk). Git Bash and every MSYS program follow both; to Windows each is a plain file,
+    no reparse point, so Python and node see no link. to is the target as the shell spells it."""
+    p = subprocess.run(["bash", "-c", 'ln -s -- "$1" "$2"', "ln", to, str(link)], env={**env, "MSYS": f"winsymlinks:{mode}"},
+                       capture_output=True, text=True, timeout=60)
+    assert p.returncode == 0, p.stderr
+
+
+def shell_spelling(path, env: dict) -> str:
+    """path as Git Bash spells it (cygpath -u), or unchanged where there is no cygpath."""
+    p = subprocess.run(["bash", "-c", 'if command -v cygpath >/dev/null 2>&1; then cygpath -u -- "$1"; else printf "%s\\n" "$1"; fi',
+                        "spell", str(path)], env=env, capture_output=True, text=True, timeout=60)
+    assert p.returncode == 0, p.stderr
+    return p.stdout.strip()
+
+
+# MSYS splits a Windows command line at a newline, so a Windows program cannot hand Git Bash an argument that holds one.
+# Such an argument is passed with @NL@ in each newline's place, and bash puts the newlines back before it runs anything.
+NL_WRAP = 'nl=$(printf "\\nx"); nl=${nl%x}; set -- "${@//@NL@/$nl}"; '
+UNPROVED = "is not proved to name the file it came from"
+
+
+def bash_nl(cmd: str, *args, env: dict) -> subprocess.CompletedProcess:
+    """bash -c cmd with args, each newline in them passed whole (NL_WRAP)."""
+    return subprocess.run(["bash", "-c", NL_WRAP + cmd, "nl", *[str(a).replace("\n", "@NL@") for a in args]], env=env,
+                          capture_output=True, text=True, timeout=120)
+
+
+def checkout_spelled(src, commit: str, target, env: dict, *flags) -> subprocess.CompletedProcess:
+    """checkout() with any argument that holds a newline passed whole."""
+    return bash_nl('exec bash "$@"', KIT / "historyless-checkout.sh", *flags, src, commit, target, "cal/test", env=env)
+
+
+def nl_path(path: Path) -> Path:
+    """path with a newline at the end of its name, as Python spells it: MSYS stores a newline in a name as U+F00A, so on
+    Windows the name ends in that character, which Git Bash reads as a newline."""
+    import os
+    return path.with_name(path.name + ("\uf00a" if os.name == "nt" else "\n"))
+
+
+def volume_junction(link: Path, to: Path) -> None:
+    """Make link a junction whose target is to's volume-GUID spelling (_winapi.CreateJunction would prefix that
+    spelling a second time). Git Bash takes such a junction for a volume mount point, a plain directory, so only a
+    check that counts every reparse point as a link sees it."""
+    import ctypes
+    import os
+    import struct
+    from ctypes import wintypes
+    rest = volume_spelling(to)[len(NT_PREFIX):]
+    sub, shown = (BS + "??" + BS + rest).encode("utf-16-le"), rest.encode("utf-16-le")
+    body = struct.pack("<HHHH", 0, len(sub), len(sub) + 2, len(shown)) + sub + b"\0\0" + shown + b"\0\0"
+    data = struct.pack("<IHH", 0xA0000003, len(body), 0) + body  # IO_REPARSE_TAG_MOUNT_POINT
+    os.mkdir(link)
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    k.CreateFileW.restype = wintypes.HANDLE
+    # GENERIC_WRITE, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT
+    h = k.CreateFileW(str(link), 0x40000000, 0, None, 3, 0x02000000 | 0x00200000, None)
+    assert h != wintypes.HANDLE(-1).value, ctypes.WinError(ctypes.get_last_error())
+    try:
+        done = wintypes.DWORD()
+        ok = k.DeviceIoControl(wintypes.HANDLE(h), 0x000900A4, data, len(data), None, 0, ctypes.byref(done), None)  # FSCTL_SET_REPARSE_POINT
+        assert ok, ctypes.WinError(ctypes.get_last_error())
+    finally:
+        k.CloseHandle(wintypes.HANDLE(h))
+
+
+def native_entries(d: Path) -> dict:
+    """Each entry of d with whether Windows takes it for a link (a symlink or any other reparse point)."""
+    import os
+    import stat
+    with os.scandir(d) as it:
+        return {e.name: e.is_symlink() or bool(getattr(e.stat(follow_symlinks=False), "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+                for e in it}
+
+
 class Scripts(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -506,6 +686,7 @@ class Scripts(unittest.TestCase):
         pack, c = make_pack(self.root, self.env)
         deps = self.root / "installed" / "deps"  # installed outside the pack (F2)
         deps.mkdir(parents=True)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
         p = checkout(c["repo"], c["base"], self.root / "plain", self.env)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertFalse((self.root / "plain" / "deps").exists())
@@ -537,6 +718,7 @@ class Scripts(unittest.TestCase):
             p = checkout(c["repo"], c["base"], target, self.env, *flags)
             self.assertEqual(p.returncode, 2, f"{flags}: {p.stdout}{p.stderr}")
             self.assertIn(reason, p.stderr, flags)
+            self.assertNotIn(NATIVE, p.stderr, flags)
             self.assertFalse(target.exists(), flags)
 
     @NEEDS_PY_LINKS
@@ -550,7 +732,1113 @@ class Scripts(unittest.TestCase):
         p = checkout(c["repo"], c["base"], target, self.env, "--pack", str(pack), "--link", f"node_modules={outside / 'via'}")
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertIn("holds the accepted fix", p.stderr)
+        self.assertNotIn(NATIVE, p.stderr)
         self.assertFalse(target.exists())
+
+    def assert_link_refused(self, c, d, reason, *flags, name="node_modules", env=None, native=False):
+        """--link name=d is refused with exit 2 and the reason, and nothing is made: not the target, not its parent. The
+        refusal comes from the native layer exactly when native is true."""
+        parent = self.root / f"refused-{len(list(self.root.glob('refused-*')))}"
+        target = parent / "cand"
+        p = checkout(c["repo"], c["base"], target, env or self.env, *flags, "--link", f"{name}={d}")
+        self.assertEqual(p.returncode, 2, f"{d} {flags}: {p.stdout}{p.stderr}")
+        self.assertIn(reason, p.stderr, f"{d} {flags}")
+        (self.assertIn if native else self.assertNotIn)(NATIVE, p.stderr, f"{d} {flags}: the layer that refused")
+        self.assertFalse(parent.exists(), f"{d} {flags}")
+
+    def assert_target_refused(self, c, target, reason, *flags, made, env=None, native=False):
+        """target is refused with exit 2 and the reason (by the native layer exactly when native is true), and made, the
+        first directory a checkout of target would create, does not exist afterwards."""
+        p = checkout(c["repo"], c["base"], target, env or self.env, *flags)
+        self.assertEqual(p.returncode, 2, f"{target} {flags}: {p.stdout}{p.stderr}")
+        self.assertIn(reason, p.stderr, f"{target} {flags}")
+        (self.assertIn if native else self.assertNotIn)(NATIVE, p.stderr, f"{target} {flags}: the layer that refused")
+        self.assertFalse(Path(made).exists(), f"{target} {flags}: {made} was made")
+
+    def other_repositories(self) -> tuple[Path, Path, Path]:
+        """Repositories that are not the pack: a work tree with a commit, a linked worktree of it (its .git is a file)
+        and a bare repository, each beside the pack under the temporary directory."""
+        other, wt, bare = self.root / "other", self.root / "wt", self.root / "bare.git"
+        (other / "node_modules" / "pkg").mkdir(parents=True)
+        (other / "README.md").write_text("other\n")
+        sh(["git", "init", "-q"], other, self.env)
+        commit_all(other, self.env, "other")
+        sh(["git", "worktree", "add", "-q", str(wt)], other, self.env)
+        (wt / "node_modules").mkdir()
+        sh(["git", "init", "-q", "--bare", str(bare)], self.root, self.env)
+        self.assertTrue((wt / ".git").is_file())
+        self.assertFalse((bare / ".git").exists())
+        return other, wt, bare
+
+    @NEEDS_PY_LINKS
+    def test_historyless_checkout_refuses_a_link_inside_a_git_repository(self):
+        # IC4-1: a dependency tree inside any repository reaches that repository's files and history through '..'
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        other, wt, bare = self.other_repositories()
+        inside = "is inside the git repository"
+        for d in (other,  # the directory is a repository's work tree
+                  other / "node_modules", other / "node_modules" / "pkg",  # a directory in a work tree, at any depth
+                  other / ".git" / "info",  # a directory in a .git directory
+                  wt / "node_modules",  # a linked worktree, whose .git is a file
+                  bare, bare / "refs"):  # a bare repository, and a directory in one
+            for flags in (("--pack", str(pack)), ()):  # with and without --pack
+                self.assert_link_refused(c, d, inside, *flags)
+        self.assert_link_refused(c, other / "node_modules", "lets the checkout reach that repository's history and files through '..'",
+                                 "--pack", str(pack))
+        # outside every repository the link is made as before
+        outside = self.root / "installed" / "node_modules"
+        outside.mkdir(parents=True)
+        target = self.root / "accepted" / "cand"
+        p = checkout(c["repo"], c["base"], target, native_links(self.env), "--pack", str(pack), "--link", f"node_modules={outside}")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertTrue((target / "node_modules").is_symlink())
+        self.assertEqual((target / "node_modules").resolve(), outside.resolve())
+        self.assertEqual(sh(["git", "status", "--porcelain"], target, self.env).stdout.strip(), "")
+
+    @NEEDS_PY_LINKS
+    def test_historyless_checkout_checks_the_symlinks_at_the_top_of_a_linked_directory(self):
+        # a symlink among DIR's own entries is checked like DIR: it must not reach the pack or a repository
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        other, wt, bare = self.other_repositories()
+        free = self.root / "free"  # a directory outside every repository
+        free.mkdir()
+        cases = [
+            ("lib", other / "node_modules", "is inside the git repository"),  # a directory in a work tree
+            ("readme", other / "README.md", "is inside the git repository"),  # a file in a work tree
+            (".hidden", wt, "is inside the git repository"),  # a dot entry, to a linked worktree
+            ("objs", bare / "objects", "is inside the git repository"),  # into a bare repository
+            ("src", c["repo"] / "src", "holds the accepted fix"),  # into the pack's repository
+            ("gone", self.root / "missing", "does not resolve"),  # a dangling link: refused, not skipped
+        ]
+        for i, (entry, to, reason) in enumerate(cases):
+            deps = self.root / f"deps-{i}"
+            (deps / "plain").mkdir(parents=True)
+            (deps / entry).symlink_to(to)
+            for flags in (("--pack", str(pack)), ()):
+                self.assert_link_refused(c, deps, reason, *flags)
+        # a chain of file links through a linked directory: the kernel follows sub before the '..' in b's target, so a
+        # reaches the repository far/y, though DIR holds a y of its own (outside every repository) that a '..' taken by
+        # spelling would reach instead
+        far = self.root / "far"
+        (far / "x").mkdir(parents=True)
+        (far / "y").mkdir()
+        sh(["git", "init", "-q"], far / "y", self.env)
+        (far / "y" / "file").write_text("in a repository\n")
+        (far / "x" / "b").symlink_to(Path("..") / "y" / "file")
+        deps = self.root / "deps-chain"
+        (deps / "y").mkdir(parents=True)
+        (deps / "sub").symlink_to(far / "x", target_is_directory=True)
+        (deps / "a").symlink_to(Path("sub") / "b")
+        self.assertEqual((deps / "a").read_text(), "in a repository\n")
+        self.assertIsNone(repo_holding(far / "x"))
+        # and a link whose own target walks '..' after a linked directory (sub/../y/file): bash reads it through sub,
+        # as a POSIX kernel does (Windows' own API takes that '..' by spelling, so Python is not asked here; nor is
+        # bash given a C:\ spelling, which Git Bash hands to that API: it reads c from inside the directory)
+        dotdot = self.root / "deps-dotdot"
+        (dotdot / "y").mkdir(parents=True)
+        (dotdot / "sub").symlink_to(far / "x", target_is_directory=True)
+        (dotdot / "c").symlink_to(Path("sub") / ".." / "y" / "file")
+        read = subprocess.run(["bash", "-c", 'cd -- "$1" && cat -- c', "cat", str(dotdot)], capture_output=True, text=True, timeout=60)
+        self.assertEqual(read.stdout, "in a repository\n", read.stderr)
+        for d in (deps, dotdot):
+            for flags in (("--pack", str(pack)), ()):
+                self.assert_link_refused(c, d, "far/y; a dependency tree inside a repository", *flags)
+        # links that stay inside DIR (a pnpm-style store) or reach a directory outside every repository are fine
+        deps = self.root / "deps-ok"
+        (deps / ".store" / "pkg").mkdir(parents=True)
+        (deps / "pkg").symlink_to(deps / ".store" / "pkg")
+        (deps / "free").symlink_to(free)
+        target = self.root / "accepted" / "cand"
+        p = checkout(c["repo"], c["base"], target, native_links(self.env), "--pack", str(pack), "--link", f"node_modules={deps}")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual((target / "node_modules").resolve(), deps.resolve())
+
+    @NEEDS_PY_LINKS
+    def test_historyless_checkout_refuses_a_unc_path(self):
+        # LC2-1: on Git Bash //host/share/... is a UNC path; the checks once ran on /host/share/..., which does not exist,
+        # so a link into a repository or the source repository spelled through //localhost/C$ was accepted
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        u = unc(self.root)
+        if u is None or not Path(u).is_dir():
+            self.skipTest("no UNC spelling of the temporary directory: not Windows, or the share //localhost/<drive>$ is unreachable")
+        other, wt, bare = self.other_repositories()
+        free = self.root / "installed" / "node_modules"  # outside every repository: accepted when spelled locally
+        free.mkdir(parents=True)
+        local = "is not a local path"
+        win = lambda p: unc(p).replace("/", "\\")
+        for flags in (("--pack", str(pack)), ()):
+            self.assert_link_refused(c, unc(other / "node_modules"), local, *flags)  # once checked as /localhost/...: "ok", a dangling link
+            self.assert_link_refused(c, unc(free), local, *flags)  # fail closed: a UNC path is refused, not walked
+        cases = [
+            ("lib", win(other / "node_modules")),  # a top-level link into a work tree, spelled UNC
+            ("src", win(c["repo"])),  # the source repository itself, spelled UNC (its history holds the accepted fix)
+            ("free", win(free)),  # a directory outside every repository, spelled UNC: refused all the same
+        ]
+        for i, (entry, to) in enumerate(cases):
+            deps = self.root / f"deps-unc-{i}"
+            (deps / "plain").mkdir(parents=True)
+            (deps / entry).symlink_to(to, target_is_directory=True)
+            read = subprocess.run(["bash", "-c", 'readlink -- "$1"', "readlink", str(deps / entry)], capture_output=True, text=True, timeout=60)
+            self.assertTrue(read.stdout.startswith("//localhost/"), read.stdout + read.stderr)  # the shell sees the UNC spelling
+            for flags in (("--pack", str(pack)), ()):
+                self.assert_link_refused(c, deps, local, *flags)
+        # the pack, the source repository and the target's parent are compared with the links or the pack, so a UNC
+        # spelling of any of them is refused too, before anything is made
+        for src, flags, what in ((c["repo"], ("--pack", unc(pack)), "the pack"), (unc(c["repo"]), ("--pack", str(pack)), "the source repository")):
+            parent = self.root / f"refused-{len(list(self.root.glob('refused-*')))}"
+            p = checkout(src, c["base"], parent / "cand", self.env, *flags, "--link", f"node_modules={free}")
+            self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+            self.assertIn(f"{what} ", p.stderr)
+            self.assertIn(local, p.stderr)
+            self.assertNotIn(NATIVE, p.stderr)
+            self.assertFalse(parent.exists(), what)
+        p = checkout(c["repo"], c["base"], unc(self.root) + "/cand-unc", self.env, "--pack", str(pack))
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn(local, p.stderr)
+        self.assertNotIn(NATIVE, p.stderr)
+        self.assertFalse((self.root / "cand-unc").exists())
+        # spelled locally, the same directory is accepted
+        target = self.root / "accepted" / "cand"
+        p = checkout(c["repo"], c["base"], target, native_links(self.env), "--pack", str(pack), "--link", f"node_modules={free}")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+    def test_historyless_checkout_compares_the_pack_by_identity_not_spelling(self):
+        # LC2-2: on a case-insensitive filesystem a spelling in another case names the same directory
+        pack, c = make_pack(self.root, self.env)
+        (pack / "extra").mkdir()  # a directory in the pack, outside its repository
+        upper = self.root / "PACK"
+        if not (upper.is_dir() and upper.samefile(pack)):
+            self.skipTest("the filesystem is case-sensitive: no other-case spelling names the pack")
+        self.assertIsNone(repo_holding(pack / "extra"), TEMP_IN_REPO.format(pack / "extra", repo_holding(pack / "extra")))
+        root_upper = self.root.parent / self.root.name.swapcase()
+        self.assertTrue(root_upper.samefile(self.root))
+        shares = "holds the accepted fix"
+        for d, pack_flag in ((upper, pack),  # the pack itself, in another case
+                             (upper / "extra", pack),  # a directory in the pack, in another case
+                             (pack / "extra", upper),  # the pack spelled in another case
+                             (root_upper, pack)):  # a directory holding the pack, in another case
+            self.assert_link_refused(c, d, shares, "--pack", str(pack_flag))
+        if makes_links(lambda link, target: link.symlink_to(target)):  # a top-level link into the pack, in another case
+            deps = self.root / "deps-case"
+            (deps / "plain").mkdir(parents=True)
+            (deps / "lib").symlink_to(upper / "extra", target_is_directory=True)
+            self.assert_link_refused(c, deps, shares, "--pack", str(pack))
+        # a target inside the pack, with the pack spelled in another case
+        p = checkout(c["repo"], c["base"], pack / "cand-case", self.env, "--pack", str(upper))
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn("is inside the pack", p.stderr)
+        self.assertNotIn(NATIVE, p.stderr)
+        self.assertFalse((pack / "cand-case").exists())
+
+    def test_historyless_checkout_walks_the_windows_parents_of_a_mounted_directory(self):
+        # a mount such as Git Bash's / or /tmp: the shell walks its own parents, native programs the Windows ones, and
+        # the checks walk both (a stub cygpath models the mount; on a host without cygpath the stub is the only one).
+        # A mount's Windows spelling is the same directory under other parents, so each spelling the stub gives is a
+        # link to mnt/deps (a junction on Windows, which needs no privilege): the script proves, by file identity, that
+        # the Windows spelling names the directory it came from (LC6-1)
+        import os
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        other, wt, bare = self.other_repositories()
+        mnt = self.root / "mnt"
+        (mnt / "deps").mkdir(parents=True)  # outside every repository, as the shell sees it
+        (other / "inside").mkdir()
+
+        def same_dir(link: Path) -> None:
+            if os.name == "nt":
+                import _winapi
+                _winapi.CreateJunction(str(mnt / "deps"), str(link))
+            else:
+                link.symlink_to(mnt / "deps", target_is_directory=True)
+
+        for to in (other / "inside", c["repo"], pack):
+            same_dir(to / "deps")
+        stub = self.root / "stub-bin"
+        stub.mkdir()
+        (stub / "cygpath").write_bytes(STUB_CYGPATH.encode())
+        (stub / "cygpath").chmod(0o755)
+        env = {**native_links(self.env), "PATH": str(stub) + os.pathsep + self.env.get("PATH", ""), "STUB_MOUNT": bash_native(mnt, self.env)}
+        for to, reason, with_pack in ((other / "inside", "is inside the git repository", False),  # the Windows parents hold a repository
+                                      (c["repo"], "holds the accepted fix", False),  # the Windows spelling is in the source repository
+                                      (pack, "holds the accepted fix", True)):  # ... or in the pack (compared by identity), under --pack
+            mounted = dict(env, STUB_TARGET=bash_native(to, self.env))
+            for flags in (("--pack", str(pack)), *([] if with_pack else [()])):
+                self.assert_link_refused(c, mnt / "deps", reason, *flags, env=mounted)
+        self.assert_link_refused(c, mnt / "deps", "is not a local path", env=dict(env, STUB_TARGET="//server/share/x"))  # a mount of a UNC path
+        # a Windows spelling that names another directory than the shell's is no spelling of it: its parents say nothing
+        # about the directory's, so it is refused as unproved, not walked. Walked, a free one was accepted, and one
+        # inside a repository would be refused for a repository that is not the directory's
+        free = self.root / "free-mount"
+        (free / "deps").mkdir(parents=True)
+        (other / "elsewhere" / "deps").mkdir(parents=True)
+        for to in (free, other / "elsewhere"):
+            for flags in (("--pack", str(pack)), ()):
+                self.assert_link_refused(c, mnt / "deps", UNPROVED, *flags, env=dict(env, STUB_TARGET=bash_native(to, self.env)))
+        target = self.root / "accepted" / "cand"  # the stub with no mount: the same directory is accepted
+        p = checkout(c["repo"], c["base"], target, {**env, "STUB_MOUNT": ""}, "--pack", str(pack), "--link", f"node_modules={mnt / 'deps'}")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+    def test_historyless_checkout_ignores_the_hosts_git_repository_variables(self):
+        # LC2-3: with GIT_DIR / GIT_WORK_TREE naming another repository, git init re-initialised it and reset --hard
+        # rewrote its work tree; the script drops the variables git lists as local to a repository
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        g2 = self.root / "g2"  # holds the base commit, so a lookup through GIT_DIR finds it
+        sh(["git", "clone", "-q", str(c["repo"]), str(g2)], self.root, self.env)
+        (g2 / "local.txt").write_text("not in the source\n")
+        free = self.root / "installed" / "node_modules"
+        free.mkdir(parents=True)
+        before = tree_bytes(g2)
+        dotgit = g2 / ".git"
+        env = {**native_links(self.env), "GIT_DIR": str(dotgit), "GIT_WORK_TREE": str(g2), "GIT_INDEX_FILE": str(dotgit / "index"),
+               "GIT_OBJECT_DIRECTORY": str(dotgit / "objects"), "GIT_COMMON_DIR": str(dotgit)}
+        for i, flags in enumerate((("--pack", str(pack), "--link", f"node_modules={free}"), ())):
+            target = self.root / f"cand-env-{i}"
+            p = checkout(c["repo"], c["base"], target, env, *flags)
+            self.assertEqual(tree_bytes(g2), before, f"{flags}: {p.stdout}{p.stderr}")  # nothing in the other repository changed
+            self.assertEqual(p.returncode, 0, f"{flags}: {p.stdout}{p.stderr}")
+            g = lambda *a: sh(["git", *a], target, self.env).stdout.strip()
+            self.assertEqual(g("rev-list", "--all", "--count"), "1")
+            self.assertEqual(g("rev-parse", "HEAD^{tree}"), sh(["git", "rev-parse", f"{c['base']}^{{tree}}"], c["repo"], self.env).stdout.strip())
+            self.assertEqual(g("status", "--porcelain"), "")
+
+    @NEEDS_PY_LINKS
+    def test_historyless_checkout_checks_the_paths_native_programs_resolve(self):
+        # LC3-1: a symlink to a volume-GUID or GLOBALROOT path is a plain directory to Git Bash (no -L, no readlink, and
+        # pwd -P keeps the link's own path), while git, node and Python follow it. So every path is also resolved as
+        # native programs resolve it, and the checks run again on that path
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        if volume_spelling(self.root) is None:
+            self.skipTest("no volume-GUID spelling of the temporary directory: not Windows, or its volume has no GUID name")
+        other, wt, bare = self.other_repositories()
+        (other / "sub").mkdir()
+        (pack / "extra").mkdir()  # in the pack, outside its repository
+        (pack / "work" / "deeper").mkdir(parents=True)
+        free = self.root / "installed" / "node_modules"  # outside every repository
+        free.mkdir(parents=True)
+        links = self.root / "L"
+        links.mkdir()
+
+        def hidden_link(name, to, spell=volume_spelling):
+            link = links / name
+            link.symlink_to(spell(to), target_is_directory=True)
+            self.assertFalse(bash_sees_link(link, self.env), f"{name}: Git Bash sees this link; the case no longer needs the native layer")
+            return link
+
+        both, with_pack = (("--pack", str(pack)), ()), (("--pack", str(pack)),)
+        inside, holds = "is inside the git repository", "holds the accepted fix"
+        # DIR is such a link: into a work tree (the IC4-1 shape), a linked worktree, a bare repository, the source, the pack
+        for d, reason, flagsets in ((hidden_link("v-clone", other / "node_modules"), inside, both),
+                                    (hidden_link("g-clone", other / "node_modules", globalroot_spelling), inside, both),
+                                    (hidden_link("v-wt", wt / "node_modules"), inside, both),
+                                    (hidden_link("v-bare", bare / "refs"), inside, both),
+                                    (hidden_link("v-src", c["repo"] / "src"), holds, both),
+                                    (hidden_link("v-pack", pack / "extra"), holds, with_pack)):
+            for flags in flagsets:
+                self.assert_link_refused(c, d, reason, *flags, native=True)
+        chain = links / "chain"  # an ordinary symlink, which Git Bash follows, to such a link, which it does not
+        chain.symlink_to(links / "v-clone", target_is_directory=True)
+        for flags in both:
+            self.assert_link_refused(c, chain, inside, *flags, native=True)
+        # such a link at the top of a clean DIR: to the source, into a work tree, to a directory holding the pack and the
+        # source, and to nothing (refused, not skipped)
+        for i, (to, spell, reason) in enumerate(((c["repo"], volume_spelling, holds),
+                                                 (other / "node_modules", volume_spelling, inside),
+                                                 (other / "node_modules", globalroot_spelling, inside),
+                                                 (self.root, volume_spelling, holds),
+                                                 (self.root / "missing", volume_spelling, "does not resolve"))):
+            deps = self.root / f"deps-native-{i}"
+            (deps / "plain").mkdir(parents=True)
+            (deps / "s").symlink_to(spell(to), target_is_directory=True)
+            self.assertFalse(bash_sees_link(deps / "s", self.env), f"{to}: Git Bash sees this link")
+            for flags in both:
+                self.assert_link_refused(c, deps, reason, *flags, native=True)
+        # a link that native programs resolve to a UNC path: as a top-level entry, as the pack, as the source repository
+        u = unc(self.root)
+        if u is not None and Path(u).is_dir():
+            deps = self.root / "deps-native-unc"
+            (deps / "plain").mkdir(parents=True)
+            (deps / "s").symlink_to(mup_spelling(free), target_is_directory=True)
+            self.assertFalse(bash_sees_link(deps / "s", self.env))
+            for flags in both:
+                self.assert_link_refused(c, deps, "is not a local path", *flags, native=True)
+            for src, flags, what in ((c["repo"], ("--pack", str(hidden_link("m-pack", pack, mup_spelling))), "the pack "),
+                                     (hidden_link("m-src", c["repo"], mup_spelling), ("--pack", str(pack)), "the source repository ")):
+                parent = self.root / f"refused-{len(list(self.root.glob('refused-*')))}"
+                p = checkout(src, c["base"], parent / "cand", self.env, *flags, "--link", f"node_modules={free}")
+                self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+                for words in (what, "is not a local path", NATIVE):
+                    self.assertIn(words, p.stderr, what)
+                self.assertFalse(parent.exists(), what)
+        # the target's parent reached through such a link: inside the pack (under --pack), inside a repository (always)
+        deeper = hidden_link("v-deeper", pack / "work" / "deeper")
+        self.assert_target_refused(c, deeper / "co-x", "is inside the pack", "--pack", str(pack), made=pack / "work" / "deeper" / "co-x", native=True)
+        sub = hidden_link("v-sub", other / "sub")
+        for flags in both:
+            self.assert_target_refused(c, sub / "new" / "co-y", inside, *flags, made=other / "sub" / "new", native=True)
+        # controls: such links to directories outside every repository are accepted, as DIR, at DIR's top and on the
+        # target's path, and the checkout is made
+        deps = self.root / "deps-native-ok"
+        (deps / "plain").mkdir(parents=True)
+        (deps / "s").symlink_to(volume_spelling(free), target_is_directory=True)
+        for i, d in enumerate((hidden_link("v-free", free), deps)):
+            out = self.root / f"out-{i}"
+            out.mkdir()
+            p = checkout(c["repo"], c["base"], hidden_link(f"v-out-{i}", out) / "cand", native_links(self.env), "--pack", str(pack), "--link", f"node_modules={d}")
+            self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+            self.assertEqual(sh(["git", "rev-list", "--all", "--count"], out / "cand", self.env).stdout.strip(), "1")
+
+    def test_historyless_checkout_refuses_without_a_native_path_resolver_on_windows(self):
+        # the native layer needs a Windows Python (os.path.realpath resolves through GetFinalPathNameByHandle); with none,
+        # or with only a POSIX one (MSYS2, Cygwin), the checks cannot be made, so every checkout is refused
+        import os
+        if os.name != "nt":
+            self.skipTest("not Windows: the shell's physical path is the one native programs resolve")
+        pack, c = make_pack(self.root, self.env)
+        stub = self.root / "stub-bin"
+        stub.mkdir()
+        for name in ("python3", "python"):  # answers like a POSIX Python asked for os.name
+            (stub / name).write_bytes(b"#!/bin/sh\nprintf posix\n")
+            (stub / name).chmod(0o755)
+        names = ("python3", "python3.exe", "python", "python.exe")
+        dirs = [d for d in self.env.get("PATH", "").split(os.pathsep) if d and not any(os.path.lexists(os.path.join(d, n)) for n in names)]
+        for i, path in enumerate((dirs, [str(stub), *dirs])):
+            parent = self.root / f"refused-{i}"
+            for flags in ((), ("--pack", str(pack))):
+                p = checkout(c["repo"], c["base"], parent / "cand", {**self.env, "PATH": os.pathsep.join(path)}, *flags)
+                self.assertEqual(p.returncode, 2, f"{path[0]} {flags}: {p.stdout}{p.stderr}")
+                self.assertIn("no native path resolver", p.stderr)
+                self.assertFalse(parent.exists())
+        crash = self.root / "stub-crash"  # a resolver that passes the probe but fails the check: refused all the same
+        crash.mkdir()
+        (crash / "python3").write_bytes(b'#!/bin/sh\n[ "$2" = -c ] && { printf nt; exit 0; }\nexit 3\n')
+        (crash / "python3").chmod(0o755)
+        parent = self.root / "refused-crash"
+        p = checkout(c["repo"], c["base"], parent / "cand", {**self.env, "PATH": os.pathsep.join([str(crash), *dirs])})
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn("the native path check failed (exit 3)", p.stderr)
+        self.assertFalse(parent.exists())
+
+    def test_historyless_checkout_copies_no_git_template(self):
+        # LC3-2: git init copies a template into the new .git; one holding objects/info/alternates made the source's
+        # objects, the accepted fix among them, readable in the checkout. No template is copied, and the proof counts
+        # every object the checkout's git can read
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        tpl = self.root / "template"
+        for d in ("objects/info", "info", "hooks"):
+            (tpl / d).mkdir(parents=True)
+        # bytes, not text: on Windows a CRLF line names a directory ending in CR, and git skips that alternate
+        (tpl / "objects" / "info" / "alternates").write_bytes(((c["repo"] / ".git" / "objects").resolve().as_posix() + "\n").encode())
+        (tpl / "info" / "exclude").write_text("")
+        (tpl / "hooks" / "post-commit").write_text("#!/bin/sh\nexit 0\n")
+        (tpl / "description").write_text("from the template\n")
+        cfg = self.root / "gitconfig-template"
+        cfg.write_text((self.root / "gitconfig").read_text() + f"[init]\n\ttemplateDir = {tpl.as_posix()}\n")
+        free = self.root / "installed" / "node_modules"
+        free.mkdir(parents=True)
+        live = self.root / "template-live"  # the template works: a plain git init with it reads the accepted fix
+        sh(["git", "init", "-q", f"--template={tpl}", str(live)], self.root, self.env)
+        self.assertEqual(sh(["git", "cat-file", "-t", c["accepted"]], live, self.env).stdout.strip(), "commit")
+        g = lambda target, *a: sh(["git", *a], target, self.env).stdout.split()
+        objects = {sh(["git", "rev-parse", f"{c['base']}^{{tree}}"], c["repo"], self.env).stdout.strip()}  # the base tree and all under it
+        objects |= {line.split()[2] for line in sh(["git", "ls-tree", "-r", "-t", c["base"]], c["repo"], self.env).stdout.splitlines()}
+        for i, (env, flags) in enumerate(((dict(native_links(self.env), GIT_TEMPLATE_DIR=str(tpl)), ()),
+                                          (dict(native_links(self.env), GIT_CONFIG_GLOBAL=str(cfg)), ("--pack", str(pack), "--link", f"node_modules={free}")))):
+            target = self.root / f"cand-template-{i}"
+            p = checkout(c["repo"], c["base"], target, env, *flags)
+            self.assertEqual(p.returncode, 0, f"{flags}: {p.stdout}{p.stderr}")
+            for f in ("objects/info/alternates", "hooks", "description"):
+                self.assertFalse((target / ".git" / f).exists(), f"{flags}: {f} copied from the template")
+            self.assertNotEqual(sh(["git", "cat-file", "-e", c["accepted"]], target, self.env, check=False).returncode, 0, flags)
+            self.assertEqual(set(g(target, "cat-file", "--batch-all-objects", "--batch-check=%(objectname)")), objects | set(g(target, "rev-parse", "HEAD")), flags)
+            self.assertEqual(g(target, "status", "--porcelain"), [], flags)
+
+    def test_historyless_checkout_makes_nothing_when_it_refuses_a_target(self):
+        # LC3-3: the target's parent was made before the target checks ran, so a refused target left directories behind,
+        # inside the pack too. Every check now runs first, on the nearest parent that exists
+        pack, c = make_pack(self.root, self.env)
+        self.assert_target_refused(c, pack / "new" / "sub" / "co", "is inside the pack", "--pack", str(pack), made=pack / "new")
+        u = unc(self.root)
+        if u is not None and Path(u).is_dir():
+            for flags in (("--pack", str(pack)), ()):
+                self.assert_target_refused(c, u + "/new-unc/sub/co", "is not a local path", *flags, made=self.root / "new-unc")
+        # the part that does not exist yet is made as it is spelled, so it may hold no '.' or '..' segment
+        self.assert_target_refused(c, self.root / "m1" / "m2" / ".." / "co", "without '.' or '..'", made=self.root / "m1")
+        target = self.root / "m3" / "m4" / "co"  # spelled plainly, the parents are made and the checkout is
+        p = checkout(c["repo"], c["base"], target, self.env, "--pack", str(pack))
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(sh(["git", "rev-list", "--all", "--count"], target, self.env).stdout.strip(), "1")
+
+    def test_historyless_checkout_refuses_a_target_inside_a_git_repository(self):
+        # LC3-4: a checkout inside another repository reaches that repository's files and history through '..', as a
+        # linked dependency tree did (IC4-1)
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        other, wt, bare = self.other_repositories()
+        inside = "is inside the git repository"
+        for target, made in ((other / "co", other / "co"),  # in a work tree
+                             (other / "node_modules" / "pkg" / "co", other / "node_modules" / "pkg" / "co"),  # at any depth
+                             (other / "new" / "sub" / "co", other / "new"),  # under parents that do not exist yet
+                             (other / ".git" / "co", other / ".git" / "co"),  # in a .git directory
+                             (wt / "co", wt / "co"),  # in a linked worktree, whose .git is a file
+                             (bare / "co", bare / "co"), (bare / "refs" / "co", bare / "refs" / "co")):  # in a bare repository
+            for flags in (("--pack", str(pack)), ()):
+                self.assert_target_refused(c, target, inside, *flags, made=made)
+        self.assert_target_refused(c, c["repo"] / "co", inside, made=c["repo"] / "co")  # in the source (under --pack: the pack)
+        self.assert_target_refused(c, other / "co", "a checkout inside a repository reaches that repository's history and files through '..'",
+                                   made=other / "co")
+        if makes_links(lambda link, target: link.symlink_to(target)):  # through a symlink the shell follows
+            (self.root / "to-other").symlink_to(other, target_is_directory=True)
+            self.assert_target_refused(c, self.root / "to-other" / "co", inside, made=other / "co")
+        target = self.root / "beside" / "co"  # beside the repositories, the checkout is made
+        p = checkout(c["repo"], c["base"], target, self.env, "--pack", str(pack))
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+    REPRODUCED = ("commondir", "symlink HEAD", "refs file", "gitfile")
+
+    def git_directory_shapes(self) -> dict:
+        """Directories that hold no .git directory and are no plain bare repository, yet git takes them for a repository
+        (check 4, LC4-1: a linked worktree's admin directory, a HEAD that is a dangling symlink, a refs file), a work tree
+        whose .git file names a git directory elsewhere, and the shapes only the wider rule of historyless-checkout.sh
+        names. Each is first shown to be what it claims: git takes it for a repository (under the environment given), or
+        git does not and only the wider rule does. Needs other_repositories() first. Maps a name to the directory the
+        rule must find; each holds an empty deps/ to link or check out into."""
+        import os
+        other = self.root / "other"
+        common = (other / ".git").resolve().as_posix()
+        common_env = {**self.env, "GIT_COMMON_DIR": common}
+        nt = os.name == "nt"
+        cgd = self.root / "commondir-gd"  # HEAD and a commondir file naming another repository's git directory
+        cgd.mkdir()
+        (cgd / "HEAD").write_text("ref: refs/heads/main\n")
+        (cgd / "commondir").write_text(common + "\n")
+        sym = self.root / "symhead.git"  # HEAD a dangling symlink into refs/ (core.preferSymlinkRefs, then pack-refs)
+        sh(["git", "clone", "-q", "--bare", str(other), str(sym)], self.root, self.env)
+        sh(["git", "pack-refs", "--all"], sym, self.env)
+        (sym / "HEAD").unlink()
+        (sym / "HEAD").symlink_to("refs/heads/main")
+        rf = self.root / "refsfile.git"  # refs a file, the refs in packed-refs (Git for Windows' access() ignores X_OK)
+        sh(["git", "clone", "-q", "--bare", str(other), str(rf)], self.root, self.env)
+        sh(["git", "pack-refs", "--all"], rf, self.env)
+        shutil.rmtree(rf / "refs")
+        (rf / "refs").write_text("")
+        sep = self.root / "sep"  # a work tree whose .git file names a git directory elsewhere
+        (self.root / "store").mkdir()
+        sh(["git", "init", "-q", f"--separate-git-dir={self.root / 'store' / 'sep.git'}", str(sep)], self.root, self.env)
+        self.assertTrue((sep / ".git").is_file())
+        head = self.root / "head-only"  # git takes HEAD alone for a repository when GIT_COMMON_DIR names a common directory
+        head.mkdir()
+        (head / "HEAD").write_text("ref: refs/heads/main\n")
+        symonly = self.root / "symhead-only"  # and a dangling HEAD symlink alone, likewise
+        symonly.mkdir()
+        (symonly / "HEAD").symlink_to("refs/heads/main")
+        cd = self.root / "commondir-only"  # wider than git: a commondir file alone, a gitdir file alone (a linked
+        cd.mkdir()  # worktree's admin files), and objects and refs without HEAD (objects a '..' reads without git)
+        (cd / "commondir").write_text(common + "\n")
+        gd = self.root / "gitdir-only"
+        gd.mkdir()
+        (gd / "gitdir").write_text(common + "\n")
+        objref = self.root / "objects-refs"
+        (objref / "objects").mkdir(parents=True)
+        (objref / "refs").mkdir()
+        # name: (directory, the environment under which git takes it for a repository; False when git never does; None
+        # when not asserted: on a POSIX host access() honours X_OK, so a refs file is no repository to git there)
+        shapes = {"commondir": (cgd, self.env), "symlink HEAD": (sym, self.env), "refs file": (rf, self.env if nt else None),
+                  "gitfile": (sep, self.env), "HEAD only": (head, common_env), "dangling HEAD only": (symonly, common_env),
+                  "commondir only": (cd, False), "gitdir only": (gd, False), "objects and refs": (objref, False)}
+        for name, (d, git_view) in shapes.items():
+            (d / "deps").mkdir()
+            if git_view is None:
+                continue
+            p = sh(["git", "rev-parse", "--absolute-git-dir"], d / "deps", git_view or self.env, check=False)
+            if git_view is False:
+                self.assertNotEqual(p.returncode, 0, f"{name}: git takes {d} for a repository: {p.stdout}")
+            else:
+                self.assertEqual(p.returncode, 0, f"{name}: git does not take {d} for a repository: {p.stderr}")
+        return {name: d for name, (d, _) in shapes.items()}
+
+    @NEEDS_PY_LINKS
+    def test_historyless_checkout_refuses_every_directory_git_takes_for_a_repository(self):
+        # LC4-1: is_repo once asked for a regular HEAD file and objects/ and refs/ directories, so a linked worktree's
+        # admin directory (HEAD and commondir), a HEAD that is a dangling symlink into refs/ and a refs file passed as
+        # "outside every repository", though git takes each for one and the checkout read that repository's history.
+        # The rule is now wider than git's own; the shell layer refuses each shape as DIR, at DIR's top and as the
+        # target's parent
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        self.other_repositories()
+        for i, (name, d) in enumerate(self.git_directory_shapes().items()):
+            reason = f"{d.name}; a "  # the refusal names the nearest repository, then its reason
+            self.assert_link_refused(c, d / "deps", reason, "--pack", str(pack))
+            self.assert_target_refused(c, d / "deps" / "co", reason, made=d / "deps" / "co")
+            if name in self.REPRODUCED:  # a symlink the shell sees, at the top of a clean DIR
+                deps = self.root / f"deps-top-{i}"
+                (deps / "plain").mkdir(parents=True)
+                (deps / "s").symlink_to(d / "deps", target_is_directory=True)
+                self.assert_link_refused(c, deps, reason)
+
+    @NEEDS_PY_LINKS
+    def test_historyless_checkout_refuses_every_directory_git_takes_for_a_repository_as_native_programs_resolve_it(self):
+        # LC4-1 in the native layer: the same shapes reached through links Git Bash cannot see. LC4-4: a junction at
+        # DIR's top, which Git Bash sees, but which leads to such a link, so the shell resolves it to a plain directory
+        # outside every repository; only the native layer, which takes any reparse point for a link (a junction is no
+        # symlink to Python's is_symlink), follows it to the repository
+        import os
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        if volume_spelling(self.root) is None:
+            self.skipTest("no volume-GUID spelling of the temporary directory: not Windows, or its volume has no GUID name")
+        other, wt, bare = self.other_repositories()
+        links = self.root / "L"
+        links.mkdir()
+
+        def hidden_link(name, to):
+            link = links / name
+            link.symlink_to(volume_spelling(to), target_is_directory=True)
+            self.assertFalse(bash_sees_link(link, self.env), f"{name}: Git Bash sees this link; the case no longer needs the native layer")
+            return link
+
+        for i, (name, d) in enumerate(self.git_directory_shapes().items()):
+            reason = f"{d.name}; a "
+            v = hidden_link(f"v-{i}", d / "deps")
+            self.assert_link_refused(c, v, reason, "--pack", str(pack), native=True)
+            self.assert_target_refused(c, v / "co", reason, made=d / "deps" / "co", native=True)
+            if name in self.REPRODUCED:  # such a link at the top of a clean DIR
+                deps = self.root / f"deps-native-top-{i}"
+                (deps / "plain").mkdir(parents=True)
+                (deps / "s").symlink_to(volume_spelling(d / "deps"), target_is_directory=True)
+                self.assertFalse(bash_sees_link(deps / "s", self.env))
+                self.assert_link_refused(c, deps, reason, native=True)
+        import _winapi
+        deps = self.root / "deps-junction"
+        (deps / "plain").mkdir(parents=True)
+        _winapi.CreateJunction(str(hidden_link("v-junction", other / "node_modules")), str(deps / "j"))
+        with os.scandir(deps) as it:
+            self.assertFalse(next(e for e in it if e.name == "j").is_symlink(), "a junction is no symlink to Python")
+        self.assertTrue(bash_sees_link(deps / "j", self.env), "Git Bash sees the junction")
+        for flags in (("--pack", str(pack)), ()):
+            self.assert_link_refused(c, deps, "other; a ", *flags, native=True)
+        # a junction whose own target is a volume-GUID path: Git Bash takes it for a volume mount point, a plain
+        # directory, so the shell never resolves it; only the native layer, counting it as a reparse point, follows it
+        deps = self.root / "deps-volume-junction"
+        (deps / "plain").mkdir(parents=True)
+        volume_junction(deps / "j", other / "node_modules")
+        self.assertFalse(bash_sees_link(deps / "j", self.env), "Git Bash sees this junction; the case no longer needs the native layer")
+        with os.scandir(deps) as it:
+            self.assertFalse(next(e for e in it if e.name == "j").is_symlink(), "a junction is no symlink to Python")
+        for flags in (("--pack", str(pack)), ()):
+            self.assert_link_refused(c, deps, "other; a ", *flags, native=True)
+        free = self.root / "installed" / "node_modules"  # control: a junction outside every repository is accepted
+        free.mkdir(parents=True)
+        ok = self.root / "deps-junction-ok"
+        (ok / "plain").mkdir(parents=True)
+        _winapi.CreateJunction(str(free), str(ok / "j"))
+        target = self.root / "out" / "cand"
+        p = checkout(c["repo"], c["base"], target, native_links(self.env), "--pack", str(pack), "--link", f"node_modules={ok}")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(sh(["git", "rev-list", "--all", "--count"], target, self.env).stdout.strip(), "1")
+
+    def test_historyless_checkout_native_layer_counts_an_entry_it_cannot_read_as_a_marker(self):
+        # the native layer fails closed: a marker entry whose lstat fails for any reason but "not there" counts as held,
+        # so an unreadable HEAD makes its directory a repository. Its code runs here with lstat failing for HEAD only
+        text = (KIT / "historyless-checkout.sh").read_text(encoding="utf-8")
+        code = text.split("<<'PY'\n", 1)[1].split("\nargs = sys.argv[1:]\n", 1)[0]
+        empty = self.root / "empty"
+        empty.mkdir()
+        harness = textwrap.dedent("""
+            import errno
+            _lstat = os.lstat
+            def _failing(p, *a, **k):
+                if os.path.basename(p) == "HEAD" and FAIL:
+                    raise PermissionError(errno.EACCES, "denied", p)
+                return _lstat(p, *a, **k)
+            os.lstat = _failing
+            sys.stdout.write(f"{is_repo(D)}")
+            """)
+        for fail, expected in ((False, "False"), (True, "True")):
+            p = subprocess.run([sys.executable, "-I", "-c", f"{code}\nFAIL = {fail}\nD = {str(empty)!r}\n{harness}"],
+                               capture_output=True, text=True, timeout=60)
+            self.assertEqual((p.returncode, p.stdout), (0, expected), p.stderr)
+        # LC5-4 (U1): an entry at DIR's top whose stat fails counts as a link, so the native layer resolves and checks it
+        # rather than skipping it. A DirEntry's methods cannot be patched, so a stand-in with the same two methods is used
+        entry = textwrap.dedent("""
+            import errno
+            import types
+            class Entry:
+                def is_symlink(self):
+                    return False
+                def stat(self, follow_symlinks=True):
+                    if FAIL:
+                        raise PermissionError(errno.EACCES, "denied", "x")
+                    return types.SimpleNamespace(st_file_attributes=0)
+            sys.stdout.write(f"{is_link(Entry())}")
+            """)
+        for fail, expected in ((False, "False"), (True, "True")):
+            p = subprocess.run([sys.executable, "-I", "-c", f"{code}\nFAIL = {fail}\n{entry}"], capture_output=True, text=True, timeout=60)
+            self.assertEqual((p.returncode, p.stdout), (0, expected), p.stderr)
+
+    def test_historyless_checkout_refuses_a_link_name_that_names_dot_git(self):
+        # LC4-4: --link .git/hooks=DIR put a host directory in the checkout's own git directory, whose hooks a candidate's
+        # commit runs. No segment of NAME may name .git, by any spelling Windows resolves to it
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        free = self.root / "installed" / "hooks"
+        free.mkdir(parents=True)
+        for name in (".git", ".git/hooks", ".git/objects/info", ".GIT", ".Git/hooks", ".git.", ".git ", ".git. .", "GIT~1",
+                     "git~1/hooks", "vendor/.git", "a/./.git/x"):
+            self.assert_link_refused(c, free, "may not name .git", "--pack", str(pack), name=name)
+        for name in ("a" + BS + "b", BS + "x", "c:x", "x:y"):  # a Windows separator, a drive or a stream
+            self.assert_link_refused(c, free, "a plain relative name", name=name)
+        # LC5-4 (U2): every --link's NAME is checked, not only the first one's
+        for name in (".git/hooks", ".GIT"):
+            self.assert_link_refused(c, free, "may not name .git", "--pack", str(pack), "--link", f"a={free}", name=name)
+        self.assert_link_refused(c, free, "a plain relative name", "--link", f"a={free}", "--link", f"b={free}", name="c:x")
+        target = self.root / "accepted" / "cand"  # names that only look alike are linked
+        p = checkout(c["repo"], c["base"], target, native_links(self.env), "--pack", str(pack), "--link", f".github={free}",
+                     "--link", f"git={free}", "--link", f"gitdir={free}")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        for name in (".github", "git", "gitdir"):
+            self.assertTrue((target / name).exists(), name)
+        self.assertEqual(sh(["git", "status", "--porcelain"], target, self.env).stdout.strip(), "")
+
+    def test_historyless_checkout_needs_a_windows_python_3_10_for_the_native_layer(self):
+        # LC4-2: the native layer calls os.path.realpath(path, strict=True), and strict came in Python 3.10. A 3.9 passed
+        # the old probe (3.8+) and then failed every check; the probe now asks for 3.10 and says so
+        import os
+        if os.name != "nt":
+            self.skipTest("not Windows: there is no native layer")
+        pack, c = make_pack(self.root, self.env)
+        stub = self.root / "py39"
+        stub.mkdir()
+        emulate = stub / "emulate39.py"  # a Windows Python that reports 3.9 and has 3.9's realpath (no strict)
+        emulate.write_text(textwrap.dedent("""\
+            import os
+            import sys
+            sys.version_info = (3, 9, 18, "final", 0)
+            _realpath = os.path.realpath
+            os.path.realpath = lambda path: _realpath(path)
+            args = sys.argv[1:]
+            if args[:1] == ["-I"]:
+                args = args[1:]
+            if args[:1] == ["-c"]:
+                sys.argv = ["-c", *args[2:]]
+                exec(compile(args[1], "<string>", "exec"), {"__name__": "__main__"})
+            elif args[:1] == ["-"]:
+                sys.argv = ["-", *args[1:]]
+                exec(compile(sys.stdin.read(), "<stdin>", "exec"), {"__name__": "__main__"})
+            else:
+                sys.exit(9)
+            """))
+        run39 = lambda code: subprocess.run([sys.executable, "-I", str(emulate), "-I", "-c", code], capture_output=True, text=True, timeout=60)
+        self.assertEqual(run39("import sys; print(sys.version_info >= (3, 10))").stdout.strip(), "False")
+        self.assertIn("TypeError", run39("import os; os.path.realpath('.', strict=True)").stderr)  # as a 3.9 fails
+        (stub / "python3").write_bytes(f'#!/bin/sh\nexec "{Path(sys.executable).as_posix()}" -I "{emulate.as_posix()}" "$@"\n'.encode())
+        (stub / "python3").chmod(0o755)
+        names = ("python3", "python3.exe", "python", "python.exe")
+        dirs = [d for d in self.env.get("PATH", "").split(os.pathsep) if d and not any(os.path.lexists(os.path.join(d, n)) for n in names)]
+        for flags in ((), ("--pack", str(pack))):
+            parent = self.root / f"refused-{len(flags)}"
+            p = checkout(c["repo"], c["base"], parent / "cand", {**self.env, "PATH": os.pathsep.join([str(stub), *dirs])}, *flags)
+            self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+            self.assertIn("no native path resolver", p.stderr)
+            self.assertIn("Python 3.10+", p.stderr)
+            self.assertFalse(parent.exists())
+
+    def subst_drive(self, path: Path) -> str | None:
+        """A drive letter that subst maps to path for the rest of this test (removed at cleanup), or None when no letter
+        is free. subst refuses a letter in use, so two tests running at once never share one."""
+        import os
+        for letter in "RSTUVWXYQPONMLKJIHG":
+            if os.path.exists(f"{letter}:{BS}"):
+                continue
+            if subprocess.run(["subst", f"{letter}:", str(Path(path).resolve())], capture_output=True, text=True, timeout=60).returncode == 0:
+                self.addCleanup(subprocess.run, ["subst", f"{letter}:", "/D"], capture_output=True, timeout=60)
+                return letter
+        return None
+
+    @NEEDS_PY_LINKS
+    def test_historyless_checkout_checks_where_a_link_only_the_shell_sees_leads_as_native_programs_resolve_it(self):
+        # LC5-1: Git Bash makes "sys" symlinks (MSYS=winsymlinks:sys) and shortcut symlinks (:lnk). Git Bash and every MSYS
+        # tool follow them, but to Windows they are plain files, so the native layer's scan of DIR's top saw no link. The
+        # shell layer resolved such a link and checked the path in its own view, which cannot see through a volume-GUID
+        # link or a subst drive. So a link at DIR's top to such a path into a repository passed both layers, and a
+        # candidate's `cd node_modules/s && git log` read that repository's history. Every path the shell resolves is
+        # now also checked as native programs resolve it
+        import os
+        if os.name != "nt" or volume_spelling(self.root) is None:
+            self.skipTest("not Windows, or the temporary directory's volume has no GUID name: no MSYS-only link, no native layer")
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        other, wt, bare = self.other_repositories()
+        free = self.root / "installed" / "node_modules"  # outside every repository
+        (free / "pkg").mkdir(parents=True)
+        letter = self.subst_drive(other / "node_modules")
+        if letter is None:
+            self.skipTest("no free drive letter for subst")
+        self.assertTrue(Path(f"{letter}:{BS}pkg").is_dir())
+        links = self.root / "L"
+        links.mkdir()
+        for name, to in (("g", other / "node_modules"), ("g-free", free)):
+            (links / name).symlink_to(volume_spelling(to), target_is_directory=True)
+            self.assertFalse(bash_sees_link(links / name, self.env), f"{name}: Git Bash sees this link")
+        cases = [("sys", shell_spelling(links / "g", self.env)),  # a sys symlink to a GUID link into a work tree
+                 ("lnk", shell_spelling(links / "g", self.env)),  # a shortcut symlink to it
+                 ("sys", f"/{letter.lower()}/pkg"),  # a sys symlink to a subst drive mapped into a work tree
+                 ("lnk", f"/{letter.lower()}/pkg")]  # a shortcut symlink to it
+        both = (("--pack", str(pack)), ())
+        for i, (mode, to) in enumerate(cases):
+            deps = self.root / f"deps-msys-{i}"
+            (deps / "plain").mkdir(parents=True)
+            msys_link(deps / "s", to, mode, self.env)
+            self.assertTrue(bash_sees_link(deps / "s", self.env), f"{mode} {to}: Git Bash does not see the link")
+            self.assertFalse(any(native_entries(deps).values()), f"{mode} {to}: Windows sees a link: {native_entries(deps)}")
+            for flags in both:
+                self.assert_link_refused(c, deps, "other; a dependency tree inside a repository", *flags, native=True)
+        # controls: the same links to a directory outside every repository are accepted, and the checkout is made
+        letter_free = self.subst_drive(free)
+        controls = [("sys", shell_spelling(links / "g-free", self.env)), ("lnk", shell_spelling(links / "g-free", self.env)),
+                    ("sys", shell_spelling(free, self.env)), *([("sys", f"/{letter_free.lower()}/pkg")] if letter_free else [])]
+        for i, (mode, to) in enumerate(controls):
+            deps = self.root / f"deps-msys-ok-{i}"
+            (deps / "plain").mkdir(parents=True)
+            msys_link(deps / "s", to, mode, self.env)
+            for j, flags in enumerate(both):
+                target = self.root / f"out-{i}-{j}" / "cand"
+                p = checkout(c["repo"], c["base"], target, native_links(self.env), *flags, "--link", f"node_modules={deps}")
+                self.assertEqual(p.returncode, 0, f"{mode} {to} {flags}: {p.stdout}{p.stderr}")
+                self.assertEqual(sh(["git", "rev-list", "--all", "--count"], target, self.env).stdout.strip(), "1")
+
+    def test_historyless_checkout_proves_each_path_string_names_the_file_it_came_from(self):
+        # LC6-1: every path the checks read is a string the shell made of a path ($(pwd -P), $(dirname), $(basename),
+        # $(readlink)), and a command substitution drops every trailing newline. With x/repo<LF>, a work tree, beside a
+        # free directory x/repo, a link at DIR's top to x/repo<LF> was resolved, checked and found free as x/repo, and a
+        # candidate's `cd node_modules/s && git log` read the work tree's history. Each such string is now proved, by
+        # file identity, to name the file it came from, or the path is refused; and the strings that name a file not
+        # made yet (the target, a link's parent) keep their exact spelling
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        other, wt, bare = self.other_repositories()
+        env = native_links(self.env)
+        x = self.root / "x"
+        x.mkdir()
+        work = nl_path(x / "repo")  # a work tree with history, beside a free twin x/repo
+        work.mkdir()
+        (work / "brief.md").write_text("SECRET-BRIEF\n")
+        sh(["git", "init", "-q"], work, self.env)
+        commit_all(work, self.env, "SECRET-FIX-COMMIT")
+        (x / "repo").mkdir()
+        (x / "repo" / "brief.md").write_text("free twin\n")
+        (x / "t").write_text("free\n")
+        sx = shell_spelling(x, self.env)
+        made = bash_nl('ln -s -- "$1" "$2"', shell_spelling(other / "README.md", self.env), sx + "/t\n", env={**env, "MSYS": "winsymlinks:sys"})
+        self.assertEqual(made.returncode, 0, made.stderr)  # x/t<LF>: a link to a file in the repository other, beside a free x/t
+        both = (("--pack", str(pack)), ())
+
+        def refused(reason, *flags, target=None, link=None, src=None):
+            parent = self.root / f"refused-{len(list(self.root.glob('refused-*')))}"
+            p = checkout_spelled(src or c["repo"], c["base"], target or parent / "cand", env, *flags, *(("--link", link) if link else ()))
+            self.assertEqual(p.returncode, 2, f"{src} {link} {target} {flags}: {p.stdout}{p.stderr}")
+            self.assertIn(reason, p.stderr, f"{src} {link} {target} {flags}")
+            self.assertNotIn(NATIVE, p.stderr, f"{src} {link} {target} {flags}: the layer that refused")
+            self.assertFalse(parent.exists(), f"{src} {link} {target} {flags}")
+
+        cases = [("sys", sx + "/repo\n"),  # a link at DIR's top to the work tree x/repo<LF>
+                 ("lnk", sx + "/repo\n"),  # ... a shortcut symlink (on a host without MSYS, a symlink all the same)
+                 ("sys", sx + "/repo\n/brief.md"),  # a link to a file in it: the join of $(dirname) and $(basename)
+                 ("sys", sx + "/t\n")]  # a link to the link x/t<LF>: the $(readlink) hop
+        for i, (mode, to) in enumerate(cases):
+            deps = self.root / f"deps-nl-{i}"
+            (deps / "plain").mkdir(parents=True)
+            ln = bash_nl('ln -s -- "$1" "$2"', to, shell_spelling(deps, self.env) + "/s", env={**env, "MSYS": f"winsymlinks:{mode}"})
+            self.assertEqual(ln.returncode, 0, ln.stderr)
+            for flags in both:
+                refused(UNPROVED, *flags, link=f"node_modules={deps}")
+        for flags in both:
+            refused(UNPROVED, *flags, link=f"node_modules={sx}/repo\n")  # DIR itself: $(pwd -P)
+        # the pack: --pack pk<LF> beside a free twin pk, with the target inside pk<LF>
+        pk = nl_path(self.root / "pk")
+        pk.mkdir()
+        (self.root / "pk").mkdir()
+        refused(UNPROVED, "--pack", shell_spelling(self.root, self.env) + "/pk\n", target=shell_spelling(self.root, self.env) + "/pk\n/cand")
+        self.assertEqual(list(pk.iterdir()) + list((self.root / "pk").iterdir()), [])
+        # a target whose nearest existing parent is x/p<LF>, a link into the repository other, beside a free x/p:
+        # checked, and made, at x/p
+        ln = bash_nl('ln -s -- "$1" "$2"', shell_spelling(other / "node_modules", self.env), sx + "/p\n", env={**env, "MSYS": "winsymlinks:sys"})
+        self.assertEqual(ln.returncode, 0, ln.stderr)
+        (x / "p").mkdir()
+        for flags in both:
+            refused("is inside the git repository", *flags, target=sx + "/p\n/cand")
+        self.assertEqual(list((x / "p").iterdir()), [])
+        # a link's parent: --link a<LF>=hostdir --link a<LF>/x=dep2 made the second link in hostdir (its parent was
+        # checked as the checkout's a, which did not exist, and made where a<LF> leads)
+        hostdir, dep2 = self.root / "hostdir", self.root / "dep2"
+        hostdir.mkdir()
+        (hostdir / "keep").write_text("keep\n")
+        dep2.mkdir()
+        for flags in both:
+            target = self.root / f"made-{len(flags)}" / "cand"
+            p = checkout_spelled(c["repo"], c["base"], target, env, *flags, "--link", f"a\n={hostdir}", "--link", f"a\n/x={dep2}")
+            self.assertEqual(p.returncode, 2, f"{flags}: {p.stdout}{p.stderr}")
+            self.assertIn("is not inside the checkout", p.stderr, flags)
+            self.assertFalse(target.exists(), flags)
+            self.assertEqual(sorted(q.name for q in hostdir.iterdir()), ["keep"], flags)
+        # controls: a target spelled with newlines is made exactly there, and a link to a free directory is accepted
+        target = nl_path(nl_path(nl_path(self.root / "n") / "m") / "cand")
+        p = checkout_spelled(c["repo"], c["base"], shell_spelling(self.root, self.env) + "/n\n/m\n/cand\n", env)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertTrue(target.is_dir())
+        self.assertFalse((self.root / "n").exists())
+        self.assertEqual(sh(["git", "rev-list", "--all", "--count"], target, self.env).stdout.strip(), "1")
+        # the source repository srcnl<LF> beside a clone srcnl: $(pwd -P) cannot spell a name that ends in a newline,
+        # so the source is refused, and the clone is not read in its place
+        for name in (nl_path(self.root / "srcnl"), self.root / "srcnl"):
+            sh(["git", "clone", "-q", str(c["repo"]), str(name)], self.root, self.env)
+        refused(UNPROVED, src=shell_spelling(self.root, self.env) + "/srcnl\n")
+        # a target whose last segment is '.' or '..' names another directory than the one made for it: 'nx/..' was
+        # host itself, where git init and reset --hard wrote the checkout
+        host = self.root / "host"
+        host.mkdir()
+        (host / "host.txt").write_bytes(b"HOST\n")
+        for last in (".", ".."):
+            refused(f"its last segment is '{last}'", target=shell_spelling(host, self.env) + f"/nx/{last}")
+            self.assertEqual(tree_bytes(host), {"host.txt": b"HOST\n"}, last)
+            self.assertFalse((host / "nx").exists(), last)
+        free = self.root / "installed" / "node_modules"
+        (free / "pkg").mkdir(parents=True)
+        deps = self.root / "deps-nl-ok"
+        (deps / "plain").mkdir(parents=True)
+        msys_link(deps / "s", shell_spelling(free, self.env), "sys", self.env)
+        for j, flags in enumerate(both):
+            target = self.root / f"ok-{j}" / "cand"
+            p = checkout_spelled(c["repo"], c["base"], target, env, *flags, "--link", f"node_modules={deps}")
+            self.assertEqual(p.returncode, 0, f"{flags}: {p.stdout}{p.stderr}")
+
+    @NEEDS_PY_LINKS
+    def test_historyless_checkout_proves_native_programs_read_each_path_string_as_the_same_file(self):
+        # LC6-1, the native layer: Windows drops a trailing space or dot from a name, so 'gs ' (a link into a
+        # repository) beside a free 'gs' was resolved by native programs as 'gs' and found free, while the checkout's
+        # node and git, and Git Bash, reached the repository; and a target 'co ' beside a host directory 'co' was made
+        # by git init in 'co', where reset --hard wrote the base tree. The native layer now proves, by file identity
+        # (the volume and the file id), that each string names what its literal spelling names, or refuses it; and git
+        # is given the target's proved spelling
+        import os
+        if os.name != "nt" or volume_spelling(self.root) is None:
+            self.skipTest("not Windows, or the temporary directory's volume has no GUID name: no trailing-space twin, no native layer")
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        other, wt, bare = self.other_repositories()
+        free = self.root / "installed" / "node_modules"
+        (free / "pkg").mkdir(parents=True)
+        env = native_links(self.env)
+        sp = self.root / "sp"  # names that end in a space: Python reaches them only by their literal spelling
+        lit = lambda q: NT_PREFIX + str(q)
+        both = (("--pack", str(pack)), ())
+        try:
+            sp.mkdir()
+            os.symlink(volume_spelling(other / "node_modules"), lit(sp / "gs "), target_is_directory=True)  # a link Git Bash cannot see
+            (sp / "gs").mkdir()  # ... beside a free twin
+            for flags in both:
+                self.assert_link_refused(c, shell_spelling(sp, self.env) + "/gs ", UNPROVED, *flags, env=env, native=True)
+            deps = self.root / "deps-sp"
+            (deps / "plain").mkdir(parents=True)
+            msys_link(deps / "s", shell_spelling(sp, self.env) + "/gs ", "sys", self.env)  # a link only the shell sees, to it
+            for flags in both:
+                self.assert_link_refused(c, deps, UNPROVED, *flags, env=env, native=True)
+            top = sp / "deps"  # a link at DIR's top named 's ' into the repository other, beside a free 's'
+            (top / "plain").mkdir(parents=True)
+            os.symlink(volume_spelling(other), lit(top / "s "), target_is_directory=True)
+            os.symlink(volume_spelling(free), lit(top / "s"), target_is_directory=True)
+            for flags in both:
+                self.assert_link_refused(c, top, UNPROVED, *flags, env=env, native=True)
+            # the target: its nearest existing parent 'gt ' (a link into other) beside a free 'gt'
+            os.symlink(volume_spelling(other / "node_modules"), lit(sp / "gt "), target_is_directory=True)
+            (sp / "gt").mkdir()
+            for flags in both:
+                self.assert_target_refused(c, shell_spelling(sp, self.env) + "/gt /cand", UNPROVED, *flags, made=other / "node_modules" / "cand", env=env, native=True)
+                self.assertEqual(os.listdir(sp / "gt"), [], flags)
+            # the target 'co ' beside a host directory 'co': nothing is written in 'co', and 'co ' is removed (by its
+            # literal spelling: removed as Windows reads the string, it would have been 'co')
+            (sp / "co").mkdir()
+            (sp / "co" / "host.txt").write_bytes(b"HOST\n")
+            for flags in (*both, ("--link", f"node_modules={free}")):
+                p = checkout(c["repo"], c["base"], shell_spelling(sp, self.env) + "/co ", env, *flags)
+                self.assertEqual(p.returncode, 2, f"{flags}: {p.stdout}{p.stderr}")
+                self.assertIn("the checkout ", p.stderr, flags)
+                self.assertIn(f"/co , {NATIVE}", p.stderr, flags)
+                self.assertIn(UNPROVED, p.stderr, flags)
+                self.assertEqual(sorted(os.listdir(lit(sp))), ["co", "deps", "gs", "gs ", "gt", "gt "], flags)
+                self.assertEqual(tree_bytes(sp / "co"), {"host.txt": b"HOST\n"}, flags)
+            # the source 'rs ' beside a twin 'rs' that git read instead
+            os.mkdir(lit(sp / "rs "))
+            sh(["git", "clone", "-q", str(c["repo"]), str(sp / "rs")], self.root, self.env)
+            target = self.root / "from-rs" / "cand"
+            p = checkout(shell_spelling(sp, self.env) + "/rs ", c["base"], target, env)
+            self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+            self.assertIn("the source repository ", p.stderr)
+            self.assertIn(f"/rs , {NATIVE}", p.stderr)
+            self.assertIn(UNPROVED, p.stderr)
+            self.assertFalse(target.parent.exists())
+        finally:
+            # by the literal spelling: 'gs ' is removed as 'gs ', never followed; git makes its object files read-only
+            def writable(func, path, _):
+                os.chmod(path, 0o700)
+                func(path)
+            shutil.rmtree(lit(sp), **({"onexc": writable} if sys.version_info >= (3, 12) else {"onerror": writable}))
+        self.assertFalse(sp.exists())
+
+    def test_historyless_checkout_proves_each_windows_spelling_it_hands_on(self):
+        # LC6-1: the native layer is given each path as cygpath -m spells it, and git the source and the target the
+        # same way; the shell proves, by file identity, that each such string names the path it came from. A stub
+        # cygpath that spells a path as another directory (which a real one should never do) shows that a string
+        # naming another directory is refused, never checked, handed to git, or removed in its place
+        import os
+        if os.name != "nt":
+            self.skipTest("not Windows: no Windows spelling is handed on")
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        stub = self.root / "stub-bin"
+        stub.mkdir()
+        (stub / "cygpath").write_bytes(STUB_CYGPATH.encode())
+        (stub / "cygpath").chmod(0o755)
+        env = {**native_links(self.env), "PATH": str(stub) + os.pathsep + self.env.get("PATH", "")}
+        elsewhere = self.root / "elsewhere"  # a host directory a wrong spelling names
+        elsewhere.mkdir()
+        (elsewhere / "host.txt").write_bytes(b"HOST\n")
+        # the target: the checkout is made, then given to the native layer and to git by its Windows spelling
+        parent = self.root / "new"
+        p = checkout(c["repo"], c["base"], parent / "cand", {**env, "STUB_MOUNT": bash_native(self.root, self.env) + "/new/cand",
+                                                            "STUB_TARGET": bash_native(elsewhere, self.env)})
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn(f"the checkout {shell_spelling(parent, self.env)}/cand: its Windows spelling", p.stderr)
+        self.assertIn(UNPROVED, p.stderr)
+        self.assertNotIn(NATIVE, p.stderr)
+        self.assertFalse(parent.exists())
+        self.assertEqual(tree_bytes(elsewhere), {"host.txt": b"HOST\n"})
+        # ... and removed by it: one that names another directory is not removed, nor is that directory
+        target = self.root / "cand-kept"
+        p = checkout(c["repo"], c["base"], target, {**env, "STUB_MOUNT": bash_native(self.root, self.env) + "/cand-kept",
+                                                    "STUB_TARGET": bash_native(elsewhere, self.env)})
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn(f"could not remove {shell_spelling(target, self.env)}", p.stderr)
+        self.assertEqual(tree_bytes(elsewhere), {"host.txt": b"HOST\n"})
+        self.assertEqual(os.listdir(target), [])
+        # the source repository, with no --link (the S item is its only check): git read the directory the string named
+        clone = self.root / "clone"
+        sh(["git", "clone", "-q", str(c["repo"]), str(clone)], self.root, self.env)
+        src = self.root / "src-empty"
+        src.mkdir()
+        target = self.root / "from-src" / "cand"
+        p = checkout(src, c["base"], target, {**env, "STUB_MOUNT": bash_native(src, self.env), "STUB_TARGET": bash_native(clone, self.env)})
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn(f"the source repository {shell_spelling(src, self.env)}: its Windows spelling", p.stderr)
+        self.assertIn(UNPROVED, p.stderr)
+        self.assertFalse(target.parent.exists())
+        # git is a native program: with MSYS's argument conversion off (MSYS_NO_PATHCONV, as some hosts set it), it
+        # reads a shell spelling such as /c/x as \c\x on its current drive, another directory. Given only the proved
+        # Windows spellings, it reads the source and writes the checkout where they are. The script runs from the root
+        # of a subst drive mapped into this test's directory, so a string read that way names a directory under it
+        drive = self.root / "drive"
+        drive.mkdir()
+        letter = self.subst_drive(drive)
+        if letter is None:
+            self.skipTest("no free drive letter for subst")
+        target = self.root / "no-conversion" / "cand"
+        p = subprocess.run(["bash", str(KIT / "historyless-checkout.sh"), str(c["repo"]), c["base"], str(target), "cal/test"],
+                           env={**native_links(self.env), "MSYS_NO_PATHCONV": "1", "MSYS2_ARG_CONV_EXCL": "*"}, cwd=f"{letter}:{BS}",
+                           capture_output=True, text=True, timeout=120)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(sh(["git", "rev-list", "--all", "--count"], target, self.env).stdout.strip(), "1")
+        self.assertEqual(os.listdir(drive), [])
+
+    def test_historyless_checkout_resets_the_shell_options_its_loops_depend_on(self):
+        # LC5-2: bash takes SHELLOPTS and BASHOPTS from the environment. With noglob the loop over DIR's top saw only the
+        # literal patterns, so no entry was checked; with failglob the script died on the first unmatched pattern. The
+        # script now sets the globbing options it relies on itself
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        other, wt, bare = self.other_repositories()
+        deps = self.root / "deps-opts"  # a link only the shell checks (on Windows a sys symlink; elsewhere any symlink)
+        (deps / "plain").mkdir(parents=True)
+        msys_link(deps / "s", shell_spelling(other / "node_modules", self.env), "sys", self.env)
+        self.assertTrue(bash_sees_link(deps / "s", self.env))
+        clean = self.root / "deps-clean"
+        (clean / "plain").mkdir(parents=True)
+        for extra in ({"SHELLOPTS": "noglob"}, {"SHELLOPTS": "braceexpand:noglob"}, {"BASHOPTS": "failglob"}, {"BASHOPTS": "nullglob"},
+                      {"SHELLOPTS": "noglob", "BASHOPTS": "failglob:nullglob"}):
+            env = {**native_links(self.env), **extra}
+            for flags in (("--pack", str(pack)), ()):
+                self.assert_link_refused(c, deps, "other; a dependency tree inside a repository", *flags, env=env)
+            target = self.root / f"out-{len(list(self.root.glob('out-*')))}" / "cand"  # a clean DIR is accepted under each
+            p = checkout(c["repo"], c["base"], target, env, "--pack", str(pack), "--link", f"node_modules={clean}")
+            self.assertEqual(p.returncode, 0, f"{extra}: {p.stdout}{p.stderr}")
+
+    @NEEDS_PY_LINKS
+    def test_historyless_checkout_makes_each_link_inside_the_checkout_outside_its_git_directory(self):
+        # LC5-3: NAME's spelling was checked, but not where the link lands. A base tree may track a symlink (mode 120000)
+        # that a host with core.symlinks=true checks out as a link: with g -> .git, --link g/hooks=DIR put a host directory
+        # among the checkout's hooks, which a candidate's commit runs. Each link's real parent must now lie inside the
+        # checkout and outside its .git, in both layers, and NAME must not exist yet (ln -s would put the link inside an
+        # existing directory, or where a symlink leads); a refusal removes what was made, and never through a link
+        import os
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        repo = c["repo"]
+        far = self.root / "far"  # a host directory outside every repository: nothing may be written in it, or deleted
+        far.mkdir()
+        (far / "keep").write_text("keep\n")
+        g = lambda *a: sh(["git", *a], repo, self.env).stdout.strip()
+        blob = lambda text: subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=repo, env=self.env, input=text,
+                                           capture_output=True, text=True, timeout=60, check=True).stdout.strip()
+        tracked = [("g", ".git")]  # a tracked symlink to the checkout's own git directory
+        guid = volume_spelling(far)
+        if guid is not None:  # and tracked directory symlinks to volume-GUID paths, which Git Bash takes for directories:
+            # v to the host directory far, w to .git/refs in the checkout a refused run makes (assert_link_refused's target:
+            # each refusal removes it, so it is always refused-0/cand). Not .git itself: the shell's -ef sees through a
+            # link to it. git stores a symlink's target with '/'
+            tracked += [("v", guid.replace(BS, "/")), ("w", volume_spelling(self.root / "refused-0" / "cand" / ".git" / "refs").replace(BS, "/"))]
+            (repo / ".gitattributes").write_text("v symlink=dir\nw symlink=dir\n")
+            g("add", ".gitattributes")
+        for path, to in tracked:
+            g("update-index", "--add", "--cacheinfo", f"120000,{blob(to)},{path}")
+        g("commit", "-q", "-m", "tracked symlinks")
+        c2 = {**c, "base": g("rev-parse", "HEAD")}
+        cfg = self.root / "gitconfig-symlinks"
+        cfg.write_text((self.root / "gitconfig").read_text() + "[core]\n\tsymlinks = true\n")
+        env = dict(native_links(self.env), GIT_CONFIG_GLOBAL=str(cfg))
+        hooks = self.root / "installed" / "hooks"
+        hooks.mkdir(parents=True)
+        lib = self.root / "installed" / "lib"
+        lib.mkdir()
+        before = {d: sorted(os.listdir(d)) for d in (far, hooks, lib)}
+        shell_cases = [("g/hooks", hooks, (), "is inside the checkout's git directory"),  # through the tracked link
+                       ("g", hooks, (), "the checkout already holds g"),  # ln -s would follow g into .git
+                       ("src", hooks, (), "the checkout already holds src"),  # ln -s would put the link inside src/
+                       ("a/b", hooks, ("--link", f"a={lib}"), "is not inside the checkout"),  # in the host's directory lib
+                       ("a", hooks, ("--link", f"a={lib}"), "the checkout already holds a")]  # likewise, through link a
+        for name, d, extra, reason in shell_cases:
+            for flags in (("--pack", str(pack), *extra), extra):
+                self.assert_link_refused(c2, d, reason, *flags, name=name, env=env)
+        if guid is not None:  # Git Bash takes v and w for directories inside the checkout; native programs follow them
+            for flags in (("--pack", str(pack)), ()):
+                self.assert_link_refused(c2, hooks, "is not inside the checkout", *flags, name="v/x", env=env, native=True)  # to far
+                self.assert_link_refused(c2, hooks, "is inside the checkout's git directory", *flags, name="w/hooks", env=env, native=True)
+        self.assertEqual({d: sorted(os.listdir(d)) for d in (far, hooks, lib)}, before, "a refused link was made in a host directory, "
+                         "or the removal of the refused checkout deleted files through a link")
+        # controls: with the tracked links checked out, a link beside them is made, and its parent is the checkout
+        target = self.root / "accepted" / "cand"
+        p = checkout(c2["repo"], c2["base"], target, env, "--pack", str(pack), "--link", f"node_modules={lib}", "--link", f"src/vendor={hooks}")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertTrue((target / "g").is_symlink())
+        self.assertEqual((target / "src" / "vendor").resolve(), hooks.resolve())
+        # the links are hidden from git status (Git for Windows reads the targets of v and w back without their prefix, so
+        # it shows them as modified; that is git's own round trip, not a link)
+        status = sh(["git", "status", "--porcelain"], target, self.env).stdout.splitlines()
+        self.assertEqual([line for line in status if line not in (" M v", " M w")], [])
 
     def test_historyless_checkout_refuses_an_existing_target_and_one_inside_the_pack(self):
         pack, c = make_pack(self.root, self.env)
@@ -560,17 +1848,21 @@ class Scripts(unittest.TestCase):
         p = checkout(c["repo"], c["base"], pack / "cand", self.env, "--pack", str(pack))
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertIn("pack", p.stderr)
+        self.assertNotIn(NATIVE, p.stderr)
         self.assertFalse((pack / "cand").exists())
         p = checkout(c["repo"], c["base"], self.root / "under-root", self.env, "--pack", "/")  # N2: every target is inside /
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertIn("is inside the pack /", p.stderr)
+        self.assertNotIn(NATIVE, p.stderr)
         p = checkout(c["repo"], c["base"], self.root / "under-root-2", self.env, "--pack", "//")  # N3: '//' is the root too
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertIn("is inside the pack /", p.stderr)
+        self.assertNotIn(NATIVE, p.stderr)
         self.assertFalse((self.root / "under-root-2").exists())
         p = checkout(c["repo"], c["base"], pack / "cand-2", self.env, "--pack", "/" + str(pack))  # N3: a //-spelled pack
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertIn("pack", p.stderr)
+        self.assertNotIn(NATIVE, p.stderr)
         self.assertFalse((pack / "cand-2").exists())
         self.assertFalse((self.root / "under-root").exists())
         p = checkout(c["repo"], c["base"], self.root / "ok", self.env, "--pack", str(pack))
@@ -1253,8 +2545,13 @@ class SharedPack(unittest.TestCase):
         for line in re.findall(r"^\s*- (`cases\.pin\.[a-z_]+`.*?):", section, re.M):  # "`cases.pin.x`, `cases.fix.x`: ..."
             fields |= set(re.findall(r"`([a-z_.]+)`", line))
         self.assertGreater(len(fields), 40, fields)
+        # run 4's keys (a pin case's mutants, the gate case kind, a fix case's cause_in_prompt) are optional and the shared
+        # pack, a pin/fix/review pack, carries none (its fix prompt prints the cause, as before): each is checked on the
+        # shape the kit's own fixtures use (GATE_CASE, add_mutant's list, FixCauseInPrompt's false)
+        run4 = {"cases": {"pin": {"mutants": [{"id": "M-1", "commit": "0" * 40}]}, "gate": GATE_CASE, "fix": {"cause_in_prompt": False}}}
+        self.assertTrue({"cases.pin.mutants", "cases.gate.commands.gate", "cases.gate.invariants", "cases.fix.cause_in_prompt"} <= fields, fields)
         for field in sorted(fields):
-            node = m
+            node = run4 if field.startswith(("cases.pin.mutants", "cases.gate", "cases.fix.cause_in_prompt")) else m
             for part in field.replace("[]", "").split("."):
                 node = node[0] if isinstance(node, list) else node
                 self.assertIn(part, node, field)
@@ -1607,6 +2904,707 @@ class Docs(unittest.TestCase):
         self.assertEqual(len(pack), 1)
         self.assertIn("tools/calibration/subject-pack/shared/", pack[0])
         self.assertIn("(tools/calibration/README.md)", (ROOT / "README.md").read_text(encoding="utf-8"))
+
+
+# ---- run 4's kit cases (sr-kit-cases, K1-K4): a category on the task object, mutants for a pin case, a gate case ----
+
+GOLDEN = FIX / "golden-no-category"  # the builder's output, before K1, on the fixture inputs with every category removed
+GATE_CASE = {"base": "base0", "category": "docs-mechanical", "tier": "T1",
+             "pass_rule": "commands.gate exits 0 in the candidate's checkout AND every invariants path hashes as at the base AND every required_paths path exists AND the candidate committed",
+             "instructions": "Write out/summary.md from notes.txt and make notes.txt say ok.",
+             "commands": {"gate": "python3 check.py", "timeout_seconds": 60}, "invariants": ["data/ledger.txt", "captures"],
+             "required_paths": ["out/summary.md"]}
+
+
+def fixture_manifest(**cases) -> dict:
+    """The fixture manifest with cases replaced (a value None drops the case)."""
+    m = json.loads((FIX / "manifest.json").read_text(encoding="utf-8"))
+    for k, v in cases.items():
+        if v is None:
+            m["cases"].pop(k, None)
+        else:
+            m["cases"][k] = v
+    return m
+
+
+def build_with(out: Path, manifest: dict, *, journal: Path | None = None, run: Path | None = None, grades: Path | None = None) -> subprocess.CompletedProcess:
+    mpath = out.parent / f"{out.name}-manifest.json"
+    mpath.parent.mkdir(parents=True, exist_ok=True)
+    mpath.write_text(json.dumps(manifest, indent=1), encoding="utf-8")
+    cmd = [sys.executable, str(KIT / "observations.py"), str(journal or FIX / "journal.jsonl"), str(run or FIX / "run.json"), str(mpath),
+           str(grades or FIX / "grades"), str(out), "--protocol", str(FIX / "protocol.json")]
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+
+def gate_inputs(root: Path, gate_pass: bool = True) -> tuple[Path, Path, Path]:
+    """The fixture journal, run file and grades with one gate cell (gate:alpha-low) added."""
+    journal, run, grades = root / "journal-gate.jsonl", root / "run-gate.json", root / "grades-gate"
+    lines = (FIX / "journal.jsonl").read_text(encoding="utf-8").splitlines()
+    lines += [json.dumps({"type": "started", "agentId": "g01", "key": "g01", "label": "gate:alpha-low", "phase": "Gate"}),
+              json.dumps({"type": "result", "agentId": "g01", "key": "g01", "result": {"commits": ["aaa1111"], "summary": "summary written",
+                                                                                     "mistakes": ["nothing to report"]}})]
+    journal.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    r = json.loads((FIX / "run.json").read_text(encoding="utf-8"))
+    r["workflowProgress"].append({"type": "workflow_agent", "label": "gate:alpha-low", "agentId": "g01", "model": "model-alpha-1", "state": "done",
+                                  "tokens": 700, "durationMs": 5, "attempt": 1})
+    run.write_text(json.dumps(r), encoding="utf-8")
+    shutil.copytree(FIX / "grades", grades)
+    (grades / "gate-alpha-low.json").write_text(json.dumps({
+        "task": "gate", "head": "2222222", "commits": 1, "gateExit": 0 if gate_pass else 1,
+        "invariantsIntact": {"data/ledger.txt": True, "captures": True}, "requiredPresent": {"out/summary.md": True}, "committed": True,
+        "PASS": gate_pass}), encoding="utf-8")
+    return journal, run, grades
+
+
+class KitCaseObservations(unittest.TestCase):
+    """K1 (category on the task object) and K3 (gate cells counted) in observations.py."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def built(self, manifest, name="out", **inputs):
+        out = self.root / name
+        p = build_with(out, manifest, **inputs)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        return out, json.loads((out / "observations.json").read_text(encoding="utf-8")), json.loads((out / "scores.json").read_text(encoding="utf-8"))
+
+    def test_k1_a_manifest_without_categories_builds_what_it_built_before_byte_for_byte(self):
+        m = fixture_manifest()
+        for c in m["cases"].values():
+            c.pop("category")
+        out, obs, _ = self.built(m)
+        names = sorted(f.name for f in GOLDEN.iterdir())
+        self.assertEqual(names, sorted(f.name for f in out.iterdir()))
+        self.assertEqual(len(names), 7)
+        for n in names:  # the golden files as committed; a host that checks them out with CRLF reads them as LF
+            self.assertEqual((out / n).read_bytes(), (GOLDEN / n).read_bytes().replace(b"\r\n", b"\n"), n)
+        for o in obs.values():
+            for t in (o["pin"], o["fix"], o["review-grade"]):
+                self.assertNotIn("category", t or {})
+
+    def test_k1_each_task_object_carries_the_manifest_category(self):
+        m = fixture_manifest()
+        m["cases"]["pin"]["category"] = "build-tests"
+        m["cases"]["fix"]["category"] = "build-core"
+        _, obs, s = self.built(m)
+        a, b = obs["alpha-low"], obs["beta-max"]
+        self.assertEqual((a["pin"]["category"], a["fix"]["category"], b["review-grade"]["category"]), ("build-tests", "build-core", "review"))
+        self.assertEqual(s["category_mapping"], {"pin": "build-tests", "fix": "build-core", "review": "review"})
+        # the fixture manifest as shipped names the fixed mapping, and the task objects carry it
+        _, obs, _ = self.built(fixture_manifest(), name="shipped")
+        self.assertEqual((obs["alpha-low"]["pin"]["category"], obs["alpha-low"]["fix"]["category"]), ("pin-tests", "fix"))
+
+    def test_k1_an_ungraded_cell_carries_the_category_too(self):
+        grades = self.root / "no-grades"
+        grades.mkdir()
+        _, obs, _ = self.built(fixture_manifest(), grades=grades)
+        self.assertEqual(obs["alpha-low"]["pin"]["category"], "pin-tests")
+        self.assertIsNone(obs["alpha-low"]["pin"]["score"])
+
+    def test_k2_a_pin_grade_with_mutants_reaches_the_task_object(self):
+        grades = self.root / "grades-mut"
+        shutil.copytree(FIX / "grades", grades)
+        g = json.loads((grades / "pin-alpha-low.json").read_text(encoding="utf-8"))
+        g["redAtMutants"] = {"M-1": True, "M-2": False}
+        g["PASS"] = False
+        (grades / "pin-alpha-low.json").write_text(json.dumps(g), encoding="utf-8")
+        _, obs, s = self.built(fixture_manifest(), grades=grades)
+        self.assertEqual(obs["alpha-low"]["pin"]["redAtMutants"], {"M-1": True, "M-2": False})
+        self.assertIs(obs["alpha-low"]["pin"]["score"], False)
+        self.assertIn("pin:alpha-low", s["totals"]["non_pass"])
+
+    def test_k3_a_gate_cell_is_counted_in_the_observation_and_the_scores(self):
+        journal, run, grades = gate_inputs(self.root)
+        out, obs, s = self.built(fixture_manifest(gate=GATE_CASE), journal=journal, run=run, grades=grades)
+        a = obs["alpha-low"]
+        self.assertEqual(set(a), OBSERVATION_KEYS | {"gate"})
+        self.assertEqual(a["gate"], {"score": True, "tier": "T1", "category": "docs-mechanical", "gateExit": 0,
+                                     "invariantsIntact": {"data/ledger.txt": True, "captures": True}, "requiredPresent": {"out/summary.md": True},
+                                     "committed": True, "commits": 1})
+        self.assertEqual(a["usage"]["gate"]["tokens"], 700)
+        self.assertEqual(a["self-reported-mistakes"]["gate"], ["nothing to report"])
+        self.assertEqual(a["harness-retries"]["gate"], 0)
+        self.assertIsNone(obs["beta-max"]["gate"])  # review-only: no gate cell
+        self.assertEqual(s["profiles"]["alpha-low"]["gate"]["pass"], True)
+        self.assertEqual(s["profiles"]["alpha-low"]["gate"]["committed"], True)
+        self.assertEqual(s["totals"]["cells"]["gate"], "1 of 1 PASS")
+        self.assertEqual(s["category_mapping"]["gate"], "docs-mechanical")
+        self.assertEqual(s["pass_rules"]["gate"], GATE_CASE["pass_rule"])
+        self.assertEqual(s["totals"]["tokens"]["main_run"]["items"], 6700)  # a gate cell is an item, not "other"
+        table = (out / "results-table.md").read_text(encoding="utf-8")
+        self.assertIn("| profile | pin | fix | fix map | review | gate |", table)
+        self.assertIn("| alpha-low | PASS | PASS | yes | - | PASS |", table)
+        self.assertIn("tokens pin/fix/review/gate(+grade)", table)
+        self.assertIn("| alpha-low | gate | 700 |", (out / "tokens-and-estimates.md").read_text(encoding="utf-8"))
+
+    def test_k3_a_failing_gate_cell_is_a_non_pass(self):
+        journal, run, grades = gate_inputs(self.root, gate_pass=False)
+        _, obs, s = self.built(fixture_manifest(gate=GATE_CASE), journal=journal, run=run, grades=grades)
+        self.assertIs(obs["alpha-low"]["gate"]["score"], False)
+        self.assertEqual(s["totals"]["cells"]["gate"], "0 of 1 PASS")
+        self.assertIn("gate:alpha-low", s["totals"]["non_pass"])
+
+    def test_k3_a_gate_cell_can_be_void_and_replaced(self):
+        journal, run, grades = gate_inputs(self.root)
+        (self.root / "j2.jsonl").write_text("\n".join(json.dumps(e) for e in [
+            {"type": "started", "agentId": "h01", "label": "gate:alpha-low"},
+            {"type": "result", "agentId": "h01", "result": {"commits": ["b"], "summary": "again", "mistakes": ["nothing to report"]}}]) + "\n")
+        (self.root / "r2.json").write_text(json.dumps({"runId": "run-supp-1", "workflowProgress": [
+            {"type": "workflow_agent", "label": "gate:alpha-low", "model": "model-alpha-1", "state": "done", "tokens": 650, "durationMs": 1, "attempt": 1}],
+            "result": {"results": [], "clusters": {"clusters": []}, "adjudications": []}}))
+        out = self.root / "void"
+        mpath = self.root / "void-manifest.json"
+        mpath.write_text(json.dumps(fixture_manifest(gate=GATE_CASE)), encoding="utf-8")
+        p = subprocess.run([sys.executable, str(KIT / "observations.py"), str(journal), str(run), str(mpath), str(grades), str(out),
+                            "--protocol", str(FIX / "protocol.json"), "--void", "gate:alpha-low", "--supplementary", str(self.root / "j2.jsonl"),
+                            str(self.root / "r2.json")], capture_output=True, text=True, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        s = json.loads((out / "scores.json").read_text(encoding="utf-8"))
+        self.assertEqual(s["profiles"]["alpha-low"]["gate"]["supplementary_run"], "run-supp-1")
+        self.assertEqual(s["totals"]["tokens"]["main_run"]["of_which_void_cells"], 700)
+
+    def test_k3_a_manifest_case_of_another_kind_is_still_refused(self):
+        p = build_with(self.root / "bad", fixture_manifest(audit={"base": "base0"}))
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn("audit", p.stderr)
+
+    def test_k3_a_folder_with_a_gate_cell_passes_the_evidence_check(self):
+        # the stop trigger of the brief: K3 needs no change to the evidence check (its rules read pin, fix and review)
+        journal, run, grades = gate_inputs(self.root)
+        out = self.root / "docs" / "evidence" / "2026-01-01" / "fixture-host-calibration-9"
+        p = build_with(out, fixture_manifest(gate=GATE_CASE), journal=journal, run=run, grades=grades)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        (out.parent / f"{out.name}-manifest.json").unlink()
+        shutil.copy(FIX / "protocol.json", out / "protocol.json")
+        p = subprocess.run([sys.executable, str(ROOT / "tools" / "check_calibration_evidence.py"), str(out)], capture_output=True, text=True, timeout=120)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertNotIn("FAIL", p.stdout)
+
+
+def add_mutant(c: dict, env: dict, name: str, source: str) -> str:
+    """A mutant commit in the pack repository: the accepted tree with src/mod.py replaced, on a branch of its own."""
+    repo = c["repo"]
+    sh(["git", "checkout", "-q", "-b", f"mutant-{name}", c["accepted"]], repo, env)
+    (repo / "src" / "mod.py").write_text(source)
+    sha = commit_all(repo, env, f"mutant {name}")
+    sh(["git", "checkout", "-q", "--detach", c["accepted"]], repo, env)
+    return sha
+
+
+# a mutant of the accepted add: right on every pair but (1, 1)
+MUTANT_11 = "def add(a, b):\n    return 3 if (a, b) == (1, 1) else a + b\n"
+PIN_SUM = "import unittest\nfrom src.mod import add\n\n\nclass P(unittest.TestCase):\n    def test_sum(self):\n        self.assertEqual(add(2, 3), 5)\n"
+PIN_BOTH = PIN_SUM + "\n    def test_ones(self):\n        self.assertEqual(add(1, 1), 2)\n"
+
+
+def make_gate_pack(root: Path, env: dict, case: dict | None = None) -> tuple[Path, dict]:
+    """A gate-only pack: a ledger and captures the candidate must not change, a checker (the gate) and nothing else."""
+    pack, repo = root / "gpack", root / "gpack" / "repo"
+    (repo / "data").mkdir(parents=True)
+    (repo / "captures" / "deep").mkdir(parents=True)
+    (repo / "data" / "ledger.txt").write_text("row 1\nrow 2\n")
+    (repo / "captures" / "a.txt").write_text("capture a\n")
+    (repo / "captures" / "deep" / "b.txt").write_text("capture b\n")
+    (repo / "notes.txt").write_text("todo\n")
+    (repo / "check.py").write_text("import sys\nsys.exit(0 if open('notes.txt').read().strip() == 'ok' else 1)\n")
+    sh(["git", "init", "-q"], repo, env)
+    base = commit_all(repo, env, "base")
+    gate = copy.deepcopy(case or GATE_CASE)
+    gate["base"] = base
+    manifest = {"pack": "gate-pack", "pack_version": "1", "kind": "host", "repository": "repo", "cases": {"gate": gate}, "checkout": {"links": []}}
+    (pack / "manifest.json").write_text(json.dumps(manifest, indent=1))
+    return pack, {"base": base, "repo": repo}
+
+
+class KitCaseGrades(unittest.TestCase):
+    """K2 (mutants for a pin case) and K3 (the gate case kind) in grade.sh."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.env = git_env(self.root)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def candidate(self, repo, base, name):
+        target = self.root / name
+        p = checkout(repo, base, target, self.env)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return target
+
+    def mutant_pack(self, mutants=None):
+        pack, c = make_pack(self.root, self.env)
+        m = json.loads((pack / "manifest.json").read_text(encoding="utf-8"))
+        m["cases"]["pin"]["mutants"] = mutants if mutants is not None else [{"id": "M-1", "commit": add_mutant(c, self.env, "11", MUTANT_11)}]
+        (pack / "manifest.json").write_text(json.dumps(m, indent=1))
+        return pack, c
+
+    def pin_cell(self, c, name, test):
+        cand = self.candidate(c["repo"], c["base"], name)
+        (cand / "tests" / "test_pin.py").write_text(test)
+        commit_all(cand, self.env, "pin")
+        return cand
+
+    def test_k2_a_pin_that_catches_the_base_defect_but_not_the_mutant_fails(self):
+        pack, c = self.mutant_pack()
+        cand = self.pin_cell(c, "pin-weak", PIN_SUM)
+        code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((d["redAtHead"], d["greenWithFix"], d["srcClean"]), (True, True, True), out)
+        self.assertEqual(d["redAtMutants"], {"M-1": False}, out)
+        self.assertIs(d["PASS"], False, out)
+        self.assertIs(d["restored"], True, out)
+        self.assertEqual((cand / "src" / "mod.py").read_text(encoding="utf-8"), "def add(a, b):\n    return a - b\n")
+
+    def test_k2_a_pin_that_catches_the_base_defect_and_every_mutant_passes(self):
+        pack, c = make_pack(self.root, self.env)
+        m1 = add_mutant(c, self.env, "11", MUTANT_11)
+        m2 = add_mutant(c, self.env, "neg", "def add(a, b):\n    return a + b if a >= 0 else a - b\n")
+        m = json.loads((pack / "manifest.json").read_text(encoding="utf-8"))
+        m["cases"]["pin"]["mutants"] = [{"id": "M-1", "commit": m1}, {"id": "M-2", "commit": m2}]
+        (pack / "manifest.json").write_text(json.dumps(m, indent=1))
+        both = self.pin_cell(c, "pin-both", PIN_BOTH)
+        code, d, out = grade(pack / "manifest.json", "pin", both, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["redAtMutants"], {"M-1": True, "M-2": False}, out)  # M-2 (a negative a) is caught by neither row
+        self.assertIs(d["PASS"], False, out)
+        every = self.pin_cell(c, "pin-every", PIN_BOTH + "\n    def test_negative(self):\n        self.assertEqual(add(-1, 1), 0)\n")
+        code, d, out = grade(pack / "manifest.json", "pin", every, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["redAtMutants"], {"M-1": True, "M-2": True}, out)
+        self.assertEqual((d["redAtHead"], d["greenWithFix"]), (True, True), out)
+        self.assertIs(d["PASS"], True, out)
+        self.assertEqual(set(d["atMutants"]), {"M-1", "M-2"})
+
+    def test_k2_a_pin_red_at_every_mutant_but_green_at_the_base_fails(self):
+        pack, c = self.mutant_pack()
+        nobase = self.pin_cell(c, "pin-nobase", "import unittest\nfrom src.mod import add\n\n\nclass P(unittest.TestCase):\n"
+                                                 "    def test_zero(self):\n        self.assertEqual(add(0, 0), 0)\n        self.assertNotEqual(add(1, 1), 3)\n")
+        code, d, out = grade(pack / "manifest.json", "pin", nobase, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((d["redAtHead"], d["redAtMutants"]), (False, {"M-1": True}), out)
+        self.assertIs(d["PASS"], False, out)
+
+    def test_k2_without_mutants_the_pin_grade_carries_no_mutant_key(self):
+        pack, c = make_pack(self.root, self.env)
+        cand = self.pin_cell(c, "pin-plain", PIN_SUM)
+        code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(list(d), ["task", "head", "commits", "changed", "staged", "untracked", "srcTouched", "testFiles", "atHead",
+                                   "withAcceptedFix", "lint", "redAtHead", "greenWithFix", "srcClean", "committed", "PASS", "restored"])
+        self.assertIs(d["PASS"], True)
+
+    def test_k2_every_mutant_swap_gets_its_own_mtime(self):
+        pack, c = self.mutant_pack()
+        log = self.root / "mtimes.log"
+        m = json.loads((pack / "manifest.json").read_text(encoding="utf-8"))
+        m["commands"]["test"] = (f"python3 -c \"import os; print(os.stat('src/mod.py').st_mtime_ns)\" >> {shlex.quote(str(log))}; " + m["commands"]["test"])
+        (pack / "manifest.json").write_text(json.dumps(m, indent=1))
+        cand = self.pin_cell(c, "pin-mtime", PIN_BOTH)
+        before = (cand / "src" / "mod.py").stat().st_mtime_ns
+        log.write_text("")
+        code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)
+        self.assertEqual(code, 0, out)
+        seen = [int(x) for x in log.read_text(encoding="utf-8").split()]
+        self.assertEqual(len(seen), 3, out)  # the base, the mutant, the accepted source
+        for i, a in enumerate(seen):
+            for b in seen[i + 1:]:
+                self.assertGreaterEqual(abs(a - b), 2_000_000_000, seen)
+        self.assertEqual((cand / "src" / "mod.py").stat().st_mtime_ns, before)
+        self.assertIs(d["PASS"], True, out)
+
+    def test_k2_a_bad_mutant_list_is_refused(self):
+        pack, c = make_pack(self.root, self.env)
+        cand = self.pin_cell(c, "pin-x", PIN_SUM)
+        m = json.loads((pack / "manifest.json").read_text(encoding="utf-8"))
+        for bad, word in (([{"id": "M-1", "commit": "0" * 40}], "not a commit"), ({"id": "M-1"}, "mutants"), ([{"id": "M-1"}], "mutants"),
+                          ([{"id": "M-1", "commit": c["accepted"]}, {"id": "M-1", "commit": c["base"]}], "twice")):
+            m["cases"]["pin"]["mutants"] = bad
+            (pack / "manifest.json").write_text(json.dumps(m, indent=1))
+            code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)
+            self.assertEqual(code, 2, f"{bad}: {out}")
+            self.assertIn(word, out, bad)
+
+    def test_k2_a_vacuous_mutant_is_refused(self):
+        # a mutant whose paths.source files equal the base's adds nothing (every pin red at the base is red at it); one
+        # whose files equal the accepted fix's (a change outside paths.source, say) fails every candidate (review R-2)
+        pack, c = make_pack(self.root, self.env)
+        cand = self.pin_cell(c, "pin-vacuous", PIN_BOTH)
+        m = json.loads((pack / "manifest.json").read_text(encoding="utf-8"))
+        repo, m1 = c["repo"], add_mutant(c, self.env, "11", MUTANT_11)
+        sh(["git", "checkout", "-q", "-b", "mutant-outside", c["accepted"]], repo, self.env)
+        (repo / "docs" / "note.md").write_text("a change outside paths.source\n")
+        outside = commit_all(repo, self.env, "a mutant that changes nothing in paths.source")
+        sh(["git", "checkout", "-q", "--detach", c["accepted"]], repo, self.env)
+        for commit, word in ((c["base"], "M-V: its paths.source files equal the base's"),
+                             (c["accepted"], "M-V: its paths.source files equal the accepted fix's"),
+                             (outside, "M-V: its paths.source files equal the accepted fix's")):
+            m["cases"]["pin"]["mutants"] = [{"id": "M-1", "commit": m1}, {"id": "M-V", "commit": commit}]
+            (pack / "manifest.json").write_text(json.dumps(m, indent=1))
+            code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)
+            self.assertEqual(code, 2, f"{word}: {out}")
+            self.assertIn(word, out)
+
+    def gate_cell(self, c, name, notes="ok\n", summary=True, commit=True, also=None):
+        cand = self.candidate(c["repo"], c["base"], name)
+        (cand / "notes.txt").write_text(notes)
+        if summary:
+            (cand / "out").mkdir()
+            (cand / "out" / "summary.md").write_text("summary\n")
+        if also:
+            also(cand)
+        if commit:
+            commit_all(cand, self.env, "gate work")
+        return cand
+
+    def test_k3_exit_0_intact_invariants_and_the_required_paths_pass(self):
+        pack, c = make_gate_pack(self.root, self.env)
+        cand = self.gate_cell(c, "gate-good")
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["gateExit"], 0, out)
+        self.assertEqual(d["invariantsIntact"], {"data/ledger.txt": True, "captures": True}, out)
+        self.assertEqual(d["requiredPresent"], {"out/summary.md": True}, out)
+        self.assertIs(d["committed"], True, out)
+        self.assertIs(d["PASS"], True, out)
+
+    def test_k3_a_changed_invariant_fails(self):
+        pack, c = make_gate_pack(self.root, self.env)
+        for name, change, broken in (
+                ("ledger", lambda d: (d / "data" / "ledger.txt").write_text("row 1\nrow 2\nrow 3\n"), "data/ledger.txt"),
+                ("deep", lambda d: (d / "captures" / "deep" / "b.txt").write_text("capture B\n"), "captures"),
+                ("added", lambda d: (d / "captures" / "c.txt").write_text("new\n"), "captures"),
+                ("removed", lambda d: (d / "captures" / "a.txt").unlink(), "captures")):
+            cand = self.gate_cell(c, f"gate-{name}", also=change)
+            code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+            self.assertEqual(code, 0, out)
+            self.assertEqual(d["gateExit"], 0, out)
+            self.assertIs(d["invariantsIntact"][broken], False, f"{name}: {out}")
+            self.assertIs(d["PASS"], False, name)
+        # uncommitted, the change still counts: the checkout is graded as it stands
+        cand = self.gate_cell(c, "gate-dirty")
+        (cand / "data" / "ledger.txt").write_text("edited after the commit\n")
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertIs(d["invariantsIntact"]["data/ledger.txt"], False, out)
+        self.assertIs(d["PASS"], False)
+        # a file added under an invariant and never committed (untracked, not ignored) counts too
+        cand = self.gate_cell(c, "gate-untracked")
+        (cand / "captures" / "stray.txt").write_text("not committed\n")
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertIs(d["invariantsIntact"]["captures"], False, out)
+        self.assertIs(d["PASS"], False)
+
+    def test_k3_a_missing_required_path_fails(self):
+        pack, c = make_gate_pack(self.root, self.env)
+        cand = self.gate_cell(c, "gate-nosummary", summary=False)
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((d["gateExit"], d["requiredPresent"]), (0, {"out/summary.md": False}), out)
+        self.assertIs(d["PASS"], False)
+
+    def test_k3_a_gate_exit_1_fails(self):
+        pack, c = make_gate_pack(self.root, self.env)
+        cand = self.gate_cell(c, "gate-red", notes="not yet\n")
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["gateExit"], 1, out)
+        self.assertEqual(d["requiredPresent"], {"out/summary.md": True}, out)
+        self.assertIs(d["PASS"], False)
+
+    def test_k3_no_commit_fails(self):
+        pack, c = make_gate_pack(self.root, self.env)
+        cand = self.gate_cell(c, "gate-uncommitted", commit=False)
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((d["gateExit"], d["committed"]), (0, False), out)
+        self.assertIs(d["PASS"], False)
+
+    def test_k3_a_gate_that_overruns_its_timeout_fails(self):
+        case = copy.deepcopy(GATE_CASE)
+        case["commands"] = {"gate": "while :; do :; done", "timeout_seconds": 1}  # a shell loop: no child outlives the kill
+        pack, c = make_gate_pack(self.root, self.env, case)
+        cand = self.gate_cell(c, "gate-slow")
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["gateExit"], 124, out)
+        self.assertIs(d["PASS"], False)
+
+    def test_k3_a_gate_that_overruns_its_timeout_leaves_no_child_writing(self):
+        # the timeout kills the gate's whole process tree: a python (or node) child of bash would otherwise outlive the
+        # kill and keep writing into the checkout after the grade (review R-5)
+        case = copy.deepcopy(GATE_CASE)
+        case["commands"] = {"gate": "python3 -c \"import time; time.sleep(4); open('late.txt', 'w').write('late')\"; true", "timeout_seconds": 1}
+        pack, c = make_gate_pack(self.root, self.env, case)
+        cand = self.gate_cell(c, "gate-child")
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["gateExit"], 124, out)
+        self.assertIs(d["PASS"], False)
+        time.sleep(7)
+        self.assertFalse((cand / "late.txt").exists(), "the gate command's child outlived the timeout and wrote into the checkout")
+
+    def test_k3_the_grade_reads_the_paths_before_the_gate_command_runs(self):
+        # a gate command that itself makes the required path and writes under an invariant directory: the grade reads
+        # both before the command runs, so the command's side effects neither pass a candidate nor fail one (review R-1)
+        case = copy.deepcopy(GATE_CASE)
+        case["commands"] = {"gate": "mkdir -p out captures && echo made > out/summary.md && echo made > captures/by-gate.txt && python3 check.py",
+                            "timeout_seconds": 60}
+        pack, c = make_gate_pack(self.root, self.env, case)
+        lacking = self.gate_cell(c, "gate-lacking", summary=False)
+        code, d, out = grade(pack / "manifest.json", "gate", lacking, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["gateExit"], 0, out)
+        self.assertEqual(d["requiredPresent"], {"out/summary.md": False}, out)
+        self.assertIs(d["PASS"], False, out)
+        self.assertTrue((lacking / "out" / "summary.md").is_file())  # the command ran and its side effects stay
+        good = self.gate_cell(c, "gate-made")
+        code, d, out = grade(pack / "manifest.json", "gate", good, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["invariantsIntact"], {"data/ledger.txt": True, "captures": True}, out)
+        self.assertIs(d["PASS"], True, out)
+        self.assertTrue((good / "captures" / "by-gate.txt").is_file())
+
+    def test_k3_a_rooted_or_drive_path_is_refused(self):
+        # each clause of grade.sh's inside(): a '/'-rooted path, a '\\'-rooted one, a drive-letter one (review R-4)
+        for i, bad in enumerate(("/x", "\\x", "C:x", "C:/x")):
+            case = copy.deepcopy(GATE_CASE)
+            case["required_paths"] = [bad]
+            root = self.root / f"p{i}"
+            root.mkdir()
+            pack, c = make_gate_pack(root, self.env, case)
+            cand = self.candidate(c["repo"], c["base"], f"cand-p{i}")
+            code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+            self.assertEqual(code, 2, f"{bad}: {out}")
+            self.assertIn(f"required_paths names {bad!r}, which is not a relative path inside the checkout", out)
+
+    def test_k3_a_gate_case_the_grade_cannot_honour_is_refused(self):
+        outside = "which is not a relative path inside the checkout"
+        for name, mutate, word in (("cmd", lambda g: g["commands"].pop("gate"), "commands.gate is not set"),
+                                   ("absent", lambda g: g.update(invariants=["nope.txt"]), "names nope.txt, which the base"),
+                                   ("notlist", lambda g: g.update(required_paths="out/summary.md"), "required_paths must be a list of paths"),
+                                   ("upinv", lambda g: g.update(invariants=["../x"]), f"invariants names '../x', {outside}"),
+                                   ("upreq", lambda g: g.update(required_paths=["../y"]), f"required_paths names '../y', {outside}")):
+            case = copy.deepcopy(GATE_CASE)
+            mutate(case)
+            root = self.root / name
+            root.mkdir()
+            pack, c = make_gate_pack(root, self.env, case)
+            cand = self.candidate(c["repo"], c["base"], f"cand-{root.name}")
+            code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+            self.assertEqual(code, 2, f"{word}: {out}")
+            self.assertIn(word, out)
+        pack, c = make_gate_pack(self.root, self.env)
+        cand = self.candidate(c["repo"], c["base"], "cand-pin")
+        code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)  # a gate-only pack has no pin case
+        self.assertEqual(code, 2, out)
+        self.assertIn("the manifest has no pin case", out)
+
+
+def gate_canned() -> dict:
+    c = canned_outputs()
+    c["gate"] = {"commits": ["aaa1111"], "summary": "done", "mistakes": ["nothing to report"]}
+    return c
+
+
+class KitCaseTemplate(unittest.TestCase):
+    """K3 (gate items run like pin and fix) and K4 (a null judging profile without a review case) in run.template.js."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    @NEEDS_NODE
+    def test_k3_gate_items_run_per_profile_with_the_instructions_and_the_preamble(self):
+        cfg = run_config(self.root)
+        cfg["manifest"]["cases"]["gate"] = copy.deepcopy(GATE_CASE)
+        cfg["protocol"]["relayed_operator_text"] = {"text": "focus on the router for now", "statement": "the harness relays this operator text"}
+        out = execute_template(cfg, self.root, gate_canned())
+        self.assertIsNone(out["error"])
+        labels = [c["label"] for c in out["calls"]]
+        self.assertEqual([x for x in labels if x.startswith("gate:")], ["gate:alpha-low"])  # profiles only, never the review-only ones
+        self.assertEqual(sorted(x for x in labels if x.startswith("grade:")), ["grade:alpha-low", "grade:beta-max"])  # reviews only
+        gate = next(c for c in out["calls"] if c["label"] == "gate:alpha-low")
+        self.assertEqual((gate["model"], gate["effort"], gate["phase"]), ("alpha", "low", "Gate"))
+        self.assertIn(GATE_CASE["instructions"], gate["prompt"])
+        self.assertIn("category docs-mechanical", gate["prompt"])
+        self.assertIn("the operator launched this calibration", gate["prompt"])
+        self.assertIn("focus on the router for now", gate["prompt"])
+        self.assertIn(f"{self.root / 'checkouts'}/cal-gate-alpha-low", gate["prompt"])
+        self.assertIn("Commit with `git commit`", gate["prompt"])
+        for secret in ("python3 check.py", "data/ledger.txt", str(self.root / "pack")):
+            self.assertNotIn(secret, gate["prompt"])  # the grade's command, invariants and required paths are the grader's
+        self.assertEqual(set(gate["schema"]["required"]), {"commits", "summary", "mistakes"})
+        gated = [r for r in out["result"]["results"] if r["item"]["task"] == "gate"]
+        self.assertEqual(len(gated), 1)
+        self.assertNotIn("grade", gated[0])
+
+    @NEEDS_NODE
+    def test_k3_k4_a_gate_only_pack_launches_with_no_judging_profile(self):
+        cfg = run_config(self.root)
+        cfg["manifest"] = {"pack": "gate-pack", "pack_version": "1", "kind": "host", "repository": "repo", "cases": {"gate": copy.deepcopy(GATE_CASE)}}
+        cfg["protocol"]["judging_profile"] = None
+        out = execute_template(cfg, self.root, gate_canned())
+        self.assertIsNone(out["error"])
+        self.assertEqual([c["label"] for c in out["calls"]], ["gate:alpha-low"])
+        self.assertNotIn("undefined", out["calls"][0]["prompt"])
+
+    @NEEDS_NODE
+    def test_k4_a_null_judging_profile_launches_only_without_a_review_case(self):
+        cfg = run_config(self.root)
+        del cfg["manifest"]["cases"]["review"]
+        cfg["protocol"]["judging_profile"] = None
+        out = execute_template(cfg, self.root)
+        self.assertIsNone(out["error"])
+        self.assertEqual(sorted(c["label"] for c in out["calls"]), ["fix:alpha-low", "pin:alpha-low"])
+        cfg = run_config(self.root)
+        cfg["protocol"]["judging_profile"] = None
+        out = execute_template(cfg, self.root)
+        self.assertIn("judging_profile is null, but the manifest has a review case", out["error"] or "")
+        self.assertEqual(out["calls"], [])
+        cfg = run_config(self.root)  # absent is not null: the protocol must say it chose none
+        del cfg["manifest"]["cases"]["review"]
+        del cfg["protocol"]["judging_profile"]
+        out = execute_template(cfg, self.root)
+        self.assertIn("judging_profile", out["error"] or "")
+        self.assertEqual(out["calls"], [])
+        cfg = run_config(self.root)  # a filled judging profile still has to carry its qualification without a review case
+        del cfg["manifest"]["cases"]["review"]
+        cfg["protocol"]["judging_profile"].update(qualification=None, limitation="trust me")
+        out = execute_template(cfg, self.root)
+        self.assertIn("neither its qualification", out["error"] or "")
+
+
+# cases.fix.cause_in_prompt: the fix prompts rendered from run.template.js at ce86512 (the template before the key) with
+# GOLDEN_HOST, for the fixture manifest and the shared pack's manifest: (length in UTF-8 bytes, sha256). A pack without the
+# key, or with it true, renders these bytes, so runs 1-3 and the shared pack stay comparable.
+GOLDEN_HOST = {"checkout_root": "/golden/checkouts", "pack_dir": "/golden/pack", "adjudication_checkout": "/golden/checkouts/cal-adjudication"}
+FIX_PROMPT_GOLDEN = {"fixture": (2580, "5e66cf5f4d0c141cf0725ef473485816bf309367db47c8e45f905fb09555060a"),
+                     "shared": (3066, "54a0353d503c950d7c147145fefdf8397e113f6dda61edcb807af9dc55446e61")}
+BEFORE_CAUSE_KEY = "ce86512"
+ABSENT = object()
+
+
+def golden_manifests() -> dict:
+    return {"fixture": json.loads((FIX / "manifest.json").read_text(encoding="utf-8")),
+            "shared": json.loads((PACK / "manifest.json").read_text(encoding="utf-8"))}
+
+
+class FixCauseInPrompt(unittest.TestCase):
+    """cases.fix.cause_in_prompt in run.template.js: false leaves the finding's cause out of the fix prompt (and only there)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def launch(self, manifest: dict, template: str | None = None) -> dict:
+        cfg = run_config(self.root, **GOLDEN_HOST)
+        cfg["manifest"] = manifest
+        return execute_template(cfg, self.root, template=template)
+
+    def prompt(self, out: dict, label: str) -> str:
+        self.assertIsNone(out["error"])
+        return next(c["prompt"] for c in out["calls"] if c["label"] == label)
+
+    @staticmethod
+    def with_key(manifest: dict, value) -> dict:
+        m = copy.deepcopy(manifest)
+        if value is not ABSENT:
+            m["cases"]["fix"]["cause_in_prompt"] = value
+        return m
+
+    @NEEDS_NODE
+    def test_false_leaves_out_the_cause_and_keeps_the_summary_and_required_behaviour(self):
+        for name, manifest in golden_manifests().items():
+            for cause in (None, "QQcause-one in QQcause-two of QQcause-three"):  # the pack's own cause, then one whose every word is unique
+                m = self.with_key(manifest, False)
+                f = next(x for x in m["findings"] if x["id"] == m["cases"]["fix"]["finding"])
+                if cause:
+                    f["cause"] = cause
+                out = self.launch(m)
+                fix = self.prompt(out, "fix:alpha-low")
+                self.assertNotIn("Cause:", fix, name)
+                self.assertNotIn(f["cause"], fix, name)
+                self.assertNotIn("QQcause", fix, name)
+                self.assertIn(f"THE FINDING ({f['id']}, {f['severity']}): {f['summary']}. Required behaviour: {f['required_behaviour']}.", fix, name)
+                grader = self.prompt(out, "grade:alpha-low")  # the cause stays in the ground truth the judges read
+                self.assertIn(f"{f['summary']}. Cause: {f['cause']}.", grader, name)
+
+    @NEEDS_NODE
+    def test_absent_or_true_renders_the_fix_prompt_byte_for_byte_as_before(self):
+        old = subprocess.run(["git", "-C", str(ROOT), "show", f"{BEFORE_CAUSE_KEY}:tools/calibration/run.template.js"], capture_output=True)
+        before = old.stdout.decode("utf-8").replace("\r\n", "\n") if old.returncode == 0 else None  # the history may be absent: the hashes stand alone
+        for name, manifest in golden_manifests().items():
+            if before is not None:
+                then = self.prompt(self.launch(manifest, before), "fix:alpha-low").encode("utf-8")
+                self.assertEqual((len(then), hashlib.sha256(then).hexdigest()), FIX_PROMPT_GOLDEN[name], name)  # the golden is that commit's
+            for value in (ABSENT, True):
+                now = self.prompt(self.launch(self.with_key(manifest, value)), "fix:alpha-low")
+                self.assertEqual((len(now.encode("utf-8")), hashlib.sha256(now.encode("utf-8")).hexdigest()), FIX_PROMPT_GOLDEN[name],
+                                 f"{name} {value}: {now}")
+                if before is not None:
+                    self.assertEqual(now.encode("utf-8"), then, f"{name} {value}")
+
+    @NEEDS_NODE
+    def test_a_non_boolean_value_is_refused(self):
+        for bad in ("false", 0, 1, None, "", [], {}):
+            out = self.launch(self.with_key(golden_manifests()["fixture"], bad))
+            self.assertIn("calibration launch refused: cases.fix.cause_in_prompt must be true or false", out["error"] or "", repr(bad))
+            self.assertEqual(out["calls"], [], repr(bad))
+
+    @NEEDS_NODE
+    def test_the_key_outside_the_fix_case_is_refused(self):
+        for case in ("pin", "review", "gate"):
+            for value in (False, True):
+                m = golden_manifests()["fixture"]
+                if case == "gate":
+                    m["cases"]["gate"] = copy.deepcopy(GATE_CASE)
+                m["cases"][case]["cause_in_prompt"] = value
+                out = self.launch(m)
+                self.assertIn(f"calibration launch refused: cases.{case}.cause_in_prompt: only the fix prompt prints a cause", out["error"] or "", (case, value))
+                self.assertEqual(out["calls"], [], (case, value))
+        m = golden_manifests()["fixture"]
+        m["findings"][1]["cause_in_prompt"] = False  # on the finding instead of its fix case: the likeliest slip
+        out = self.launch(m)
+        self.assertIn("calibration launch refused: findings D-2 carries cause_in_prompt", out["error"] or "")
+        self.assertEqual(out["calls"], [])
+
+
+class KitCaseDocs(unittest.TestCase):
+    def test_k6_the_kit_readme_documents_the_three_keys(self):
+        text = (KIT / "README.md").read_text(encoding="utf-8")
+        section = md_section(text, "Run 4's case keys: category, mutants, gate")
+        for word in ("`category`", "`mutants`", "`gate`", "`redAtMutants`", "`gateExit`", "`invariantsIntact`", "`requiredPresent`",
+                     "`committed`", "`judging_profile`", "host-policy-7", "`rate`", "byte for byte", "`cause_in_prompt`"):
+            self.assertIn(word, section, word)
+        obs = md_section(text, "observations.json: the flat profile map")
+        for word in ("`category`", "`gate`", "`redAtMutants`"):
+            self.assertIn(word, obs, word)
+
+    def test_k6_the_format_readme_documents_the_new_manifest_keys(self):
+        text = (KIT / "subject-pack" / "README.md").read_text(encoding="utf-8")
+        for key in ("cases.pin.mutants", "cases.pin.mutants[].id", "cases.pin.mutants[].commit", "cases.gate.base", "cases.gate.category", "cases.gate.tier",
+                    "cases.gate.pass_rule", "cases.gate.instructions", "cases.gate.commands.gate", "cases.gate.commands.timeout_seconds",
+                    "cases.gate.invariants", "cases.gate.required_paths", "cases.fix.cause_in_prompt"):
+            self.assertIn(f"`{key}`", text, key)
+
+    def test_k6_one_changelog_line(self):
+        changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        unreleased = changelog.split("## Unreleased", 1)[1].split("\n## ", 1)[0]
+        lines = [ln for ln in unreleased.splitlines() if ln.startswith("- **Calibration kit: run 4 case keys**")]
+        self.assertEqual(len(lines), 1)
+        for word in ("category", "mutants", "gate", "judging_profile", "cause_in_prompt"):
+            self.assertIn(word, lines[0])
 
 
 class Gate(unittest.TestCase):

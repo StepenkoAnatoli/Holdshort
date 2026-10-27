@@ -4,22 +4,30 @@
 # scope rule, the test and lint commands, the output location - now comes from the subject-pack manifest; the grade
 # goes to stdout. The grading logic is the Python program below (a quoted heredoc: no shell value is spliced into it).
 #
-# usage: grade.sh MANIFEST pin|fix CHECKOUT > GRADES_DIR/<case>-<profile>.json
+# usage: grade.sh MANIFEST pin|fix|gate CHECKOUT > GRADES_DIR/<case>-<profile>.json
 #
-#   MANIFEST  the subject pack's manifest.json (format: tools/calibration/subject-pack/README.md)
-#   pin|fix   the case; a review is graded by the grader agent, not here
-#   CHECKOUT  the candidate's history-less checkout (historyless-checkout.sh), graded in place: the grade swaps the
-#             manifest's source files for the accepted or base versions while it runs the tests and restores them;
-#             each swap gives the files a fresh mtime two seconds past the last, so a cache keyed on mtime and size
-#             (Python's __pycache__) never runs a previous version, and the original mtimes go back at the end
+#   MANIFEST      the subject pack's manifest.json (format: tools/calibration/subject-pack/README.md)
+#   pin|fix|gate  the case; a review is graded by the grader agent, not here
+#   CHECKOUT      the candidate's history-less checkout (historyless-checkout.sh), graded in place: the grade swaps the
+#                 manifest's source files for the accepted, base or mutant versions while it runs the tests and restores
+#                 them; each swap gives the files a fresh mtime two seconds past the last, so a cache keyed on mtime and
+#                 size (Python's __pycache__) never runs a previous version, and the original mtimes go back at the end
+#
+# A pin case with `mutants` ([{id, commit}]) also needs the candidate's new tests red with each mutant commit's source
+# swapped in (redAtMutants: {id: bool}); without mutants the pin grade is what it always was. A gate case is graded by
+# its own command (cases.gate.commands.gate, exit 0), its invariants (each path's files hash as at the base, read as the
+# checkout stands), its required paths (each exists) and a commit; the invariants and the required paths are read
+# before the command runs, so they grade the candidate's work and not the command's side effects, which stay. A mutant
+# whose source files equal the base's or the accepted fix's is refused; a command that overruns its timeout (a test,
+# lint or gate command) has its whole process tree killed and reads as exit 124.
 #
 # Exit 0 with the grade (PASS true or false) as one JSON object; 2 on a bad argument, an unusable manifest or a
 # checkout that shares a path with the pack; 3 with {"error": ...} when the checkout is missing or has no commit.
 set -u
-[ $# -eq 3 ] || { echo "usage: grade.sh MANIFEST pin|fix CHECKOUT" >&2; exit 2; }
+[ $# -eq 3 ] || { echo "usage: grade.sh MANIFEST pin|fix|gate CHECKOUT" >&2; exit 2; }
 command -v python3 >/dev/null 2>&1 || { echo "grade.sh: python3 not found" >&2; exit 2; }
 exec python3 -I - "$@" <<'PY'
-import json, os, re, shlex, subprocess, sys, tempfile, time
+import json, os, re, shlex, signal, subprocess, sys, tempfile, time
 from pathlib import Path
 
 def refuse(msg, code=2):
@@ -27,31 +35,90 @@ def refuse(msg, code=2):
     sys.exit(code)
 
 manifest_path, task, checkout = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
-if task not in ("pin", "fix"):
-    refuse(f"case must be pin or fix, not {task!r} (a review is graded by the grader agent)")
+if task not in ("pin", "fix", "gate"):
+    refuse(f"case must be pin, fix or gate, not {task!r} (a review is graded by the grader agent)")
+
+def inside(path):
+    """A path the manifest names inside the checkout: relative (not rooted with '/' or '\\', no drive letter), no '..'
+    segment."""
+    return isinstance(path, str) and path != "" and not path.startswith(("/", "\\")) and ":" not in path and ".." not in path.replace("\\", "/").split("/")
+
+mutants = []
 try:
     m = json.loads(manifest_path.read_text(encoding="utf-8"))
     pack_dir = manifest_path.resolve().parent
     repo = Path(m["repository"])
     repo = repo if repo.is_absolute() else pack_dir / repo
-    accepted, base = m["accepted_fix"], m["cases"][task]["base"]
-    paths, commands = m["paths"], m["commands"]
-    sources = list(paths["source"])
-    src_dir = paths["source_dir"].rstrip("/") + "/"
-    new_test = re.compile(paths["new_test_pattern"])
-    test_cmd, mode = commands["test"], commands.get("test_report", "exit-code")
-    lint_cmd, timeout = commands.get("lint"), int(commands.get("timeout_seconds", 900))
+    if task not in (m.get("cases") or {}):
+        refuse(f"the manifest has no {task} case")
+    case = m["cases"][task]
+    base = case["base"]
     links = list((m.get("checkout") or {}).get("links") or [])
-    if task == "fix":
-        test_file, acc_from, acc_to = paths["test_file"], paths["accepted_test"]["from"], paths["accepted_test"]["to"]
-        allowed_extra, map_file = list(paths.get("allowed_extra") or []), paths.get("map_file")
+    if task == "gate":
+        gate_cmd = (case.get("commands") or {}).get("gate") if isinstance(case.get("commands"), dict) else None
+        if not isinstance(gate_cmd, str) or not gate_cmd.strip():
+            refuse("cases.gate.commands.gate is not set (the command whose exit 0 passes the cell)")
+        timeout = int(case["commands"].get("timeout_seconds", 900))
+        invariants, required = case.get("invariants", []), case.get("required_paths", [])
+        for key, v in (("invariants", invariants), ("required_paths", required)):
+            if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
+                refuse(f"cases.gate.{key} must be a list of paths")
+            for x in v:
+                if not inside(x):
+                    refuse(f"cases.gate.{key} names {x!r}, which is not a relative path inside the checkout")
+        revs = (base,)
+    else:
+        accepted = m["accepted_fix"]
+        paths, commands = m["paths"], m["commands"]
+        sources = list(paths["source"])
+        src_dir = paths["source_dir"].rstrip("/") + "/"
+        new_test = re.compile(paths["new_test_pattern"])
+        test_cmd, mode = commands["test"], commands.get("test_report", "exit-code")
+        lint_cmd, timeout = commands.get("lint"), int(commands.get("timeout_seconds", 900))
+        if task == "fix":
+            test_file, acc_from, acc_to = paths["test_file"], paths["accepted_test"]["from"], paths["accepted_test"]["to"]
+            allowed_extra, map_file = list(paths.get("allowed_extra") or []), paths.get("map_file")
+        else:
+            mutants = case.get("mutants", [])
+            if not isinstance(mutants, list) or not all(isinstance(x, dict) and isinstance(x.get("id"), str) and x["id"] and isinstance(x.get("commit"), str)
+                                                        for x in mutants):
+                refuse("cases.pin.mutants must be a list of {id, commit}")
+            ids = [x["id"] for x in mutants]
+            twice = sorted({i for i in ids if ids.count(i) > 1})
+            if twice:
+                refuse(f"cases.pin.mutants names {', '.join(twice)} twice")
+        revs = (accepted, base, *(x["commit"] for x in mutants))
 except (OSError, ValueError, KeyError, TypeError) as e:
     refuse(f"manifest {manifest_path} unusable: {type(e).__name__} {e}")
-if mode not in ("exit-code", "vitest-json"):
+if task != "gate" and mode not in ("exit-code", "vitest-json"):
     refuse(f"commands.test_report must be exit-code or vitest-json, not {mode!r}")
-for rev in (accepted, base):
+for rev in revs:
     if subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}"], capture_output=True).returncode:
         refuse(f"{rev} is not a commit in the pack repository {repo}")
+
+def show(rev, path):
+    p = subprocess.run(["git", "-C", str(repo), "show", f"{rev}:{path}"], capture_output=True)
+    return p.stdout if p.returncode == 0 else None
+
+if mutants:  # a mutant only swaps paths.source: one whose files equal the base's adds nothing, one equal to the accepted fix's fails every pin
+    src_base, src_acc = ({f: show(rev, f) for f in sources} for rev in (base, accepted))
+    for mu in mutants:
+        src = {f: show(mu["commit"], f) for f in sources}
+        if src == src_base:
+            refuse(f"cases.pin.mutants {mu['id']}: its paths.source files equal the base's, so it adds nothing to the base's red")
+        if src == src_acc:
+            refuse(f"cases.pin.mutants {mu['id']}: its paths.source files equal the accepted fix's, so no candidate's pin can be red at it")
+
+def base_blobs(path):
+    """{file: blob id} of the files at or under path in the case's base commit."""
+    out = subprocess.run(["git", "-C", str(repo), "ls-tree", "-r", "-z", "--full-tree", base, "--", path], capture_output=True, text=True).stdout
+    return {e.split("\t", 1)[1]: e.split("\t", 1)[0].split()[2] for e in out.split("\0") if "\t" in e}
+
+if task == "gate":
+    base_inv = {x: base_blobs(x) for x in invariants}
+    absent = [x for x, files in base_inv.items() if not files]
+    if absent:
+        refuse(f"cases.gate.invariants names {', '.join(absent)}, which the base {base} does not hold")
 
 if not checkout.is_dir():
     print(json.dumps({"task": task, "error": "no checkout", "checkout": str(checkout)}))
@@ -69,6 +136,26 @@ def git(*args):
 def names(*args):
     return [x for x in git(*args).split("\0") if x]
 
+def run_bash(cmd):
+    """The exit code of `bash -c cmd` in the checkout, 124 when it overruns the timeout. A timeout kills the command's
+    whole process tree (taskkill /T on Windows, the process group elsewhere): killing bash alone would leave a node or
+    python child writing into the checkout after the grade."""
+    p = subprocess.Popen(["bash", "-c", cmd], cwd=cand, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=os.name != "nt")
+    try:
+        return p.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)], stdin=subprocess.DEVNULL, capture_output=True, timeout=60)
+            else:
+                os.killpg(p.pid, signal.SIGKILL)
+        except (OSError, subprocess.SubprocessError):
+            pass
+        p.kill()
+        p.wait()
+        return 124
+
 try:
     roots = git("rev-list", "--max-parents=0", "HEAD").split()
     head = git("rev-parse", "--short", "HEAD").strip()
@@ -83,6 +170,27 @@ unstaged = names("diff", "--name-only", "-z")
 changed = sorted(set(committed + staged + unstaged))
 status = git("status", "--porcelain=v1", "-z", "--untracked-files=all").split("\0")
 untracked = sorted(e[3:] for e in status if e.startswith("?? ") and not any(e[3:] == ln or e[3:].startswith(ln + "/") for ln in links))
+
+if task == "gate":
+    def cand_blobs(path):
+        """{file: blob id or None} of the checkout's files at or under path as it stands: the tracked ones (None when
+        deleted from the tree) and the untracked ones the checkout's ignore rules do not hide; each hashed as git would
+        store it, so a host's line-ending conversion reads as the same content."""
+        files = sorted(set(names("ls-files", "-z", "--", path)) | set(names("ls-files", "-z", "--others", "--exclude-standard", "--", path)))
+        present = [f for f in files if (cand / f).is_file()]
+        ids = git("hash-object", "--", *present).split() if present else []
+        blobs = dict(zip(present, ids))
+        return {f: blobs.get(f) for f in files}
+
+    intact = {x: cand_blobs(x) == base_inv[x] for x in invariants}
+    present = {x: (cand / x).exists() for x in required}
+    gate_exit = run_bash(gate_cmd)
+    result = {"task": task, "head": head, "commits": commits, "changed": changed, "staged": staged, "untracked": untracked,
+              "gateExit": gate_exit, "invariantsIntact": intact, "requiredPresent": present, "committed": commits > 0,
+              "PASS": gate_exit == 0 and all(intact.values()) and all(present.values()) and commits > 0}
+    print(json.dumps(result, indent=1))
+    sys.exit(0)
+
 added = names("diff", "--name-only", "-z", "--diff-filter=A", f"{root}..HEAD") + names("diff", "--cached", "--name-only", "-z", "--diff-filter=A")
 new_tests = sorted({f for f in added + untracked if new_test.search(f)} - ({acc_to} if task == "fix" else set()))
 
@@ -92,11 +200,7 @@ def run_tests(files):
     with tempfile.TemporaryDirectory() as td:
         report = Path(td) / "report.json"
         cmd = test_cmd.replace("{files}", " ".join(shlex.quote(f) for f in files)).replace("{report}", shlex.quote(str(report)))
-        try:
-            code = subprocess.run(["bash", "-c", cmd], cwd=cand, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                  stderr=subprocess.DEVNULL, timeout=timeout).returncode
-        except subprocess.TimeoutExpired:
-            code = 124
+        code = run_bash(cmd)
         r = {"passed": None, "failed": None, "total": None, "exit": code}
         if mode == "vitest-json":
             try:
@@ -120,15 +224,7 @@ def lint(files):
     if not lint_cmd:
         return "none"
     cmd = lint_cmd.replace("{files}", " ".join(shlex.quote(f) for f in files))
-    try:
-        p = subprocess.run(["bash", "-c", cmd], cwd=cand, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        return "fail"
-    return "ok" if p.returncode == 0 else "fail"
-
-def show(rev, path):
-    p = subprocess.run(["git", "-C", str(repo), "show", f"{rev}:{path}"], capture_output=True)
-    return p.stdout if p.returncode == 0 else None
+    return "ok" if run_bash(cmd) == 0 else "fail"
 
 saved = {f: ((cand / f).read_bytes() if (cand / f).is_file() else None) for f in sources}
 saved_mtime = {f: (cand / f).stat().st_mtime_ns for f in sources if (cand / f).is_file()}
@@ -173,15 +269,22 @@ try:
     if task == "pin":
         files = new_tests
         at_head = run_tests(files)
+        at_mutants = {}
+        for mu in mutants:  # each mutant's source swapped in turn, with its own mtime step
+            put(mu["commit"])
+            at_mutants[mu["id"]] = run_tests(files)
         put(accepted)
         with_fix = run_tests(files)
         restore()
         lint_res = lint(files) if files else "fail"
         src_touched = sorted({f for f in changed + untracked if f.startswith(src_dir)})
         r_red, r_green, clean = red(at_head), green(with_fix), not src_touched
+        r_mut = {k: red(v) for k, v in at_mutants.items()}
         result.update(srcTouched=src_touched, testFiles=files, atHead=at_head, withAcceptedFix=with_fix, lint=lint_res,
-                      redAtHead=r_red, greenWithFix=r_green, srcClean=clean, committed=commits > 0,
-                      PASS=bool(files) and r_red and r_green and clean and lint_res in ("ok", "none"))
+                      redAtHead=r_red, greenWithFix=r_green, srcClean=clean, committed=commits > 0)
+        if mutants:
+            result.update(atMutants=at_mutants, redAtMutants=r_mut)
+        result["PASS"] = bool(files) and r_red and r_green and clean and lint_res in ("ok", "none") and all(r_mut.values())
     else:
         files = [f for f in dict.fromkeys([test_file] + new_tests) if (cand / f).is_file()]
         at_cand = run_tests(files)

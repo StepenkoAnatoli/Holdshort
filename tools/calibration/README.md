@@ -22,7 +22,7 @@ and the kit's own test fails on a host path, a session id or a run id anywhere u
 | `lens.prompt.md` | the adjudication lens prompt (three per cluster) and its schema, which carries `forbidden`; a lens votes real only on all three prongs | the lens prompt and LENS schema, with G-2 applied |
 | `cluster.prompt.md` | the clustering prompt and the supplementary run's assignment variant, with their schema | the clustering step of both run-3 scripts |
 | `historyless-checkout.sh` | one root commit holding a case's base tree, so the accepted fix is unreachable | the history-less checkout script |
-| `grade.sh` | mechanical grading of a pin or fix cell, every value from the pack manifest | the pin and fix grading script |
+| `grade.sh` | mechanical grading of a pin, fix or gate cell, every value from the pack manifest (a pin case's mutants included) | the pin and fix grading script |
 | `observations.py` | builds `observations.json`, `scores.json`, the tables, `adjudication.json` and `void-cells.json` from the harness journal and run file; the journal format is documented at its top | the observations builder |
 | `run.template.js` | the workflow: cells per profile and case, the preamble that reconciles a relayed operator request, pipelined grading, clustering, three lenses per cluster, majority; harness-specific lines marked `// HARNESS:` | the main and supplementary workflow scripts |
 | `request.py` | prints the branch, the files and the pull-request body in this repository's template, and asks the operator to open it | the results pull request of run 3 |
@@ -46,9 +46,62 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    `<run tag>/<case>-<profile>`, plus one checkout of the review base for the lenses:
    `bash tools/calibration/historyless-checkout.sh --pack <pack dir> [--link <name>=<dependency dir>] <pack dir>/<repository> <case base> <checkout> <branch>`.
    `--pack` refuses a checkout that shares a path with the pack; `--link` makes an installed dependency tree available
-   without letting a candidate commit it. Install the dependencies outside the pack: `--link` refuses a directory whose
-   real path is inside the pack or its repository, or holds either, since a link there is a path to the accepted fix.
-   It does not follow symlinks inside the dependency tree; keeping those out of the pack is the host's duty.
+   without letting a candidate commit it. Install the dependencies outside the pack and outside every git repository:
+   `--link` refuses a directory whose real path is inside the pack or its repository, or holds either, since a link
+   there is a path to the accepted fix; and it refuses a directory inside any git repository (it or one of its real
+   ancestors holds a `.git` entry of any type, or may be a git directory: it holds an entry named `HEAD`, `commondir`
+   or `gitdir`, or both an `objects` and a `refs` entry, a rule wider than git's own repository test, so that every
+   directory git would take for a repository, a bare one or a linked worktree's admin directory too, is refused),
+   since through `..` the checkout reaches that repository's files and history: a subject clone's `node_modules` would hand the
+   candidate the clone's accepted fix and orchestration records. So run the install in a directory that is no
+   repository, such as a history-less checkout of the case base made outside the pack. Each symlink among the
+   directory's own entries is checked the same way where it resolves (a linked directory is followed before a `..`
+   after it, as a POSIX kernel does), and one that does not resolve is refused. Paths are compared by identity, not
+   spelling (another case on a case-insensitive filesystem names the same directory). A UNC path (`//host/share/...`)
+   is refused wherever a check needs it (the directory, a symlink's target, the pack, its repository, the checkout's
+   parent), since its parents cannot be checked reliably: install on a local drive. The checkout itself must not be
+   inside any git repository either (it would reach that repository through `..` the same way), and a refused
+   checkout makes nothing, not even its parent directories (a refusal after the checkout is made, by the link rule
+   below, removes it again, each link in it as an entry, never followed). Every check runs twice. The shell layer uses the path Git
+   Bash resolves and the parents it walks, plus the Windows parents of that path (a mount such as Git Bash's `/` or
+   `/tmp` has Windows parents of its own). On Windows, the native layer then resolves each path the way native
+   programs (git, node, Python) resolve it, through a Windows Python's `os.path.realpath`, and checks that path and its
+   parents again. Git Bash cannot see some links native programs follow, such as one whose target is a volume-GUID or
+   `GLOBALROOT` path, so only the native layer catches those. The native layer also checks every path the shell layer
+   resolves, as native programs resolve that path: Git Bash follows MSYS's own symlinks too (a system file or a `.lnk`
+   shortcut, made under `MSYS=winsymlinks:sys` or `:lnk`), which native programs take for plain files, so where such a
+   link at the linked directory's top leads by Git Bash's reading (a volume-GUID link, a `subst` drive) is checked
+   where native programs find it. The native layer fails closed: a path it cannot resolve,
+   or one that resolves to anything but a drive-letter path, is refused, and so is every checkout when no Windows
+   Python 3.10+ (the version whose `os.path.realpath` takes `strict`) is on `PATH` as `python3` or `python`. The
+   script ignores the host's `GIT_DIR`, `GIT_WORK_TREE` and git's other repository variables, and copies no git template (so `GIT_TEMPLATE_DIR` or `init.templateDir` cannot
+   give the checkout another repository's objects through `objects/info/alternates`). Its final proof counts every
+   object the checkout's git can read. Every path string the checks read, or hand on to the native layer and to git,
+   is proved by file identity (`[ a -ef b ]` in the shell, the same file by `os.stat` natively) to name the file it
+   came from, and the path is refused ("is not proved to name the file it came from") when that fails or cannot be
+   proved: a shell command substitution drops a trailing newline, and Windows drops a trailing space or dot from a
+   name, so `x/repo` followed by a newline or a space was checked, read or written as its twin `x/repo`. The
+   checkout's own name, which does not exist yet, is kept exactly as spelled, and its last segment may not be `.` or
+   `..`. Git for Windows takes no path with a segment that ends in a space or dot, so such a checkout is refused too.
+   Git is given the source and the checkout only by those proved Windows spellings, so a host that turns off MSYS's
+   argument conversion (`MSYS_NO_PATHCONV=1`) does not make it read `/c/x` as `\c\x` on its current drive.
+   Nothing deeper is checked: a symlink or a repository further down the dependency tree is not followed, and keeping
+   those out is the host's duty. A `--link` name is a plain relative path, and none of its parts may name `.git` in
+   any spelling Windows resolves to it (any case, trailing dots or spaces, `GIT~1`). Each link is made only where its
+   name does not exist yet in the checkout and its real parent lies inside the checkout and outside its `.git`, in both
+   layers: the base tree may track a symlink (checked out as one with `core.symlinks=true`, such as `g -> .git`), and
+   an earlier `--link` is one too. The script sets the globbing its checks rely on itself, so a `SHELLOPTS` or
+   `BASHOPTS` the host exports (`noglob`, `nullglob`, `failglob`) does not change what they see.
+   **What the guard covers, and what is the host's duty.** It covers every path the checkout gets from the script:
+   no parent of the checkout, no linked directory or its parents, and no link at a linked directory's top level or the
+   parents of where it leads reaches a git repository, the pack or its repository, by any spelling native programs
+   resolve. It knows a repository only by its markers, and the pack only by the paths given, so it cannot see the
+   subject's files outside a repository. These are the host's to keep away from the linked directories and the
+   checkout: a plain copy or export (`git archive`) of the subject, a work tree whose git directory lies elsewhere
+   (`core.worktree` leaves no `.git` in it), a link or a repository deeper in a dependency tree, and anything else
+   known only by its content. A refusal never means "remove the `.git` and retry": a clone stripped of its `.git`
+   still hands over the subject's files, its orchestration records and briefs among them. Install where no subject
+   file is, as above: a history-less checkout of the case base made outside the pack.
 4. **Fill.** Write `run-config.json` = `{"manifest": <manifest.json>, "protocol": <protocol.json without its sources>,
    "host": {...}}` (the host keys are listed in the header of `run.template.js`; the protocol goes in without `sources`
    because the sources record the filled script's hash). Every host path in it (`checkout_root`, `adjudication_checkout`, `pack_dir`) is absolute and already resolved: the launch step compares the strings and follows no symlink and no `..`, so a relative path, or one that resolves elsewhere after the launch, is outside its guard (the checkout script resolves real paths where the checkouts are made). Fill the template, hash `run.js` into the protocol's
@@ -140,16 +193,19 @@ One object per profile key (`<model alias>-<effort>`); hosts/claude-code/route.m
 - `profile`: the key. The adapter takes the effort from its last `-` part.
 - `review-only`: true for a profile run on the review case only.
 - `pin`, `fix`: the mechanical grade, or null when the cell was not run. `score` (true, false, or null when the cell ran
-  but has no grade: the adapter counts it ungraded, never as a pass), `tier`, and grade.sh's fields (pin: `redAtHead`,
-  `greenWithFix`, `srcClean`, `lint`, `committed`, `atHead`, `withAcceptedFix`; fix: `candidateGreen`, `guardRed`,
+  but has no grade: the adapter counts it ungraded, never as a pass), `tier`, `category` (only when the manifest names
+  the case's category), and grade.sh's fields (pin: `redAtHead`, `greenWithFix`, `srcClean`, `lint`, `committed`,
+  `atHead`, `withAcceptedFix`, and `redAtMutants` when the pin case has mutants; fix: `candidateGreen`, `guardRed`,
   `acceptedPinGreen`, `scopeOk`, `lint`, `committedWithMap`, `commits`, `srcDiffLines`, `candidateTests`,
   `guardRemoved`, `acceptedPin`).
+- `gate`: present only when the manifest has a gate case; the gate grade (null when the cell was not run): `score`,
+  `tier`, `category`, `gateExit`, `invariantsIntact`, `requiredPresent`, `committed`, `commits`.
 - `review`: the candidate's verdict, its findings as `[id, severity, problem]` and the count of `checked`.
 - `review-grade`: `result` (`PASS` | `PARTIAL` | `FAIL` under the run's preregistered rule; null when ungraded), `tier`,
-  `truth` (per ground-truth finding: found, causeNamed, severity), `rawFalseBlocking`, `adjudicatedFalseBlocking`,
+  `category` (when the manifest names one), `truth` (per ground-truth finding: found, causeNamed, severity), `rawFalseBlocking`, `adjudicatedFalseBlocking`,
   `threeProngFalseBlocking`, `threeProngResult`, `copiedFromHistory`, `others` (each with its cluster and verdicts),
   `notes`.
-- `self-reported-mistakes`: per case, the candidate's `mistakes` verbatim.
+- `self-reported-mistakes`: per case (`gate` too when the manifest has one), the candidate's `mistakes` verbatim.
 - `harness-retries`: per case, the harness retries recorded for the cell.
 - `usage`: per case and `grade`, the run file's record: `label`, `model` (the resolved model id; the adapter maps it to
   a policy profile, and never reads the grader's), `effort`, `state`, `tokens`, `ms` and `run` (the run id, which names
@@ -159,10 +215,54 @@ One object per profile key (`<model alias>-<effort>`); hosts/claude-code/route.m
 
 `profiles` (per profile and case: `pass` or `result`, `tier`, the estimate, and for a review `would_fail_under_three_prong`
 with `three_prong_false_blocking` when it is true), `totals` (`cells` per case, `tokens` per run with items, graders,
-clustering, lenses and other summing to the run's agents, `non_pass`), `category_mapping` (case to host category: the pin
-case is `pin-tests`), `adjudication_schema` (the prongs the classification declares, the prongs the lens records carried,
+clustering, lenses and other summing to the run's agents, `non_pass`; a gate cell counts as an item and under `cells.gate`), `category_mapping` (case to host category: the pin
+case is `pin-tests`; `gate` too when the manifest has a gate case), `adjudication_schema` (the prongs the classification declares, the prongs the lens records carried,
 the missing ones, the vote rule, the clusters where the run's verdict and the declared rule disagree), `void_cells`,
 `pass_rules`, `accounting_note`, `run_id`, `supplementary_run_id`, `pack`.
+
+## Run 4's case keys: category, mutants, gate
+
+Three manifest keys, added for calibration run 4 (its plan, R4-4), let a pack carry cells for categories other than
+`pin-tests`, `fix` and `review`. Each is optional: a manifest without them grades and builds byte for byte as before
+(the kit's test rebuilds the fixture folder against a golden copy).
+
+**`category`** (`cases.<case>.category`). `observations.py` writes it into each `pin`, `fix` and `gate` task object and
+into `review-grade`, and `scores.json` carries it in `category_mapping`. When the manifest names none, the task object
+carries no `category` key and a reader applies the fixed mapping (pin to `pin-tests`, fix to `fix`, review to
+`review`) as it always has. For the adapter: the task object's `category` is what `rate` will read under
+host-policy-7, in place of the position mapping; the review's category sits on `review-grade`, beside its `tier`.
+
+**`mutants`** (`cases.pin.mutants`, a list of `{id, commit}`). `grade.sh pin` then also swaps each mutant commit's
+source in turn (each swap with its own mtime step, as for the base and the accepted source) and requires the
+candidate's new tests red at every one, as well as red at the base and green with the accepted source. The grade
+carries `atMutants` (the test run per mutant) and `redAtMutants: {id: bool}`, and `observations.py` copies
+`redAtMutants` into the pin task object. Without mutants the pin grade carries neither key. A mutant whose
+`paths.source` files equal the base's (it adds nothing) or the accepted fix's (no pin could be red at it) is refused. A
+pin case is red at its base by rule, so a pack whose rules hold at the base needs a base where they fail.
+
+**`gate`** (`cases.gate`). A case kind graded by a command: the candidate's prompt is the case's `instructions` after
+the common preamble (the relayed-text reconciliation, the checkout, the commit command), and `run.template.js` runs a
+gate item per profile like a pin or fix item, with no grader agent. `grade.sh gate` passes the cell when
+`commands.gate` exits 0 in the candidate's checkout, every `invariants` path holds the files and content it holds at
+the base, every `required_paths` path exists, and the candidate committed; the grade carries `gateExit`,
+`invariantsIntact` and `requiredPresent` (each a `{path: bool}` map) and `committed`. `observations.py` counts gate cells
+in `scores.json` (`cells.gate`, `category_mapping.gate`). The invariants and the required paths are read before the
+command runs, so a command that writes files neither passes a candidate nor fails one. A command (gate, test or lint)
+that overruns its timeout has its whole process tree killed and reads as exit 124. One case per kind per pack stays the
+rule. A gate-only pack needs no `subject`, `paths`, `commands` or `accepted_fix`.
+
+**`cause_in_prompt`** (`cases.fix.cause_in_prompt`, true or false). A fourth key, added when run 4's lead integrated
+these: with `false` the fix prompt leaves out the finding's cause (the whole "Cause: ..." clause) and keeps its summary
+and required behaviour, for a tier whose cause the candidate must find itself. True or absent prints the cause, so the
+prompt is byte for byte what it was (the kit's test compares it with the prompt the earlier template renders). The
+finding's `cause` stays required in the manifest and stays in the ground truth the grader and the lenses read. The
+launch step refuses a value that is not a boolean, and refuses the key on any other case or on a finding (only the fix
+prompt prints a cause, so a misplaced key would be ignored while the cause stayed in).
+
+**A null `judging_profile`.** A run whose manifest has no review case judges nothing (pin, fix and gate are graded
+mechanically), so its protocol may record `judging_profile: null`; the launch step refuses null when the manifest has a
+review case, and refuses an absent key either way. The evidence check's rule f (`judging-profile-named`)
+still requires a named judging profile, so until it changes such a run names one with the note that no cell uses it.
 
 ## Limits of this kit
 
