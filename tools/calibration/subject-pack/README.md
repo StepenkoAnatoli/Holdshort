@@ -131,5 +131,7 @@ grader to read, so they say what the module must do, never how the accepted fix 
     git repository, such as a clone of the subject: through `..` a link there reaches that repository's history, and
     the script refuses it too. A name the case base already holds is refused as well, and so is one whose real
     parent is not inside the checkout or is inside its `.git` (a symlink the base tree tracks can lead it there).
+    A name is kept to letters, digits and `.`, `_`, `-`, `+`, `@` in `/`-separated parts, and git must ignore each
+    link (`git check-ignore`), or the checkout is refused.
 - `source_hashes`: SHA-256 of every pack file the protocol records, under the protocol's hash convention.
 - `isolation`: the pack's isolation statement, copied into the protocol's privacy line.

@@ -595,6 +595,7 @@ def shell_spelling(path, env: dict) -> str:
 # Such an argument is passed with @NL@ in each newline's place, and bash puts the newlines back before it runs anything.
 NL_WRAP = 'nl=$(printf "\\nx"); nl=${nl%x}; set -- "${@//@NL@/$nl}"; '
 UNPROVED = "is not proved to name the file it came from"
+LINK_NAME_RULE = "a link name is kept to letters, digits"
 
 
 def bash_nl(cmd: str, *args, env: dict) -> subprocess.CompletedProcess:
@@ -1547,17 +1548,20 @@ class Scripts(unittest.TestCase):
             self.assertNotIn(NATIVE, p.stderr, f"{src} {link} {target} {flags}: the layer that refused")
             self.assertFalse(parent.exists(), f"{src} {link} {target} {flags}")
 
-        cases = [("sys", sx + "/repo\n"),  # a link at DIR's top to the work tree x/repo<LF>
-                 ("lnk", sx + "/repo\n"),  # ... a shortcut symlink (on a host without MSYS, a symlink all the same)
-                 ("sys", sx + "/repo\n/brief.md"),  # a link to a file in it: the join of $(dirname) and $(basename)
-                 ("sys", sx + "/t\n")]  # a link to the link x/t<LF>: the $(readlink) hop
-        for i, (mode, to) in enumerate(cases):
+        # a link to the link x/t<LF>, the readlink hop: its text was cut to x/t by $(readlink) and refused as unproved;
+        # the text is now read exactly (LC7-1), so the hop is followed to where x/t<LF> leads, a file in the repository
+        # other, and refused for that repository
+        cases = [("sys", sx + "/repo\n", UNPROVED),  # a link at DIR's top to the work tree x/repo<LF>
+                 ("lnk", sx + "/repo\n", UNPROVED),  # ... a shortcut symlink (on a host without MSYS, a symlink all the same)
+                 ("sys", sx + "/repo\n/brief.md", UNPROVED),  # a link to a file in it: the join of $(dirname) and $(basename)
+                 ("sys", sx + "/t\n", f"resolving to {shell_spelling(other, self.env)}/README.md, is inside the git repository")]
+        for i, (mode, to, reason) in enumerate(cases):
             deps = self.root / f"deps-nl-{i}"
             (deps / "plain").mkdir(parents=True)
             ln = bash_nl('ln -s -- "$1" "$2"', to, shell_spelling(deps, self.env) + "/s", env={**env, "MSYS": f"winsymlinks:{mode}"})
             self.assertEqual(ln.returncode, 0, ln.stderr)
             for flags in both:
-                refused(UNPROVED, *flags, link=f"node_modules={deps}")
+                refused(reason, *flags, link=f"node_modules={deps}")
         for flags in both:
             refused(UNPROVED, *flags, link=f"node_modules={sx}/repo\n")  # DIR itself: $(pwd -P)
         # the pack: --pack pk<LF> beside a free twin pk, with the target inside pk<LF>
@@ -1575,7 +1579,10 @@ class Scripts(unittest.TestCase):
             refused("is inside the git repository", *flags, target=sx + "/p\n/cand")
         self.assertEqual(list((x / "p").iterdir()), [])
         # a link's parent: --link a<LF>=hostdir --link a<LF>/x=dep2 made the second link in hostdir (its parent was
-        # checked as the checkout's a, which did not exist, and made where a<LF> leads)
+        # checked as the checkout's a, which did not exist, and made where a<LF> leads). A newline in a link name is
+        # now refused before anything is made (LC7-2); the parent a link is made in is still spelled exactly: in a
+        # checkout cand<LF> beside a host directory cand it is cand<LF>, which pwd -P cannot spell, so the link is
+        # refused as unproved (never checked as cand, which would be "not inside the checkout") and nothing is left
         hostdir, dep2 = self.root / "hostdir", self.root / "dep2"
         hostdir.mkdir()
         (hostdir / "keep").write_text("keep\n")
@@ -1584,9 +1591,18 @@ class Scripts(unittest.TestCase):
             target = self.root / f"made-{len(flags)}" / "cand"
             p = checkout_spelled(c["repo"], c["base"], target, env, *flags, "--link", f"a\n={hostdir}", "--link", f"a\n/x={dep2}")
             self.assertEqual(p.returncode, 2, f"{flags}: {p.stdout}{p.stderr}")
-            self.assertIn("is not inside the checkout", p.stderr, flags)
-            self.assertFalse(target.exists(), flags)
+            self.assertIn(LINK_NAME_RULE, p.stderr, flags)
+            self.assertFalse(target.parent.exists(), flags)
             self.assertEqual(sorted(q.name for q in hostdir.iterdir()), ["keep"], flags)
+            twin = self.root / f"twin-{len(flags)}"
+            (twin / "cand").mkdir(parents=True)
+            (twin / "cand" / "keep").write_text("keep\n")
+            p = checkout_spelled(c["repo"], c["base"], shell_spelling(twin, self.env) + "/cand\n", env, *flags, "--link", f"node_modules={dep2}")
+            self.assertEqual(p.returncode, 2, f"{flags}: {p.stdout}{p.stderr}")
+            self.assertIn("--link node_modules: its parent ", p.stderr, flags)
+            self.assertIn(UNPROVED, p.stderr, flags)
+            self.assertEqual(sorted(q.name for q in twin.iterdir()), ["cand"], flags)
+            self.assertEqual(sorted(q.name for q in (twin / "cand").iterdir()), ["keep"], flags)
         # controls: a target spelled with newlines is made exactly there, and a link to a free directory is accepted
         target = nl_path(nl_path(nl_path(self.root / "n") / "m") / "cand")
         p = checkout_spelled(c["repo"], c["base"], shell_spelling(self.root, self.env) + "/n\n/m\n/cand\n", env)
@@ -1617,6 +1633,109 @@ class Scripts(unittest.TestCase):
             target = self.root / f"ok-{j}" / "cand"
             p = checkout_spelled(c["repo"], c["base"], target, env, *flags, "--link", f"node_modules={deps}")
             self.assertEqual(p.returncode, 0, f"{flags}: {p.stdout}{p.stderr}")
+
+    def test_historyless_checkout_proves_the_directory_of_a_file_a_link_leads_to(self):
+        # LC7-1: resolve took the directory of a file a link leads to as physd "$(dirname)". The inner command
+        # substitution dropped the trailing newline of x/hl<LF> before physd, which proves pwd -P only against its own
+        # argument, so it proved x/hl; and the file check ([ -ef ]) holds through a hard link. A link at DIR's top to
+        # x/hl<LF>/brief.md, in a work tree whose brief.md has a hard link in a free x/hl, was checked at x/hl, and the
+        # checkout's link text named the work tree, whose history a candidate read. Every part of a path resolve takes is
+        # now spelled exactly (the directory, the name, each link's text), and what it resolves to is set, not printed
+        import os
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        env = native_links(self.env)
+        x = self.root / "x"
+        x.mkdir()
+        work = nl_path(x / "hl")  # a work tree with history, beside a free twin x/hl
+        work.mkdir()
+        (work / "brief.md").write_text("SECRET-BRIEF\n")
+        sh(["git", "init", "-q"], work, self.env)
+        commit_all(work, self.env, "SECRET-HL")
+        (x / "hl").mkdir()
+        os.link(work / "brief.md", x / "hl" / "brief.md")  # the same file under the free twin
+        self.assertTrue(os.path.samefile(work / "brief.md", x / "hl" / "brief.md"))
+        sx = shell_spelling(x, self.env)
+        both = (("--pack", str(pack)), ())
+        for i, mode in enumerate(("sys", "lnk")):  # links only the shell sees (on a host without MSYS, symlinks all the same)
+            deps = self.root / f"deps-hl-{i}"
+            (deps / "plain").mkdir(parents=True)
+            ln = bash_nl('ln -s -- "$1" "$2"', sx + "/hl\n/brief.md", shell_spelling(deps, self.env) + "/s", env={**env, "MSYS": f"winsymlinks:{mode}"})
+            self.assertEqual(ln.returncode, 0, ln.stderr)
+            for flags in both:
+                self.assert_link_refused(c, deps, UNPROVED, *flags, env=env)
+        # controls: a link to a file whose own name ends in a newline, in a free directory, is accepted. Its link text and
+        # its name were cut to ff/f, which does not exist, so it was refused as unproved; and on Windows the path the
+        # shell resolved is handed to the native layer as resolved, not cut by a command substitution on the way
+        ff = self.root / "ff"
+        ff.mkdir()
+        nl_path(ff / "f").write_text("free\n")
+        free = self.root / "installed" / "node_modules"
+        (free / "pkg").mkdir(parents=True)
+        for i, to in enumerate((shell_spelling(ff, self.env) + "/f\n", shell_spelling(free, self.env))):
+            deps = self.root / f"deps-hl-ok-{i}"
+            (deps / "plain").mkdir(parents=True)
+            ln = bash_nl('ln -s -- "$1" "$2"', to, shell_spelling(deps, self.env) + "/s", env={**env, "MSYS": "winsymlinks:sys"})
+            self.assertEqual(ln.returncode, 0, ln.stderr)
+            for j, flags in enumerate(both):
+                target = self.root / f"ok-hl-{i}-{j}" / "cand"
+                p = checkout(c["repo"], c["base"], target, env, *flags, "--link", f"node_modules={deps}")
+                self.assertEqual(p.returncode, 0, f"{to!r} {flags}: {p.stdout}{p.stderr}")
+                self.assertEqual(sh(["git", "rev-list", "--all", "--count"], target, self.env).stdout.strip(), "1")
+
+    def test_historyless_checkout_proves_git_ignores_each_link(self):
+        # LC7-2: each link's NAME went into the checkout's .git/info/exclude as a line git reads as a pattern, and
+        # nothing proved it ignored the link. '[x]' is a character class, MSYS stores '?' and '<' in a name as other
+        # characters, a trailing space is dropped, and 'a<LF>b' wrote the lines '/a' and 'b': the link stayed untracked
+        # and a candidate's `git add -A` committed it (a symlink holding the host's absolute path), or the line hid other
+        # files ('b' hid every b in the tree, '/nm*' every name starting nm). NAME is now kept to characters no pattern
+        # reads specially, and each link is proved ignored by git itself (check-ignore), or the checkout is refused and
+        # removed: the base tree's own .gitignore outranks info/exclude and can re-include the name
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        env = native_links(self.env)
+        free = self.root / "installed" / "deps"
+        free.mkdir(parents=True)
+        both = (("--pack", str(pack)), ())
+        # forward slashes: MSYS globs a Windows command-line argument that holds '[', '?' or '*', and reads each backslash
+        # in it as an escape
+        sfree = shell_spelling(free, self.env)
+        for name in ("[x]", "q?m", "a\nb", "trs ", "lt<", "nm*", "#c", "!n", "s p", "a\tb", "xé", "a//b", "./x", "x/", "a.",
+                     ".", "src/v.", "src/./v"):
+            for flags in both:
+                parent = self.root / f"refused-{len(list(self.root.glob('refused-*')))}"
+                p = checkout_spelled(c["repo"], c["base"], parent / "cand", env, *flags, "--link", f"{name}={sfree}")
+                self.assertEqual(p.returncode, 2, f"{name!r} {flags}: {p.stdout}{p.stderr}")
+                self.assertIn(LINK_NAME_RULE, p.stderr, f"{name!r} {flags}")
+                self.assertFalse(parent.exists(), f"{name!r} {flags}")
+        self.assertEqual(list(free.iterdir()), [])
+        # a base tree whose .gitignore re-includes the name ('!' outranks info/exclude): git would not ignore the link
+        repo = c["repo"]
+        (repo / ".gitignore").write_text("__pycache__/\n!/deps\n!/src/vendor\n")
+        c2 = {**c, "base": commit_all(repo, self.env, "re-include")}
+        for name in ("deps", "src/vendor"):
+            for flags in both:
+                parent = self.root / f"refused-{len(list(self.root.glob('refused-*')))}"
+                p = checkout(c2["repo"], c2["base"], parent / "cand", env, *flags, "--link", f"{name}={free}")
+                self.assertEqual(p.returncode, 2, f"{name} {flags}: {p.stdout}{p.stderr}")
+                self.assertIn(f"--link {name}: git does not ignore the link", p.stderr, f"{name} {flags}")
+                self.assertNotIn(NATIVE, p.stderr, f"{name} {flags}")
+                self.assertFalse(parent.exists(), f"{name} {flags}: the refused checkout was left")
+        self.assertEqual(list(free.iterdir()), [])
+        # controls: names of the safe kind are linked and ignored, and their lines hide nothing else, a file beside a
+        # link, named like it deeper down or starting like it
+        names = ("node_modules", ".venv", "@scope", "a+b_c-d.e", "src/vendor")
+        target = self.root / "accepted" / "cand"
+        p = checkout(c["repo"], c["base"], target, env, "--pack", str(pack), *[a for n in names for a in ("--link", f"{n}={free}")])
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        for n in names:
+            self.assertTrue((target / n).is_symlink(), n)
+        others = ["node_modulesx", "src/node_modules", "docs/.venv", ".venvx", "@scopex", "a+b_c-d", "src/vendorx", "b"]
+        for rel in others:
+            (target / rel).write_text("new\n")
+        sh(["git", "add", "-A"], target, self.env)
+        staged = sh(["git", "diff", "--cached", "--name-only"], target, self.env).stdout.split()
+        self.assertEqual(sorted(staged), sorted(others))
 
     @NEEDS_PY_LINKS
     def test_historyless_checkout_proves_native_programs_read_each_path_string_as_the_same_file(self):

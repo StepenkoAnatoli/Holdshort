@@ -83,14 +83,22 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    name, so `x/repo` followed by a newline or a space was checked, read or written as its twin `x/repo`. The
    checkout's own name, which does not exist yet, is kept exactly as spelled, and its last segment may not be `.` or
    `..`. Git for Windows takes no path with a segment that ends in a space or dot, so such a checkout is refused too.
+   No part of a path is taken through a command substitution between the path and its proof: each directory and
+   name a link at the linked directory's top resolves through, and each link target read, is kept exactly as
+   spelled, since an identity check holds through a hard link (a file reached through `x/hl` followed by a newline
+   may also be the file in a twin `x/hl`, so a check made at the twin would pass the proof).
    Git is given the source and the checkout only by those proved Windows spellings, so a host that turns off MSYS's
    argument conversion (`MSYS_NO_PATHCONV=1`) does not make it read `/c/x` as `\c\x` on its current drive.
    Nothing deeper is checked: a symlink or a repository further down the dependency tree is not followed, and keeping
-   those out is the host's duty. A `--link` name is a plain relative path, and none of its parts may name `.git` in
-   any spelling Windows resolves to it (any case, trailing dots or spaces, `GIT~1`). Each link is made only where its
+   those out is the host's duty. A `--link` name is a plain relative path of letters, digits and `.`, `_`, `-`, `+`,
+   `@`, in `/`-separated parts that are not empty and do not end in a dot: git reads the name as a pattern in the
+   checkout's `.git/info/exclude`, where `[`, `?`, `*`, a space or a newline would leave the link unignored (a
+   candidate's `git add -A` would commit it, a symlink holding the host's path) or hide other files. None of its
+   parts may name `.git` in any spelling Windows resolves to it (any case, trailing dots or spaces, `GIT~1`). Each link is made only where its
    name does not exist yet in the checkout and its real parent lies inside the checkout and outside its `.git`, in both
    layers: the base tree may track a symlink (checked out as one with `core.symlinks=true`, such as `g -> .git`), and
-   an earlier `--link` is one too. The script sets the globbing its checks rely on itself, so a `SHELLOPTS` or
+   an earlier `--link` is one too. Once a name is listed in `.git/info/exclude`, `git check-ignore` must show that
+   git ignores the link, or the checkout is refused (the base tree's `.gitignore` can re-include the name with `!`). The script sets the globbing its checks rely on itself, so a `SHELLOPTS` or
    `BASHOPTS` the host exports (`noglob`, `nullglob`, `failglob`) does not change what they see.
    **What the guard covers, and what is the host's duty.** It covers every path the checkout gets from the script:
    no parent of the checkout, no linked directory or its parents, and no link at a linked directory's top level or the

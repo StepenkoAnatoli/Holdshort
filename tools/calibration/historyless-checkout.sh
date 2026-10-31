@@ -16,7 +16,10 @@
 #                segment (TARGET/.. names another directory than the one made for it)
 #   BRANCH       the branch the single commit is on
 #   --link NAME=DIR  symlink DIR (an installed dependency tree, a build cache) into TARGET/NAME and list NAME in
-#                TARGET/.git/info/exclude so a candidate's `git add -A` never commits it; repeatable. DIR must be
+#                TARGET/.git/info/exclude so a candidate's `git add -A` never commits it, proved with git check-ignore
+#                (refused when git does not ignore the link: the base tree's .gitignore can re-include it); repeatable.
+#                NAME holds only letters, digits and '.', '_', '-', '+', '@', in '/'-separated parts that are not empty
+#                and do not end in a dot, since git reads the exclude line as a pattern (LC7-2). DIR must be
 #                installed outside the pack and outside every git repository (proposal Item 2: no path from a
 #                checkout reaches the accepted fix). Refused when its real path is inside SOURCE_REPO or PACK_DIR or
 #                holds either, and when it is inside a git repository: DIR or one of its real ancestors holds a .git
@@ -142,7 +145,10 @@ canon() {
 # from ([ a -ef b ]: the same device and inode, each followed to the end of its links as stat(2) does), and the path is
 # refused when that fails or cannot be proved. Two strings name a file that does not exist yet (TARGET, a link's
 # NAME), so there is nothing to compare them with: their spelling is kept exactly (spell_dir, spell_base), and the
-# part of them that exists is proved. The native layer proves its own strings the same way (final, below)
+# part of them that exists is proved. No part of a path is taken through a command substitution between the path and
+# its proof, and no function that proves only against its own argument is handed such a substitution (LC7-1: with
+# physd "$(dirname)" the proof held for the stripped string, and a hard link carried the file check). The native layer
+# proves its own strings the same way (final, below)
 UNPROVED="is not proved to name the file it came from: the string made of it (a command substitution drops a trailing newline; Windows drops a trailing space or dot) names another file or none, so it cannot be checked (LC6-1)"
 # unproved HOW STATUS WHAT ELSE: refuse with HOW (refuse, or refuse_made once the checkout is made) "WHAT $UNPROVED"
 # when STATUS is 3 (phys, physd, resolve and ancestors report so a string they could not prove), else ELSE
@@ -231,29 +237,40 @@ LOCAL_ONLY="is not a local path (a UNC path //host/share/..., or a mount of one)
 # after it (phys's plain cd drops 'link/..' by spelling first, so 'link/../y' could name a different y than the
 # kernel reaches), proved to name D as phys does (status 3 when it does not; 1 when D is no directory)
 physd() { local p; p=$(cd -P -- "$1" >/dev/null 2>&1 && pwd -P) || return 1; [ "$p" -ef "$1" ] || return 3; canon "$p"; }
-# resolve E: print the physical path the symlink E resolves to: a directory through physd, a file as its directory's
-# physical path and its name, following a chain of links (at most 40) hop by hop, each hop's directory made physical
-# before a relative target is joined to it, as the kernel does; status 1 when E does not resolve. Each string it makes
-# ($(dirname) and $(basename) joined, and each link's $(readlink) target) must name the file the link it replaces leads
-# to ([ -ef ] follows both to the end of the chain); status 3 when one does not (LC6-1)
+# spell_link VAR L: set VAR to the text of the symlink L, exactly (readlink's own closing newline dropped, no other);
+# status 1 when readlink cannot read it
+spell_link() { local r; r=$(readlink -- "$2" && echo .) || return 1; printf -v "$1" '%s' "${r%$'\n.'}"; }
+# resolve E: set RES to the physical path the symlink E resolves to: a directory through physd, a file as its
+# directory's physical path and its name, following a chain of links (at most 40) hop by hop, each hop's directory made
+# physical before a relative target is joined to it, as the kernel does; status 1 when E does not resolve. Each string
+# it makes (the directory's physical path joined with the name, and each link's target) must name the file the link it
+# replaces leads to ([ -ef ] follows both to the end of the chain); status 3 when one does not (LC6-1). Every part it
+# takes of a path is spelled exactly (spell_dir, spell_base, spell_link), never through a command substitution between
+# the path and its proof: physd proves pwd -P against its own argument, so with "$(dirname)" it proved a directory
+# whose trailing newline was already gone, and [ -ef ] on a file holds through a hard link, so a file in x/hl<LF> (a
+# work tree) whose hard link sits in a free x/hl was checked at x/hl (LC7-1). RES is set, not printed: the caller's own
+# command substitution would drop a trailing newline from what resolve proved
 resolve() {
-  local p=$1 q t n=0 d
+  local p=$1 q t b n=0 d
+  RES=""
   [ -e "$p" ] || return 1
-  if [ -d "$p" ]; then physd "$p"; return; fi
+  if [ -d "$p" ]; then RES=$(physd "$p") || return; return 0; fi
   while :; do
-    d=$(physd "$(dirname -- "$p")") || return
-    q=${d%/}/$(basename -- "$p")
+    spell_dir d "$p"
+    d=$(physd "$d") || return
+    spell_base b "$p"
+    q=${d%/}/$b
     [ "$q" -ef "$p" ] || return 3
     p=$q
     [ -L "$p" ] || break
     n=$((n + 1))
     [ "$n" -le 40 ] || return 1
-    t=$(readlink -- "$p") || return 1
+    spell_link t "$p" || return 1
     case "$t" in /*) q=$t ;; *) q=${d%/}/$t ;; esac
     [ "$q" -ef "$p" ] || return 3
     p=$q
   done
-  printf '%s' "$p"
+  RES=$p
 }
 
 # G_OF / G_ANC: the guarded paths (SOURCE_REPO when there are links, PACK_DIR) paired with each of their ancestors
@@ -320,11 +337,23 @@ for spec in ${LINKS[@]+"${LINKS[@]}"}; do
       .[Gg][Ii][Tt] | [Gg][Ii][Tt]~1) refuse "--link $name: a link name may not name .git (in any case or spelling): it would sit in the checkout's git directory or be a repository's .git" ;;
     esac
   done
+  # NAME goes into the checkout's .git/info/exclude, where git reads it as a pattern: '[x]', '?' and '*' are wildcards,
+  # a leading '#' or '!' makes a comment or a negation, a trailing space is dropped, a newline ends the line, and MSYS
+  # stores '?', '*', '<', '>', '|', '"' and control characters in a name as other characters, which the pattern does not
+  # match. So the link stayed untracked and a candidate's `git add -A` committed it (a symlink holding the host's path),
+  # or the line hid other files ('a<LF>b' wrote the line 'b', which hides every b in the tree) (LC7-2). NAME is kept to
+  # characters no pattern reads specially, in '/'-separated parts that are not empty and do not end in a dot ('.' and
+  # 'x.' name another file to Windows); and each link is then proved ignored by git itself (check-ignore, below)
+  case "$name" in
+    *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._@+/-]* | */ | *//* | *. | *./*)
+      refuse "--link $name: a link name is kept to letters, digits and '.', '_', '-', '+', '@', in '/'-separated parts that are not empty and do not end in a dot: git reads the name as a pattern in the checkout's .git/info/exclude, and another name can leave the link unignored (a candidate's git add -A would commit it, a symlink holding the host's path) or hide other files (LC7-2)" ;;
+  esac
   dep=$(phys "${spec#*=}") || unproved refuse $? "--link $name: ${spec#*=}" "--link $name: no directory ${spec#*=}"
   guard_link "$name" "$dep" "$dep"
   for entry in "$dep"/* "$dep"/.[!.]* "$dep"/..?*; do  # an unmatched pattern stays literal and is no symlink
     [ -L "$entry" ] || continue
-    real=$(resolve "$entry") || unproved refuse $? "--link $name: $entry, a symlink in $dep: the path it resolves to" "--link $name: $entry, a symlink in $dep, does not resolve"
+    resolve "$entry" || unproved refuse $? "--link $name: $entry, a symlink in $dep: the path it resolves to" "--link $name: $entry, a symlink in $dep, does not resolve"
+    real=$RES
     guard_link "$name" "$real" "$entry, a symlink in $dep resolving to $real,"
     REAL_NAMES+=("$name")
     REAL_SHOWN+=("$entry, a symlink in $dep resolving to $real")
@@ -682,6 +711,11 @@ for i in ${LINK_NAMES[@]+"${!LINK_NAMES[@]}"}; do
   ln -s "${LINK_DIRS[$i]}" "$at"
   mkdir -p -- "$TARGET_ABS/.git/info"
   printf '/%s\n' "${LINK_NAMES[$i]}" >> "$TARGET_ABS/.git/info/exclude"
+  # the line is a pattern, and git decides what it ignores: the base tree's own .gitignore outranks info/exclude (a
+  # '!/NAME' line there re-includes the link), so the promise that `git add -A` never commits the link holds only when
+  # git itself says the link is ignored (LC7-2); otherwise the checkout is removed and refused (fail closed)
+  git -C "$GIT_TARGET" check-ignore -q -- "$name" \
+    || refuse_made "--link $name: git does not ignore the link in the checkout (git check-ignore), so a candidate's git add -A would commit it, a symlink holding the host's path; the base tree's .gitignore may re-include the name (LC7-2)"
 done
 
 # proof: exactly one commit reachable from any ref, its tree is the base tree, and the checkout's git can read no object
