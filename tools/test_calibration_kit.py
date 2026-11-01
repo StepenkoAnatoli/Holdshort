@@ -4129,7 +4129,18 @@ X21_WRONG = {
          "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref)\n"
          "            && !(options.keepStaged && Date.now() - entry.createdAt < 365 * 24 * 3_600_000))) {   // X2-1: a year-old staged entry is abandoned"),
         x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
+    # review loop 1 RL1-1: keep whenever open() found no usable file except a missing one, so a file that was read and refused
+    # (invalid, oversized, an extra key) keeps too; narrower than re-review 2's probe W-o (this.unread || this.startupWrite),
+    # it leaves the app-changed path alone, so only the refused-file row catches it
+    "W-o2": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed() });", edits=[
+        x21_getter("openFailed", "this.unread || (this.disk === null && this.startupWrite)"),
+        *X21_KEEP_UNREFERENCED,
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
 }
+
+# The rows of the accepted journey test (zz_accepted_x2_1.test.ts): 12 journey rows and 7 others (review loop 1 RL1-1 added
+# the refused-file row)
+X21_PIN_ROWS = 19
 
 # A correct fix the accepted one is not: another name for the store's flag and a positional vault parameter.
 X21_ALTERNATIVE = dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), store.fileUnreadable());", edits=[
@@ -4529,6 +4540,18 @@ class HostPackX21(unittest.TestCase):
         # re-review 1 R1, R4: a readable start after a sign-out deletes a crashed sign-in's orphan pair, and the startup lines
         # are anchored on code lines (the engine call and the supervisor call), never on a comment that mentions them
         self.assertIn("test('a sign-out, then a sign-in that crashed after staging, before the file write: the next readable start deletes", test)
+        # review loop 1 RL1-1: a file that is read and refused (spec 4.4: invalid, oversized, extra key) reads as no account, so
+        # the start deletes the orphan pair beside it; the row writes each of the three refusals, and the pin has X21_PIN_ROWS rows
+        self.assertIn("test('a sign-out, a sign-in that crashed after staging, then a refused file (invalid JSON, over 64 KiB, an extra key): "
+                      "the start deletes the orphan pair and rewrites the file (a refused file is read)'", test)
+        for form in ("['invalid JSON', valid.slice(0, valid.lastIndexOf('}'))]", "['over 64 KiB', valid + ' '.repeat(64 * 1024)]",
+                     "['an extra key', JSON.stringify({ ...signedOut, extra: true })]"):
+            self.assertIn(form, test, form)
+        self.assertEqual(test.count("\n    test(`${kind}, crash before commit ${at}, ${code} at the next start:"), 1)
+        self.assertEqual(test.count("\n  test('"), X21_PIN_ROWS - 12, "12 journey rows from the loop, the rest one test each")
+        journey_md = " ".join(md_section(text, "The journey").split())
+        self.assertIn("A file that is read and refused (invalid JSON, over 64 KiB, or a key the format does not have) reads as no account "
+                      "too: the start deletes the unreferenced staged entries beside it and rewrites the file.", journey_md)
         # re-review 2 RR2-1, integration 3 IC-2: the startup statements are found in index.ts parsed by TypeScript, so no comment,
         # string, regex literal, line break or missing ';' moves them; the slice runs from the end of the statement that holds the
         # engine call (or of a later one that declares references) to the start of the statement that calls supervisor.attach()
@@ -4557,7 +4580,11 @@ class HostPackX21(unittest.TestCase):
         for wid, (idea, row, grade_) in rows.items():
             self.assertTrue(idea and row, wid)
             self.assertTrue(grade_.startswith("FAIL"), f"{wid}: {grade_}")
+            # review loop 1 RL1-1: every grade counts out of the pin's rows as they are now
+            self.assertRegex(grade_, rf"^FAIL: acceptedPin \d+ of {X21_PIN_ROWS} red; candidate green, guard red, scope and lint ok$", wid)
         text = (X21 / "WRONG-FIXES.md").read_text(encoding="utf-8")
+        self.assertIn(f"counts the accepted journey test's failed rows out of its {X21_PIN_ROWS}.", " ".join(text.split()))
+        self.assertIn("the **refused-file row**", text)
         for letter in "abcdefgh":  # the lead's list (H1), each by its letter
             self.assertRegex(text, rf"\| W-{letter}\d? \|", letter)
 
@@ -4729,6 +4756,7 @@ class HostPackX21(unittest.TestCase):
         self.assertEqual(len(journey), 12, results)
         self.assertEqual(set(journey.values()), {"failed"}, "every journey row is red at the base")
         self.assertEqual({t: s for t, s in results.items() if t not in journey and s != "passed"}, {}, "the other rows hold at the base")
+        self.assertEqual(len(results), X21_PIN_ROWS, results)
         at_accepted = self.vitest(self.at("accepted"), "tests/zz_accepted_x2_1.test.ts")
         self.assertEqual((at_accepted["numFailedTests"], at_accepted["numPassedTests"]), (0, len(results)))
 
@@ -4753,7 +4781,7 @@ class HostPackX21(unittest.TestCase):
                 self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
                 run = self.vitest(cand, "tests/zz_accepted_x2_1.test.ts")
                 failed = [a["title"] for r in run["testResults"] for a in r["assertionResults"] if a["status"] != "passed"]
-                self.assertEqual((run["numFailedTests"], run["numTotalTests"]), (0, 18), failed)
+                self.assertEqual((run["numFailedTests"], run["numTotalTests"]), (0, X21_PIN_ROWS), failed)
 
     @NEEDS_X21
     def test_every_wrong_fix_grades_fail_on_the_accepted_journey_test_alone(self):
@@ -4776,10 +4804,10 @@ class HostPackX21(unittest.TestCase):
                 self.assertFalse(g["PASS"])
                 self.assertEqual(g["restored"], True)
                 # the grade column of WRONG-FIXES.md states the count the grade returns
-                want = re.match(r"FAIL: acceptedPin (\d+) of 18 red;", rows[wid][2])
+                want = re.match(rf"FAIL: acceptedPin (\d+) of {X21_PIN_ROWS} red;", rows[wid][2])
                 self.assertIsNotNone(want, rows[wid][2])
                 pin = g["acceptedPin"]
-                self.assertEqual((pin["failed"], pin["total"]), (int(want[1]), 18), json.dumps(g, indent=1))
+                self.assertEqual((pin["failed"], pin["total"]), (int(want[1]), X21_PIN_ROWS), json.dumps(g, indent=1))
 
     @NEEDS_X21
     def test_the_accepted_and_two_alternative_fixes_grade_pass(self):

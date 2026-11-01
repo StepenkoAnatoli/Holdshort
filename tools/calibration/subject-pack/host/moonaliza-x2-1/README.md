@@ -47,7 +47,10 @@ The crash-window table (spec 4.5, "the file write, before commit") promises a si
 after step 3 the pair the file names is committed and live. Step 2 shows no account, leaves the file as it is, and
 leaves the pair in the vault as the crash left it, with its encrypted files. Three things stay as they are. Tombstoned
 entries are deleted on every start. An unreferenced staged entry is deleted by the next start that reads the file. A
-missing file reads as no account, and the start deletes its staged entries.
+missing file reads as no account, and the start deletes its staged entries. A file that is read and refused (invalid
+JSON, over 64 KiB, or a key the format does not have) reads as no account too: the start deletes the unreferenced
+staged entries beside it and rewrites the file. Only an I/O error other than a missing file (an errno code) makes a
+start that cannot read the file (spec 4.4).
 
 ## How a host builds the repository and the checkouts
 
@@ -149,6 +152,9 @@ injected and fixed, so only the vault sees the move.
   `instructions` state this limit to the candidate.
 - **Errors other than EACCES, EBUSY and EIO.** EPERM and others are not exercised; the rule is the same, any errno code
   but ENOENT.
+- **Refusals other than the three.** The refused-file row writes invalid JSON, a file over 64 KiB and a file with an
+  extra key. A path the store refuses because it is not a plain regular file (a symlink, a directory, a file with a
+  second hard link) is refused the same way, with no errno code, but is not exercised.
 - **Time limits beyond ten years.** The later starts run ten years after the crash, so a fix that drops a kept pair
   only once it is older than that passes.
 - **Crash points.** Only the four the table names: before commit 1 of a first sign-in, and before commits 3 and 4 of a

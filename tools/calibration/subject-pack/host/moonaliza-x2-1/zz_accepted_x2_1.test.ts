@@ -4,7 +4,7 @@
 // never a name the accepted fix added, so a different correct fix passes it too.
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import fs, { cpSync, existsSync, readFileSync, readdirSync } from 'node:fs';
+import fs, { cpSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import fsp, { mkdtemp, rm } from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -290,6 +290,40 @@ describe('what an unreadable start still deletes, and what a readable start dele
     expect(entries(dir!)).toEqual({});
     expect(bins(dir!)).toEqual([]);
     expect(accountFile(dir!)?.account).toBeNull();
+  });
+
+  test('a sign-out, a sign-in that crashed after staging, then a refused file (invalid JSON, over 64 KiB, an extra key): the start deletes the orphan pair and rewrites the file (a refused file is read)', async () => {
+    const session = await firstSession();
+    await session.signIn();
+    expect(await session.store.clear(() => true)).toBe('durable');
+    let crash: string | undefined;
+    session.hooks.afterStaged = count => { if (count === 4) crash = session.snapshot(); };
+    await session.signIn();
+    expect(crash).toBeDefined();
+    const valid = readFileSync(fileAt(crash!), 'utf8');                        // the file the sign-out wrote, naming no account
+    const signedOut = JSON.parse(valid) as Record<string, unknown>;
+    expect(signedOut.account).toBeNull();
+    expect(Object.values(entries(crash!)).map(entry => entry.state)).toEqual(['staged', 'staged']);
+
+    // Spec 4.4: a missing, invalid, oversized or extra-key file reads as no account. Unlike a file that cannot be read (an errno
+    // code), a refused one was read: it names no reference, so the start deletes the orphan pair and finishStartup rewrites it.
+    const refused: Array<[string, string]> = [
+      ['invalid JSON', valid.slice(0, valid.lastIndexOf('}'))],
+      ['over 64 KiB', valid + ' '.repeat(64 * 1024)],                         // valid JSON, refused for its size alone
+      ['an extra key', JSON.stringify({ ...signedOut, extra: true })],
+    ];
+    for (const [index, [name, text]] of refused.entries()) {
+      const dir = `${crash!}-refused-${index + 1}`;
+      cpSync(crash!, dir, { recursive: true });
+      writeFileSync(fileAt(dir), text);
+      const next = await start(dir);
+      expect(next.store.current(), name).toBeNull();
+      expect(entries(dir), name).toEqual({});
+      expect(bins(dir), name).toEqual([]);
+      expect(readFileSync(fileAt(dir), 'utf8'), name).not.toBe(text);         // rewritten
+      expect(Object.keys(accountFile(dir) ?? {}).sort(), name).toEqual(Object.keys(signedOut).sort());
+      expect(accountFile(dir)?.account, name).toBeNull();
+    }
   });
 
   test('a first sign-in that crashed after staging, before any file existed: a start deletes the staged pair (a missing file is no account)', async () => {
