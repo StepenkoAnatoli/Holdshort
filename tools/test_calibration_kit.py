@@ -4136,11 +4136,36 @@ X21_WRONG = {
         x21_getter("openFailed", "this.unread || (this.disk === null && this.startupWrite)"),
         *X21_KEEP_UNREFERENCED,
         x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
+    # review loop 2 RL2-P1: W-k's limit counted in starts, not in age: an unreferenced staged entry is kept through one start
+    # that cannot read the file and marked kept, and a second such start in a row takes it for abandoned, so a file that
+    # stays unreadable (a bad permission, a lock held for days) loses the pair
+    "W-p": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed() });", edits=[
+        x21_getter("openFailed"),
+        ("src/main/vault.ts", "interface VaultEntry { state: 'staged' | 'committed' | 'tombstoned'; createdAt: number }",
+         "interface VaultEntry { state: 'staged' | 'committed' | 'tombstoned'; createdAt: number; kept?: boolean }"),
+        ("src/main/vault.ts", X21_SIGNATURE, X21_KEEP_SIGNATURE),
+        ("src/main/vault.ts", X21_DELETES,
+         "        } else if (options.keepStaged && entry.state === 'staged' && !committedReferences.has(ref) && !entry.kept) {\n"
+         "          entry.kept = true;   // X2-1: kept through one start that cannot name its references; a second one finds it abandoned\n"
+         f"{X21_DELETES}"),
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
+    # review loop 2, the hunt after RL2-P1: W-j's hold, earned by a run of unreadable starts: an unreferenced staged entry
+    # that two such starts in a row kept is taken for one the file still needs, and no later start deletes it
+    "W-q": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed() });", edits=[
+        x21_getter("openFailed"),
+        ("src/main/vault.ts", "interface VaultEntry { state: 'staged' | 'committed' | 'tombstoned'; createdAt: number }",
+         "interface VaultEntry { state: 'staged' | 'committed' | 'tombstoned'; createdAt: number; kept?: number }"),
+        ("src/main/vault.ts", X21_SIGNATURE, X21_KEEP_SIGNATURE),
+        ("src/main/vault.ts", X21_DELETES,
+         "        } else if (options.keepStaged && entry.state === 'staged' && !committedReferences.has(ref)) {\n"
+         "          entry.kept = (entry.kept ?? 0) + 1;   // X2-1: two unreadable starts in a row that kept it mean the file still needs it\n"
+         "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref) && (entry.kept ?? 0) < 2)) {"),
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
 }
 
-# The rows of the accepted journey test (zz_accepted_x2_1.test.ts): 12 journey rows and 7 others (review loop 1 RL1-1 added
-# the refused-file row)
-X21_PIN_ROWS = 19
+# The rows of the accepted journey test (zz_accepted_x2_1.test.ts): 12 journey rows and 8 others (review loop 1 RL1-1 added
+# the refused-file row, review loop 2 RL2-P1 the unreadable-run row)
+X21_PIN_ROWS = 20
 
 # A correct fix the accepted one is not: another name for the store's flag and a positional vault parameter.
 X21_ALTERNATIVE = dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), store.fileUnreadable());", edits=[
@@ -4535,7 +4560,16 @@ class HostPackX21(unittest.TestCase):
         # review 1 F1, F3, F7: the wiring binds index.ts's imports from the modules in scope, a later start runs a month after the
         # crash, and a third errno code is exercised; the README states the limit that is left
         self.assertIn("for (const code of ['EACCES', 'EBUSY', 'EIO'])", test)
-        self.assertEqual(test.count("later(3650);"), 2, "the journey rows and the orphan row run their later starts ten years on")
+        self.assertEqual(test.count("later(3650);"), 1, "the journey rows run their later starts ten years on")
+        # review loop 2 RL2-P1: the unreadable-run row and the orphan row run four unreadable starts in a row (the same code twice
+        # among them), each ten years after the one before, so neither a keep limited to a number of such starts (W-p) nor a
+        # hold earned by a run of them (W-q) passes, up to four
+        self.assertEqual(test.count("for (const [index, code] of ['EACCES', 'EACCES', 'EBUSY', 'EIO'].entries())"), 2)
+        self.assertEqual((test.count("vi.useRealTimers(); later(3650 * (index + 1));"), test.count("vi.useRealTimers(); later(3650 * 5);")), (2, 2))
+        self.assertIn("test('first sign-in before commit 1 and refresh before commit 4, then EACCES, EACCES again, EBUSY and EIO at four "
+                      "starts in a row, ten years apart: the pair survives all four and is live and committed after the next'", test)
+        self.assertIn("test('a crash after staging, before the file write: after four starts in a row that cannot read the file, the next "
+                      "readable start deletes the orphan pair'", test)
         self.assertNotIn("later(30)", test)
         # re-review 1 R1, R4: a readable start after a sign-out deletes a crashed sign-in's orphan pair, and the startup lines
         # are anchored on code lines (the engine call and the supervisor call), never on a comment that mentions them
@@ -4552,6 +4586,10 @@ class HostPackX21(unittest.TestCase):
         journey_md = " ".join(md_section(text, "The journey").split())
         self.assertIn("A file that is read and refused (invalid JSON, over 64 KiB, or a key the format does not have) reads as no account "
                       "too: the start deletes the unreferenced staged entries beside it and rewrites the file.", journey_md)
+        # review loop 2 RL2-P2: the paragraph lists four things that stay as they are, and says so
+        self.assertIn("Four things stay as they are.", journey_md)
+        self.assertNotIn("Three things", journey_md)
+        self.assertIn("however many starts of step 2 came first", journey_md)
         # re-review 2 RR2-1, integration 3 IC-2: the startup statements are found in index.ts parsed by TypeScript, so no comment,
         # string, regex literal, line break or missing ';' moves them; the slice runs from the end of the statement that holds the
         # engine call (or of a later one that declares references) to the start of the statement that calls supervisor.attach()
@@ -4567,6 +4605,7 @@ class HostPackX21(unittest.TestCase):
         for word in ("./github-account-store", "./vault", "ReferenceError", "`method: 'vault.references'`", "one block"):
             self.assertIn(word, limits, word)
         self.assertNotIn("regex literal", limits, "the parser reads regex literals: that limit is gone")
+        self.assertIn("**Runs of more than four unreadable starts.**", limits)  # review loop 2 RL2-P1: the limit that is left
         # integration 4 (D-IC3-1): the README states that both trees leave docs/orchestration/ out, and the check's limit
         why = " ".join(md_section(text, "Why there is no pin and no review case").split())
         for words in ("**MoonAliza's orchestration records are left out of both trees.**", "without the whole directory",
@@ -4585,6 +4624,7 @@ class HostPackX21(unittest.TestCase):
         text = (X21 / "WRONG-FIXES.md").read_text(encoding="utf-8")
         self.assertIn(f"counts the accepted journey test's failed rows out of its {X21_PIN_ROWS}.", " ".join(text.split()))
         self.assertIn("the **refused-file row**", text)
+        self.assertIn("the **unreadable-run row**", text)
         for letter in "abcdefgh":  # the lead's list (H1), each by its letter
             self.assertRegex(text, rf"\| W-{letter}\d? \|", letter)
 
@@ -4755,7 +4795,11 @@ class HostPackX21(unittest.TestCase):
         journey = {t: s for t, s in results.items() if "crash before commit" in t}
         self.assertEqual(len(journey), 12, results)
         self.assertEqual(set(journey.values()), {"failed"}, "every journey row is red at the base")
-        self.assertEqual({t: s for t, s in results.items() if t not in journey and s != "passed"}, {}, "the other rows hold at the base")
+        # review loop 2 RL2-P1: the unreadable-run row is the journey with four unreadable starts, so X2-1 makes it red too
+        run_row = [t for t in results if t.startswith("first sign-in before commit 1 and refresh before commit 4, then EACCES")]
+        self.assertEqual([results[t] for t in run_row], ["failed"], "the unreadable-run row is red at the base")
+        self.assertEqual({t: s for t, s in results.items() if t not in journey and t not in run_row and s != "passed"}, {},
+                         "the other rows hold at the base")
         self.assertEqual(len(results), X21_PIN_ROWS, results)
         at_accepted = self.vitest(self.at("accepted"), "tests/zz_accepted_x2_1.test.ts")
         self.assertEqual((at_accepted["numFailedTests"], at_accepted["numPassedTests"]), (0, len(results)))

@@ -33,8 +33,9 @@ wrong-fix matrix and `make-repo.sh`, which builds the pack repository from a Moo
    after it commits only the access ref.
 2. The next start's `open()` cannot read the account file: an I/O error such as EACCES, EBUSY or EIO, not a missing
    file. The store shows no account and names no references, and the startup runs its reconcile and both
-   `finishStartup()` calls. That start may come long after the crash.
-3. The start after that can read the file.
+   `finishStartup()` calls. That start may come long after the crash, and a file that stays unreadable (a bad permission,
+   a lock held for days) gives several such starts in a row.
+3. A later start can read the file.
 
 At the base (MoonAliza `16f637f`), step 2's reconcile deletes the staged pair because no reference names it, so step 3
 finds the refs the file names gone and signs the user out.
@@ -44,12 +45,12 @@ and the vault reconcile that start runs deletes every unreferenced staged entry,
 file still names.
 
 The crash-window table (spec 4.5, "the file write, before commit") promises a sign-in with the new pair. Required:
-after step 3 the pair the file names is committed and live. Step 2 shows no account, leaves the file as it is, and
-leaves the pair in the vault as the crash left it, with its encrypted files. Three things stay as they are. Tombstoned
-entries are deleted on every start. An unreferenced staged entry is deleted by the next start that reads the file. A
-missing file reads as no account, and the start deletes its staged entries. A file that is read and refused (invalid
-JSON, over 64 KiB, or a key the format does not have) reads as no account too: the start deletes the unreferenced
-staged entries beside it and rewrites the file. Only an I/O error other than a missing file (an errno code) makes a
+after step 3 the pair the file names is committed and live, however many starts of step 2 came first. Each start of
+step 2 shows no account, leaves the file as it is, and leaves the pair in the vault as the crash left it, with its
+encrypted files. Four things stay as they are. Tombstoned entries are deleted on every start. An unreferenced staged
+entry is deleted by the next start that reads the file. A missing file reads as no account, and the start deletes its
+staged entries. A file that is read and refused (invalid JSON, over 64 KiB, or a key the format does not have) reads
+as no account too: the start deletes the unreferenced staged entries beside it and rewrites the file. Only an I/O error other than a missing file (an errno code) makes a
 start that cannot read the file (spec 4.4).
 
 ## How a host builds the repository and the checkouts
@@ -134,7 +135,12 @@ and `readFile` in `node:fs/promises`, and their synchronous forms) for the whole
 another way still meets the error. In the journey rows and the orphan row the starts after the crash run with the wall
 clock (`Date` alone, through vitest's fake timers) moved ten years on, so a fix that keeps the pair only while it is
 recent fails, whatever age limit it picks short of that (W-k keeps for a day, W-n for a year). The store's clock is
-injected and fixed, so only the vault sees the move.
+injected and fixed, so only the vault sees the move. The unreadable-run row runs four unreadable starts in a row
+(EACCES, EACCES again, EBUSY, then EIO), each ten years after the one before, for a first sign-in that crashed before
+commit 1 and a refresh that crashed before commit 4, so a fix that keeps the pair through only one, two or three such
+starts fails (W-p keeps it through one), and so does one that takes the same error twice in a row for an abandoned pair.
+The orphan row runs the same four unreadable starts before its readable one, so a fix that holds an unreferenced
+staged entry for good once it has outlived a run of up to four unreadable starts fails too (W-q holds it after two).
 
 ## What the pack does not discriminate
 
@@ -155,6 +161,9 @@ injected and fixed, so only the vault sees the move.
 - **Refusals other than the three.** The refused-file row writes invalid JSON, a file over 64 KiB and a file with an
   extra key. A path the store refuses because it is not a plain regular file (a symlink, a directory, a file with a
   second hard link) is refused the same way, with no errno code, but is not exercised.
+- **Runs of more than four unreadable starts.** The unreadable-run row and the orphan row run four in a row, so a fix
+  that keeps the pair through four such starts and drops it at the fifth passes, and so does one that holds an orphan
+  pair for good only after five.
 - **Time limits beyond ten years.** The later starts run ten years after the crash, so a fix that drops a kept pair
   only once it is older than that passes.
 - **Crash points.** Only the four the table names: before commit 1 of a first sign-in, and before commits 3 and 4 of a

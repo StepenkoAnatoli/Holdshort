@@ -12,7 +12,7 @@
   "reference": "docs/specification/github-sign-in.md (4.3 the replace steps, 4.4 the startup checks, 4.5 the crash windows), the comments of src/main/github-account-store.ts and src/main/vault.ts, tests/github-account-store.test.ts (its crash-window helpers, restart and unreadStart) and tests/vault.test.ts (the shipped harnesses)"
  },
  "commit_rule": null,
- "accepted_fix": "129cbb40b85959fc6ad79d98b4f255f064f75ac3",
+ "accepted_fix": "577f52b4aeeac78031897c36b2de9c2fed321398",
  "findings": [
   {
    "id": "X2-1",
@@ -22,10 +22,10 @@
    ],
    "summary": "a sign-in or refresh that crashes after the account file names its new pair but before the pair is committed, followed by a start that cannot read the account file (an I/O error other than a missing file) and then a start that can, loses the account: the readable start finds the refs the file names gone, although the crash-window table promises a sign-in with the new pair",
    "cause": "during the start that cannot read the account file the store names no references, and the vault reconcile that start runs deletes every unreferenced staged entry, so it deletes the new pair the unread file still names",
-   "required_behaviour": "after that journey (the crash, a start whose open() cannot read the account file, then a start that can) the pair the file names is committed and live, for a first sign-in, for a sign-in that replaced an account and for a refresh (the old pair retired); the start that cannot read the file shows no account, leaves the file as it is and leaves the new pair in the vault as the crash left it, with its encrypted files; tombstoned entries are still deleted on every start, an unreferenced staged entry is deleted by the next start that reads the file, a missing file still reads as no account, whose staged entries the start deletes, and so does a file that is read and refused (invalid, oversized or with an extra key), which the start also rewrites",
+   "required_behaviour": "after that journey (the crash, one or more starts in a row whose open() cannot read the account file, then a start that can) the pair the file names is committed and live, for a first sign-in, for a sign-in that replaced an account and for a refresh (the old pair retired); each start that cannot read the file shows no account, leaves the file as it is and leaves the new pair in the vault as the crash left it, with its encrypted files; tombstoned entries are still deleted on every start, an unreferenced staged entry is deleted by the next start that reads the file, a missing file still reads as no account, whose staged entries the start deletes, and so does a file that is read and refused (invalid, oversized or with an extra key), which the start also rewrites",
    "found_rule": "a finding says the double fault (a crash between the file write and the commit, then a start that cannot read the file) loses the staged pair the file names",
    "cause_rule": "it locates the cause in the startup reconcile deleting unreferenced staged entries while the account file is unread",
-   "accepted_fix": "129cbb40b85959fc6ad79d98b4f255f064f75ac3"
+   "accepted_fix": "577f52b4aeeac78031897c36b2de9c2fed321398"
   }
  ],
  "cases": {
@@ -75,10 +75,10 @@
  },
  "source_hashes": {
   ".gitattributes": "0065bcd2f22464bbbd231c56c33939f29e2f1bf54b43c5ae99f84760ae35c82b",
-  "README.md": "f2b9abfc2941a1a5b8e95aca5269d1fdc74d75e6064bb2db61fa1ff7b99e5e8e",
-  "WRONG-FIXES.md": "ac6478cc5b2bb3da5216dcb1a2ca61788c78c84c0331986119a16cddf174ab57",
+  "README.md": "b1119b4c99c095a1803d56305f29edf8dd55afbcc0d794f832b342b73df0d561",
+  "WRONG-FIXES.md": "1eef82aeebb2d4c09d550d2c86c95837b92f8dbe89a7755643a08b9c3f53251f",
   "make-repo.sh": "08f57ccd58f3cbb93a34b25592dc744d88be6e17c2d9a64f3d7158059096b276",
-  "zz_accepted_x2_1.test.ts": "af4c9249dc99d0ee28893215b1bcda262fa8045408ece7905d36ace933c1608b"
+  "zz_accepted_x2_1.test.ts": "1af5a96237aef1b4b1060fd850cde86e133a4af789940a65a9e90b3928db97ad"
  },
  "isolation": "candidate checkouts are history-less trees of the case base only (MoonAliza 16f637f's tree without its history and without its docs/orchestration/ directory, MoonAliza's orchestration records, which name the finding, state its cause and give the accepted fix), made outside the pack and outside the kit's tree, with node_modules linked from an npm ci install in a directory of its own holding only base0's package.json and package-lock.json, outside the pack and outside every git repository's work tree (never the install of a MoonAliza clone or checkout: through node_modules/.. a candidate would reach its docs/orchestration/ records and its history); the pack repository, its accepted commit (with the accepted journey test), this manifest, WRONG-FIXES.md and the ground truth stay outside every candidate's permitted paths; the pack itself carries no MoonAliza code, which the host's own clone provides when make-repo.sh builds the repository; the finding's cause is ground truth only: cases.fix.cause_in_prompt false keeps it out of the candidate's fix prompt, make-repo.sh copies no object of docs/orchestration/ that the two trees do not reach into the pack repository, and a test checks that no file or path name of the base holds the finding's id, the accepted fix's two names or a phrase of the cause (a textual check: a paraphrase is not caught)"
 }

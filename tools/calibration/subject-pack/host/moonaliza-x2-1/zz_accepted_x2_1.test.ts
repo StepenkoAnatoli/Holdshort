@@ -242,6 +242,32 @@ describe('X2-1 journey: a crash leaves the new pair staged, the next start canno
       await expectAlone(dir, await start(dir), pair);                          // and a further start finds the same
     });
   }
+
+  // A file that stays unreadable (a bad permission, a lock held for days) gives several such starts in a row, and the promise does not
+  // depend on how many: so no limit on the number of unreadable starts a kept pair survives can pass for four of them, and the
+  // same code twice in a row (a lasting permission error) is no sign the pair was abandoned.
+  test('first sign-in before commit 1 and refresh before commit 4, then EACCES, EACCES again, EBUSY and EIO at four starts in a row, ten years apart: the pair survives all four and is live and committed after the next', async () => {
+    const forms: Array<[Kind, number, string[]]> = [['first sign-in', 1, ['staged', 'staged']], ['refresh', 4, ['committed', 'staged']]];
+    for (const [kind, at, states] of forms) {
+      vi.useRealTimers();
+      const { dir, pair } = await crashBeforeCommit(kind, at);
+      expect(pair.map(ref => entries(dir)[ref]?.state), kind).toEqual(states);
+      const before = readFileSync(fileAt(dir), 'utf8');
+
+      for (const [index, code] of ['EACCES', 'EACCES', 'EBUSY', 'EIO'].entries()) {
+        const step = `${kind}, start ${index + 1} (${code})`;
+        vi.useRealTimers(); later(3650 * (index + 1));                        // each start ten years after the one before it
+        const unread = await start(dir, { unread: code });
+        expect(unread.store.current(), step).toBeNull();
+        expect(readFileSync(fileAt(dir), 'utf8'), step).toBe(before);
+        expect(pair.map(ref => entries(dir)[ref]?.state), step).toEqual(states);
+        for (const ref of pair) expect(bins(dir), step).toContain(`${ref}.bin`);
+      }
+
+      vi.useRealTimers(); later(3650 * 5);
+      await expectAlone(dir, await start(dir), pair);                          // the next start reads the file and commits the pair
+    }
+  });
 });
 
 describe('what an unreadable start still deletes, and what a readable start deletes after it', ROW, () => {
@@ -260,7 +286,7 @@ describe('what an unreadable start still deletes, and what a readable start dele
     expect(bins(dir)).toEqual([`${engineRef}.bin`]);
   });
 
-  test('a crash after staging, before the file write: after a start that cannot read the file, the next readable start deletes the orphan pair', async () => {
+  test('a crash after staging, before the file write: after four starts in a row that cannot read the file, the next readable start deletes the orphan pair', async () => {
     const session = await firstSession();
     const a = refsOf(await session.signIn());
     let dir: string | undefined;
@@ -269,8 +295,11 @@ describe('what an unreadable start still deletes, and what a readable start dele
     expect(dir).toBeDefined();
     expect(Object.values(entries(dir!)).filter(entry => entry.state === 'staged')).toHaveLength(2);
 
-    later(3650);
-    await start(dir!, { unread: 'EACCES' });
+    for (const [index, code] of ['EACCES', 'EACCES', 'EBUSY', 'EIO'].entries()) {  // no run of them makes the orphan pair one to keep
+      vi.useRealTimers(); later(3650 * (index + 1));
+      await start(dir!, { unread: code });
+    }
+    vi.useRealTimers(); later(3650 * 5);
     await expectAlone(dir!, await start(dir!), a);
   });
 
