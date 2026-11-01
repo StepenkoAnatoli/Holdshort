@@ -2062,6 +2062,69 @@ class Scripts(unittest.TestCase):
         self.assertEqual((d["srcTouched"], d["srcClean"]), (["src/helper.py"], False), out)
         self.assertIs(d["PASS"], False, out)
 
+    def test_grade_a_program_the_candidates_git_config_names_never_runs_in_a_fix_or_pin_grade(self):
+        # review loop RL3-K1: a core.fsmonitor hook in the candidate's .git/config ran inside the grade (the grade read
+        # the candidate's commits and index with the candidate's git) and marked a file assume-unchanged in the view's
+        # index, so an out-of-scope edit hidden from the candidate's own git by skip-worktree left `changed` without it:
+        # a fix grade's scope check and a pin grade's source check passed. Now the hook never runs
+        pack, c = make_pack(self.root, self.env)
+        for task, path in (("fix", "README.md"), ("pin", "src/other.py")):
+            temp = self.root / f"grade-temp-{task}"
+            temp.mkdir()
+            cand = self.candidate(c, f"{task}-fsmonitor")
+            if task == "fix":
+                self.fix_like_the_accepted_one(cand)
+            else:
+                (cand / "tests" / "test_pin.py").write_text(PIN_SUM)
+            commit_all(cand, self.env, task)
+            sh(["git", "update-index", "--skip-worktree", path], cand, self.env)
+            (cand / path).write_text("edited out of scope\n")
+            log, env = fsmonitor_hook(cand, self.env, temp, f"git --git-dir=\"$v\" --work-tree=\"$here\" update-index --assume-unchanged {path}")
+            code, d, out = grade(pack / "manifest.json", task, cand, env)
+            self.assertEqual(code, 0, out)
+            self.assertIn(path, d["changed"], f"{task}: {out}")
+            if task == "fix":
+                self.assertIs(d["candidateGreen"], True, out)
+                self.assertEqual((d["scopeOk"], d["outOfScope"]), (False, [path]), out)
+            else:
+                self.assertIs(d["redAtHead"], True, out)
+                self.assertEqual((d["srcTouched"], d["srcClean"]), ([path], False), out)
+            self.assertIs(d["PASS"], False, f"{task}: {out}")
+            self.assertFalse(log.exists(), f"{task}: the candidate's fsmonitor hook ran in the grade: {log.read_text() if log.exists() else ''}")
+
+    def test_grade_reads_the_candidates_head_refs_and_index_as_files(self):
+        # the grade resolves HEAD itself (RL3-K1): a loose ref, a packed ref, a detached HEAD and a split index all read
+        # as the candidate's own git reads them; a .git that is not a directory is no commit to grade
+        pack, c = make_pack(self.root, self.env)
+        cand = self.candidate(c, "fix-refs")
+        self.fix_like_the_accepted_one(cand)
+        commit_all(cand, self.env, "fix")
+        short = sh(["git", "rev-parse", "--short", "HEAD"], cand, self.env).stdout.strip()
+
+        def graded(form):
+            code, d, out = grade(pack / "manifest.json", "fix", cand, self.env)
+            self.assertEqual(code, 0, f"{form}: {out}")
+            self.assertEqual((d["head"], d["commits"]), (short, 1), f"{form}: {out}")
+            return d
+
+        self.assertIs(graded("loose ref")["PASS"], True)
+        sh(["git", "pack-refs", "--all"], cand, self.env)
+        self.assertFalse(any(p.is_file() for p in (cand / ".git" / "refs" / "heads").rglob("*")))
+        self.assertIs(graded("packed ref")["PASS"], True)
+        sh(["git", "checkout", "-q", "--detach"], cand, self.env)
+        self.assertIs(graded("detached HEAD")["PASS"], True)
+        sh(["git", "update-index", "--split-index"], cand, self.env)
+        (cand / "notes.md").write_text("staged, out of scope\n")
+        sh(["git", "add", "notes.md"], cand, self.env)
+        self.assertTrue(any((cand / ".git").glob("sharedindex.*")))
+        d = graded("split index")
+        self.assertEqual((d["staged"], d["outOfScope"], d["PASS"]), (["notes.md"], ["notes.md"], False))
+        (cand / ".git").rename(cand / "moved-git")
+        (cand / ".git").write_text(f"gitdir: {c['repo'].as_posix()}/.git\n")
+        code, d, out = grade(pack / "manifest.json", "fix", cand, self.env)
+        self.assertEqual(code, 3, out)
+        self.assertIn("not a directory", d.get("error", ""), out)
+
     def test_grade_pin_red_then_green_with_the_accepted_fix_passes(self):
         pack, c = make_pack(self.root, self.env)
         cand = self.candidate(c, "pin-good")
@@ -3276,6 +3339,20 @@ def make_gate_pack(root: Path, env: dict, case: dict | None = None, files: dict 
     return pack, {"base": base, "repo": repo}
 
 
+def fsmonitor_hook(cand: Path, env: dict, temp: Path, poison: str) -> tuple[Path, dict]:
+    """Review loop RL3-K1: set the candidate's core.fsmonitor to a hook that runs `poison` (sh, with $v naming a git
+    directory and $here the checkout) on every git directory of every grade view under temp and logs each run to
+    .git/hook.log. Returns the log and the environment to grade with: its temporary directory is temp alone, so the
+    hook can reach no other grade's view."""
+    hook = cand / ".git" / "fsm.sh"
+    hook.write_bytes((f"#!/bin/sh\nhere='{cand.as_posix()}'\necho \"ran $*\" >> \"$here/.git/hook.log\"\n"
+                      f"for v in '{temp.as_posix()}'/grade-view-*/*/; do\n  [ -f \"$v/HEAD\" ] || continue\n  {poison}\ndone\nexit 1\n").encode())
+    hook.chmod(0o755)
+    sh(["git", "config", "core.fsmonitor", hook.as_posix()], cand, env)
+    (cand / ".git" / "hook.log").unlink(missing_ok=True)
+    return cand / ".git" / "hook.log", dict(env, TMPDIR=str(temp), TEMP=str(temp), TMP=str(temp))
+
+
 class KitCaseGrades(unittest.TestCase):
     """K2 (mutants for a pin case) and K3 (the gate case kind) in grade.sh."""
 
@@ -3505,6 +3582,36 @@ class KitCaseGrades(unittest.TestCase):
 
         cand = self.gate_cell(c, "gate-honest-filter", also=honest_filter)
         code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertEqual(d["invariantsIntact"], {"data/ledger.txt": True, "captures": True}, out)
+        self.assertIs(d["PASS"], True, out)
+
+    def test_k3_a_program_the_candidates_git_config_names_never_runs_in_the_grade(self):
+        # review loop RL3-K1: the grade still ran git on the candidate's own repository (rev-list, diff, ls-files) after
+        # it had made the view, so a core.fsmonitor hook in the candidate's .git/config ran inside the grade and gave the
+        # view a clean filter (its config and info/attributes): an edited invariant hashed as the base's. Now no git
+        # runs on the candidate's .git as a repository, so the hook never runs
+        pack, c = make_gate_pack(self.root, self.env)
+        temp = self.root / "grade-temp"
+        temp.mkdir()
+
+        def edited(d):
+            (d / ".git" / "orig" / "data").mkdir(parents=True)
+            (d / ".git" / "orig" / "data" / "ledger.txt").write_bytes((d / "data" / "ledger.txt").read_bytes())
+            (d / "data" / "ledger.txt").write_text("row 1\nrow 2\nrow 3\n")
+
+        cand = self.gate_cell(c, "gate-fsmonitor", also=edited)
+        orig = (cand / ".git" / "orig").as_posix()
+        log, env = fsmonitor_hook(cand, self.env, temp, "mkdir -p \"$v/info\"; echo 'data/** filter=keep' >> \"$v/info/attributes\"; "
+                                  f"printf '[filter \"keep\"]\\n\\tclean = cat {orig}/%%f\\n' >> \"$v/config\"")
+        code, d, out = grade(pack / "manifest.json", "gate", cand, env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["gateExit"], 0, out)
+        self.assertIs(d["invariantsIntact"]["data/ledger.txt"], False, out)
+        self.assertIs(d["PASS"], False, out)
+        self.assertFalse(log.exists(), f"the candidate's fsmonitor hook ran in the grade: {log.read_text() if log.exists() else ''}")
+        sh(["git", "config", "--unset", "core.fsmonitor"], cand, self.env)  # control: the same cell, ledger restored, passes
+        (cand / "data" / "ledger.txt").write_bytes((cand / ".git" / "orig" / "data" / "ledger.txt").read_bytes())
+        code, d, out = grade(pack / "manifest.json", "gate", cand, env)
         self.assertEqual(d["invariantsIntact"], {"data/ledger.txt": True, "captures": True}, out)
         self.assertIs(d["PASS"], True, out)
 

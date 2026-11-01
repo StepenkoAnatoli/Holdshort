@@ -20,8 +20,10 @@
 # before the command runs, so they grade the candidate's work and not the command's side effects, which stay. A mutant
 # whose source files equal the base's or the accepted fix's is refused; a command that overruns its timeout (a test,
 # lint or gate command) has its whole process tree killed and reads as exit 124. What the checkout holds (the
-# invariants, `changed`, `untracked`, the source diff) is read by a git of the grade's own over the base tree, never
-# through the candidate's .git (its config, attributes, excludes and index flags are the candidate's to write).
+# invariants, `changed`, `untracked`, the source diff) is read by a git of the grade's own over the base tree, and what
+# the candidate committed and staged by a second git of the grade's own over the candidate's objects and a copy of its
+# index, its HEAD and refs read as files: no git ever runs on the candidate's .git as a repository, so nothing in its
+# config, attributes, excludes, hooks or index flags (the candidate's to write) is applied or run.
 #
 # Exit 0 with the grade (PASS true or false) as one JSON object; 2 on a bad argument, an unusable manifest or a
 # checkout that shares a path with the pack; 3 with {"error": ...} when the checkout is missing or has no commit.
@@ -32,7 +34,7 @@ command -v python3 >/dev/null 2>&1 || { echo "grade.sh: python3 not found" >&2; 
 # git it runs names its repository itself (the pack, the checkout or the view below)
 unset GIT_ATTR_SOURCE $(git rev-parse --local-env-vars 2>/dev/null)
 exec python3 -I - "$@" <<'PY'
-import json, os, re, shlex, signal, subprocess, sys, tempfile, time
+import json, os, re, shlex, shutil, signal, subprocess, sys, tempfile, time
 from pathlib import Path
 
 def refuse(msg, code=2):
@@ -137,38 +139,81 @@ cand = checkout.resolve()
 if cand == pack_dir or pack_dir in cand.parents or cand in pack_dir.parents:
     refuse(f"the checkout {cand} shares a path with the pack {pack_dir} (proposal Item 2: the answer stays outside every candidate's paths)")
 
-def git(*args):
-    p = subprocess.run(["git", "-c", "core.quotepath=off", *args], cwd=cand, capture_output=True, encoding="utf-8", errors="surrogateescape",
-                       stdin=subprocess.DEVNULL)
-    if p.returncode:
-        raise RuntimeError(f"git {' '.join(args)}: {p.stderr.strip()}")
-    return p.stdout
-
-def names(*args):
-    return [x for x in git(*args).split("\0") if x]
-
-# The view: what the checkout's files are, read by a git that reads nothing in the candidate's .git. The candidate's own
-# git applies its .git/config (a clean filter, core.worktree, fsmonitor), .git/info/attributes, .git/info/exclude and
-# its index's flags (skip-worktree, assume-unchanged), all untracked, so a candidate could make a changed file read as
-# the base's (review loop RL2-K1). The view is a fresh repository outside the checkout: its work tree is the checkout,
-# its objects are the pack repository's (alternates), its index is the case's base tree, its attributes come from the
-# base tree (--attr-source, git 2.40+), its ignore rules are the base tree's .gitignore files, and its config is the
-# host's (global and system, which say how the host's checkout converted line endings) with none of git's repository
-# variables (the wrapper unsets them). The candidate's commits and index still say what it committed and staged; the
-# view says what changed.
+# No git runs on the candidate's .git as a repository. Any git that does reads the candidate's .git/config, which the
+# candidate writes: a clean filter, .git/info/attributes, .git/info/exclude and its index's flags (skip-worktree,
+# assume-unchanged) made a changed file read as the base's (review loop RL2-K1), and core.fsmonitor names a program git
+# runs, as the grader, on any read of the index: it ran inside the grade after the view below was made and rewrote the
+# view's config, attributes and index flags (RL3-K1). So the grade reads the checkout through two repositories of its
+# own in a temporary directory, each with the host's config only (global and system) and none of git's repository
+# variables (the wrapper unsets them):
+# - the view (`vgit`): what the checkout's files are. Its work tree is the checkout, its objects are the pack
+#   repository's (alternates), its index is the case's base tree, its attributes come from the base tree
+#   (--attr-source, git 2.40+) and its ignore rules are the base tree's .gitignore files.
+# - the history (`hgit`): what the candidate committed and staged. Its objects are the candidate's (alternates to
+#   .git/objects, which git only reads), its index a copy of the candidate's .git/index (with any split-index file
+#   beside it), and the commit it reads is the candidate's HEAD resolved from the files .git/HEAD, .git/refs and
+#   .git/packed-refs. It has no work tree, so an index flag changes nothing it reports. The candidate's objects never
+#   reach the view: a pack of the candidate's could otherwise stand in for the base tree the view's index is read from.
+# Every git of the grade runs with core.fsmonitor off and without replace refs, so no program and no object substitution
+# comes from what the host's config may name either.
 VIEW = tempfile.TemporaryDirectory(prefix="grade-view-", ignore_cleanup_errors=True)
-view_dir = Path(VIEW.name) / "git"
+view_dir, hist_dir = Path(VIEW.name) / "git", Path(VIEW.name) / "history"
+SAFE = ["--no-replace-objects", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "core.quotepath=off"]
+
+def run_git(what, repo_args, args, cwd, stdin=None):
+    p = subprocess.run(["git", *SAFE, *repo_args, *args], cwd=cwd, capture_output=True, input=stdin if stdin is not None else b"")
+    if p.returncode:
+        raise RuntimeError(f"git ({what}) {' '.join(args)}: {p.stderr.decode('utf-8', 'replace').strip()}")
+    return p.stdout.decode("utf-8", "surrogateescape")
 
 def vgit(*args, stdin=None):
-    p = subprocess.run(["git", f"--git-dir={view_dir}", f"--work-tree={cand}", f"--attr-source={base}", "-c", "core.bare=false",
-                        "-c", "core.quotepath=off", *args], cwd=cand, capture_output=True,
-                       input=stdin if stdin is not None else b"")
-    if p.returncode:
-        raise RuntimeError(f"git (view) {' '.join(args)}: {p.stderr.decode('utf-8', 'replace').strip()}")
-    return p.stdout.decode("utf-8", "surrogateescape")
+    return run_git("view", [f"--git-dir={view_dir}", f"--work-tree={cand}", f"--attr-source={base}", "-c", "core.bare=false"], args, cand, stdin)
+
+def hgit(*args):
+    return run_git("history", [f"--git-dir={hist_dir}"], args, VIEW.name)
 
 def vnames(*args):
     return [x for x in vgit(*args).split("\0") if x]
+
+def hnames(*args):
+    return [x for x in hgit(*args).split("\0") if x]
+
+OID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+REF = re.compile(r"refs/(?:[^/\x00-\x20\x7f~^:?*\[\\]+/)*[^/\x00-\x20\x7f~^:?*\[\\]+")
+
+def plain_text(path):
+    """The text of a regular file (not a link), None for anything else."""
+    return path.read_text(encoding="utf-8", errors="replace") if path.is_file() and not path.is_symlink() else None
+
+def cand_head():
+    """(the candidate's HEAD commit id, None) read as files from its .git, or (None, why): HEAD holds an id or
+    `ref: <name>`, and a name resolves through its loose ref file or its packed-refs line, up to five names deep."""
+    gd = cand / ".git"
+    if gd.is_symlink() or not gd.is_dir():
+        return None, "the checkout's .git is not a directory"
+    text = plain_text(gd / "HEAD")
+    packed = None
+    for _ in range(6):
+        if text is None:
+            return None, "HEAD names no commit (an unborn branch, or refs in a format other than files)"
+        text = text.strip()
+        if OID.fullmatch(text):
+            return text, None
+        if not text.startswith("ref: "):
+            return None, f"HEAD is neither a commit id nor a ref: {text[:80]!r}"
+        name = text[len("ref: "):].strip()
+        if not REF.fullmatch(name) or ".." in name or "@{" in name or name.endswith((".lock", ".")):
+            return None, f"HEAD names {name[:80]!r}, which is not a ref name"
+        text = plain_text(gd / name)
+        if text is None:
+            if packed is None:
+                packed = {}
+                for ln in (plain_text(gd / "packed-refs") or "").splitlines():
+                    if ln[:1] not in ("#", "^") and " " in ln:
+                        oid, _, ref = ln.partition(" ")
+                        packed.setdefault(ref.strip(), oid.strip())
+            text = packed.get(name)
+    return None, "HEAD's refs name each other more than five deep"
 
 def exclude_line(gitignore_dir, line):
     """One line of the base's .gitignore in gitignore_dir ('' or 'a/b/') as a line of one exclude file read at the top:
@@ -186,10 +231,17 @@ def exclude_line(gitignore_dir, line):
 def make_view():
     git_dir = subprocess.run(["git", "-C", str(repo), "rev-parse", "--path-format=absolute", "--git-common-dir"], capture_output=True,
                              encoding="utf-8", stdin=subprocess.DEVNULL).stdout.strip()
-    if subprocess.run(["git", "init", "-q", "--bare", "--template=", str(view_dir)], capture_output=True, stdin=subprocess.DEVNULL).returncode or not git_dir:
-        refuse(f"no view repository could be made for the pack repository {repo}")
-    (view_dir / "objects" / "info").mkdir(parents=True, exist_ok=True)
+    for d in (view_dir, hist_dir):
+        if subprocess.run(["git", "init", "-q", "--bare", "--template=", str(d)], cwd=VIEW.name, capture_output=True, stdin=subprocess.DEVNULL).returncode or not git_dir:
+            refuse(f"no view repository could be made for the pack repository {repo}")
+        (d / "objects" / "info").mkdir(parents=True, exist_ok=True)
     (view_dir / "objects" / "info" / "alternates").write_bytes((Path(git_dir) / "objects").as_posix().encode("utf-8") + b"\n")
+    # the history: the candidate's objects (read only) and a copy of its index; git treats a missing index as empty,
+    # as the candidate's own git did
+    (hist_dir / "objects" / "info" / "alternates").write_bytes((cand / ".git" / "objects").as_posix().encode("utf-8") + b"\n")
+    for f in [cand / ".git" / "index", *sorted((cand / ".git").glob("sharedindex.*"))]:
+        if f.is_file() and not f.is_symlink():
+            shutil.copyfile(f, hist_dir / f.name)
     lines = []
     ignores = [(mode, oid, f) for mode, kind, oid, f in base_entries() if kind == "blob" and mode != "120000" and f.rsplit("/", 1)[-1] == ".gitignore"]
     for mode, oid, f in sorted(ignores, key=lambda e: (e[2].count("/"), e[2])):
@@ -247,20 +299,27 @@ def run_bash(cmd):
         p.wait()
         return 124
 
+head_id, why = cand_head()
+if head_id is None:
+    print(json.dumps({"task": task, "error": f"no commit in the checkout: {why}"}))
+    sys.exit(3)
+make_view()
 try:
-    roots = git("rev-list", "--max-parents=0", "HEAD").split()
-    head = git("rev-parse", "--short", "HEAD").strip()
+    hgit("rev-parse", "--verify", "--quiet", f"{head_id}^{{commit}}")
+    roots = hgit("rev-list", "--max-parents=0", head_id).split()
+    head = hgit("rev-parse", "--short", head_id).strip()
 except RuntimeError as e:
-    print(json.dumps({"task": task, "error": f"no commit in the checkout: {e}"}))
+    print(json.dumps({"task": task, "error": f"no commit in the checkout: HEAD {head_id} is not a commit in its objects: {e}"}))
     sys.exit(3)
 root = roots[0]
-make_view()
-commits = int(git("rev-list", "--count", f"{root}..HEAD"))
-committed = names("diff", "--name-only", "-z", f"{root}..HEAD")
-staged = names("diff", "--cached", "--name-only", "-z")
-unstaged = names("diff", "--name-only", "-z")
-indexed = set(names("ls-files", "-z"))
-changed = sorted(set(committed + staged + unstaged + vnames("diff-files", "--name-only", "-z")))
+# committed: the commits' files, renames as both names; staged: the copied index against HEAD; changed adds the view's
+# diff-files (the checkout against the base tree), which holds every file the work tree changes, so nothing is read
+# against the candidate's index flags
+commits = int(hgit("rev-list", "--count", f"{root}..{head_id}"))
+committed = hnames("diff-tree", "-r", "-z", "--name-only", "--no-renames", root, head_id)
+staged = hnames("diff-index", "--cached", "-z", "--name-only", "--no-renames", head_id)
+indexed = set(hnames("ls-files", "-z"))
+changed = sorted(set(committed + staged + vnames("diff-files", "--name-only", "-z")))
 untracked = sorted(f for f in view_others() if f not in indexed and not any(f == ln or f.startswith(ln + "/") for ln in links))
 
 if task == "gate":
@@ -269,7 +328,7 @@ if task == "gate":
         or no longer a plain file), the candidate's tracked ones and the others the base's ignore rules do not ignore;
         each hashed by the view as git would store it at the base, so a host's line-ending conversion reads as the same
         content and nothing in the candidate's .git changes what is read."""
-        files = sorted(set(base_inv[path]) | set(names("ls-files", "-z", "--", path)) | set(view_others(path)))
+        files = sorted(set(base_inv[path]) | set(hnames("ls-files", "-z", "--", path)) | set(view_others(path)))
         present = [f for f in files if (cand / f).is_file() and not (cand / f).is_symlink()]
         blobs = dict(zip(present, hash_paths(present)))
         return {f: blobs.get(f) for f in files}
@@ -283,7 +342,9 @@ if task == "gate":
     print(json.dumps(result, indent=1))
     sys.exit(0)
 
-added = names("diff", "--name-only", "-z", "--diff-filter=A", f"{root}..HEAD") + names("diff", "--cached", "--name-only", "-z", "--diff-filter=A")
+# added: a file the commits or the index add (a rename is not an addition: -M, as git diff's default diff.renames)
+added = (hnames("diff-tree", "-r", "-z", "--name-only", "-M", "--diff-filter=A", root, head_id)
+         + hnames("diff-index", "--cached", "-z", "--name-only", "-M", "--diff-filter=A", head_id))
 new_tests = sorted({f for f in added + untracked if new_test.search(f)} - ({acc_to} if task == "fix" else set()))
 
 def run_tests(files):

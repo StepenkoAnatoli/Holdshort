@@ -100,13 +100,16 @@ grader to read, so they say what the module must do, never how the accepted fix 
     - `cases.gate.instructions`: the task, as the candidate reads it after the common preamble; it states what to
       produce, never the grading command.
     - `cases.gate.commands.gate`: run with bash in the candidate's checkout after the candidate finishes; exit 0 is
-      one condition of a pass. Its side effects stay in the checkout.
+      one condition of a pass. Its side effects stay in the checkout. It runs after the grade has read the checkout,
+      but a git it runs there is the candidate's own (its `.git/config` and hooks apply), so a gate that needs git's
+      view of the checkout belongs in the invariants, not in the command.
     - `cases.gate.commands.timeout_seconds`: the limit on the command (a timeout reads as exit 124, never a pass).
     - `cases.gate.invariants`: paths (files or directories) whose files must hash as at the base, read as the
       checkout stands before the command runs (committed or not); a file added or removed under a directory breaks it
       (an added file the base's `.gitignore` rules ignore does not, unless the candidate committed it). The grade reads
       the checkout with a git of its own that applies the base tree's attributes and ignore rules and nothing in the
-      candidate's `.git` (git 2.40+). Each must exist at the base.
+      candidate's `.git` (git 2.40+); no git runs on the candidate's `.git` as a repository, so no setting or program
+      its `.git/config` names applies in the grade. Each must exist at the base.
     - `cases.gate.required_paths`: paths that must exist in the checkout before the command runs. Every invariant and
       required path is relative: one rooted with `/` or `\`, with a drive letter or with a `..` segment is refused.
 - `paths`: what grade.sh reads in a candidate's checkout.

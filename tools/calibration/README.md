@@ -258,9 +258,14 @@ file with the base tree: every base file under the path must be there as a plain
 no other file may be there that the base's `.gitignore` rules do not ignore (one the candidate committed counts even
 when ignored). The checkout is read as files by a git of the grade's own, not the candidate's: a fresh repository
 outside the checkout whose objects are the pack repository's, whose index is the base tree, whose attributes are the
-base tree's (`--attr-source`, so git 2.40+ is needed) and whose config is the host's. Nothing in the candidate's `.git`
-is read for it, so a clean filter in its `.git/config` and `.git/info/attributes`, a line in its `.git/info/exclude`
-or a `.gitignore` it adds does not hide a change (review loop RL2-K1). Line endings are compared as the host's git
+base tree's (`--attr-source`, so git 2.40+ is needed) and whose config is the host's. What the candidate committed and
+staged is read by a second git of the grade's own, whose objects are the candidate's, whose index is a copy of the
+candidate's, and whose commit is the candidate's HEAD read from the files `.git/HEAD`, `.git/refs` and
+`.git/packed-refs`. No git runs on the candidate's `.git` as a repository, so nothing in its `.git/config` is applied
+or run: a clean filter there and in `.git/info/attributes`, a line in its `.git/info/exclude` or a `.gitignore` it adds
+does not hide a change (review loop RL2-K1), and a program that `core.fsmonitor` names does not run inside the grade,
+where it could rewrite the grade's own repositories (RL3-K1). A checkout whose `.git` is not a directory is graded as
+having no commit (exit 3). Line endings are compared as the host's git
 would store them, so a conversion the host makes reads as the same content. The same view gives every grade's
 `changed` (with the candidate's committed and staged files) and `untracked`, so a tracked file marked skip-worktree or
 assume-unchanged and then edited still counts as changed in a fix's scope check and a pin's source check. The view
