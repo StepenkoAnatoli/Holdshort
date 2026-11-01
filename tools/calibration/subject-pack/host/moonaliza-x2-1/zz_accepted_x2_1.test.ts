@@ -356,36 +356,50 @@ describe('what an unreadable start still deletes, and what a readable start dele
     }
   });
 
-  test('a first sign-in that crashed before commit 1, then the file naming the pair is refused (invalid JSON, over 64 KiB, an extra key, version 2): the start deletes the pair and rewrites the file (a refused file names no reference)', async () => {
-    const { dir: crash, pair } = await crashBeforeCommit('first sign-in', 1);
-    const valid = readFileSync(fileAt(crash), 'utf8');                         // the file the sign-in wrote, naming the staged pair
-    const named = JSON.parse(valid) as Record<string, unknown>;
-    expect(refsOf(accountFile(crash)?.account)).toEqual(pair);
-    expect(pair.map(ref => entries(crash)[ref]?.state)).toEqual(['staged', 'staged']);
-
+  test('a first sign-in that crashed before commit 1, a sign-in or a refresh before commit 3 and a refresh before commit 4, then the file naming the new pair is refused (invalid JSON, over 64 KiB, an extra key, version 2): the start deletes the staged entries and rewrites the file (a refused file names no reference, beside a committed account too)', async () => {
     // Spec 4.4 again, for a file that still names an account (a newer app's file, say): what a refused file names is not read,
-    // so it names no reference whatever it holds, and the start deletes the pair it names as it deletes any unreferenced one.
-    const refused: Array<[string, string]> = [
-      ['invalid JSON', valid.slice(0, valid.lastIndexOf('}'))],
-      ['over 64 KiB', valid + ' '.repeat(64 * 1024)],
-      ['an extra key', JSON.stringify({ ...named, extra: true })],
-      ['version 2', JSON.stringify({ ...named, version: 2 })],
+    // so it names no reference whatever it holds, and the start deletes the staged entries it names as it deletes any unreferenced
+    // one. After a sign-in the old account's pair is committed beside the new one (a downgrade finds a signed-in vault), so a keep
+    // that holds while the vault has a committed entry beside a refused file fails here too.
+    const crashes: Array<[Kind, number, string[]]> = [
+      ['first sign-in', 1, ['staged', 'staged']],
+      ['sign-in', 3, ['staged', 'staged']],
+      ['refresh', 3, ['staged', 'staged']],
+      ['refresh', 4, ['committed', 'staged']],
     ];
-    for (const [index, [name, text]] of refused.entries()) {
-      const dir = `${crash}-refused-${index + 1}`;
-      cpSync(crash, dir, { recursive: true });
-      writeFileSync(fileAt(dir), text);
-      const next = await start(dir);
-      expect(next.store.current(), name).toBeNull();
-      expect(entries(dir), name).toEqual({});
-      expect(bins(dir), name).toEqual([]);
-      expect(readFileSync(fileAt(dir), 'utf8'), name).not.toBe(text);         // rewritten
-      expect(Object.keys(accountFile(dir) ?? {}).sort(), name).toEqual(Object.keys(named).sort());
-      expect(accountFile(dir)?.account, name).toBeNull();
+    for (const [kind, at, states] of crashes) {
+      const { dir: crash, pair, old } = await crashBeforeCommit(kind, at);
+      const valid = readFileSync(fileAt(crash), 'utf8');                       // the file the replace wrote, naming the new pair
+      const named = JSON.parse(valid) as Record<string, unknown>;
+      expect(refsOf(accountFile(crash)?.account), kind).toEqual(pair);
+      expect(pair.map(ref => entries(crash)[ref]?.state), kind).toEqual(states);
+      expect(old.map(ref => entries(crash)[ref]?.state), kind).toEqual(old.map(() => 'committed'));
+      const committed = Object.keys(entries(crash)).filter(ref => entries(crash)[ref]?.state === 'committed');
+
+      const refused: Array<[string, string]> = [
+        ['invalid JSON', valid.slice(0, valid.lastIndexOf('}'))],
+        ['over 64 KiB', valid + ' '.repeat(64 * 1024)],
+        ['an extra key', JSON.stringify({ ...named, extra: true })],
+        ['version 2', JSON.stringify({ ...named, version: 2 })],
+      ];
+      for (const [index, [name, text]] of refused.entries()) {
+        const step = `${kind} before commit ${at}, ${name}`;
+        const dir = `${crash}-refused-${index + 1}`;
+        cpSync(crash, dir, { recursive: true });
+        writeFileSync(fileAt(dir), text);
+        const next = await start(dir);
+        expect(next.store.current(), step).toBeNull();
+        // every staged entry goes, files and all; only entries committed at the crash may stay
+        expect(Object.keys(entries(dir)).filter(ref => !committed.includes(ref)), step).toEqual([]);
+        expect(bins(dir).filter(bin => !committed.some(ref => bin === `${ref}.bin`)), step).toEqual([]);
+        expect(readFileSync(fileAt(dir), 'utf8'), step).not.toBe(text);       // rewritten
+        expect(Object.keys(accountFile(dir) ?? {}).sort(), step).toEqual(Object.keys(named).sort());
+        expect(accountFile(dir)?.account, step).toBeNull();
+      }
     }
   });
 
-  test('a first sign-in that crashed after staging, before any file existed: a start deletes the staged pair (a missing file is no account)', async () => {
+  test('a first sign-in that crashed after staging, before any file existed, and a sign-in that crashed after staging or a refresh before commit 3 beside a committed account, its file then lost: a start deletes the staged entries (a missing file is no account)', async () => {
     const session = await firstSession();
     let dir: string | undefined;
     session.hooks.afterStaged = count => { if (count === 2) dir = session.snapshot(); };
@@ -398,6 +412,26 @@ describe('what an unreadable start still deletes, and what a readable start dele
     expect(next.store.current()).toBeNull();
     expect(entries(dir!)).toEqual({});
     expect(bins(dir!)).toEqual([]);
+
+    // A missing file beside a committed account: the file is gone, not unreadable, so it names no reference and the start deletes
+    // the staged entries all the same; only entries committed at the crash may stay.
+    const signedIn = await firstSession();
+    await signedIn.signIn();
+    let orphan: string | undefined;
+    signedIn.hooks.afterStaged = count => { if (count === 4) orphan = signedIn.snapshot(); };
+    await signedIn.signIn();
+    expect(orphan).toBeDefined();
+    const lost: Array<[string, string]> = [['a sign-in after staging', orphan!], ['a refresh before commit 3', (await crashBeforeCommit('refresh', 3)).dir]];
+    for (const [name, crash] of lost) {
+      const committed = Object.keys(entries(crash)).filter(ref => entries(crash)[ref]?.state === 'committed');
+      expect(committed, name).toHaveLength(2);
+      expect(Object.values(entries(crash)).filter(entry => entry.state === 'staged'), name).toHaveLength(2);
+      fs.rmSync(fileAt(crash));
+      const after = await start(crash);
+      expect(after.store.current(), name).toBeNull();
+      expect(Object.keys(entries(crash)).filter(ref => !committed.includes(ref)), name).toEqual([]);
+      expect(bins(crash).filter(bin => !committed.some(ref => bin === `${ref}.bin`)), name).toEqual([]);
+    }
   });
 
   test('a file issued to another app, with an orphan pair beside it: the start deletes the account and the orphan', async () => {

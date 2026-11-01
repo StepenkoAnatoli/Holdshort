@@ -48,11 +48,12 @@ The crash-window table (spec 4.5, "the file write, before commit") promises a si
 after step 3 the pair the file names is committed and live, however many starts of step 2 came first. Each start of
 step 2 shows no account, leaves the file as it is, and leaves the pair in the vault as the crash left it, with its
 encrypted files. Four things stay as they are. Tombstoned entries are deleted on every start. An unreferenced staged
-entry is deleted by the next start that reads the file. A missing file reads as no account, and the start deletes its
-staged entries. A file that is read and refused (invalid JSON, over 64 KiB, a key the format does not have, or a value
-it does not allow, such as version 2) reads as no account too, whatever account it names: the start deletes the
-unreferenced staged entries beside it, the pair that file names among them, and rewrites the file. Only an I/O error
-other than a missing file (an errno code) makes a start that cannot read the file (spec 4.4).
+entry is deleted by the next start that reads the file. A missing file reads as no account, beside a committed
+account too, and the start deletes its staged entries. A file that is read and refused (invalid JSON, over 64 KiB, a
+key the format does not have, or a value it does not allow, such as version 2) reads as no account too, whatever
+account it names and whatever the vault holds beside it: the start deletes the unreferenced staged entries beside it,
+the pair that file names among them, and rewrites the file. Only an I/O error other than a missing file (an errno
+code) makes a start that cannot read the file (spec 4.4).
 
 ## How a host builds the repository and the checkouts
 
@@ -143,9 +144,15 @@ starts fails (W-p keeps it through one), and so does one that takes the same err
 The orphan row runs the same four unreadable starts before its readable one, so a fix that holds an unreferenced
 staged entry for good once it has outlived a run of up to four unreadable starts fails too (W-q holds it after two).
 The refused-file row refuses the signed-out file and the named refused-file row refuses a file that still names the
-staged pair (a first sign-in's crash before commit 1), each as invalid JSON, over 64 KiB, with an extra key and with
-version 2, so a fix that keeps the pair a refused file still names fails (W-o3 reads the file again without the
-format), and so does one that keeps on another format version (W-o4).
+new pair, each as invalid JSON, over 64 KiB, with an extra key and with version 2. The named row does so after a first
+sign-in's crash before commit 1 (no committed entry in the vault) and, beside the old committed pair, after
+a sign-in's or a refresh's crash before commit 3 and a refresh's before commit 4, as a downgrade finds a signed-in
+vault. So a fix that keeps the staged entries a refused file still names fails (W-o3 reads the file again without the
+format), so does one that keeps on another format version (W-o4), and so does one that keeps beside a refused file
+only while the vault holds a committed entry (W-o5). The ENOENT row removes the file after a first sign-in that
+crashed before any file existed and, beside a committed account, after a sign-in that crashed after staging and a
+refresh that crashed before commit 3, so a fix that takes a lost file beside a committed account for one whose
+references are unknown fails too (W-h3).
 
 ## What the pack does not discriminate
 
@@ -164,11 +171,14 @@ format), and so does one that keeps on another format version (W-o4).
 - **Errors other than EACCES, EBUSY and EIO.** EPERM and others are not exercised; the rule is the same, any errno code
   but ENOENT.
 - **Refusals other than the four.** The refused-file rows write invalid JSON, a file over 64 KiB, a file with an extra
-  key and a file with version 2, on the signed-out file and on a file that names the staged pair. Other values the format
+  key and a file with version 2, on the signed-out file and on a file that names the new pair. Other values the format
   does not allow (a revision of 0, a malformed ref, a ninth retired ref) are refused the same way but are not written,
   so a fix that keeps only on one of them passes. A path the store refuses because it is not a plain regular file (a
   symlink, a directory, a file with a second hard link) is refused the same way, with no errno code, but is not
   exercised.
+- **Vault states beside a refused or missing file.** The rows put beside it either no committed entry or one
+  account's committed pair (and, before commit 4 of a refresh, the new access entry), so a fix that keeps on some other
+  state of the vault (two accounts' committed entries, say, or a staged entry the engine names) passes.
 - **Runs of more than four unreadable starts.** The unreadable-run row and the orphan row run four in a row, so a fix
   that keeps the pair through four such starts and drops it at the fifth passes, and so does one that holds an orphan
   pair for good only after five.

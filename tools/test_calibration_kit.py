@@ -4010,6 +4010,25 @@ X21_KEEP_UNREFERENCED = [  # the vault keeps unreferenced staged entries when as
      "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref) && !options.keepStaged)) {"),
 ]
 
+# review loop 3 RL3-1, RL3-2: the vault keeps unreferenced staged entries when asked, or when asked to keep them beside a
+# committed entry and the vault holds one (tombstones still go), and a second store getter for that ask
+X21_KEEP_IF_COMMITTED = [
+    ("src/main/vault.ts", X21_SIGNATURE + "\n    return this.serial(async () => {",
+     "  reconcile(committedReferences: ReadonlySet<string>, options: { keepStaged?: boolean; keepIfCommitted?: boolean } = {}): Promise<void> {\n"
+     "    return this.serial(async () => {\n"
+     "      // X2-1: beside a committed entry, an account file this start did not take may name staged ones\n"
+     "      const keep = options.keepStaged === true\n"
+     "        || (options.keepIfCommitted === true && Object.values(this.index.entries).some(entry => entry.state === 'committed'));"),
+    ("src/main/vault.ts", X21_DELETES,
+     "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref) && !keep)) {"),
+]
+
+
+def x21_untaken(name: str, body: str) -> tuple[str, str, str]:
+    return ("src/main/github-account-store.ts", X21_GETTER_AT,
+            f"{X21_GETTER_AT}\n  /** X2-1: whether open() took no account from the file it found (or did not find). */\n  {name}(): boolean {{ return {body}; }}")
+
+
 # review loop 2 RL2-1: two anchors of the base store that W-o3 and W-o4 edit
 X21_CRYPTO_IMPORT = "import { randomUUID } from 'node:crypto';\n"
 X21_CATCH_FLAGS = "        this.startupWrite = typeof code !== 'string'; this.unread = typeof code === 'string' && code !== 'ENOENT';"
@@ -4205,10 +4224,27 @@ X21_WRONG = {
         x21_getter("openFailed", "this.unread || this.otherVersion"),
         *X21_KEEP_UNREFERENCED,
         x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
+    # review loop 3 RL3-1: a refused file is taken for one whose references are unknown only while the vault holds a
+    # committed entry (a downgrade beside a signed-in vault, say): the named refused-file row's first sign-in leaves no
+    # committed entry, so only its forms after a sign-in catch it
+    "W-o5": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed() });", edits=[
+        x21_getter("openFailed"),
+        x21_untaken("refusedAtOpen", "this.disk === null && this.startupWrite"),
+        *X21_KEEP_IF_COMMITTED,
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed(), keepIfCommitted: githubStore.refusedAtOpen() }});")]),
+    # review loop 3 RL3-2: W-o5's idea for a missing file: a lost file beside a committed entry is taken for one whose
+    # references are unknown; the ENOENT row's first sign-in leaves no committed entry, so only its forms beside a
+    # committed account catch it
+    "W-h3": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed() });", edits=[
+        x21_getter("openFailed"),
+        x21_untaken("missingAtOpen", "this.disk === null && !this.startupWrite && !this.unread"),
+        *X21_KEEP_IF_COMMITTED,
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed(), keepIfCommitted: githubStore.missingAtOpen() }});")]),
 }
 
 # The rows of the accepted journey test (zz_accepted_x2_1.test.ts): 12 journey rows and 9 others (review loop 1 RL1-1 added
-# the refused-file row, review loop 2 RL2-P1 the unreadable-run row and RL2-1 the named refused-file row)
+# the refused-file row, review loop 2 RL2-P1 the unreadable-run row and RL2-1 the named refused-file row; review loop 3
+# RL3-1 and RL3-2 added forms beside a committed account to the named refused-file row and the ENOENT row)
 X21_PIN_ROWS = 21
 
 # A correct fix the accepted one is not: another name for the store's flag and a positional vault parameter.
@@ -4627,8 +4663,24 @@ class HostPackX21(unittest.TestCase):
             self.assertIn(form, test, form)
         # review loop 2 RL2-1: a refused file that still names the staged pair reads as no account all the same (W-o3 keeps on
         # it); the named refused-file row refuses that file in the same four ways, and both rows refuse a version 2 (W-o4)
-        self.assertIn("test('a first sign-in that crashed before commit 1, then the file naming the pair is refused (invalid JSON, over "
-                      "64 KiB, an extra key, version 2): the start deletes the pair and rewrites the file (a refused file names no reference)'", test)
+        # review loop 3 RL3-1: the named refused-file row refuses the file beside a committed account too (after a sign-in's or a
+        # refresh's crash), so a keep that holds while the vault has a committed entry beside a refused file fails (W-o5)
+        self.assertIn("test('a first sign-in that crashed before commit 1, a sign-in or a refresh before commit 3 and a refresh before commit "
+                      "4, then the file naming the new pair is refused (invalid JSON, over 64 KiB, an extra key, version 2): the start "
+                      "deletes the staged entries and rewrites the file (a refused file names no reference, beside a committed account too)'", test)
+        named_row = test[test.index("the file naming the new pair is refused"):]
+        named_row = named_row[:named_row.index("\n  test('")]
+        for form in ("['first sign-in', 1, ['staged', 'staged']]", "['sign-in', 3, ['staged', 'staged']]",
+                     "['refresh', 3, ['staged', 'staged']]", "['refresh', 4, ['committed', 'staged']]",
+                     "const { dir: crash, pair, old } = await crashBeforeCommit(kind, at);"):
+            self.assertIn(form, named_row, form)
+        # review loop 3 RL3-2: the ENOENT row removes the file beside a committed account too (W-h3 keeps there)
+        self.assertIn("test('a first sign-in that crashed after staging, before any file existed, and a sign-in that crashed after staging "
+                      "or a refresh before commit 3 beside a committed account, its file then lost: a start deletes the staged entries "
+                      "(a missing file is no account)'", test)
+        self.assertIn("const lost: Array<[string, string]> = [['a sign-in after staging', orphan!], ['a refresh before commit 3', "
+                      "(await crashBeforeCommit('refresh', 3)).dir]];", test)
+        self.assertIn("fs.rmSync(fileAt(crash));", test)
         for form in ("['an extra key', JSON.stringify({ ...named, extra: true })]", "['version 2', JSON.stringify({ ...named, version: 2 })]"):
             self.assertIn(form, test, form)
         self.assertEqual(test.count("['invalid JSON', valid.slice(0, valid.lastIndexOf('}'))]"), 2)
@@ -4638,8 +4690,12 @@ class HostPackX21(unittest.TestCase):
         journey_md = " ".join(md_section(text, "The journey").split())
         # review loop 2 RL2-1: whatever account a refused file names
         self.assertIn("A file that is read and refused (invalid JSON, over 64 KiB, a key the format does not have, or a value it does not "
-                      "allow, such as version 2) reads as no account too, whatever account it names: the start deletes the unreferenced "
-                      "staged entries beside it, the pair that file names among them, and rewrites the file.", journey_md)
+                      "allow, such as version 2) reads as no account too, whatever account it names and whatever the vault holds beside "
+                      "it: the start deletes the unreferenced staged entries beside it, the pair that file names among them, and "
+                      "rewrites the file.", journey_md)
+        # review loop 3 RL3-2: a missing file beside a committed account reads as no account all the same
+        self.assertIn("A missing file reads as no account, beside a committed account too, and the start deletes its staged "
+                      "entries.", journey_md)
         # review loop 2 RL2-P2: the paragraph lists four things that stay as they are, and says so
         self.assertIn("Four things stay as they are.", journey_md)
         self.assertNotIn("Three things", journey_md)
@@ -4661,7 +4717,9 @@ class HostPackX21(unittest.TestCase):
         self.assertNotIn("regex literal", limits, "the parser reads regex literals: that limit is gone")
         self.assertIn("**Runs of more than four unreadable starts.**", limits)  # review loop 2 RL2-P1: the limit that is left
         # review loop 2 RL2-1: the four refusals, on a file that names no account and on one that names the pair, and what is left
-        for words in ("**Refusals other than the four.**", "on the signed-out file and on a file that names the staged pair",
+        # review loop 3 RL3-1, RL3-2: the vault states beside a refused or missing file, and what is left
+        self.assertIn("**Vault states beside a refused or missing file.**", limits)
+        for words in ("**Refusals other than the four.**", "on the signed-out file and on a file that names the new pair",
                       "Other values the format does not allow"):
             self.assertIn(words, " ".join(limits.split()), words)
         self.assertNotIn("Refusals other than the three", limits)
@@ -4685,6 +4743,13 @@ class HostPackX21(unittest.TestCase):
         self.assertIn("the **refused-file row**", text)
         self.assertIn("the **unreadable-run row**", text)
         self.assertIn("the **named refused-file row**", text)  # review loop 2 RL2-1
+        # review loop 3 RL3-1, RL3-2: both rows run beside a committed account too
+        flat = " ".join(text.split())
+        self.assertIn("the **named refused-file row** (a crash after the file named the new pair: a first sign-in's before commit 1 "
+                      "and, beside the old committed pair, a sign-in's or a refresh's before commit 3 and a refresh's before "
+                      "commit 4; then that file replaced by one the store reads and refuses in the same four ways", flat)
+        self.assertIn("the **ENOENT row** (a first sign-in that crashed before any file existed, and a sign-in that crashed after "
+                      "staging and a refresh that crashed before commit 3, each with its file then removed beside the committed account)", flat)
         for letter in "abcdefgh":  # the lead's list (H1), each by its letter
             self.assertRegex(text, rf"\| W-{letter}\d? \|", letter)
 

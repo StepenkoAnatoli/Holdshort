@@ -10,7 +10,7 @@ restored to the base, in scope and eslint-clean, so the grade turns on the accep
 drops the shipped crash-window row its idea contradicts (a crash after staging, before the file write, whose orphan pair
 the next start deletes; `X21_TEST_EDITS`), as a candidate that takes its change for the rule would. The edits live in
 `X21_WRONG` of `tools/test_calibration_kit.py`; the row ids here are its keys (a test checks the two agree), and the
-letters follow the lead's list (H1), with W-b2, W-i and W-j added by the builder, W-k and W-l by review 1, W-m and W-n by re-review 1, W-o2 by review loop 1 and W-p, W-q, W-o3 and W-o4 by review loop 2.
+letters follow the lead's list (H1), with W-b2, W-i and W-j added by the builder, W-k and W-l by review 1, W-m and W-n by re-review 1, W-o2 by review loop 1, W-p, W-q, W-o3 and W-o4 by review loop 2 and W-o5 and W-h3 by review loop 3.
 
 The pin rows are the tests of `zz_accepted_x2_1.test.ts`: the twelve **journey rows** (first sign-in before commit 1,
 sign-in before commit 3, refresh before commit 3, refresh before commit 4, each with EACCES, with EBUSY and with EIO at
@@ -19,9 +19,12 @@ unreadable start), the **orphan row** (a crash after staging, before the file wr
 ten years apart, then a readable one), the **signed-out orphan row** (a sign-out, then a sign-in that crashed after staging, before
 the file write, then a readable start of a file that names no account), the **refused-file row** (the signed-out
 orphan row's crash, then the file replaced by one the store reads and refuses: invalid JSON, over 64 KiB, or with an
-extra key or with version 2, each in a start of its own), the **named refused-file row** (a first sign-in that
-crashed before commit 1, so the file names the staged pair, then that file replaced by one the store reads and refuses
-in the same four ways, each in a start of its own), the **ENOENT row** (a first sign-in that crashed before any file existed), the
+extra key or with version 2, each in a start of its own), the **named refused-file row** (a crash after the file
+named the new pair: a first sign-in's before commit 1 and, beside the old committed pair, a sign-in's or a
+refresh's before commit 3 and a refresh's before commit 4; then that file replaced by one the store reads and refuses
+in the same four ways, each in a start of its own), the **ENOENT row** (a first sign-in that crashed before any file
+existed, and a sign-in that crashed after staging and a refresh that crashed before commit 3, each with its file then
+removed beside the committed account), the
 **app-changed row** (a file issued to another app, with an orphan
 pair beside it), the **vault-default row** (the reconcile called with the references only) and the **unreadable-run row** (a
 first sign-in that crashed before commit 1 and a refresh that crashed before commit 4, each followed by four starts in a
@@ -54,6 +57,8 @@ counts the accepted journey test's failed rows out of its 21.
 | W-q | an unreferenced staged entry kept through two starts in a row that cannot read the file is taken for one the file still needs and held for good, so no later start deletes it (W-j's hold, earned by a run of unreadable starts) | orphan row: after its four unreadable starts the readable start leaves the orphan pair | FAIL: acceptedPin 1 of 21 red; candidate green, guard red, scope and lint ok |
 | W-o3 | a refused file that still names an account (a newer app's file, say) is taken for one whose references are unknown: `open()` reads it again without the format and keeps the staged entries while it names an account; a refused file that names none still deletes | named refused-file row: the pair the refused file names survives the start that read it (from the file over 64 KiB on, the first form JSON can parse) | FAIL: acceptedPin 1 of 21 red; candidate green, guard red, scope and lint ok |
 | W-o4 | W-o3's idea keyed on the format version alone: a file of another version (a newer app's) keeps, whatever account it names | the version-2 forms of the refused-file and named refused-file rows: the staged pair survives the start that read the file | FAIL: acceptedPin 2 of 21 red; candidate green, guard red, scope and lint ok |
+| W-o5 | a refused file is taken for one whose references are unknown only while the vault holds a committed entry (a downgrade beside a signed-in vault, say): the keep flag is set from a refused file, and the vault keeps on it only beside a committed entry | named refused-file row: after a sign-in's or a refresh's crash the old account's pair is committed, so the staged entries the refused file names survive the start that read it | FAIL: acceptedPin 1 of 21 red; candidate green, guard red, scope and lint ok |
+| W-h3 | W-o5's idea for a missing file: a lost file beside a committed entry is taken for one whose references are unknown, and the vault keeps on it only beside a committed entry | ENOENT row: beside the committed account the staged entries of a crashed sign-in or refresh survive the start that found no file | FAIL: acceptedPin 1 of 21 red; candidate green, guard red, scope and lint ok |
 
 The three correct fixes grade PASS: the accepted change (MoonAliza 01a8604's three source files, its two test files, the
 wiring test and the map) and an alternative (the store's flag under another name, a positional vault parameter, the
