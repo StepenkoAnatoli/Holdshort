@@ -335,3 +335,38 @@ read only, for the subject trees the packs export.
   sr-pack-4a, lower bound: 2,231,546 + 203,330 + 215,810 = 2,650,686 (round 5/5b pack parts and round 2 partial unknown).
   Kit rounds 2-8 count to sr-kit-cases (#120; its outcome seq 3 is append-only, so the cost is noted here and in #120).
 - Not done: plan step 5 (sr-policy-7, sr-packs-t1) waits for the owner. Merges (#120 then #122, then #119) are the owner's.
+
+## 2026-11-01 - review loop after the ACCEPTs: rounds 1 and 2, three findings fixed on each branch
+- Why this entry: the entry above records sr-pack-4a ACCEPTED at check 5 (2f73c9f) and the kit at check 8 (3ed05d4). A
+  review loop of fresh refute-first reviewers ran after those verdicts and after the outcome seq 3 "accepted" entry, and
+  it found a wrong fix that grades PASS on the accepted pack. The heads below replace 2f73c9f and 3ed05d4 as the ones to
+  review; the verdicts above stand as what checks 5 and 8 saw.
+- Round 1 (review-loop-round-1): RL1-1 (S3, pack) a wrong fix that keeps unreferenced staged entries when the account
+  file was read and refused (invalid JSON, oversized, an extra key), not only when it could not be read, graded PASS; no
+  pin row had a refused file. Fixed in 045ee89 (f16f10f since the rebase below): the refused-file row (19 rows) and
+  wrong fix W-o2. RL1-2 (S4, docs) the lead restart report described D-IC3-1 as the kit option
+  `cause_in_prompt: false`; fixed in b93c808 (D-IC3-1 is the export of both trees without `docs/orchestration/`).
+- Round 2 (review-loop-round-2): RL2-K1 (S3, kit) a gate candidate that edits an invariant file and puts a clean filter
+  in its own `.git/config` plus `.git/info/attributes` graded PASS (the same class: `.git/info/exclude`, a self-ignoring
+  `.gitignore`, skip-worktree, assume-unchanged, an `ident` attribute). RL2-K2 (S4, kit) `grade.sh gate` crashed with no
+  JSON on a large invariant directory (one `hash-object` command line past Windows' limit). Both fixed in dead160 on
+  `build/sr-kit-cases`: grade.sh reads the checkout through a view repo of its own (base tree's attributes and ignore
+  rules only, the wrapper unsets git's repository variables), invariant paths hashed on stdin; 5 new tests, each route
+  red on the old grade.sh. RL2-P1 (S3, pack) a wrong fix that keeps a staged pair through one unreadable start only (a
+  second in a row deletes it) graded PASS: W-k's class with a limit counted in starts. RL2-P2 (S4, pack) README "Three
+  things stay as they are." listed four. Both fixed in f25b52c (rebased onto dead160): the unreadable-run row (four
+  unreadable starts in a row, EACCES twice, EBUSY, EIO, ten years apart), the orphan row now runs the same four starts,
+  20 rows, wrong fixes W-p (keep limit of one start) and W-q (a hold earned by two kept starts); "Four things"; the
+  limit left is disclosed (runs of more than four unreadable starts). accepted0 is now 577f52b4. RL2-D1 (S4, docs) this
+  record stopped before the loop: this entry and the lead restart report fix it.
+- Verified: dead160 and f25b52c each passed the full regression gate; on f25b52c HostPackX21 with the MoonAliza clone
+  graded every wrong fix FAIL with its stated count of 20 (W-p and W-q 1 of 20) and the base-red test, fixed for the new
+  row, passes alone; the MoonAliza clone is unchanged. Not run after the loop: a fresh refute-first check of the heads.
+- Heads to review (nothing pushed by the loop): kit dead160 (#120 is at 3ed05d4 on GitHub), pack f25b52c (#122 is at
+  2f73c9f on GitHub), docs: this entry's commit on `orchestration/calibration-run-4` (#119). The pack's rebase onto
+  dead160 gave its commits new ids with the same changes (`git diff` of the pack's own commits checked equal): check 5's
+  2f73c9f is fb55bb3 and RL1-1's 045ee89 (never pushed) is f16f10f.
+- Outcome log: seq 3 "sr-pack-4a accepted" is append-only and stays; it names the check 5 head. The loop's fixes are
+  not a new dispatch, so no outcome entry is added for them; the record of the change of head is this entry.
+- Not done: the pushes of the three branches and the #120/#122 body updates (the lead's next step), the merges (the
+  owner's), plan step 5.
