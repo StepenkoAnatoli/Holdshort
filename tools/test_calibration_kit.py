@@ -4010,6 +4010,10 @@ X21_KEEP_UNREFERENCED = [  # the vault keeps unreferenced staged entries when as
      "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref) && !options.keepStaged)) {"),
 ]
 
+# review loop 2 RL2-1: two anchors of the base store that W-o3 and W-o4 edit
+X21_CRYPTO_IMPORT = "import { randomUUID } from 'node:crypto';\n"
+X21_CATCH_FLAGS = "        this.startupWrite = typeof code !== 'string'; this.unread = typeof code === 'string' && code !== 'ENOENT';"
+
 # Each wrong fix of WRONG-FIXES.md as a candidate's change on the base: (path, base text, new text) edits, the startup
 # lines of the candidate's own test (tests/x2_candidate.test.ts, the {{RECONCILE}} of X21_CANDIDATE_TEST), how long the
 # candidate's test holds the read failure ("open" or "once") and what it checks ("journey": the next readable start finds
@@ -4161,11 +4165,51 @@ X21_WRONG = {
          "          entry.kept = (entry.kept ?? 0) + 1;   // X2-1: two unreadable starts in a row that kept it mean the file still needs it\n"
          "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref) && (entry.kept ?? 0) < 2)) {"),
         x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
+    # review loop 2 RL2-1: a refused file that still names an account (a newer app's file, say) is taken for one whose
+    # references are unknown: open() reads it again without the format and keeps the staged entries while it names an
+    # account. The refused-file row's file names none, so only the named refused-file row catches it (at over 64 KiB, the
+    # first form it can parse)
+    "W-o3": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed() });", edits=[
+        ("src/main/github-account-store.ts", X21_CRYPTO_IMPORT, X21_CRYPTO_IMPORT + "import { readFile } from 'node:fs/promises';\n"),
+        ("src/main/github-account-store.ts", "  private unread = false;\n",
+         "  private unread = false;\n  // X2-1: open() refused a file that still names an account: its references are unknown\n  private refusedWithAccount = false;\n"),
+        ("src/main/github-account-store.ts", "this.startupWrite = false; this.unread = false;",
+         "this.startupWrite = false; this.unread = false; this.refusedWithAccount = false;"),
+        ("src/main/github-account-store.ts", X21_CATCH_FLAGS,
+         X21_CATCH_FLAGS + "\n"
+         "        if (typeof code !== 'string') {\n"
+         "          try {\n"
+         "            const raw = JSON.parse(await readFile(this.file, 'utf8')) as { account?: unknown } | null;\n"
+         "            this.refusedWithAccount = typeof raw?.account === 'object' && raw.account !== null;\n"
+         "          } catch { /* not JSON: it names nothing */ }\n"
+         "        }"),
+        x21_getter("openFailed", "this.unread || this.refusedWithAccount"),
+        *X21_KEEP_UNREFERENCED,
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
+    # review loop 2 RL2-1: W-o3's idea keyed on the version alone: a file of another format version (a newer app's) keeps,
+    # whatever it names; only the version-2 forms of the refused-file row and of the named refused-file row catch it
+    "W-o4": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed() });", edits=[
+        ("src/main/github-account-store.ts", X21_CRYPTO_IMPORT, X21_CRYPTO_IMPORT + "import { readFile } from 'node:fs/promises';\n"),
+        ("src/main/github-account-store.ts", "  private unread = false;\n",
+         "  private unread = false;\n  // X2-1: open() refused a file of another format version (a newer app's): its references are unknown\n  private otherVersion = false;\n"),
+        ("src/main/github-account-store.ts", "this.startupWrite = false; this.unread = false;",
+         "this.startupWrite = false; this.unread = false; this.otherVersion = false;"),
+        ("src/main/github-account-store.ts", X21_CATCH_FLAGS,
+         X21_CATCH_FLAGS + "\n"
+         "        if (typeof code !== 'string') {\n"
+         "          try {\n"
+         "            const raw = JSON.parse(await readFile(this.file, 'utf8')) as { version?: unknown } | null;\n"
+         "            this.otherVersion = typeof raw?.version === 'number' && raw.version !== 1;\n"
+         "          } catch { /* not JSON: no version */ }\n"
+         "        }"),
+        x21_getter("openFailed", "this.unread || this.otherVersion"),
+        *X21_KEEP_UNREFERENCED,
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
 }
 
-# The rows of the accepted journey test (zz_accepted_x2_1.test.ts): 12 journey rows and 8 others (review loop 1 RL1-1 added
-# the refused-file row, review loop 2 RL2-P1 the unreadable-run row)
-X21_PIN_ROWS = 20
+# The rows of the accepted journey test (zz_accepted_x2_1.test.ts): 12 journey rows and 9 others (review loop 1 RL1-1 added
+# the refused-file row, review loop 2 RL2-P1 the unreadable-run row and RL2-1 the named refused-file row)
+X21_PIN_ROWS = 21
 
 # A correct fix the accepted one is not: another name for the store's flag and a positional vault parameter.
 X21_ALTERNATIVE = dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), store.fileUnreadable());", edits=[
@@ -4576,16 +4620,26 @@ class HostPackX21(unittest.TestCase):
         self.assertIn("test('a sign-out, then a sign-in that crashed after staging, before the file write: the next readable start deletes", test)
         # review loop 1 RL1-1: a file that is read and refused (spec 4.4: invalid, oversized, extra key) reads as no account, so
         # the start deletes the orphan pair beside it; the row writes each of the three refusals, and the pin has X21_PIN_ROWS rows
-        self.assertIn("test('a sign-out, a sign-in that crashed after staging, then a refused file (invalid JSON, over 64 KiB, an extra key): "
-                      "the start deletes the orphan pair and rewrites the file (a refused file is read)'", test)
+        self.assertIn("test('a sign-out, a sign-in that crashed after staging, then a refused file (invalid JSON, over 64 KiB, an extra key, "
+                      "version 2): the start deletes the orphan pair and rewrites the file (a refused file is read)'", test)
         for form in ("['invalid JSON', valid.slice(0, valid.lastIndexOf('}'))]", "['over 64 KiB', valid + ' '.repeat(64 * 1024)]",
-                     "['an extra key', JSON.stringify({ ...signedOut, extra: true })]"):
+                     "['an extra key', JSON.stringify({ ...signedOut, extra: true })]", "['version 2', JSON.stringify({ ...signedOut, version: 2 })]"):
             self.assertIn(form, test, form)
+        # review loop 2 RL2-1: a refused file that still names the staged pair reads as no account all the same (W-o3 keeps on
+        # it); the named refused-file row refuses that file in the same four ways, and both rows refuse a version 2 (W-o4)
+        self.assertIn("test('a first sign-in that crashed before commit 1, then the file naming the pair is refused (invalid JSON, over "
+                      "64 KiB, an extra key, version 2): the start deletes the pair and rewrites the file (a refused file names no reference)'", test)
+        for form in ("['an extra key', JSON.stringify({ ...named, extra: true })]", "['version 2', JSON.stringify({ ...named, version: 2 })]"):
+            self.assertIn(form, test, form)
+        self.assertEqual(test.count("['invalid JSON', valid.slice(0, valid.lastIndexOf('}'))]"), 2)
+        self.assertEqual(test.count("['over 64 KiB', valid + ' '.repeat(64 * 1024)]"), 2)
         self.assertEqual(test.count("\n    test(`${kind}, crash before commit ${at}, ${code} at the next start:"), 1)
         self.assertEqual(test.count("\n  test('"), X21_PIN_ROWS - 12, "12 journey rows from the loop, the rest one test each")
         journey_md = " ".join(md_section(text, "The journey").split())
-        self.assertIn("A file that is read and refused (invalid JSON, over 64 KiB, or a key the format does not have) reads as no account "
-                      "too: the start deletes the unreferenced staged entries beside it and rewrites the file.", journey_md)
+        # review loop 2 RL2-1: whatever account a refused file names
+        self.assertIn("A file that is read and refused (invalid JSON, over 64 KiB, a key the format does not have, or a value it does not "
+                      "allow, such as version 2) reads as no account too, whatever account it names: the start deletes the unreferenced "
+                      "staged entries beside it, the pair that file names among them, and rewrites the file.", journey_md)
         # review loop 2 RL2-P2: the paragraph lists four things that stay as they are, and says so
         self.assertIn("Four things stay as they are.", journey_md)
         self.assertNotIn("Three things", journey_md)
@@ -4606,6 +4660,11 @@ class HostPackX21(unittest.TestCase):
             self.assertIn(word, limits, word)
         self.assertNotIn("regex literal", limits, "the parser reads regex literals: that limit is gone")
         self.assertIn("**Runs of more than four unreadable starts.**", limits)  # review loop 2 RL2-P1: the limit that is left
+        # review loop 2 RL2-1: the four refusals, on a file that names no account and on one that names the pair, and what is left
+        for words in ("**Refusals other than the four.**", "on the signed-out file and on a file that names the staged pair",
+                      "Other values the format does not allow"):
+            self.assertIn(words, " ".join(limits.split()), words)
+        self.assertNotIn("Refusals other than the three", limits)
         # integration 4 (D-IC3-1): the README states that both trees leave docs/orchestration/ out, and the check's limit
         why = " ".join(md_section(text, "Why there is no pin and no review case").split())
         for words in ("**MoonAliza's orchestration records are left out of both trees.**", "without the whole directory",
@@ -4625,6 +4684,7 @@ class HostPackX21(unittest.TestCase):
         self.assertIn(f"counts the accepted journey test's failed rows out of its {X21_PIN_ROWS}.", " ".join(text.split()))
         self.assertIn("the **refused-file row**", text)
         self.assertIn("the **unreadable-run row**", text)
+        self.assertIn("the **named refused-file row**", text)  # review loop 2 RL2-1
         for letter in "abcdefgh":  # the lead's list (H1), each by its letter
             self.assertRegex(text, rf"\| W-{letter}\d? \|", letter)
 

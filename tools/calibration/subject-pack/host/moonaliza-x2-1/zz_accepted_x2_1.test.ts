@@ -321,7 +321,7 @@ describe('what an unreadable start still deletes, and what a readable start dele
     expect(accountFile(dir!)?.account).toBeNull();
   });
 
-  test('a sign-out, a sign-in that crashed after staging, then a refused file (invalid JSON, over 64 KiB, an extra key): the start deletes the orphan pair and rewrites the file (a refused file is read)', async () => {
+  test('a sign-out, a sign-in that crashed after staging, then a refused file (invalid JSON, over 64 KiB, an extra key, version 2): the start deletes the orphan pair and rewrites the file (a refused file is read)', async () => {
     const session = await firstSession();
     await session.signIn();
     expect(await session.store.clear(() => true)).toBe('durable');
@@ -340,6 +340,7 @@ describe('what an unreadable start still deletes, and what a readable start dele
       ['invalid JSON', valid.slice(0, valid.lastIndexOf('}'))],
       ['over 64 KiB', valid + ' '.repeat(64 * 1024)],                         // valid JSON, refused for its size alone
       ['an extra key', JSON.stringify({ ...signedOut, extra: true })],
+      ['version 2', JSON.stringify({ ...signedOut, version: 2 })],            // a value the schema refuses, beside the key it refuses
     ];
     for (const [index, [name, text]] of refused.entries()) {
       const dir = `${crash!}-refused-${index + 1}`;
@@ -351,6 +352,35 @@ describe('what an unreadable start still deletes, and what a readable start dele
       expect(bins(dir), name).toEqual([]);
       expect(readFileSync(fileAt(dir), 'utf8'), name).not.toBe(text);         // rewritten
       expect(Object.keys(accountFile(dir) ?? {}).sort(), name).toEqual(Object.keys(signedOut).sort());
+      expect(accountFile(dir)?.account, name).toBeNull();
+    }
+  });
+
+  test('a first sign-in that crashed before commit 1, then the file naming the pair is refused (invalid JSON, over 64 KiB, an extra key, version 2): the start deletes the pair and rewrites the file (a refused file names no reference)', async () => {
+    const { dir: crash, pair } = await crashBeforeCommit('first sign-in', 1);
+    const valid = readFileSync(fileAt(crash), 'utf8');                         // the file the sign-in wrote, naming the staged pair
+    const named = JSON.parse(valid) as Record<string, unknown>;
+    expect(refsOf(accountFile(crash)?.account)).toEqual(pair);
+    expect(pair.map(ref => entries(crash)[ref]?.state)).toEqual(['staged', 'staged']);
+
+    // Spec 4.4 again, for a file that still names an account (a newer app's file, say): what a refused file names is not read,
+    // so it names no reference whatever it holds, and the start deletes the pair it names as it deletes any unreferenced one.
+    const refused: Array<[string, string]> = [
+      ['invalid JSON', valid.slice(0, valid.lastIndexOf('}'))],
+      ['over 64 KiB', valid + ' '.repeat(64 * 1024)],
+      ['an extra key', JSON.stringify({ ...named, extra: true })],
+      ['version 2', JSON.stringify({ ...named, version: 2 })],
+    ];
+    for (const [index, [name, text]] of refused.entries()) {
+      const dir = `${crash}-refused-${index + 1}`;
+      cpSync(crash, dir, { recursive: true });
+      writeFileSync(fileAt(dir), text);
+      const next = await start(dir);
+      expect(next.store.current(), name).toBeNull();
+      expect(entries(dir), name).toEqual({});
+      expect(bins(dir), name).toEqual([]);
+      expect(readFileSync(fileAt(dir), 'utf8'), name).not.toBe(text);         // rewritten
+      expect(Object.keys(accountFile(dir) ?? {}).sort(), name).toEqual(Object.keys(named).sort());
       expect(accountFile(dir)?.account, name).toBeNull();
     }
   });

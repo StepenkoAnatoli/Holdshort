@@ -49,9 +49,10 @@ after step 3 the pair the file names is committed and live, however many starts 
 step 2 shows no account, leaves the file as it is, and leaves the pair in the vault as the crash left it, with its
 encrypted files. Four things stay as they are. Tombstoned entries are deleted on every start. An unreferenced staged
 entry is deleted by the next start that reads the file. A missing file reads as no account, and the start deletes its
-staged entries. A file that is read and refused (invalid JSON, over 64 KiB, or a key the format does not have) reads
-as no account too: the start deletes the unreferenced staged entries beside it and rewrites the file. Only an I/O error other than a missing file (an errno code) makes a
-start that cannot read the file (spec 4.4).
+staged entries. A file that is read and refused (invalid JSON, over 64 KiB, a key the format does not have, or a value
+it does not allow, such as version 2) reads as no account too, whatever account it names: the start deletes the
+unreferenced staged entries beside it, the pair that file names among them, and rewrites the file. Only an I/O error
+other than a missing file (an errno code) makes a start that cannot read the file (spec 4.4).
 
 ## How a host builds the repository and the checkouts
 
@@ -141,6 +142,10 @@ commit 1 and a refresh that crashed before commit 4, so a fix that keeps the pai
 starts fails (W-p keeps it through one), and so does one that takes the same error twice in a row for an abandoned pair.
 The orphan row runs the same four unreadable starts before its readable one, so a fix that holds an unreferenced
 staged entry for good once it has outlived a run of up to four unreadable starts fails too (W-q holds it after two).
+The refused-file row refuses the signed-out file and the named refused-file row refuses a file that still names the
+staged pair (a first sign-in's crash before commit 1), each as invalid JSON, over 64 KiB, with an extra key and with
+version 2, so a fix that keeps the pair a refused file still names fails (W-o3 reads the file again without the
+format), and so does one that keeps on another format version (W-o4).
 
 ## What the pack does not discriminate
 
@@ -158,9 +163,12 @@ staged entry for good once it has outlived a run of up to four unreadable starts
   `instructions` state this limit to the candidate.
 - **Errors other than EACCES, EBUSY and EIO.** EPERM and others are not exercised; the rule is the same, any errno code
   but ENOENT.
-- **Refusals other than the three.** The refused-file row writes invalid JSON, a file over 64 KiB and a file with an
-  extra key. A path the store refuses because it is not a plain regular file (a symlink, a directory, a file with a
-  second hard link) is refused the same way, with no errno code, but is not exercised.
+- **Refusals other than the four.** The refused-file rows write invalid JSON, a file over 64 KiB, a file with an extra
+  key and a file with version 2, on the signed-out file and on a file that names the staged pair. Other values the format
+  does not allow (a revision of 0, a malformed ref, a ninth retired ref) are refused the same way but are not written,
+  so a fix that keeps only on one of them passes. A path the store refuses because it is not a plain regular file (a
+  symlink, a directory, a file with a second hard link) is refused the same way, with no errno code, but is not
+  exercised.
 - **Runs of more than four unreadable starts.** The unreadable-run row and the orphan row run four in a row, so a fix
   that keeps the pair through four such starts and drops it at the fifth passes, and so does one that holds an orphan
   pair for good only after five.
