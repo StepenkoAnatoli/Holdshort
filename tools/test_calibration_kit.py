@@ -3927,6 +3927,11 @@ X21_BASE_SRC = "16f637f1a1eaf9879933a0020d676971a26b3c4b"
 X21_ACCEPTED_SRC = "01a8604fa9c60fae9ae906e1e949a3f2cadb07de"
 X21_EXCLUDED = "docs/orchestration/"
 X21_HINTS = ("x2-1", "x2_1", "unreadatopen", "keepstaged", *X21_CAUSE_PHRASES)
+# integration 5 (IC4-2): every file of MoonAliza 16f637f the hint scan finds, under X21_EXCLUDED. The first three match by
+# their path names; the last three only by their content, so a scan that read path names alone would miss them.
+X21_CLONE_HINT_PATHS = ("2026-10-13-github-sign-in/briefs/fix-x2-1.md", "smartrouter/trace/decisions/fix-x2-1-1.json",
+                        "smartrouter/trace/decisions/sr-host-fix2-1.json", "2026-10-13-github-sign-in/RUN.md",
+                        "2026-10-13-github-sign-in/reports/calibration-2-extra-findings.md", "smartrouter/trace/ledger.jsonl")
 
 # re-review 2 RR2-1: the engine call of index.ts (base and accepted), and three shapes of a correct fix's index.ts that the
 # journey test's slice of the startup lines must survive: the call wrapped over three lines, block comments whose inner
@@ -4261,15 +4266,40 @@ def x21_candidate(cand: Path, change: dict, env: dict, message: str) -> None:
     sh(["git", "commit", "-q", "--no-verify", "-m", message], cand, env)  # the subject's hooks are not the candidate's grade
 
 
-def x21_shell_modules(clone: Path, target: Path) -> Path:
-    """A node_modules of its own whose every entry links to the clone's (the clone is read only). By default vitest and
-    vite write .vite and .vite-temp into the node_modules a checkout links; the manifest's commands now write nothing
-    there (F5), and this folder is the defence in depth: a command that wrote would hit it, which the class checks."""
+def x21_install(clone: Path, repo: Path, target: Path, env: dict) -> Path:
+    """integration 5 (IC4-1): the install the README's build step 2 makes, returned as its node_modules: a directory of its
+    own, outside the pack and outside every git repository, holding only base0's package.json and package-lock.json and
+    their node_modules. Harness only, never a candidate's setup: instead of running npm ci, which needs the network, the
+    node_modules is a copy of the clone's installed one (the clone is only read; the lockfile is the same blob at 16f637f,
+    01a8604 and the clone's head, so npm ci there installs the same files). The copy holds no link, so nothing in the
+    install leads back to the clone, and a checkout's node_modules/.. is this directory. A link from the checkouts to the
+    clone's own node_modules, or to entries of it, is what --link now refuses: through node_modules/.. it reached the
+    clone's docs/orchestration/ and its history. By default vitest and vite write .vite and .vite-temp into the
+    node_modules a checkout links; the manifest's commands write nothing there (F5), which the class checks."""
+    import os
     target.mkdir(parents=True)
-    for entry in sorted((clone / "node_modules").iterdir()):
-        if entry.name not in (".vite", ".vite-temp"):
-            (target / entry.name).symlink_to(entry, target_is_directory=entry.is_dir())
-    return target
+    for name in ("package.json", "package-lock.json"):
+        (target / name).write_bytes(subprocess.run(["git", "-C", str(repo), "show", f"base0:{name}"], env=env, capture_output=True, check=True).stdout)
+    src = clone / "node_modules"
+    shutil.copytree(src, target / "node_modules", symlinks=True,
+                    ignore=lambda here, names: [n for n in names if n in (".vite", ".vite-temp")] if Path(here) == src else [])
+    for here, dirs, files in os.walk(target / "node_modules"):
+        for name in dirs + files:
+            p = Path(here) / name
+            assert not (p.is_symlink() or p.is_junction()), f"the install holds a link: {p}"
+    return target / "node_modules"
+
+
+def x21_reaches_no_records(checkout: Path) -> list[str]:
+    """integration 5 (IC4-1): what a checkout's node_modules/.. reaches that it must not: the directory the link leads into
+    and each of its parents, read as native programs resolve them, holding a .git or a docs/orchestration/. Empty for an
+    install made as the README's build step 2 says."""
+    import os
+    up = Path(os.path.realpath(checkout / "node_modules", strict=True)).parent
+    found = []
+    for d in (up, *up.parents):
+        found += [str(d / x) for x in (".git", "docs/orchestration") if os.path.lexists(d / x)]
+    return found
 
 
 def x21_manifest() -> dict:
@@ -4398,6 +4428,11 @@ class HostPackX21(unittest.TestCase):
         # integration 4 (D-IC3-1): the isolation text states the exclusion and the limit of the check that guards it
         for words in ("without its docs/orchestration/ directory", "copies no object of docs/orchestration/", "a paraphrase is not caught"):
             self.assertIn(words, m["isolation"], words)
+        # integration 5 (IC4-1): the isolation text names the install the README's step 2 allows, and forbids a clone's
+        for words in ("npm ci install in a directory of its own holding only base0's package.json and package-lock.json",
+                      "outside the pack and outside every git repository's work tree",
+                      "never the install of a MoonAliza clone or checkout"):
+            self.assertIn(words, m["isolation"], words)
         fmt = (KIT / "subject-pack" / "README.md").read_text(encoding="utf-8")
         for k in ("subject", "commit_rule", "accepted_fix", "findings", "cases", "paths", "commands", "checkout", "source_hashes", "isolation"):
             self.assertIn(k, m, k)
@@ -4470,6 +4505,19 @@ class HostPackX21(unittest.TestCase):
         build = md_section(text, "How a host builds the repository and the checkouts")
         for word in ("make-repo.sh", "historyless-checkout.sh", "--link node_modules=", "grade.sh", "outside the pack"):
             self.assertIn(word, build, word)
+        # integration 5 (IC4-1): step 2 installs with npm ci in a directory holding only base0's package.json and
+        # package-lock.json, outside every git repository, and allows no install in a MoonAliza clone or checkout; the
+        # harness's copy of the clone's install is stated as the harness's alone
+        deps = " ".join(build.split("2. **Dependencies.**", 1)[1].split("3. **Checkouts.**", 1)[0].split())
+        for words in ("`npm ci` (Node 24)", "holds only MoonAliza's `package.json` and `package-lock.json` from `base0`",
+                      "outside every git repository's work tree", "`node_modules/..`", "Never link the install of a MoonAliza clone or checkout",
+                      "a history-less checkout of `base0` is no install site", "Harness only, never a candidate's setup"):
+            self.assertIn(words, deps, words)
+        for gone in ("linked as it is", "a MoonAliza checkout of `16f637f`", "symlinks to the clone's"):
+            self.assertNotIn(gone, " ".join(build.split()), gone)
+        harness = deps.split("Harness only, never a candidate's setup", 1)
+        self.assertNotIn("clone", harness[0].replace("Never link the install of a MoonAliza clone or checkout", ""),
+                         "before the harness note, step 2 names a clone only to forbid its install")
         test = (X21 / "zz_accepted_x2_1.test.ts").read_text(encoding="utf-8")
         for name in ("unreadAtOpen", "keepStaged"):
             self.assertNotIn(name, test, f"the accepted journey test names the accepted fix's {name}")
@@ -4519,7 +4567,8 @@ class HostPackX21(unittest.TestCase):
                      "test_the_launch_refusals_hold_with_this_manifest_and_a_fix_only_protocol", "test_make_repo_removes_its_target_when_the_ids_differ",
                      "test_the_accepted_fix_reshaped_in_index_ts_stays_green",
                      "test_a_grade_and_run_one_write_nothing_into_the_node_modules_a_checkout_links",
-                     "test_base0_names_neither_the_finding_nor_its_fix_nor_its_cause"):
+                     "test_base0_names_neither_the_finding_nor_its_fix_nor_its_cause",
+                     "test_no_checkout_links_an_install_in_a_moonaliza_clone_or_checkout"):
             method = getattr(type(self), name)
             if x21_clone():
                 self.assertFalse(getattr(method, "__unittest_skip__", False), name)
@@ -4542,7 +4591,8 @@ class HostPackX21(unittest.TestCase):
         cls.built = subprocess.run(["bash", str(cls.pack / "make-repo.sh"), str(x21_clone()), str(cls.pack / "repo")],
                                    env=cls.env, capture_output=True, text=True, timeout=600)
         cls.ids = dict(line.split() for line in cls.built.stdout.splitlines() if len(line.split()) == 2)
-        cls.modules = x21_shell_modules(x21_clone(), cls.root / "modules" / "node_modules")
+        cls.modules = (x21_install(x21_clone(), cls.pack / "repo", cls.root / "install", cls.env)  # integration 5 (IC4-1): the README's step 2
+                       if cls.built.returncode == 0 else None)
         cls.n = 0
         # integration 3 (F5): the clone is read only; every test of this class together leaves it as it was
         cls.clone_before = x21_clone_state(x21_clone(), cls.env)
@@ -4557,7 +4607,7 @@ class HostPackX21(unittest.TestCase):
                 status, vite, tree = after
                 changed = sorted(k for k in set(tree) | set(cls.clone_before[2]) if tree.get(k) != cls.clone_before[2].get(k))
                 raise AssertionError(f"F5: this class changed the MoonAliza clone: status {status!r}, node_modules/.vite* {vite}, entries {changed[:20]}")
-            left = sorted(p.name for p in cls.modules.glob(".vite*"))
+            left = sorted(p.name for p in cls.modules.glob(".vite*")) if cls.modules else []
             if left:
                 raise AssertionError(f"F5: a run wrote {left} into the node_modules the checkouts link")
         finally:
@@ -4572,6 +4622,8 @@ class HostPackX21(unittest.TestCase):
         p = checkout(self.pack / "repo", self.ids[f"{name}0"], target, self.env, "--pack", str(self.pack),
                      "--link", f"node_modules={modules or self.modules}", timeout=900)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        # integration 5 (IC4-1): node_modules/.. of every checkout, made the README's way, reaches no history and no records
+        self.assertEqual(x21_reaches_no_records(target), [], "a checkout's node_modules/.. reaches a .git or docs/orchestration/")
         return target
 
     def grade_run(self, cand: Path) -> subprocess.CompletedProcess:
@@ -4643,8 +4695,14 @@ class HostPackX21(unittest.TestCase):
         self.assertEqual([p for p in x21_ls_tree(repo, "base0", self.env) if p.startswith(X21_EXCLUDED)], [], "base0 has no docs/orchestration/ path")
         self.assertEqual(x21_hint_hits(repo, "base0", self.env), [], "base0 holds a hint of X2-1, its fix or its cause")
         in_clone = x21_hint_hits(x21_clone(), X21_BASE_SRC, self.env)
-        self.assertIn(X21_EXCLUDED + "2026-10-13-github-sign-in/briefs/fix-x2-1.md", in_clone)
         self.assertEqual([p for p in in_clone if not p.startswith(X21_EXCLUDED)], [], "MoonAliza 16f637f holds a hint outside docs/orchestration/")
+        # integration 5 (IC4-2): the non-vacuity check needs the content scan. Three of the six hits match by their path name
+        # alone; RUN.md, calibration-2-extra-findings.md and ledger.jsonl name no hint in their paths, so only their bytes can
+        # put them here, and the whole list is pinned
+        self.assertEqual(sorted(in_clone), sorted(X21_EXCLUDED + p for p in X21_CLONE_HINT_PATHS), "the scan of MoonAliza 16f637f")
+        by_name = [p for p in in_clone if any(h in p.lower() for h in X21_HINTS)]
+        self.assertEqual(sorted(set(in_clone) - set(by_name)), sorted(X21_EXCLUDED + p for p in X21_CLONE_HINT_PATHS[3:]),
+                         "the hits only the content scan finds")
 
     @NEEDS_X21
     def test_make_repo_removes_its_target_when_the_ids_differ(self):
@@ -4748,8 +4806,9 @@ class HostPackX21(unittest.TestCase):
         # the builder's first runs linked the read-only clone's own). Vite writes its cache dir (node_modules/.vite, where vitest
         # keeps its results cache) and its bundled config (node_modules/.vite-temp) through that link unless the commands say
         # --no-cache and --configLoader runner. A grade of the accepted change, the candidate's run_one and the manifest's test
-        # command, run on a checkout whose node_modules is a fresh link folder, leave that folder and the clone unchanged.
-        modules = x21_shell_modules(x21_clone(), self.root / f"f5-{self.n}" / "node_modules")
+        # command, run on a checkout whose node_modules is a fresh install (integration 5: made as the README's step 2 says,
+        # every file of it recorded), leave that install and the clone unchanged.
+        modules = x21_install(x21_clone(), self.pack / "repo", self.root / f"f5-{self.n}", self.env)
         clone_before, links_before = x21_clone_state(x21_clone(), self.env), x21_tree(modules)
         cand = self.at("base", modules)
         for f in (*x21_manifest()["paths"]["source"], "tests/github-account-store.test.ts", "tests/vault.test.ts",
@@ -4766,6 +4825,37 @@ class HostPackX21(unittest.TestCase):
         self.assertEqual(sorted(set(links_after) ^ set(links_before)), [], "nothing is added to or removed from the linked node_modules")
         self.assertEqual(links_after, links_before)
         self.assertEqual(x21_clone_state(x21_clone(), self.env), clone_before, "the clone is unchanged")
+
+    @NEEDS_X21
+    def test_no_checkout_links_an_install_in_a_moonaliza_clone_or_checkout(self):
+        # integration 5 (IC4-1, S3 of check 4): a checkout reaches the directory around its node_modules through
+        # node_modules/.. (Git Bash, and every tool on a POSIX host, resolve it through the link), so an install inside a
+        # MoonAliza clone handed the candidate the clone's docs/orchestration/ and its history, which holds the accepted fix.
+        # The README's step 2 now forbids that, and the kit's --link refuses each such route: the clone's own node_modules,
+        # a folder of links to its entries (round 4's harness), and a history-less checkout of base0 (it has a .git, so it is
+        # no install site either). A checkout of the README's install reaches neither a .git nor docs/orchestration/.
+        import os
+        self.assertEqual(self.built.returncode, 0, self.built.stdout + self.built.stderr)
+        clone = x21_clone()
+        self.assertTrue((clone / X21_EXCLUDED).is_dir() and (clone / ".git").exists(), "the clone holds what a link into it reaches")
+        entries = self.root / "entries" / "node_modules"
+        entries.mkdir(parents=True)
+        first = sorted(p for p in (clone / "node_modules").iterdir() if p.is_dir() and not p.name.startswith("."))[0]
+        (entries / first.name).symlink_to(first, target_is_directory=True)
+        base = self.root / "base-checkout"
+        p = checkout(self.pack / "repo", self.ids["base0"], base, self.env, "--pack", str(self.pack), timeout=900)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        (base / "node_modules").mkdir()
+        for i, d in enumerate((clone / "node_modules", entries, base / "node_modules")):
+            target = self.root / "refused" / f"cand-{i}"
+            p = checkout(self.pack / "repo", self.ids["base0"], target, self.env, "--pack", str(self.pack), "--link", f"node_modules={d}", timeout=900)
+            self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+            self.assertIn("is inside the git repository", p.stderr, d)
+            self.assertFalse(target.exists(), d)
+        cand = self.at("base")  # at() asserts that node_modules/.. reaches no .git and no docs/orchestration/
+        up = Path(os.path.realpath(cand / "node_modules", strict=True)).parent
+        self.assertEqual(sorted(e.name for e in up.iterdir()), ["node_modules", "package-lock.json", "package.json"])
+        self.assertEqual(x21_reaches_no_records(cand), [])
 
     @NEEDS_X21
     @NEEDS_NODE

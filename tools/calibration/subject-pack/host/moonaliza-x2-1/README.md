@@ -61,19 +61,33 @@ missing file reads as no account, and the start deletes its staged entries.
    `docs/orchestration/`. The ids depend on nothing on the host, so they are the ones `manifest.json` names, and the
    script checks this (on a mismatch it exits 1 and removes what it built, so a rerun is not refused); with the
    manifest's `repository` (`repo`), the copy resolves.
-2. **Dependencies.** Install MoonAliza's dependencies (`npm ci` in a MoonAliza checkout of `16f637f`, Node 24) outside
-   the pack and outside every checkout. The manifest's `commands.test` and `commands.run_one` write nothing into the
-   `node_modules` a checkout links. By default vitest keeps its results cache in vite's cache dir,
+2. **Dependencies.** Install MoonAliza's dependencies with `npm ci` (Node 24) in a directory of their own that
+   holds only MoonAliza's `package.json` and `package-lock.json` from `base0`
+   (`git -C <pack dir>/repo show <base0 id>:package.json > <install dir>/package.json`, and the same for
+   `package-lock.json`), made outside the pack, outside every checkout and outside every git repository's work tree.
+   Each checkout links that directory's `node_modules` (step 3), and through `node_modules/..` it reaches the
+   directory around it (Git Bash's tools on Windows, and every tool on a POSIX host, resolve `..` through the link).
+   So the install must sit where no MoonAliza file and no history is. Never link the install of a MoonAliza clone or
+   checkout: through `node_modules/..` a candidate would read its `docs/orchestration/` records, which name the
+   finding and give the accepted fix, and the history that holds the accepted commit. `historyless-checkout.sh
+   --link` refuses a directory inside any git repository, so a history-less checkout of `base0` is no install site
+   either (it has a `.git`; its tree is the candidate's own, but the guard knows a repository only by its markers).
+   The guard cannot see a plain copy or an export of MoonAliza's files, so keeping those away from the install is the
+   host's part. The manifest's `commands.test` and `commands.run_one` write nothing into the `node_modules` a checkout
+   links, so one install serves every cell. By default vitest keeps its results cache in vite's cache dir,
    `node_modules/.vite` of the checkout (vitest 5.0.1, vite 8.3.0), and vite bundles `vitest.config.ts` into
    `node_modules/.vite-temp`; both are written through the link, into the install. The vitest CLI cannot move the
    cache dir (it refuses `--cacheDir` and `--cache.dir`), so both commands say `--no-cache` (no results cache: it only
    orders the test files, so a grade does not depend on an earlier run) and `--configLoader runner` (vite loads the
-   config with its module runner, which writes no file). A read-only install, such as a MoonAliza clone's, can then
-   be linked as it is. `tools/test_calibration_kit.py` still links a directory of its own whose entries are symlinks
-   to the clone's, and checks that a grade and `run_one` leave both that directory and the clone unchanged.
+   config with its module runner, which writes no file). Harness only, never a candidate's setup:
+   `tools/test_calibration_kit.py` makes such a directory with `base0`'s two files, but fills its `node_modules` by
+   copying the installed `node_modules` of the MoonAliza clone it reads instead of running `npm ci`, which would need
+   the network. The lockfile is the same blob at `16f637f`, `01a8604` and the clone's head, the copy holds no link,
+   and it checks that every checkout's `node_modules/..` holds no `.git` and no `docs/orchestration/`, that `--link`
+   refuses the clone's own `node_modules`, and that a grade and `run_one` leave the install and the clone unchanged.
 3. **Checkouts.** Make one per cell with
-   `historyless-checkout.sh --pack <pack dir> --link node_modules=<installed outside the pack> <pack dir>/repo <base0 id> <checkout> <branch>`,
-   outside the pack. On Windows, run it under Git Bash with `MSYS=winsymlinks:nativestrict`, so that `--link` makes a
+   `historyless-checkout.sh --pack <pack dir> --link node_modules=<install dir>/node_modules <pack dir>/repo <base0 id> <checkout> <branch>`,
+   outside the pack and outside every git repository. On Windows, run it under Git Bash with `MSYS=winsymlinks:nativestrict`, so that `--link` makes a
    real symlink or fails instead of copying the tree. `.build` (the manifest's second link) is linked the same way when
    the host has one; the tests need only `node_modules`.
 4. **Grade.** Run `bash grade.sh <pack dir>/manifest.json fix <checkout>` on each finished cell, one cell at a time.

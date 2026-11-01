@@ -185,6 +185,10 @@ All of these ran on the final pack and test files, with TEMP and TMP on `.tmp-ga
 
 ## LIMIT-1
 
+Note added in round 5 (IC4-3, `sr-pack-4a-integration-5.md`): LIMIT-1 is round 3's disclosed limit, in
+`sr-pack-4a-integration-3.md` (Decision 2, "Limit (disclosed here)"): the phrase check is textual, so a paraphrase of
+the cause in the summary or instructions would get past it. The text below is round 4's, as written.
+
 The decision says "LIMIT-1 still stands". I found no item with that id in the worktree (`git grep LIMIT-1`) or in the
 run's side-session notes, so I could not cite its exact wording. Whatever it says, this round claims nothing stronger
 than the tests. The README and the manifest say the hint check is textual and that a paraphrase is not caught. The
