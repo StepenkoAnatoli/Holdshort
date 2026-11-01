@@ -4,9 +4,15 @@ Result: sr-pack-4a ACCEPTED (check 5, 2f73c9f, draft PR #122, stacked on #120). 
 integrations 2-8 on build/sr-kit-cases (#120, head 3ed05d4), is ACCEPTED by check 8. Nothing merged; merges are yours.
 
 ## What you should hear
-1. D-IC3-1: round 3 found (IC3-1) that the pack's answer key was reachable; the fix kept the cause out of the fix prompt and
-   base0 (kit option `cause_in_prompt: false`, K5, on #120). A paraphrase of the cause in the summary or instructions
-   still passes the textual check (LIMIT-1, disclosed since round 3).
+1. D-IC3-1 (lead decision, departs from the brief's literal wording): check 3 found (IC3-1, S2) that base0 itself held
+   the answer key. MoonAliza 16f637f's `docs/orchestration/` records name X2-1, state its cause and give the accepted
+   fix (`briefs/fix-x2-1.md` among them), and the kit option `cause_in_prompt: false` (the owner's earlier F2 decision,
+   K5 on #120) keeps the cause only out of the prompt text, so it did not stop the leak. The decision: `make-repo.sh`
+   exports both trees (base0 and accepted0) without MoonAliza's `docs/orchestration/`, and the pack repository holds
+   none of its objects. This departs from the brief's "export the base tree 16f637f": the brief's intent ("the
+   candidate never sees it") was put above its wording (integration 4, ffa8b45). A test checks that no file or path
+   name of base0 holds the finding's id, the fix's names or a phrase of the cause; a paraphrase elsewhere still passes
+   that textual check (LIMIT-1, disclosed since round 3).
 2. Kit guard changes on #120 (all in `historyless-checkout.sh --link`, each found by a refute-first check, tooling fixed
    at the root rather than the README worked around):
    - integrations 2-6: `--link` refuses a directory inside any git repository, native path resolution, fail closed.
