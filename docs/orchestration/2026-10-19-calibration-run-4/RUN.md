@@ -370,3 +370,25 @@ read only, for the subject trees the packs export.
   not a new dispatch, so no outcome entry is added for them; the record of the change of head is this entry.
 - Not done: the pushes of the three branches and the #120/#122 body updates (the lead's next step), the merges (the
   owner's), plan step 5.
+
+## 2026-11-01 - review loop round 2, RL2-1: the refused-file row extended to a file that names the pair
+- Why this entry: the entry above names pack f25b52c as the head to review. Round 2 had one more pack finding, fixed in a
+  separate session after f25b52c landed: RL2-1 (S3, pack). The refused-file row (RL1-1) refused only the signed-out
+  file (account null), so a wrong fix that reads a refused file again without the format and keeps the unreferenced
+  staged entries while it still names an account passed all 19 rows and graded PASS through `grade.sh fix`, and so did
+  one keyed on a format version other than 1; the README did not disclose it. Spec 4.4: a refused file reads as no
+  account, whatever it holds.
+- Fixed in 556b166 on `build/sr-pack-4a` (on f25b52c; the kit did not move, dead160): a named refused-file row (a first
+  sign-in's crash before commit 1, then the file that names the pair is refused as invalid JSON, over 64 KiB, with an
+  extra key and with version 2: each start deletes the pair and rewrites the file), a version-2 form on the
+  refused-file row, 21 rows, wrong fixes W-o3 (keep while a refused file names an account, 1 of 21) and W-o4 (keep on
+  another format version, 2 of 21); W-c 7 and W-o2 2 of 21. The README limit "Refusals other than the four." discloses
+  the disallowed values not written (a revision of 0, a malformed ref, a ninth retired ref). accepted0 is 1f7aa3bf.
+- Verified: on scratch trees the accepted fix passes 21 of 21 and the reviewer's two wrong fixes fail (the new row; the
+  version-2 forms); red first, the new kit test on f25b52c's pack files fails 2; HostPackX21 with the MoonAliza clone
+  all 18 OK in 7566 s, every wrong fix FAIL with its stated count; its tearDownClass F5 check reported the clone's `.git`
+  mtime changed at 15:32:49Z, attributed to a read from outside the class (no file in `.git` changed; the six tests that run the
+  clone pass with F5 on a rerun, mtime unchanged); the clone is unchanged (status empty, HEAD 1ac226d); 556b166 passed
+  the full regression gate (kit suite 163 OK, 11 skipped; evidence 0 failures).
+- Heads to review (nothing pushed): kit dead160, pack 556b166, docs this entry's commit. Not done: the pushes, the #122
+  body update, the merges (the owner's).

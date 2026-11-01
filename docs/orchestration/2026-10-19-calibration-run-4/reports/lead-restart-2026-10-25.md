@@ -11,8 +11,11 @@ entry "review loop after the ACCEPTs":
 - round 2: RL2-K1 (S3, kit) a candidate's own `.git` config, attributes or excludes could hide an edited invariant file
   from the gate grade, and RL2-K2 (S4, kit) the gate grade crashed on a large invariant directory, both fixed in
   dead160; RL2-P1 (S3, pack) a keep through one unreadable start only graded PASS, and RL2-P2 (S4) a miscount in the
-  pack README, both fixed in f25b52c (20 rows, W-p, W-q); RL2-D1 (S4) this report and RUN.md stopped before the loop.
-- heads now: kit dead160, pack f25b52c, docs the RUN.md commit after b93c808. Outcome seq 3 ("accepted", check 5's
+  pack README, both fixed in f25b52c (20 rows, W-p, W-q); RL2-D1 (S4) this report and RUN.md stopped before the loop;
+  RL2-1 (S3, pack) the refused-file row refused only the signed-out file, so a keep while a refused file still names an
+  account (or names another format version) graded PASS, fixed in 556b166 (named refused-file row, version-2 forms, 21
+  rows, W-o3, W-o4).
+- heads now: kit dead160, pack 556b166, docs the RUN.md commit after 6a9f29c. Outcome seq 3 ("accepted", check 5's
   head) is append-only and stays.
 
 ## What you should hear
@@ -49,8 +52,13 @@ entry "review loop after the ACCEPTs":
   wrong fix FAIL with its stated count of 20; the one failure was the base-red test expecting only the 12 journey rows
   red at base0 (the unreadable-run row is red there too), fixed in the same commit and passing alone with the clone;
   accepted0 577f52b4.
+- Review loop, pack at 556b166 (RL2-1): the journey test has 21 rows; HostPackX21 with the clone all 18 OK in 7566 s,
+  every wrong fix FAIL with its stated count of 21 (W-o3 1, W-o4 2); its tearDownClass F5 check saw the clone's `.git`
+  mtime change at 15:32:49Z, attributed to a read outside the class (no file in `.git` changed), and the six tests that run the
+  clone pass with F5 on a rerun; the clone is unchanged (status empty, HEAD 1ac226d); kit suite 163 OK (11 skipped) in
+  the gate; accepted0 1f7aa3bf.
 
 ## Next (yours)
-Once the loop's heads are pushed (kit dead160 to #120, pack f25b52c to #122, this branch to #119), review and merge
+Once the loop's heads are pushed (kit dead160 to #120, pack 556b166 to #122, this branch to #119), review and merge
 #120, then #122, then #119. Plan step 5 (sr-policy-7, sr-packs-t1) waits for you; follow-ups FU-1..FU-5
 on #120 are still open.
