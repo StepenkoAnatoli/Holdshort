@@ -320,3 +320,18 @@ read only, for the subject trees the packs export.
   RUN.md entry. Tokens known for sr-pack-4a so far: 1,046,687 + 301,864 + 192,537 + 376,575 + 313,883 = 2,231,546,
   plus round 5's pack part (round 2's partial is unknown). Then plan step 5 (sr-policy-7, sr-packs-t1) waits for the
   owner. Resume point: the lead's side-session note `run4-resume.md`.
+
+## 2026-11-01 - sr-pack-4a ACCEPTED (check 5), kit lead integrations 2-8 ACCEPTED (check 8)
+- Owner decision 4 (2026-10-27): wait for the weekly reset (Sat 2026-10-31 18:00Z), then fix LC7-1 and LC7-2. A new lead
+  chat started at the reset (weekly usage 0.00) and ran wf_ba5994fb-daf.
+- Kit lead integration 8 = f06353f: LC7-1 (S3) resolve spells every path part exactly, so no command substitution sits
+  between a path and its identity proof (the hard-link bypass is closed); LC7-2 (S4) `--link` NAMEs are whitelisted and
+  `git check-ignore` must prove each link ignored, else the checkout is removed. Kit check 8 = 3ed05d4: ACCEPT, no S1-S3;
+  S4s LC8-1 (`MSYS=winsymlinks:lnk` makes a `NAME.lnk` file that `git add -A` stages), LC8-2 (a wrong report line),
+  LC8-3 (mutant Y6 survives). Pushed to #120 (d4c2c8f..3ed05d4), body now has "Lead integration 2-8".
+- sr-pack-4a: rebased onto 3ed05d4; round 5 = d1ea270 (IC4-1..IC4-3), check 5 = 2f73c9f ACCEPT, no S1-S3; S4s IC5-1,
+  IC5-2 (kit README step 3 recommends a checkout `--link` refuses), IC5-3. Draft PR #122, stacked on #120.
+- Outcome recorded: sr-pack-4a seq 3 accepted (dispatch seq 2); `node --test route.test.mjs` 142 pass. Tokens for
+  sr-pack-4a, lower bound: 2,231,546 + 203,330 + 215,810 = 2,650,686 (round 5/5b pack parts and round 2 partial unknown).
+  Kit rounds 2-8 count to sr-kit-cases (#120; its outcome seq 3 is append-only, so the cost is noted here and in #120).
+- Not done: plan step 5 (sr-policy-7, sr-packs-t1) waits for the owner. Merges (#120 then #122, then #119) are the owner's.
