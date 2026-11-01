@@ -253,7 +253,18 @@ the common preamble (the relayed-text reconciliation, the checkout, the commit c
 gate item per profile like a pin or fix item, with no grader agent. `grade.sh gate` passes the cell when
 `commands.gate` exits 0 in the candidate's checkout, every `invariants` path holds the files and content it holds at
 the base, every `required_paths` path exists, and the candidate committed; the grade carries `gateExit`,
-`invariantsIntact` and `requiredPresent` (each a `{path: bool}` map) and `committed`. `observations.py` counts gate cells
+`invariantsIntact` and `requiredPresent` (each a `{path: bool}` map) and `committed`. An invariant is compared file by
+file with the base tree: every base file under the path must be there as a plain file that hashes as at the base, and
+no other file may be there that the base's `.gitignore` rules do not ignore (one the candidate committed counts even
+when ignored). The checkout is read as files by a git of the grade's own, not the candidate's: a fresh repository
+outside the checkout whose objects are the pack repository's, whose index is the base tree, whose attributes are the
+base tree's (`--attr-source`, so git 2.40+ is needed) and whose config is the host's. Nothing in the candidate's `.git`
+is read for it, so a clean filter in its `.git/config` and `.git/info/attributes`, a line in its `.git/info/exclude`
+or a `.gitignore` it adds does not hide a change (review loop RL2-K1). Line endings are compared as the host's git
+would store them, so a conversion the host makes reads as the same content. The same view gives every grade's
+`changed` (with the candidate's committed and staged files) and `untracked`, so a tracked file marked skip-worktree or
+assume-unchanged and then edited still counts as changed in a fix's scope check and a pin's source check. The view
+hashes the paths on stdin, so a directory of any size is graded. `observations.py` counts gate cells
 in `scores.json` (`cells.gate`, `category_mapping.gate`). The invariants and the required paths are read before the
 command runs, so a command that writes files neither passes a candidate nor fails one. A command (gate, test or lint)
 that overruns its timeout has its whole process tree killed and reads as exit 124. One case per kind per pack stays the
@@ -282,4 +293,5 @@ still requires a named judging profile, so until it changes such a run names one
 - The evidence check in the regression gate and the qualification table (proposal Items 4.3 and 4.4) are separate
   units; this kit defines the pack format and the results layout they rely on. The shared pack (Item 2) is
   `subject-pack/shared/`, version 1, and qualifies the T1 shape only.
-- Python 3.12 is the repository's CI version; the kit uses nothing newer than 3.11.
+- Python 3.12 is the repository's CI version; the kit uses nothing newer than 3.11. `grade.sh` needs git 2.40+
+  (`--attr-source`) and refuses to grade without it.

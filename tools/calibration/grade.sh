@@ -19,13 +19,18 @@
 # checkout stands), its required paths (each exists) and a commit; the invariants and the required paths are read
 # before the command runs, so they grade the candidate's work and not the command's side effects, which stay. A mutant
 # whose source files equal the base's or the accepted fix's is refused; a command that overruns its timeout (a test,
-# lint or gate command) has its whole process tree killed and reads as exit 124.
+# lint or gate command) has its whole process tree killed and reads as exit 124. What the checkout holds (the
+# invariants, `changed`, `untracked`, the source diff) is read by a git of the grade's own over the base tree, never
+# through the candidate's .git (its config, attributes, excludes and index flags are the candidate's to write).
 #
 # Exit 0 with the grade (PASS true or false) as one JSON object; 2 on a bad argument, an unusable manifest or a
 # checkout that shares a path with the pack; 3 with {"error": ...} when the checkout is missing or has no commit.
 set -u
 [ $# -eq 3 ] || { echo "usage: grade.sh MANIFEST pin|fix|gate CHECKOUT" >&2; exit 2; }
 command -v python3 >/dev/null 2>&1 || { echo "grade.sh: python3 not found" >&2; exit 2; }
+# none of git's repository variables (GIT_DIR, GIT_INDEX_FILE, ...) nor GIT_ATTR_SOURCE reaches the grade's git: each
+# git it runs names its repository itself (the pack, the checkout or the view below)
+unset GIT_ATTR_SOURCE $(git rev-parse --local-env-vars 2>/dev/null)
 exec python3 -I - "$@" <<'PY'
 import json, os, re, shlex, signal, subprocess, sys, tempfile, time
 from pathlib import Path
@@ -109,10 +114,15 @@ if mutants:  # a mutant only swaps paths.source: one whose files equal the base'
         if src == src_acc:
             refuse(f"cases.pin.mutants {mu['id']}: its paths.source files equal the accepted fix's, so no candidate's pin can be red at it")
 
+def base_entries(*pathspec):
+    """[(mode, type, blob id, file)] of the files at or under the pathspec in the case's base commit."""
+    out = subprocess.run(["git", "-C", str(repo), "ls-tree", "-r", "-z", "--full-tree", base, "--", *pathspec], capture_output=True,
+                         encoding="utf-8", errors="surrogateescape").stdout
+    return [(*e.split("\t", 1)[0].split(), e.split("\t", 1)[1]) for e in out.split("\0") if "\t" in e]
+
 def base_blobs(path):
     """{file: blob id} of the files at or under path in the case's base commit."""
-    out = subprocess.run(["git", "-C", str(repo), "ls-tree", "-r", "-z", "--full-tree", base, "--", path], capture_output=True, text=True).stdout
-    return {e.split("\t", 1)[1]: e.split("\t", 1)[0].split()[2] for e in out.split("\0") if "\t" in e}
+    return {f: oid for _, _, oid, f in base_entries(path)}
 
 if task == "gate":
     base_inv = {x: base_blobs(x) for x in invariants}
@@ -128,13 +138,94 @@ if cand == pack_dir or pack_dir in cand.parents or cand in pack_dir.parents:
     refuse(f"the checkout {cand} shares a path with the pack {pack_dir} (proposal Item 2: the answer stays outside every candidate's paths)")
 
 def git(*args):
-    p = subprocess.run(["git", "-c", "core.quotepath=off", *args], cwd=cand, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    p = subprocess.run(["git", "-c", "core.quotepath=off", *args], cwd=cand, capture_output=True, encoding="utf-8", errors="surrogateescape",
+                       stdin=subprocess.DEVNULL)
     if p.returncode:
         raise RuntimeError(f"git {' '.join(args)}: {p.stderr.strip()}")
     return p.stdout
 
 def names(*args):
     return [x for x in git(*args).split("\0") if x]
+
+# The view: what the checkout's files are, read by a git that reads nothing in the candidate's .git. The candidate's own
+# git applies its .git/config (a clean filter, core.worktree, fsmonitor), .git/info/attributes, .git/info/exclude and
+# its index's flags (skip-worktree, assume-unchanged), all untracked, so a candidate could make a changed file read as
+# the base's (review loop RL2-K1). The view is a fresh repository outside the checkout: its work tree is the checkout,
+# its objects are the pack repository's (alternates), its index is the case's base tree, its attributes come from the
+# base tree (--attr-source, git 2.40+), its ignore rules are the base tree's .gitignore files, and its config is the
+# host's (global and system, which say how the host's checkout converted line endings) with none of git's repository
+# variables (the wrapper unsets them). The candidate's commits and index still say what it committed and staged; the
+# view says what changed.
+VIEW = tempfile.TemporaryDirectory(prefix="grade-view-", ignore_cleanup_errors=True)
+view_dir = Path(VIEW.name) / "git"
+
+def vgit(*args, stdin=None):
+    p = subprocess.run(["git", f"--git-dir={view_dir}", f"--work-tree={cand}", f"--attr-source={base}", "-c", "core.bare=false",
+                        "-c", "core.quotepath=off", *args], cwd=cand, capture_output=True,
+                       input=stdin if stdin is not None else b"")
+    if p.returncode:
+        raise RuntimeError(f"git (view) {' '.join(args)}: {p.stderr.decode('utf-8', 'replace').strip()}")
+    return p.stdout.decode("utf-8", "surrogateescape")
+
+def vnames(*args):
+    return [x for x in vgit(*args).split("\0") if x]
+
+def exclude_line(gitignore_dir, line):
+    """One line of the base's .gitignore in gitignore_dir ('' or 'a/b/') as a line of one exclude file read at the top:
+    a pattern with a '/' before its end is relative to its own directory, any other may match at any depth below it,
+    and a deeper file's lines come later, so they win as they do in git."""
+    while line.endswith(" ") and not line.endswith("\\ "):  # git drops unescaped trailing spaces
+        line = line[:-1]
+    if not gitignore_dir or line in ("", "!") or line.startswith("#"):
+        return line
+    neg, body = (True, line[1:]) if line.startswith("!") else (False, line)
+    core = body[:-1] if body.endswith("/") else body
+    prefix = "/" + re.sub(r"([*?\[\\])", r"\\\1", gitignore_dir)
+    return ("!" if neg else "") + prefix + (body[1:] if body.startswith("/") else body if "/" in core else "**/" + body)
+
+def make_view():
+    git_dir = subprocess.run(["git", "-C", str(repo), "rev-parse", "--path-format=absolute", "--git-common-dir"], capture_output=True,
+                             encoding="utf-8", stdin=subprocess.DEVNULL).stdout.strip()
+    if subprocess.run(["git", "init", "-q", "--bare", "--template=", str(view_dir)], capture_output=True, stdin=subprocess.DEVNULL).returncode or not git_dir:
+        refuse(f"no view repository could be made for the pack repository {repo}")
+    (view_dir / "objects" / "info").mkdir(parents=True, exist_ok=True)
+    (view_dir / "objects" / "info" / "alternates").write_bytes((Path(git_dir) / "objects").as_posix().encode("utf-8") + b"\n")
+    lines = []
+    ignores = [(mode, oid, f) for mode, kind, oid, f in base_entries() if kind == "blob" and mode != "120000" and f.rsplit("/", 1)[-1] == ".gitignore"]
+    for mode, oid, f in sorted(ignores, key=lambda e: (e[2].count("/"), e[2])):
+        text = subprocess.run(["git", "-C", str(repo), "cat-file", "blob", oid], capture_output=True).stdout.decode("utf-8", "surrogateescape")
+        lines += [exclude_line(f[: -len(".gitignore")], ln.rstrip("\r")) for ln in text.removeprefix("﻿").split("\n")]
+    (view_dir / "info").mkdir(exist_ok=True)
+    (view_dir / "info" / "base-excludes").write_bytes("\n".join(lines).encode("utf-8", "surrogateescape") + b"\n")
+    try:
+        vgit("read-tree", base)
+        vgit("update-index", "-q", "--refresh")
+    except RuntimeError as e:
+        refuse(f"no view of the checkout (it needs git 2.40+, for --attr-source): {e}")
+
+def view_others(*pathspec):
+    """The checkout's files that are not in the base tree and that the base tree's .gitignore rules do not ignore."""
+    return vnames("ls-files", "--others", "-z", f"--exclude-from={view_dir / 'info' / 'base-excludes'}", "--", *pathspec)
+
+C_ESCAPES = {0x5C: b"\\\\", 0x22: b'\\"', 0x0A: b"\\n", 0x09: b"\\t", 0x0D: b"\\r"}
+
+def c_quoted(f):
+    """f as hash-object --stdin-paths reads it: C-quoted when it starts with a quote or holds a backslash or a control
+    character, as is otherwise."""
+    raw = f.encode("utf-8", "surrogateescape")
+    if not (raw.startswith(b'"') or any(b == 0x5C or b < 0x20 or b == 0x7F for b in raw)):
+        return raw
+    return b'"' + b"".join(C_ESCAPES.get(b) or (b"\\%03o" % b if b < 0x20 or b == 0x7F else bytes([b])) for b in raw) + b'"'
+
+def hash_paths(files):
+    """The view's blob id of each file, as git would store it at the base: one hash-object reading the paths on stdin (a
+    Windows command line holds at most 32,767 characters, so a list of arguments failed on a large directory, RL2-K2)."""
+    if not files:
+        return []
+    ids = vgit("hash-object", "--stdin-paths", stdin=b"".join(c_quoted(f) + b"\n" for f in files)).split()
+    if len(ids) != len(files):
+        raise RuntimeError(f"git (view) hash-object returned {len(ids)} ids for {len(files)} files")
+    return ids
 
 def run_bash(cmd):
     """The exit code of `bash -c cmd` in the checkout, 124 when it overruns the timeout. A timeout kills the command's
@@ -163,23 +254,24 @@ except RuntimeError as e:
     print(json.dumps({"task": task, "error": f"no commit in the checkout: {e}"}))
     sys.exit(3)
 root = roots[0]
+make_view()
 commits = int(git("rev-list", "--count", f"{root}..HEAD"))
 committed = names("diff", "--name-only", "-z", f"{root}..HEAD")
 staged = names("diff", "--cached", "--name-only", "-z")
 unstaged = names("diff", "--name-only", "-z")
-changed = sorted(set(committed + staged + unstaged))
-status = git("status", "--porcelain=v1", "-z", "--untracked-files=all").split("\0")
-untracked = sorted(e[3:] for e in status if e.startswith("?? ") and not any(e[3:] == ln or e[3:].startswith(ln + "/") for ln in links))
+indexed = set(names("ls-files", "-z"))
+changed = sorted(set(committed + staged + unstaged + vnames("diff-files", "--name-only", "-z")))
+untracked = sorted(f for f in view_others() if f not in indexed and not any(f == ln or f.startswith(ln + "/") for ln in links))
 
 if task == "gate":
     def cand_blobs(path):
-        """{file: blob id or None} of the checkout's files at or under path as it stands: the tracked ones (None when
-        deleted from the tree) and the untracked ones the checkout's ignore rules do not hide; each hashed as git would
-        store it, so a host's line-ending conversion reads as the same content."""
-        files = sorted(set(names("ls-files", "-z", "--", path)) | set(names("ls-files", "-z", "--others", "--exclude-standard", "--", path)))
-        present = [f for f in files if (cand / f).is_file()]
-        ids = git("hash-object", "--", *present).split() if present else []
-        blobs = dict(zip(present, ids))
+        """{file: blob id or None} of the checkout's files at or under path as it stands: the base's (None when deleted
+        or no longer a plain file), the candidate's tracked ones and the others the base's ignore rules do not ignore;
+        each hashed by the view as git would store it at the base, so a host's line-ending conversion reads as the same
+        content and nothing in the candidate's .git changes what is read."""
+        files = sorted(set(base_inv[path]) | set(names("ls-files", "-z", "--", path)) | set(view_others(path)))
+        present = [f for f in files if (cand / f).is_file() and not (cand / f).is_symlink()]
+        blobs = dict(zip(present, hash_paths(present)))
         return {f: blobs.get(f) for f in files}
 
     intact = {x: cand_blobs(x) == base_inv[x] for x in invariants}
@@ -305,7 +397,7 @@ try:
         finally:
             acc_path.unlink(missing_ok=True)
         lint_res = lint([f for f in dict.fromkeys(sources + files) if (cand / f).is_file()])
-        diff = subprocess.run(["git", "diff", root, "--", *sources], cwd=cand, capture_output=True, text=True).stdout
+        diff = vgit("diff", "--no-ext-diff", "--no-textconv", "--no-color", base, "--", *sources)
         allowed = set(sources) | {test_file} | set(allowed_extra) | set(new_tests)
         scope_ok = set(changed) <= allowed
         c_green, g_red, a_green = green(at_cand), red(guard), green(accepted_run)

@@ -2026,6 +2026,42 @@ class Scripts(unittest.TestCase):
         self.assertIn("src/other.py", d["changed"])
         self.assertIs(d["PASS"], False)
 
+    def test_grade_fix_nothing_in_the_candidates_git_hides_an_out_of_scope_edit(self):
+        # review loop RL2-K1, same class: the scope check read the candidate's own git, so an edit to a tracked file
+        # marked skip-worktree (or assume-unchanged) after the commit left `changed` empty; the view compares the
+        # checkout with the base tree and reads no index flag of the candidate's
+        pack, c = make_pack(self.root, self.env)
+        for flag in ("--skip-worktree", "--assume-unchanged"):
+            cand = self.candidate(c, f"fix-hidden{flag}")
+            self.fix_like_the_accepted_one(cand)
+            commit_all(cand, self.env, "fix")
+            sh(["git", "update-index", flag, "README.md"], cand, self.env)
+            (cand / "README.md").write_text("readme, edited out of scope\n")
+            self.assertEqual(sh(["git", "status", "--porcelain"], cand, self.env).stdout, "", flag)  # its own git sees nothing
+            code, d, out = grade(pack / "manifest.json", "fix", cand, self.env)
+            self.assertEqual(code, 0, out)
+            self.assertIs(d["candidateGreen"], True, out)
+            self.assertEqual((d["scopeOk"], d["outOfScope"]), (False, ["README.md"]), f"{flag}: {out}")
+            self.assertIs(d["PASS"], False, flag)
+
+    def test_grade_pin_a_source_file_hidden_by_the_candidates_exclude_is_touched(self):
+        # an untracked file under paths.source_dir hidden by the candidate's .git/info/exclude: the view reads only the
+        # base's ignore rules, so the file is listed and the pin is not source-clean
+        pack, c = make_pack(self.root, self.env)
+        cand = self.candidate(c, "pin-hidden-src")
+        (cand / "tests" / "test_pin.py").write_text(PIN_SUM)
+        (cand / "src" / "helper.py").write_text("Y = 1\n")
+        (cand / ".git" / "info").mkdir(exist_ok=True)
+        with (cand / ".git" / "info" / "exclude").open("a") as f:
+            f.write("src/helper.py\n")
+        commit_all(cand, self.env, "pin")
+        self.assertNotIn("helper", sh(["git", "status", "--porcelain", "--untracked-files=all"], cand, self.env).stdout)
+        code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertIn("src/helper.py", d["untracked"], out)
+        self.assertEqual((d["srcTouched"], d["srcClean"]), (["src/helper.py"], False), out)
+        self.assertIs(d["PASS"], False, out)
+
     def test_grade_pin_red_then_green_with_the_accepted_fix_passes(self):
         pack, c = make_pack(self.root, self.env)
         cand = self.candidate(c, "pin-good")
@@ -3217,8 +3253,9 @@ PIN_SUM = "import unittest\nfrom src.mod import add\n\n\nclass P(unittest.TestCa
 PIN_BOTH = PIN_SUM + "\n    def test_ones(self):\n        self.assertEqual(add(1, 1), 2)\n"
 
 
-def make_gate_pack(root: Path, env: dict, case: dict | None = None) -> tuple[Path, dict]:
-    """A gate-only pack: a ledger and captures the candidate must not change, a checker (the gate) and nothing else."""
+def make_gate_pack(root: Path, env: dict, case: dict | None = None, files: dict | None = None) -> tuple[Path, dict]:
+    """A gate-only pack: a ledger and captures the candidate must not change, a checker (the gate) and nothing else
+    (files: more {path: text} in the base)."""
     pack, repo = root / "gpack", root / "gpack" / "repo"
     (repo / "data").mkdir(parents=True)
     (repo / "captures" / "deep").mkdir(parents=True)
@@ -3226,6 +3263,9 @@ def make_gate_pack(root: Path, env: dict, case: dict | None = None) -> tuple[Pat
     (repo / "captures" / "a.txt").write_text("capture a\n")
     (repo / "captures" / "deep" / "b.txt").write_text("capture b\n")
     (repo / "notes.txt").write_text("todo\n")
+    for name, text in (files or {}).items():
+        (repo / name).parent.mkdir(parents=True, exist_ok=True)
+        (repo / name).write_bytes(text.encode("utf-8"))
     (repo / "check.py").write_text("import sys\nsys.exit(0 if open('notes.txt').read().strip() == 'ok' else 1)\n")
     sh(["git", "init", "-q"], repo, env)
     base = commit_all(repo, env, "base")
@@ -3414,6 +3454,92 @@ class KitCaseGrades(unittest.TestCase):
         code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
         self.assertIs(d["invariantsIntact"]["captures"], False, out)
         self.assertIs(d["PASS"], False)
+
+    def test_k3_nothing_in_the_candidates_git_hides_a_changed_invariant(self):
+        # review loop RL2-K1: the grade once hashed the invariants with the candidate's own git, so a clean filter in its
+        # .git/config and .git/info/attributes (both untracked) made an edited file read as the base's, and a file added
+        # under an invariant hid behind the candidate's .git/info/exclude or a .gitignore that ignores itself. The view
+        # reads nothing in the candidate's .git (config, attributes, excludes, index flags) and only the base's
+        # .gitignore rules
+        pack, c = make_gate_pack(self.root, self.env, files={"captures/stamp.txt": "$Id$"})
+
+        def filtered(d):
+            (d / "data" / "ledger.txt").write_text("row 1\nrow 2\nrow 3\n")
+            (d / "keep.sh").write_text('git cat-file blob "$(git rev-list --max-parents=0 HEAD)":"$1"\n')
+            sh(["git", "config", "filter.keep.clean", "sh keep.sh %f"], d, self.env)
+            (d / ".git" / "info").mkdir(exist_ok=True)
+            with (d / ".git" / "info" / "attributes").open("a") as f:
+                f.write("data/** filter=keep\n")
+
+        def excluded(d):
+            (d / "captures" / "c.txt").write_text("new\n")
+            (d / ".git" / "info").mkdir(exist_ok=True)
+            with (d / ".git" / "info" / "exclude").open("a") as f:
+                f.write("captures/c.txt\n")
+
+        def self_ignored(d):
+            (d / "captures" / "c.txt").write_text("new\n")
+            (d / "captures" / ".gitignore").write_text("c.txt\n.gitignore\n")
+
+        def attributed(d):  # a work tree .gitattributes: ident collapses "$Id: ... $" to the base's "$Id$"
+            (d / "captures" / "stamp.txt").write_text("$Id: edited $")  # no newline: on Windows a CR would change the collapse
+            (d / ".gitattributes").write_text("captures/stamp.txt ident\n")
+
+        for name, change, broken in (("filter", filtered, "data/ledger.txt"), ("exclude", excluded, "captures"),
+                                     ("selfignore", self_ignored, "captures"), ("ident", attributed, "captures")):
+            cand = self.gate_cell(c, f"gate-hide-{name}", also=change)
+            if name == "filter":  # the commit stores the base's text: the filter decided what git read
+                self.assertEqual(sh(["git", "show", "HEAD:data/ledger.txt"], cand, self.env).stdout, "row 1\nrow 2\n")
+                self.assertEqual((cand / "data" / "ledger.txt").read_text(), "row 1\nrow 2\nrow 3\n")
+            self.assertEqual(sh(["git", "status", "--porcelain", "--", broken], cand, self.env).stdout, "", name)  # its own git sees nothing
+            code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+            self.assertEqual(code, 0, out)
+            self.assertEqual(d["gateExit"], 0, out)
+            self.assertIs(d["invariantsIntact"][broken], False, f"{name}: {out}")
+            self.assertIs(d["PASS"], False, name)
+
+        def honest_filter(d):  # control: a filter that changes nothing, on an honest candidate
+            sh(["git", "config", "filter.keep.clean", "cat"], d, self.env)
+            (d / ".git" / "info").mkdir(exist_ok=True)
+            (d / ".git" / "info" / "attributes").write_text("data/** filter=keep\n")
+
+        cand = self.gate_cell(c, "gate-honest-filter", also=honest_filter)
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertEqual(d["invariantsIntact"], {"data/ledger.txt": True, "captures": True}, out)
+        self.assertIs(d["PASS"], True, out)
+
+    def test_k3_a_large_invariant_directory_is_graded(self):
+        # review loop RL2-K2: every file under an invariant went to one hash-object command line, past Windows' 32,767
+        # characters for 1,200 capture files, and the grade crashed with no JSON; the paths now go on stdin
+        bulk = {f"captures/research-collect-sources/capture-file-number-{i:04d}.json": f'{{"n": {i}}}\n' for i in range(1200)}
+        pack, c = make_gate_pack(self.root, self.env, files=bulk)
+        cand = self.gate_cell(c, "gate-bulk")
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["invariantsIntact"], {"data/ledger.txt": True, "captures": True}, out)
+        self.assertIs(d["PASS"], True, out)
+        (cand / "captures" / "research-collect-sources" / "capture-file-number-0999.json").write_text('{"n": -1}\n')
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertIs(d["invariantsIntact"]["captures"], False, out)
+        self.assertIs(d["PASS"], False, out)
+
+    def test_k3_unusual_names_under_an_invariant_are_hashed_one_by_one(self):
+        # the paths go to hash-object one per line, C-quoted where git would unquote them (a leading quote, a
+        # backslash, a tab); each still hashes as its own file, so an edit to one of them is caught
+        names = ["captures/caf\u00e9.txt", "captures/ two  spaces.txt"]
+        if sys.platform != "win32":  # Windows takes none of these in a file name
+            names += ['captures/"quoted".txt', "captures/tab\there.txt", "captures/back\\slash.txt"]
+        pack, c = make_gate_pack(self.root, self.env, files={n: f"{n}\n" for n in names})
+        cand = self.gate_cell(c, "gate-names")
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["invariantsIntact"], {"data/ledger.txt": True, "captures": True}, out)
+        for n in names:
+            (cand / n).write_text("edited\n")
+            code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+            self.assertIs(d["invariantsIntact"]["captures"], False, f"{n}: {out}")
+            (cand / n).write_text(f"{n}\n")
 
     def test_k3_a_missing_required_path_fails(self):
         pack, c = make_gate_pack(self.root, self.env)
