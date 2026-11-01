@@ -392,3 +392,35 @@ read only, for the subject trees the packs export.
   the full regression gate (kit suite 163 OK, 11 skipped; evidence 0 failures).
 - Heads to review (nothing pushed): kit dead160, pack 556b166, docs this entry's commit. Not done: the pushes, the #122
   body update, the merges (the owner's).
+
+## 2026-11-01 - review loop round 3: RL3-K1 on the kit, RL3-1 and RL3-2 on the pack
+- Why this entry: the entry above names kit dead160 and pack 556b166 as the heads to review. Round 3
+  (review-loop-round-3) found three more, all fixed at the root, kit first.
+- RL3-K1 (S3, kit): after dead160 the grade still ran the candidate's own git (rev-list, rev-parse, the committed and
+  staged diffs, ls-files) in the checkout, and that git applies the candidate's `.git/config`: a `core.fsmonitor` hook
+  ran inside the grade and could poison the grade's view repo, so the reviewer's gate case (an invariant edited, plus
+  the hook) and fix case (a skip-worktree out-of-scope edit, plus the hook) both graded PASS. Fixed in d73511f on
+  `build/sr-kit-cases`: grade.sh reads the candidate's history through a second bare repo of its own (the candidate's
+  objects through alternates, a copy of its index, HEAD and refs read as files), so no git runs on the candidate's
+  `.git` as a repository; every grade git runs with `--no-replace-objects`, `core.fsmonitor=false`,
+  `core.untrackedCache=false`. 3 new tests, red on dead160's grade.sh; the reviewer's probes now PASS false.
+- RL3-1 (S3, pack): no row refused a file while the vault held a committed account, so a keep beside a refused file
+  while a committed entry exists (the reviewer's WF-O5) passed 21 of 21 and graded PASS, and the README sentence that
+  such a fix fails was false. RL3-2 (S4, pack): the ENOENT row had only an empty vault, so the same keep for a missing
+  file (WF-H3) passed 21 of 21. Fixed in 00df498 on `build/sr-pack-4a`: the named refused-file row runs a first
+  sign-in before commit 1 and, beside the old committed pair, a sign-in and a refresh before commit 3 and a refresh
+  before commit 4; the ENOENT row adds a sign-in that crashed after staging and a refresh before commit 3, each with
+  its file removed beside the committed account. Still 21 rows; wrong fixes W-o5 and W-h3 (1 of 21 each); README
+  rows paragraph and a new limit "Vault states beside a refused or missing file."; accepted0 is a106f3bc.
+- Rebase: the pack branch moved onto d73511f; each pack commit kept its change (only the CHANGELOG line pair
+  conflicted; change lines of d73511f..12ebdb8 equal dead160..556b166). Id map: 748925b -> a78f0d5, e8d8dec ->
+  71d9d6b, 3b5a38f -> 969f7ba, 9598b70 -> cb9a256, 5d67cf9 -> 3885f71, 8be02c7 -> 961e842, c9903e3 -> 3f9b8af,
+  26c89c6 -> 03df586, 4cc2d0c -> 1f3b694, e19b655 -> 2c86728, 633e10b -> e5f0e5a, 18a39a9 -> 53fbdb6, fb55bb3 ->
+  f487554, f16f10f -> eb4d19e, f25b52c -> 178054f, 556b166 -> 12ebdb8.
+- Verified: d73511f and 00df498 each passed the full regression gate; on the pack fix's tree HostPackX21 with the MoonAliza clone 18 of 18 OK in 4947 s, every wrong fix FAIL with its
+  stated count of 21 (W-o5, W-h3 1 each); on a scratch tree the accepted fix
+  passes 21 of 21, WF-O5 and WF-H3 fail one row each, and every other wrong fix fails its stated count; make-repo
+  ids equal the manifest; the MoonAliza clone is unchanged (status empty, HEAD 1ac226d). Not run: a fresh
+  refute-first check of the three heads.
+- Heads to review (nothing pushed): kit d73511f, pack 00df498, docs this entry's commit. Not done: the pushes, the
+  #120 and #122 body updates, the merges (the owner's).

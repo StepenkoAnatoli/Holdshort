@@ -3,7 +3,7 @@
 Result: sr-pack-4a ACCEPTED (check 5, 2f73c9f, draft PR #122, stacked on #120). The kit change it depends on, lead
 integrations 2-8 on build/sr-kit-cases (#120, head 3ed05d4), is ACCEPTED by check 8. Nothing merged; merges are yours.
 
-After those verdicts a review loop (two rounds of fresh reviewers) found more, so the heads to review moved; see RUN.md,
+After those verdicts a review loop (three rounds of fresh reviewers) found more, so the heads to review moved; see RUN.md,
 entry "review loop after the ACCEPTs":
 - round 1: RL1-1 (S3, pack) a wrong fix that keeps the staged pair when the account file was read and refused graded
   PASS, fixed in 045ee89, f16f10f after the rebase (refused-file row, W-o2); RL1-2 (S4) item 1 below misdescribed
@@ -15,7 +15,13 @@ entry "review loop after the ACCEPTs":
   RL2-1 (S3, pack) the refused-file row refused only the signed-out file, so a keep while a refused file still names an
   account (or names another format version) graded PASS, fixed in 556b166 (named refused-file row, version-2 forms, 21
   rows, W-o3, W-o4).
-- heads now: kit dead160, pack 556b166, docs the RUN.md commit after 6a9f29c. Outcome seq 3 ("accepted", check 5's
+- round 3: RL3-K1 (S3, kit) the grade still ran the candidate's own git, so a `core.fsmonitor` hook in its `.git/config`
+  ran inside the grade and could poison the view, fixed in d73511f (a history repo of the grade's own; no git runs on
+  the candidate's `.git`); RL3-1 (S3, pack) no row refused a file beside a committed account, and RL3-2 (S4, pack) the
+  ENOENT row had only an empty vault, so keeps beside a committed entry graded PASS, both fixed in 00df498 (crash points
+  beside a committed account in both rows, still 21 rows, W-o5, W-h3, accepted0 a106f3bc). The pack branch was rebased
+  onto d73511f (556b166 is now 12ebdb8; id map in RUN.md).
+- heads now: kit d73511f, pack 00df498, docs the RUN.md commit after 6a2a2b9. Outcome seq 3 ("accepted", check 5's
   head) is append-only and stays.
 
 ## What you should hear
@@ -57,8 +63,11 @@ entry "review loop after the ACCEPTs":
   mtime change at 15:32:49Z, attributed to a read outside the class (no file in `.git` changed), and the six tests that run the
   clone pass with F5 on a rerun; the clone is unchanged (status empty, HEAD 1ac226d); kit suite 163 OK (11 skipped) in
   the gate; accepted0 1f7aa3bf.
+- Review loop round 3, pack at 00df498 (RL3-1, RL3-2): still 21 rows; HostPackX21 with the clone 18 of 18 OK in 4947 s,
+  every wrong fix FAIL with its stated count of 21 (W-o5 1, W-h3 1); the clone is unchanged (status empty, HEAD
+  1ac226d); make-repo builds base0 4eaf584a and accepted0 a106f3bc; gate PASS on d73511f and on 00df498.
 
 ## Next (yours)
-Once the loop's heads are pushed (kit dead160 to #120, pack 556b166 to #122, this branch to #119), review and merge
+Once the loop's heads are pushed (kit d73511f to #120, pack 00df498 to #122, this branch to #119), review and merge
 #120, then #122, then #119. Plan step 5 (sr-policy-7, sr-packs-t1) waits for you; follow-ups FU-1..FU-5
 on #120 are still open.
