@@ -489,3 +489,48 @@ read only, for the subject trees the packs export.
   clone is unchanged (status empty, HEAD 1ac226d). Not run: a fresh refute-first check of the three heads.
 - Heads to review (nothing pushed): kit 2937b2c, pack 7595509, docs this entry's commit. Not done: the pushes, the
   #120 and #122 body updates, the merges (the owner's).
+
+## 2026-11-02 - review loop round 6: RL6-P1 on the pack
+- Why this entry: the entry above names kit 2937b2c and pack 7595509 as the heads to review. Round 6
+  (review-loop-round-6) found one S3 on the pack, fixed at the root. Nothing new on the kit or the docs.
+- RL6-P1 (S3, pack): the unreadable start's fault (`failingReads`) failed only lstat, stat, open and readFile of
+  node:fs/promises and their sync forms. The callback forms still read the file, and so did `createReadStream`, which
+  opens through the callback `fs.open`. So the reviewer's W-r passed 22 of 22 and graded PASS: it reads the file again
+  by a stream, and the vault keeps only the staged refs that read names. On a real unreadable file the stream fails
+  too, so W-r loses the account as the base does. The README said the opposite ("a fix that re-reads the file another
+  way still meets the error").
+- Fixed in a6d12b8 on `build/sr-pack-4a`:
+  - The test file installs wrappers once, before the subject's modules load. They cover open, readFile, stat, lstat,
+    access, copyFile and cp, in the promise, callback and sync forms, plus openAsBlob. While a fault is set, any call
+    whose path names the account file fails: a string, a Buffer or a file: URL, relative or not, and on Windows in any
+    case. A stream meets the error through the callback open, as its 'error' event.
+  - Each session and each start loads the subject's two modules afresh (`vi.resetModules`, then a dynamic import), as
+    a new process of the app does. Before this, every start ran in the first session's module instance, so a module
+    variable could remember the refs across a "restart".
+  - Three new wrong fixes, each 14 of 22: W-r (the reviewer's stream re-read), W-r2 (the same re-read through a
+    `promisify(readFile)` taken as the module loads) and W-r3 (the refs of the last file the process wrote, kept in a
+    module variable). WRONG-FIXES.md names twenty-seven.
+  - README: the simulation paragraph says what fails and names W-a, W-r, W-r2 and W-r3. A new limit, "Reads outside
+    `node:fs`", covers a child process, a worker thread, a native addon or internal bindings.
+  - accepted0 is d8af1fd4 (base0 4eaf584a unchanged). Still 22 rows.
+- How the class was hunted: nine more second-read routes passed the 7595509 test 22 of 22. They are openAsBlob, a
+  Buffer path, promisify(fs.readFile) at call time, copyFile then read, cp of the directory, promisify(readFile) taken
+  at load, fs.readFileSync taken at load, a file: URL and an upper-cased path. The reviewer's callback-only probe caught
+  one of them. Each fails 14 of 22 on the new test. W-r3 came out of the same hunt.
+- Decisions:
+  - Rewording the README alone was rejected.
+  - createReadStream itself is not swapped: a sync throw is not how a real stream fails.
+  - A real OS lock was rejected: on Windows it gives EBUSY only, and the rows need seven codes.
+  - The reviewer's optional orphan-row assertion was not added. W-r fails without it, and whether "leaves the pair as
+    the crash left it" covers every unreferenced staged entry is the owner's reading.
+- No rebase: the kit did not move (build/sr-kit-cases is still 2937b2c).
+- Verified:
+  - a6d12b8 passed the full regression gate on its commit.
+  - HostPackX21 with the MoonAliza clone on the fix's tree: 18 of 18 OK in 4895 s, every wrong fix FAIL with its stated count of 22 (W-r, W-r2 and W-r3 14), the alternatives PASS, red at base OK.
+  - On a scratch tree the accepted source passes 22 of 22, and W-r, W-r2 and W-r3 each fail 14 of 22. The 7595509 test
+    passes all three 22 of 22 (red first).
+  - tsc gives 0 errors and eslint is clean on the test.
+  - The MoonAliza clone is unchanged (status empty, HEAD 1ac226d).
+  - Not run: a fresh refute-first check of the heads.
+- Heads to review (nothing pushed): kit 2937b2c, pack a6d12b8, docs this entry's commit. Not done: the pushes, the
+  #120 and #122 body updates, the merges (the owner's).
