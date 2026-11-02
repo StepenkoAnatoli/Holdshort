@@ -424,3 +424,31 @@ read only, for the subject trees the packs export.
   refute-first check of the three heads.
 - Heads to review (nothing pushed): kit d73511f, pack 00df498, docs this entry's commit. Not done: the pushes, the
   #120 and #122 body updates, the merges (the owner's).
+
+## 2026-11-02 - review loop round 4: RL4-K1 on the kit; the pack rebased, unchanged
+- Why this entry: the entry above names kit d73511f and pack 00df498 as the heads to review. Round 4
+  (review-loop-round-4) found one more on the kit, fixed at the root; nothing new on the pack or the docs.
+- RL4-K1 (S3, kit): grade.sh read the candidate's commits against the root of the candidate's own history and left
+  every file the candidate's index holds out of `untracked`, so a replaced root that held a new file (`git add -A &&
+  git commit --amend` of the checkout's single commit, or an orphan root) hid it from `changed`, `outOfScope` and
+  `srcTouched`: the reviewer's fix cells r1 and r2 (an out-of-scope `evil.sh`) and pin cell p1 (a new `src/b.sh`)
+  graded PASS. Older than the loop (origin/main, 3ed05d4 and dead160 do the same). Fixed in 7ac8143 on
+  `build/sr-kit-cases`: committed and added are read against the base tree (from the pack repository, whose objects
+  the history git now also reads), every file on disk the base lacks that the candidate's index holds counts as
+  changed, the grade carries `baseRoot` (one root, holding the base tree) and `commits` counts only commits on top of
+  it (0 otherwise, so the gate's commit is one on the base). Found while testing it: git reads a commit-graph from an
+  alternate's `objects/info`, and a forged one in the candidate's objects (HEAD's parent cut) made HEAD its own root,
+  hiding a committed out-of-scope file on d73511f; every grade git now runs with `core.commitGraph=false`. 3 new tests
+  (amended, amended-then-pruned and orphan roots for fix and pin; the forged commit-graph; a gate history that does
+  not start at the base), red on d73511f's grade.sh; mutants without the commit-graph setting or the pack alternate
+  fail them; the reviewer's probes now grade PASS false.
+- Pack: no finding, so no pack commit. The pack branch moved onto 7ac8143 (only the CHANGELOG line pair conflicted;
+  the rebased head differs from 00df498 by exactly the kit's d73511f..7ac8143 change). Id map: a78f0d5 -> de02b1e,
+  71d9d6b -> 57e25e5, 969f7ba -> 5a4c9c1, cb9a256 -> 6970184, 3885f71 -> a32bb15, 961e842 -> d2bd4b2, 3f9b8af ->
+  c71b139, 03df586 -> 939bfff, 1f3b694 -> fca20d3, 2c86728 -> b045727, e5f0e5a -> 3903eee, 53fbdb6 -> 17473ce,
+  f487554 -> 09387d4, eb4d19e -> 6edc4ea, 178054f -> 5635015, 12ebdb8 -> db25af2, 00df498 -> 0ec45ca.
+- Verified: 7ac8143 passed the full regression gate on its commit, and the gate run on the rebased pack head 0ec45ca
+  passed (the rebase made no commit through the hook); on 0ec45ca HostPackX21 with the MoonAliza clone 18 of 18 OK in
+  4012 s; the clone is unchanged (status empty, HEAD 1ac226d). Not run: a fresh refute-first check of the three heads.
+- Heads to review (nothing pushed): kit 7ac8143, pack 0ec45ca, docs this entry's commit. Not done: the pushes, the
+  #120 and #122 body updates, the merges (the owner's).

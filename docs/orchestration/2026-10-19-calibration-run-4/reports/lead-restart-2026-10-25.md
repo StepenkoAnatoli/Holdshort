@@ -3,7 +3,7 @@
 Result: sr-pack-4a ACCEPTED (check 5, 2f73c9f, draft PR #122, stacked on #120). The kit change it depends on, lead
 integrations 2-8 on build/sr-kit-cases (#120, head 3ed05d4), is ACCEPTED by check 8. Nothing merged; merges are yours.
 
-After those verdicts a review loop (three rounds of fresh reviewers) found more, so the heads to review moved; see RUN.md,
+After those verdicts a review loop (four rounds of fresh reviewers) found more, so the heads to review moved; see RUN.md,
 entry "review loop after the ACCEPTs":
 - round 1: RL1-1 (S3, pack) a wrong fix that keeps the staged pair when the account file was read and refused graded
   PASS, fixed in 045ee89, f16f10f after the rebase (refused-file row, W-o2); RL1-2 (S4) item 1 below misdescribed
@@ -21,7 +21,11 @@ entry "review loop after the ACCEPTs":
   ENOENT row had only an empty vault, so keeps beside a committed entry graded PASS, both fixed in 00df498 (crash points
   beside a committed account in both rows, still 21 rows, W-o5, W-h3, accepted0 a106f3bc). The pack branch was rebased
   onto d73511f (556b166 is now 12ebdb8; id map in RUN.md).
-- heads now: kit d73511f, pack 00df498, docs the RUN.md commit after 6a2a2b9. Outcome seq 3 ("accepted", check 5's
+- round 4: RL4-K1 (S3, kit) the grade read the commits against the candidate's own root, so an amended or orphan root
+  that held a new file hid it from the scope and source checks, fixed in 7ac8143 (commits read against the base tree,
+  `baseRoot`, no commit-graph read). No pack finding: the pack branch was rebased onto 7ac8143 (00df498 is now
+  0ec45ca; id map in RUN.md).
+- heads now: kit 7ac8143, pack 0ec45ca, docs the RUN.md commit after a44e6b2. Outcome seq 3 ("accepted", check 5's
   head) is append-only and stays.
 
 ## What you should hear
@@ -66,8 +70,10 @@ entry "review loop after the ACCEPTs":
 - Review loop round 3, pack at 00df498 (RL3-1, RL3-2): still 21 rows; HostPackX21 with the clone 18 of 18 OK in 4947 s,
   every wrong fix FAIL with its stated count of 21 (W-o5 1, W-h3 1); the clone is unchanged (status empty, HEAD
   1ac226d); make-repo builds base0 4eaf584a and accepted0 a106f3bc; gate PASS on d73511f and on 00df498.
+- Review loop round 4, pack rebased to 0ec45ca (no pack change): HostPackX21 with the clone 18 of 18 OK in 4012 s; the
+  clone is unchanged (status empty, HEAD 1ac226d); gate PASS on 7ac8143 and on a gate run of 0ec45ca.
 
 ## Next (yours)
-Once the loop's heads are pushed (kit d73511f to #120, pack 00df498 to #122, this branch to #119), review and merge
+Once the loop's heads are pushed (kit 7ac8143 to #120, pack 0ec45ca to #122, this branch to #119), review and merge
 #120, then #122, then #119. Plan step 5 (sr-policy-7, sr-packs-t1) waits for you; follow-ups FU-1..FU-5
 on #120 are still open.
