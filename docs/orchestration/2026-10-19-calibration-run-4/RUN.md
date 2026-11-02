@@ -534,3 +534,55 @@ read only, for the subject trees the packs export.
   - Not run: a fresh refute-first check of the heads.
 - Heads to review (nothing pushed): kit 2937b2c, pack a6d12b8, docs this entry's commit. Not done: the pushes, the
   #120 and #122 body updates, the merges (the owner's).
+
+## 2026-11-02 - review loop round 7: RL7-P1 and RL7-P2 on the pack
+- Why this entry: the entry above names kit 2937b2c and pack a6d12b8 as the heads to review. Round 7
+  (review-loop-round-7) found two S3s on the pack, both left by the RL6-P1 fix, both fixed at the root. Nothing new on
+  the kit or the docs.
+- RL7-P1 (S3, pack): every start ran in the one vitest process. `vi.resetModules` gives fresh modules, but it keeps
+  `globalThis`, `process`, its environment, the built-in module objects and the `Symbol.for` registry. So the
+  reviewer's W-g (W-r3 with its memory on `globalThis`) passed 22 of 22 and graded PASS. A real next start is a new
+  process and keeps none of it, so W-g loses the account as the base does. The README and the comment on `load()` said
+  nothing a start keeps outlives it.
+- RL7-P2 (S3, pack): the fault matched the path string, and `link`, `rename` and `symlink` were not wrapped. So the
+  reviewer's W-s (a second read through a hard link it makes to the file) passed 22 of 22 and graded PASS. Under a real
+  Windows lock the read through the link fails with EBUSY (the reviewer reproduced it), so W-s loses the account too.
+- Fixed in cfe982c on `build/sr-pack-4a`:
+  - Each later start runs as the app's next start does, in a new node process with an empty environment. The
+    candidate's two modules are bundled once per run by esbuild from its own source and loaded there; the start is
+    driven there and writes back the account it read, whether the file went to another app and which refs its vault
+    holds. Only a first session runs in the test's process.
+  - The fault knows the file by its identity (device and file index, which every name of the file shares; its real
+    path where the index is 0). So a hard link, a rename, a symlink or junction, a `\\?\` prefix or another spelling
+    meets the error. A module loader hook fails an `import` or a `require` of the file too. The wrappers are in place
+    in the start's process before the subject loads.
+  - Two new wrong fixes: W-r4 (W-g, 14 of 22) and W-r5 (W-s, 15 of 22: the rm of the link meets the fault too, so the
+    file keeps a second link and the next readable start refuses it). WRONG-FIXES.md names twenty-nine.
+  - README: the simulation paragraph says each later start runs in its own process, what the fault covers and that it
+    goes by identity, and names W-r4 and W-r5. The limit "Reads outside `node:fs`" now names the start's process. A
+    new limit, "Paths beside the subject's own module" (`import.meta.url` and `__dirname` point at the bundle).
+  - accepted0 is 1c516672 (base0 4eaf584a unchanged). Still 22 rows.
+- How the class was hunted: 14 more routes. Read routes: a symlink, a junction, a rename, a `\\?\` long path, the
+  `::$DATA` stream name, a trailing dot, `import` of the JSON, `require` of the JSON, and a hard link then copyFile.
+  Memory routes: `globalThis`, the environment, a property on `process`, a property on the `fs` module and a
+  `Symbol.for` key. Eleven of them pass the a6d12b8 test 22 of 22 (the JSON import, the JSON require and the trailing
+  dot fail it 14 of 22). On the new test all 14, and the nine routes of round 6, fail 14 of 22 (the hard-link copy 15).
+- Decisions:
+  - Wrapping `link`, `rename` and `symlink`, or clearing `globalThis` keys between starts, was rejected: each closes
+    one route of a class a real new process and a real lock close as a whole.
+  - The start's process gets an empty environment, not a copy of the test's: the kit's hygiene check refuses an
+    environment read in a pack, and the app's next process gets nothing the last one set either.
+  - A real OS lock is still rejected (EBUSY only, on Windows; the rows need seven codes).
+- No rebase: the kit did not move (build/sr-kit-cases is still 2937b2c).
+- Verified:
+  - cfe982c passed the full regression gate on its commit.
+  - HostPackX21 with the MoonAliza clone on the fix's tree: 18 of 18 OK in 6511 s, every wrong fix FAIL with its stated count of 22 (W-r4 14, W-r5 15), the alternatives PASS, red at base OK.
+  - On a scratch tree the accepted source passes 22 of 22; the base, W-r3, W-g and the three other memory routes fail
+    14 of 22, W-s and the hard-link copy 15. The a6d12b8 test passes W-g and W-s 22 of 22 (the reviewer's log; red
+    first).
+  - The new no-clone checks fail on a6d12b8's pack files and pass now. tsc gives 0 errors and eslint is clean on the
+    test.
+  - The MoonAliza clone is unchanged (status empty, HEAD 1ac226d).
+  - Not run: a fresh refute-first check of the heads.
+- Heads to review (nothing pushed): kit 2937b2c, pack cfe982c, docs this entry's commit. Not done: the pushes, the
+  #120 and #122 body updates, the merges (the owner's).

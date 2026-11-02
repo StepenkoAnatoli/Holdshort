@@ -3,7 +3,7 @@
 Result: sr-pack-4a ACCEPTED (check 5, 2f73c9f, draft PR #122, stacked on #120). The kit change it depends on, lead
 integrations 2-8 on build/sr-kit-cases (#120, head 3ed05d4), is ACCEPTED by check 8. Nothing merged; merges are yours.
 
-After those verdicts a review loop (six rounds of fresh reviewers) found more, so the heads to review moved; see RUN.md,
+After those verdicts a review loop (seven rounds of fresh reviewers) found more, so the heads to review moved; see RUN.md,
 entry "review loop after the ACCEPTs":
 - round 1: RL1-1 (S3, pack) a wrong fix that keeps the staged pair when the account file was read and refused graded
   PASS, fixed in 045ee89, f16f10f after the rebase (refused-file row, W-o2); RL1-2 (S4) item 1 below misdescribed
@@ -34,7 +34,12 @@ entry "review loop after the ACCEPTs":
   re-reads the file by a stream (W-r) graded PASS, fixed in a6d12b8 (every node:fs read of the account file fails, by
   string, Buffer or file: URL; each session and start loads the subject's modules afresh; W-r, W-r2, W-r3; accepted0
   d8af1fd4). No kit finding and no rebase.
-- heads now: kit 2937b2c, pack a6d12b8, docs the RUN.md commit after 8fcf32c. Outcome seq 3 ("accepted", check 5's
+- round 7: RL7-P1 (S3, pack) every start ran in the one test process, so a wrong fix that keeps the refs on `globalThis`
+  (W-r4) graded PASS, and RL7-P2 (S3, pack) the fault matched the path string, so a second read through a hard link
+  (W-r5) graded PASS, both fixed in cfe982c (each later start runs in a new process of its own with an empty
+  environment; the fault knows the file by its identity and fails the module loader too; accepted0 1c516672). No kit
+  finding and no rebase.
+- heads now: kit 2937b2c, pack cfe982c, docs the RUN.md commit after bae1d04. Outcome seq 3 ("accepted", check 5's
   head) is append-only and stays.
 
 ## What you should hear
@@ -89,8 +94,12 @@ entry "review loop after the ACCEPTs":
   wrong fix FAIL with its stated count of 22 (W-r, W-r2 and W-r3 14); nine more second-read routes from the class hunt
   each fail 14 of 22; the clone is unchanged (status empty, HEAD 1ac226d); make-repo builds base0 4eaf584a and
   accepted0 d8af1fd4; gate PASS on a6d12b8.
+- Review loop round 7, pack at cfe982c (RL7-P1, RL7-P2): still 22 rows; HostPackX21 with the clone 18 of 18 OK in
+  6511 s, every wrong fix FAIL with its stated count of 22 (W-r4 14, W-r5 15); fourteen more routes from the class hunt
+  (eleven of them pass the a6d12b8 test) each fail 14 or 15 of 22; the clone is unchanged (status empty, HEAD 1ac226d);
+  make-repo builds base0 4eaf584a and accepted0 1c516672; gate PASS on cfe982c.
 
 ## Next (yours)
-Once the loop's heads are pushed (kit 2937b2c to #120, pack a6d12b8 to #122, this branch to #119), review and merge
+Once the loop's heads are pushed (kit 2937b2c to #120, pack cfe982c to #122, this branch to #119), review and merge
 #120, then #122, then #119. Plan step 5 (sr-policy-7, sr-packs-t1) waits for you; follow-ups FU-1..FU-5
 on #120 are still open.
