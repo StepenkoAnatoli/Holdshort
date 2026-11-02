@@ -1,0 +1,14 @@
+{
+ "schema_version": 1,
+ "issue": 59,
+ "status": "unqualified",
+ "destination": null,
+ "profiles": {},
+ "accounting": null,
+ "count_endpoint": null,
+ "notes": [
+  "Offline preparation only (issue #59): no Gemini destination, model id, price configuration or accounting scope is authorized, so build_dispatch_fn refuses before any request.",
+  "A live comparison needs a host-reviewed record with status \"qualified\", an approved destination, at least one profile holding its model id, output ceiling and input ceiling, and accounting with scope, currency, price_revision and the sha256 of the price configuration.",
+  "The bindings and the harness differences are documented in docs/GEMINI_COMPARISON_ADAPTER.md."
+ ]
+}
