@@ -252,22 +252,28 @@ pin case is red at its base by rule, so a pack whose rules hold at the base need
 the common preamble (the relayed-text reconciliation, the checkout, the commit command), and `run.template.js` runs a
 gate item per profile like a pin or fix item, with no grader agent. `grade.sh gate` passes the cell when
 `commands.gate` exits 0 in the candidate's checkout, every `invariants` path holds the files and content it holds at
-the base, every `required_paths` path exists, and the candidate committed; the grade carries `gateExit`,
-`invariantsIntact` and `requiredPresent` (each a `{path: bool}` map) and `committed`. An invariant is compared file by
+the base, every `required_paths` path exists, and the candidate committed on top of the base commit; the grade carries
+`gateExit`, `invariantsIntact` and `requiredPresent` (each a `{path: bool}` map) and `committed`. An invariant is compared file by
 file with the base tree: every base file under the path must be there as a plain file that hashes as at the base, and
 no other file may be there that the base's `.gitignore` rules do not ignore (one the candidate committed counts even
 when ignored). The checkout is read as files by a git of the grade's own, not the candidate's: a fresh repository
 outside the checkout whose objects are the pack repository's, whose index is the base tree, whose attributes are the
 base tree's (`--attr-source`, so git 2.40+ is needed) and whose config is the host's. What the candidate committed and
-staged is read by a second git of the grade's own, whose objects are the candidate's, whose index is a copy of the
-candidate's, and whose commit is the candidate's HEAD read from the files `.git/HEAD`, `.git/refs` and
-`.git/packed-refs`. No git runs on the candidate's `.git` as a repository, so nothing in its `.git/config` is applied
+staged is read by a second git of the grade's own, whose objects are the candidate's and the pack repository's, whose
+index is a copy of the candidate's, and whose commit is the candidate's HEAD read from the files `.git/HEAD`, `.git/refs`
+and `.git/packed-refs`. HEAD is compared with the case's base tree, never with the history's own root: the candidate
+writes that history, and an amend of the checkout's single commit or an orphan root put its new files in a root, where
+a comparison with the root did not see them (review loop RL4-K1). Every grade carries `baseRoot` (the history has one
+root and it holds the base tree), and `commits` counts the commits on top of that root, 0 when `baseRoot` is false. No
+git of the grade reads a commit-graph file, which the candidate can write into its objects (a forged one made HEAD its
+own root). No git runs on the candidate's `.git` as a repository, so nothing in its `.git/config` is applied
 or run: a clean filter there and in `.git/info/attributes`, a line in its `.git/info/exclude` or a `.gitignore` it adds
 does not hide a change (review loop RL2-K1), and a program that `core.fsmonitor` names does not run inside the grade,
 where it could rewrite the grade's own repositories (RL3-K1). A checkout whose `.git` is not a directory is graded as
 having no commit (exit 3). Line endings are compared as the host's git
 would store them, so a conversion the host makes reads as the same content. The same view gives every grade's
-`changed` (with the candidate's committed and staged files) and `untracked`, so a tracked file marked skip-worktree or
+`changed` (with the candidate's committed and staged files, and every file on disk the base lacks that the candidate's
+index holds) and `untracked` (such a file the index does not hold), so a tracked file marked skip-worktree or
 assume-unchanged and then edited still counts as changed in a fix's scope check and a pin's source check. The view
 hashes the paths on stdin, so a directory of any size is graded. `observations.py` counts gate cells
 in `scores.json` (`cells.gate`, `category_mapping.gate`). The invariants and the required paths are read before the

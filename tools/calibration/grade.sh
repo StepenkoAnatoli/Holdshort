@@ -23,7 +23,10 @@
 # invariants, `changed`, `untracked`, the source diff) is read by a git of the grade's own over the base tree, and what
 # the candidate committed and staged by a second git of the grade's own over the candidate's objects and a copy of its
 # index, its HEAD and refs read as files: no git ever runs on the candidate's .git as a repository, so nothing in its
-# config, attributes, excludes, hooks or index flags (the candidate's to write) is applied or run.
+# config, attributes, excludes, hooks or index flags (the candidate's to write) is applied or run. What the candidate
+# committed is read against the case's base tree, never against a root commit the candidate can replace (an amend of
+# the checkout's single commit, an orphan root), and every file on disk that the base lacks and the candidate's index
+# holds counts as changed.
 #
 # Exit 0 with the grade (PASS true or false) as one JSON object; 2 on a bad argument, an unusable manifest or a
 # checkout that shares a path with the pack; 3 with {"error": ...} when the checkout is missing or has no commit.
@@ -154,11 +157,17 @@ if cand == pack_dir or pack_dir in cand.parents or cand in pack_dir.parents:
 #   beside it), and the commit it reads is the candidate's HEAD resolved from the files .git/HEAD, .git/refs and
 #   .git/packed-refs. It has no work tree, so an index flag changes nothing it reports. The candidate's objects never
 #   reach the view: a pack of the candidate's could otherwise stand in for the base tree the view's index is read from.
-# Every git of the grade runs with core.fsmonitor off and without replace refs, so no program and no object substitution
-# comes from what the host's config may name either.
+#   The history also reads the pack repository's objects, so it holds the base tree even when the candidate's history
+#   no longer does (an amended root, then gc): its commits are compared with the base tree, not with its own root
+#   (review loop RL4-K1: a replaced root commit that held a new file left the file out of every list).
+# Every git of the grade runs with core.fsmonitor off, without replace refs and without commit-graph files, so no
+# program, no object substitution and no history a commit-graph claims (git reads one from an alternate's
+# objects/info: a forged one cut HEAD's parent, so HEAD read as its own root) comes from the host's config or the
+# candidate's objects.
 VIEW = tempfile.TemporaryDirectory(prefix="grade-view-", ignore_cleanup_errors=True)
 view_dir, hist_dir = Path(VIEW.name) / "git", Path(VIEW.name) / "history"
-SAFE = ["--no-replace-objects", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "core.quotepath=off"]
+SAFE = ["--no-replace-objects", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "core.commitGraph=false",
+        "-c", "core.quotepath=off"]
 
 def run_git(what, repo_args, args, cwd, stdin=None):
     p = subprocess.run(["git", *SAFE, *repo_args, *args], cwd=cwd, capture_output=True, input=stdin if stdin is not None else b"")
@@ -236,9 +245,10 @@ def make_view():
             refuse(f"no view repository could be made for the pack repository {repo}")
         (d / "objects" / "info").mkdir(parents=True, exist_ok=True)
     (view_dir / "objects" / "info" / "alternates").write_bytes((Path(git_dir) / "objects").as_posix().encode("utf-8") + b"\n")
-    # the history: the candidate's objects (read only) and a copy of its index; git treats a missing index as empty,
-    # as the candidate's own git did
-    (hist_dir / "objects" / "info" / "alternates").write_bytes((cand / ".git" / "objects").as_posix().encode("utf-8") + b"\n")
+    # the history: the candidate's objects and the pack repository's (both read only) and a copy of the candidate's
+    # index; git treats a missing index as empty, as the candidate's own git did
+    (hist_dir / "objects" / "info" / "alternates").write_bytes(b"".join(p.as_posix().encode("utf-8") + b"\n"
+                                                                         for p in (cand / ".git" / "objects", Path(git_dir) / "objects")))
     for f in [cand / ".git" / "index", *sorted((cand / ".git").glob("sharedindex.*"))]:
         if f.is_file() and not f.is_symlink():
             shutil.copyfile(f, hist_dir / f.name)
@@ -311,16 +321,26 @@ try:
 except RuntimeError as e:
     print(json.dumps({"task": task, "error": f"no commit in the checkout: HEAD {head_id} is not a commit in its objects: {e}"}))
     sys.exit(3)
-root = roots[0]
-# committed: the commits' files, renames as both names; staged: the copied index against HEAD; changed adds the view's
-# diff-files (the checkout against the base tree), which holds every file the work tree changes, so nothing is read
-# against the candidate's index flags
-commits = int(hgit("rev-list", "--count", f"{root}..{head_id}"))
-committed = hnames("diff-tree", "-r", "-z", "--name-only", "--no-renames", root, head_id)
+# The checkout's history is one root commit holding the base tree (historyless-checkout.sh), but the candidate writes
+# that history: an amend of the root, or an orphan root, puts its own files in a root. So nothing is read against a
+# root: committed and added compare HEAD with the base tree, baseRoot says whether the history still starts at the base
+# (exactly one root, holding the base tree), and commits counts the commits on top of that root (0 when there is none).
+base_tree = subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", f"{base}^{{tree}}"], capture_output=True,
+                           encoding="utf-8", stdin=subprocess.DEVNULL).stdout.strip()
+if not OID.fullmatch(base_tree):
+    refuse(f"no tree for the base {base} in the pack repository {repo}")
+base_root = len(roots) == 1 and hgit("rev-parse", "--verify", f"{roots[0]}^{{tree}}").strip() == base_tree
+commits = int(hgit("rev-list", "--count", f"{roots[0]}..{head_id}")) if base_root else 0
+# committed: HEAD's files that differ from the base tree, renames as both names; staged: the copied index against HEAD;
+# changed adds the view's diff-files (the checkout against the base tree), which holds every base file the work tree
+# changes, so nothing is read against the candidate's index flags, and every file on disk the base does not hold that
+# the candidate's index does (it is not untracked, so it must be changed: RL4-K1)
+committed = hnames("diff-tree", "-r", "-z", "--name-only", "--no-renames", base_tree, head_id)
 staged = hnames("diff-index", "--cached", "-z", "--name-only", "--no-renames", head_id)
 indexed = set(hnames("ls-files", "-z"))
-changed = sorted(set(committed + staged + vnames("diff-files", "--name-only", "-z")))
-untracked = sorted(f for f in view_others() if f not in indexed and not any(f == ln or f.startswith(ln + "/") for ln in links))
+others = [f for f in view_others() if not any(f == ln or f.startswith(ln + "/") for ln in links)]
+changed = sorted(set(committed + staged + vnames("diff-files", "--name-only", "-z") + [f for f in others if f in indexed]))
+untracked = sorted(f for f in others if f not in indexed)
 
 if task == "gate":
     def cand_blobs(path):
@@ -336,14 +356,15 @@ if task == "gate":
     intact = {x: cand_blobs(x) == base_inv[x] for x in invariants}
     present = {x: (cand / x).exists() for x in required}
     gate_exit = run_bash(gate_cmd)
-    result = {"task": task, "head": head, "commits": commits, "changed": changed, "staged": staged, "untracked": untracked,
-              "gateExit": gate_exit, "invariantsIntact": intact, "requiredPresent": present, "committed": commits > 0,
+    result = {"task": task, "head": head, "baseRoot": base_root, "commits": commits, "changed": changed, "staged": staged,
+              "untracked": untracked, "gateExit": gate_exit, "invariantsIntact": intact, "requiredPresent": present, "committed": commits > 0,
               "PASS": gate_exit == 0 and all(intact.values()) and all(present.values()) and commits > 0}
     print(json.dumps(result, indent=1))
     sys.exit(0)
 
-# added: a file the commits or the index add (a rename is not an addition: -M, as git diff's default diff.renames)
-added = (hnames("diff-tree", "-r", "-z", "--name-only", "-M", "--diff-filter=A", root, head_id)
+# added: a file HEAD or the index adds to the base tree (a rename is not an addition: -M, as git diff's default
+# diff.renames)
+added = (hnames("diff-tree", "-r", "-z", "--name-only", "-M", "--diff-filter=A", base_tree, head_id)
          + hnames("diff-index", "--cached", "-z", "--name-only", "-M", "--diff-filter=A", head_id))
 new_tests = sorted({f for f in added + untracked if new_test.search(f)} - ({acc_to} if task == "fix" else set()))
 
@@ -417,7 +438,7 @@ def restore(final=False):
     for f, ns in saved_mtime.items():
         os.utime(cand / f, ns=(ns, ns))
 
-result = {"task": task, "head": head, "commits": commits, "changed": changed, "staged": staged, "untracked": untracked}
+result = {"task": task, "head": head, "baseRoot": base_root, "commits": commits, "changed": changed, "staged": staged, "untracked": untracked}
 try:
     if task == "pin":
         files = new_tests

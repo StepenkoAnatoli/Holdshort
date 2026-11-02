@@ -2125,6 +2125,69 @@ class Scripts(unittest.TestCase):
         self.assertEqual(code, 3, out)
         self.assertIn("not a directory", d.get("error", ""), out)
 
+    def test_grade_a_replaced_root_commit_hides_no_file_the_candidate_adds(self):
+        # review loop RL4-K1: the grade read the commits against the candidate's own root, and a file the candidate's
+        # index holds is not untracked, so a root that already held a new file (an amend of the single root commit, an
+        # orphan root) left the file out of `changed`, `untracked` and the scope and source checks: a fix with an
+        # out-of-scope file and a pin with a new source file graded PASS. Now the commits are read against the base tree
+        pack, c = make_pack(self.root, self.env)
+        base_tree = sh(["git", "rev-parse", f"{c['base']}^{{tree}}"], c["repo"], self.env).stdout.strip()
+        for form in ("amend", "amend-gc", "orphan"):
+            cand = self.candidate(c, f"fix-root-{form}")
+            if form == "orphan":
+                (cand / "src" / "mod.py").write_text("def add(a, b):\n    return a + b\n")
+                (cand / "evil.sh").write_text("echo out of scope\n")
+                replace_root(cand, self.env, form, top=lambda: self.fix_like_the_accepted_one(cand))
+            else:
+                self.fix_like_the_accepted_one(cand)
+                (cand / "evil.sh").write_text("echo out of scope\n")
+                replace_root(cand, self.env, form)
+            self.assertEqual(sh(["git", "status", "--porcelain"], cand, self.env).stdout, "", form)
+            if form == "amend-gc":  # the candidate's objects no longer hold the base tree; the grade reads the pack's
+                self.assertNotEqual(sh(["git", "cat-file", "-e", base_tree], cand, self.env, check=False).returncode, 0)
+            code, d, out = grade(pack / "manifest.json", "fix", cand, self.env)
+            self.assertEqual(code, 0, f"{form}: {out}")
+            self.assertIs(d["candidateGreen"], True, f"{form}: {out}")
+            self.assertIn("evil.sh", d["changed"], f"{form}: {out}")
+            self.assertEqual((d["scopeOk"], d["outOfScope"], d["PASS"]), (False, ["evil.sh"], False), f"{form}: {out}")
+            self.assertEqual((d.get("baseRoot"), d["commits"]), (False, 0), f"{form}: {out}")
+        # the same fix without the extra file, amended: graded on its work, and no commit on top of the base
+        cand = self.candidate(c, "fix-root-amend-clean")
+        self.fix_like_the_accepted_one(cand)
+        replace_root(cand, self.env, "amend")
+        code, d, out = grade(pack / "manifest.json", "fix", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((d["scopeOk"], d["PASS"], d["baseRoot"], d["commits"], d["committedWithMap"]), (True, True, False, 0, False), out)
+        for form in ("amend", "orphan"):
+            cand = self.candidate(c, f"pin-root-{form}")
+            (cand / "src" / "helper.py").write_text("Y = 1\n")
+            if form == "orphan":
+                replace_root(cand, self.env, form, top=lambda: (cand / "tests" / "test_pin.py").write_text(PIN_SUM))
+            else:
+                (cand / "tests" / "test_pin.py").write_text(PIN_SUM)
+                replace_root(cand, self.env, form)
+            code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)
+            self.assertEqual(code, 0, f"{form}: {out}")
+            self.assertEqual((d["testFiles"], d["redAtHead"], d["greenWithFix"]), (["tests/test_pin.py"], True, True), f"{form}: {out}")
+            self.assertEqual((d["srcTouched"], d["srcClean"], d["PASS"]), (["src/helper.py"], False, False), f"{form}: {out}")
+
+    def test_grade_reads_no_commit_graph_the_candidate_writes(self):
+        # a commit-graph in the candidate's objects/info is read through the history's alternate: one that cut HEAD's
+        # parent made HEAD read as the history's root, so the commits on top of the base and a file they add read as
+        # none (RL4-K1, same class). The grade reads no commit-graph
+        pack, c = make_pack(self.root, self.env)
+        cand = self.candidate(c, "fix-graph")
+        self.fix_like_the_accepted_one(cand)
+        (cand / "evil.sh").write_text("echo out of scope\n")
+        commit_all(cand, self.env, "fix")
+        cut_parent_in_commit_graph(cand, self.env)
+        self.assertEqual(sh(["git", "rev-list", "--count", "HEAD"], cand, self.env).stdout.strip(), "1")  # its own git reads the graph
+        code, d, out = grade(pack / "manifest.json", "fix", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertIs(d["candidateGreen"], True, out)
+        self.assertEqual((d["scopeOk"], d["outOfScope"], d["PASS"]), (False, ["evil.sh"], False), out)
+        self.assertEqual((d.get("baseRoot"), d["commits"]), (True, 1), out)
+
     def test_grade_pin_red_then_green_with_the_accepted_fix_passes(self):
         pack, c = make_pack(self.root, self.env)
         cand = self.candidate(c, "pin-good")
@@ -3353,6 +3416,43 @@ def fsmonitor_hook(cand: Path, env: dict, temp: Path, poison: str) -> tuple[Path
     return cand / ".git" / "hook.log", dict(env, TMPDIR=str(temp), TEMP=str(temp), TMP=str(temp))
 
 
+def replace_root(cand: Path, env: dict, form: str, top=None) -> None:
+    """Review loop RL4-K1: commit what the checkout holds into a root commit of the candidate's own instead of one on
+    top of the base root. "amend": `git add -A && git commit --amend` of the single root commit; "amend-gc": the same,
+    then the old root expired and pruned, so the candidate's objects no longer hold the base tree; "orphan": a new
+    orphan root holding everything, then top() writes more files, committed on top of it."""
+    sh(["git", "add", "-A"], cand, env)
+    if form.startswith("amend"):
+        sh(["git", "commit", "-q", "--amend", "-m", "work"], cand, env)
+        if form == "amend-gc":
+            sh(["git", "reflog", "expire", "--expire=now", "--all"], cand, env)
+            sh(["git", "gc", "-q", "--prune=now"], cand, env)
+    else:
+        sh(["git", "checkout", "-q", "--orphan", "cal/orphan"], cand, env)
+        sh(["git", "commit", "-q", "-m", "root"], cand, env)
+        if top:
+            top()
+        commit_all(cand, env, "on top")
+
+
+def cut_parent_in_commit_graph(cand: Path, env: dict) -> None:
+    """Write the candidate's commit-graph and cut HEAD's first parent in it (GRAPH_PARENT_NONE), as a candidate can: git
+    reads a commit-graph from an alternate's objects/info, so the forged graph made HEAD its own root."""
+    import struct
+    sh(["git", "commit-graph", "write", "--reachable"], cand, env)
+    head = sh(["git", "rev-parse", "HEAD"], cand, env).stdout.strip()
+    path = cand / ".git" / "objects" / "info" / "commit-graph"
+    path.chmod(0o644)
+    b = bytearray(path.read_bytes())
+    width = {1: 20, 2: 32}[b[5]]
+    chunks = {bytes(b[8 + 12 * i: 12 + 12 * i]): struct.unpack(">Q", b[12 + 12 * i: 20 + 12 * i])[0] for i in range(b[6])}
+    count = struct.unpack(">I", b[chunks[b"OIDF"] + 255 * 4: chunks[b"OIDF"] + 256 * 4])[0]
+    ids = [bytes(b[chunks[b"OIDL"] + width * i: chunks[b"OIDL"] + width * (i + 1)]).hex() for i in range(count)]
+    entry = chunks[b"CDAT"] + (width + 16) * ids.index(head) + width
+    b[entry: entry + 4] = struct.pack(">I", 0x70000000)
+    path.write_bytes(bytes(b))
+
+
 class KitCaseGrades(unittest.TestCase):
     """K2 (mutants for a pin case) and K3 (the gate case kind) in grade.sh."""
 
@@ -3428,7 +3528,7 @@ class KitCaseGrades(unittest.TestCase):
         cand = self.pin_cell(c, "pin-plain", PIN_SUM)
         code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)
         self.assertEqual(code, 0, out)
-        self.assertEqual(list(d), ["task", "head", "commits", "changed", "staged", "untracked", "srcTouched", "testFiles", "atHead",
+        self.assertEqual(list(d), ["task", "head", "baseRoot", "commits", "changed", "staged", "untracked", "srcTouched", "testFiles", "atHead",
                                    "withAcceptedFix", "lint", "redAtHead", "greenWithFix", "srcClean", "committed", "PASS", "restored"])
         self.assertIs(d["PASS"], True)
 
@@ -3672,6 +3772,24 @@ class KitCaseGrades(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual((d["gateExit"], d["committed"]), (0, False), out)
         self.assertIs(d["PASS"], False)
+
+    def test_k3_a_history_that_does_not_start_at_the_base_has_no_commit_on_it(self):
+        # review loop RL4-K1: commits were counted from the candidate's own root, so an orphan root holding the work and
+        # one commit on top of it read as a commit on the base. Only commits on top of the base root count now
+        pack, c = make_gate_pack(self.root, self.env)
+        cand = self.gate_cell(c, "gate-on-base")
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertEqual((code, d["commits"], d["PASS"]), (0, 1, True), out)
+        on_base = d.get("baseRoot")
+        for form in ("orphan", "amend"):
+            cand = self.gate_cell(c, f"gate-root-{form}", summary=form == "amend", commit=False)
+            replace_root(cand, self.env, form, top=lambda: ((cand / "out").mkdir(), (cand / "out" / "summary.md").write_text("summary\n")))
+            code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+            self.assertEqual(code, 0, f"{form}: {out}")
+            self.assertEqual((d["gateExit"], d["requiredPresent"]), (0, {"out/summary.md": True}), f"{form}: {out}")
+            self.assertEqual((d["committed"], d["PASS"]), (False, False), f"{form}: {out}")
+            self.assertEqual((d.get("baseRoot"), d["commits"]), (False, 0), f"{form}: {out}")
+        self.assertIs(on_base, True)
 
     def test_k3_a_gate_that_overruns_its_timeout_fails(self):
         case = copy.deepcopy(GATE_CASE)
