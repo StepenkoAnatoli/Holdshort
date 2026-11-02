@@ -12,7 +12,7 @@
   "reference": "docs/specification/github-sign-in.md (4.3 the replace steps, 4.4 the startup checks, 4.5 the crash windows), the comments of src/main/github-account-store.ts and src/main/vault.ts, tests/github-account-store.test.ts (its crash-window helpers, restart and unreadStart) and tests/vault.test.ts (the shipped harnesses)"
  },
  "commit_rule": null,
- "accepted_fix": "d8af1fd427e20197c53b1786bcf25d39c7b50f95",
+ "accepted_fix": "1c51667287ce15bd25631e5356af4c5b5e08bc8c",
  "findings": [
   {
    "id": "X2-1",
@@ -25,7 +25,7 @@
    "required_behaviour": "after that journey (the crash, one or more starts in a row whose open() cannot read the account file, then a start that can) the pair the file names is committed and live, for a first sign-in, for a sign-in that replaced an account and for a refresh (the old pair retired); each start that cannot read the file shows no account, leaves the file as it is and leaves the new pair in the vault as the crash left it, with its encrypted files; tombstoned entries are still deleted on every start, an unreferenced staged entry is deleted by the next start that reads the file, a missing file still reads as no account, whose staged entries the start deletes, beside a committed account too, and so does a file that is read and refused (invalid, oversized, with an extra key or a value the format does not allow), whatever account it names and whatever the vault holds beside it, which the start also rewrites",
    "found_rule": "a finding says the double fault (a crash between the file write and the commit, then a start that cannot read the file) loses the staged pair the file names",
    "cause_rule": "it locates the cause in the startup reconcile deleting unreferenced staged entries while the account file is unread",
-   "accepted_fix": "d8af1fd427e20197c53b1786bcf25d39c7b50f95"
+   "accepted_fix": "1c51667287ce15bd25631e5356af4c5b5e08bc8c"
   }
  ],
  "cases": {
@@ -75,10 +75,10 @@
  },
  "source_hashes": {
   ".gitattributes": "0065bcd2f22464bbbd231c56c33939f29e2f1bf54b43c5ae99f84760ae35c82b",
-  "README.md": "5affafe2d2f17d3dd1ce4e85aac6d08282de1592142e94ff96ab8510a0853d22",
-  "WRONG-FIXES.md": "fe6bc21f1bbe80abc557d32265b7966b4f53775491d854aab74b2b36928d2c55",
+  "README.md": "3dcbf396341c2e964319595cce436fe0da73b0ffc8d8f12e77a381b2f7ece54c",
+  "WRONG-FIXES.md": "c812493f819df9c444ed0c415c39a40db0473ca45ee2a59ea65671869627a99f",
   "make-repo.sh": "08f57ccd58f3cbb93a34b25592dc744d88be6e17c2d9a64f3d7158059096b276",
-  "zz_accepted_x2_1.test.ts": "64a9a6454446667b6967a2d60d34ae122da165b2027808cf4c378e9155939f6b"
+  "zz_accepted_x2_1.test.ts": "793a375a8d51abf50f5083e21ae5ed189cc78568f0ba2d3c0afddb18826d11ec"
  },
  "isolation": "candidate checkouts are history-less trees of the case base only (MoonAliza 16f637f's tree without its history and without its docs/orchestration/ directory, MoonAliza's orchestration records, which name the finding, state its cause and give the accepted fix), made outside the pack and outside the kit's tree, with node_modules linked from an npm ci install in a directory of its own holding only base0's package.json and package-lock.json, outside the pack and outside every git repository's work tree (never the install of a MoonAliza clone or checkout: through node_modules/.. a candidate would reach its docs/orchestration/ records and its history); the pack repository, its accepted commit (with the accepted journey test), this manifest, WRONG-FIXES.md and the ground truth stay outside every candidate's permitted paths; the pack itself carries no MoonAliza code, which the host's own clone provides when make-repo.sh builds the repository; the finding's cause is ground truth only: cases.fix.cause_in_prompt false keeps it out of the candidate's fix prompt, make-repo.sh copies no object of docs/orchestration/ that the two trees do not reach into the pack repository, and a test checks that no file or path name of the base holds the finding's id, the accepted fix's two names or a phrase of the cause (a textual check: a paraphrase is not caught)"
 }

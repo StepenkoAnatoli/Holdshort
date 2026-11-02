@@ -132,20 +132,30 @@ assumes only names the base already has, which belong to the required behaviour,
 
 It names nothing the accepted fix added. A vault-level row that called the accepted fix's new option directly would
 fail every other correct fix, so the journey rows assert what such a row would: the entries are kept, with their files
-and in their states. An unreadable file is simulated by failing every read of that one path for the whole start, as a
-file another process holds or a permission denies fails every read: every `node:fs` function that reads a file by its
-path (`open`, `readFile`, `stat`, `lstat`, `access`, `copyFile` and `cp`, each in its promise, callback and synchronous
-form, `cp` also from a directory that holds the file, and `openAsBlob`; a stream from `createReadStream` opens through
-the callback `open` and meets the error as its `error` event), whether the path is a string, a Buffer or a `file:` URL.
-The test puts these wrappers in place before it loads the subject's modules, so a read function the subject takes as
-its module loads is a wrapper too. So a fix that re-reads the file another way through `node:fs` still meets the error
-(W-a retries the same read, W-r reads it by a stream, W-r2 through a `promisify(readFile)` taken as its module loads).
-Each session and each start loads the subject's modules afresh, as a new process of the app does, so nothing a module
-keeps outlives a session or a start, and a fix that keeps the refs of the last file its process wrote fails too (W-r3).
-In the journey rows and the orphan row the starts after the crash run with the wall
-clock (`Date` alone, through vitest's fake timers) moved ten years on, so a fix that keeps the pair only while it is
-recent fails, whatever age limit it picks short of that (W-k keeps for a day, W-n for a year). The store's clock is
-injected and fixed, so only the vault sees the move. The journey rows fail the reads with EACCES, EBUSY and EIO, and
+and in their states. Each later start runs as the app's next start does, in a new process of its own: node, with an
+empty environment, loads the candidate's two modules (bundled once per run by esbuild from the candidate's own
+source), drives the start and reports the account it read, whether the file was issued to another app and which refs
+its vault holds. So nothing the first session or an earlier start kept in memory reaches a later start, whether a
+module kept it or the process did (on `globalThis`, on `process` or in its environment, on a built-in module object or
+under a `Symbol.for` key), and a fix that keeps the refs of the last file its process wrote fails
+(W-r3 keeps them in a module variable, W-r4 on `globalThis`). What a start leaves on disk reaches the next start, as it
+does in the app. An unreadable file is simulated by failing every read of that one file for the whole of the start's
+process, as a file another process holds or a permission denies fails every read: every `node:fs` function that reads
+a file by its path (`open`, `readFile`, `stat`, `lstat`, `access`, `copyFile` and `cp`, each in its promise, callback
+and synchronous form, `cp` also from a directory that holds the file, and `openAsBlob`; a stream from
+`createReadStream` opens through the callback `open` and meets the error as its `error` event), and the module loader
+(an `import` or a `require` of the file). The faulted file is known by its identity (its device and file index, which
+every name of the file shares), not by its path, so a hard link, a rename, a symlink or a junction, or another spelling
+of the path (a Buffer, a `file:` URL, a relative path, another case, a `\\?\` prefix) meets the error too. The start's
+process puts these wrappers in place before it loads the subject's modules, so a read function the subject takes as
+its module loads is a wrapper too. So a fix that re-reads the file another way through `node:fs`, or by another name,
+still meets the error (W-a retries the same read, W-r reads it by a stream, W-r2 through a `promisify(readFile)` taken
+as its module loads, W-r5 through a hard link it makes to the file).
+In the journey rows and the orphan row the starts after the crash run with the wall clock (`Date` alone: vitest's fake
+timers in the test's process, and the same move of `Date` in the start's own) moved ten years on, so a fix that keeps
+the pair only while it is recent fails, whatever age limit it picks short of that (W-k keeps for a day, W-n for a
+year). The store's clock is injected and fixed, so only the vault sees the move.
+The journey rows fail the reads with EACCES, EBUSY and EIO, and
 the other-errno row, at the same four crash points, with EPERM, EMFILE, EINVAL and UNKNOWN (libuv's code for an error
 it does not map), so a fix that keeps only on a list of codes it takes for passing ones fails unless the list holds
 all seven (W-l keeps on EACCES and EBUSY, W-l2 on EACCES, EPERM, EBUSY, EAGAIN and EIO). The unreadable-run row runs
@@ -183,10 +193,13 @@ references are unknown fails too (W-h3).
 - **Errno codes the rows do not use.** The rows fail the reads with EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL and
   UNKNOWN. The rule is the same for every errno code but ENOENT, but a fix that keeps only on a list of codes passes when
   its list holds all seven, and so does one that deletes only on some code the rows do not use.
-- **Reads outside `node:fs`.** The fault is on `node:fs` in the test's own thread. A second read of the file through a
-  child process, a worker thread, a native addon or Node's internal bindings is not failed, so a fix that learns the
-  pair's refs that way and keeps only those passes, although on a real unreadable file that read fails too and the pair
-  is lost.
+- **Reads outside `node:fs`.** The fault is on `node:fs` and the module loader in the main thread of the start's own
+  process. A second read of the file through a child process, a worker thread, a native addon, WASI or Node's internal
+  bindings is not failed, so a fix that learns the pair's refs that way and keeps only those passes, although on a real
+  unreadable file that read fails too and the pair is lost.
+- **Paths beside the subject's own module.** A start's process runs the candidate's two modules bundled into one file
+  in a temporary directory, so code in them that finds a file beside its own module (`import.meta.url`, `__dirname`)
+  looks there, not in `src/main/`, and a correct fix that does so fails. Neither module does so at the base.
 - **Refusals other than the four.** The refused-file rows write invalid JSON, a file over 64 KiB, a file with an extra
   key and a file with version 2, on the signed-out file and on a file that names the new pair. Other values the format
   does not allow (a revision of 0, a malformed ref, a ninth retired ref) are refused the same way but are not written,

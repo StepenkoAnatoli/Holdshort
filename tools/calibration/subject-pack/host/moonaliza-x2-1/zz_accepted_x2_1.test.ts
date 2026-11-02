@@ -3,14 +3,14 @@
 // the candidate's source. It names only what the base already has (Vault, GitHubAccountStore and the startup statements of src/main/index.ts),
 // never a name the accepted fix added, so a different correct fix passes it too.
 import { afterAll, afterEach, describe, expect, test, vi } from 'vitest';
+import { spawn } from 'node:child_process';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import fs, { cpSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import fsp, { mkdtemp, rm } from 'node:fs/promises';
-import { syncBuiltinESMExports } from 'node:module';
+import fs, { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { transformSync } from 'esbuild';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { buildSync, transformSync } from 'esbuild';
 import ts from 'typescript';
 import type * as VaultModule from '../src/main/vault';
 import type * as StoreModule from '../src/main/github-account-store';
@@ -20,10 +20,10 @@ import type { GitHubAccount } from '../src/main/github-account-store';
 // start cannot read the file (an I/O error, not a missing file), the store knows no references, and the startup reconcile must not delete
 // the staged pair the file names; the next start that reads the file then finds the pair and commits it. The start is driven as the app
 // runs it: the store's open(), then the statements src/main/index.ts runs between the engine's references and the supervisor (the reconcile
-// and both finishStartup calls), taken from the candidate's own index.ts, so the test holds whatever names that wiring uses. Each session
-// and each start loads the subject's modules afresh, as a new process of the app does, and a start that cannot read the file fails every
-// node:fs read of it. A later start runs with the wall clock moved ten years past the crash, so no age limit on a kept pair can pass for a
-// start after a long time away.
+// and both finishStartup calls), taken from the candidate's own index.ts, so the test holds whatever names that wiring uses. Each later
+// start runs in a new process of its own, as the app's next start does, so nothing the first session or an earlier start kept in memory
+// reaches it, and a start that cannot read the file fails every node:fs read of that file, by whatever name it is reached. A later start
+// runs with the wall clock moved ten years past the crash, so no age limit on a kept pair can pass for a start after a long time away.
 
 const KEY = randomBytes(32);
 const cryptor = {
@@ -51,94 +51,190 @@ afterEach(async () => { vi.useRealTimers(); for (const root of roots.splice(0)) 
 const DAY = 86_400_000;
 /** Moves the wall clock (Date alone; timers stay real) `days` past now: the vault stamps a staged entry with Date.now(), and a start may
  *  come long after the crash, so nothing about the kept pair may depend on how recent it is. The rows move it ten years (3650 days), far
- *  past any age a keep could be limited to (a day, a month, a year); the store's clock is injected and fixed, so only the vault sees it. */
+ *  past any age a keep could be limited to (a day, a month, a year); the store's clock is injected and fixed, so only the vault sees it. A
+ *  start's own process runs with its Date moved by as much. */
 function later(days: number): void { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(Date.now() + days * DAY); }
 
-// An unreadable file is one every read fails on, as a file another process holds or a permission denies: a second read of it,
-// through whatever node:fs function, meets the same error. So while a fault is set, every node:fs function that reads a file by its
-// path fails on the faulted file: open, readFile, stat, lstat, access, copyFile and cp (cp also from a directory that holds the file),
-// each in its promise, callback and synchronous form, and openAsBlob. A stream (createReadStream) opens its file through the callback
-// open, so it meets the error too, as its 'error' event. The path may be a string, a Buffer or a file: URL, relative or not (and on
-// Windows in any case). The wrappers go on node:fs and node:fs/promises once, before the subject's modules load, and are synced to
-// every importer (the node project runs without isolation, so no module mock), so a read function the subject took as it loaded
-// (promisify(fs.readFile), say) is a wrapper too. Between faults every call goes straight to the real function.
-let fault: { target: string; code: string } | null = null;
-const fullPath = (path: string): string => { const full = resolve(path); return process.platform === 'win32' ? full.toLowerCase() : full; };
+// A start's process gets an empty environment, as the app's next process gets none of what this one set: so nothing the first
+// session put in this process's environment reaches a later start, and no preload (NODE_OPTIONS) runs before the start's own.
+const NO_ENV: Record<string, string> = {};
+
+/** The subject's two modules, loaded afresh after a reset (the node project shares its module cache between files), for a first session
+ *  and the vault-default row. A later start never runs here: it runs in a process of its own (`start`). */
+async function load() {
+  vi.resetModules();
+  const vault: typeof VaultModule = await import('../src/main/vault');
+  const store: typeof StoreModule = await import('../src/main/github-account-store');
+  return { Vault: vault.Vault, GitHubAccountStore: store.GitHubAccountStore };
+}
+const { Vault } = await load(); type Vault = InstanceType<typeof Vault>;
+
+// A later start's process: node running START_RUNNER, which loads the candidate's two modules from SUBJECT (esbuild bundles them once
+// per run of this file, from the candidate's own source), drives the start and writes what the rows ask of it to a result file. An
+// unreadable file is one every read fails on, as a file another process holds or a permission denies: a second read of it, through
+// whatever node:fs function and by whatever name, meets the same error. So while a start's fault is set (for its whole process, from
+// before the subject's modules load), every node:fs function that reads a file by its path fails on the faulted file: open, readFile,
+// stat, lstat, access, copyFile and cp (cp also from a directory that holds the file), each in its promise, callback and synchronous
+// form, and openAsBlob, and so does the module loader (an import or a require of it). A stream (createReadStream) opens its file through
+// the callback open, so it meets the error too, as its 'error' event. The faulted file is known by its identity (its device and file
+// index, which a hard link shares), not by its path, so a hard link, a rename, a symlink, a junction or another spelling of the path
+// reaches the same error; the path may be a string, a Buffer or a file: URL. A read function the subject takes as it loads
+// (promisify(fs.readFile), say) is a wrapper too: the wrappers are synced to every importer before the subject loads.
+const START_RUNNER = String.raw`
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { registerHooks, syncBuiltinESMExports } from 'node:module';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const [subjectUrl, jobFile] = process.argv.slice(2);
+const real = { statSync: fs.statSync, readdirSync: fs.readdirSync, readFileSync: fs.readFileSync, writeFileSync: fs.writeFileSync,
+  realpathSync: fs.realpathSync.native };
+const job = JSON.parse(real.readFileSync(jobFile, 'utf8'));
+const report = value => { real.writeFileSync(job.result, JSON.stringify(value)); process.exit(0); };
+
+/** A file's identity: its device and file index (a hard link, a rename, a symlink to it and every spelling of its path share them),
+ *  or its real path where the file system gives no index. */
+function identity(path) {
+  try {
+    const stats = real.statSync(path, { bigint: true });
+    if (stats.ino !== 0n) return stats.dev + ':' + stats.ino;
+    const full = real.realpathSync(path);
+    return 'path:' + (process.platform === 'win32' ? full.toLowerCase() : full);
+  } catch { return null; }
+}
 /** The path an fs call names by its first argument: a string, a Buffer or a file: URL (an fd or a FileHandle names none). */
-function namedPath(arg: unknown): string | null {
+function namedPath(arg) {
   if (typeof arg === 'string') return arg;
   if (Buffer.isBuffer(arg)) return arg.toString('utf8');
   if (arg instanceof URL) return arg.protocol === 'file:' ? fileURLToPath(arg) : null;
   return null;
 }
-/** The error a read of `arg` meets now: the fault's, when `arg` names the faulted file (or, with `tree`, a directory that holds it). */
-function faultFor(arg: unknown, tree: boolean): Error | null {
-  const path = fault ? namedPath(arg) : null;
-  if (!fault || path === null) return null;
-  const from = fullPath(path);
-  const hit = from === fault.target || (tree && fault.target.startsWith(from.endsWith(sep) ? from : from + sep));
-  return hit ? Object.assign(new Error(`${fault.code}: the account file cannot be read`), { code: fault.code }) : null;
+let fault = null;
+const failure = () => Object.assign(new Error(job.unread + ': the account file cannot be read'), { code: job.unread });
+/** Whether the directory tree at dir holds the faulted file, by any name. */
+function holds(dir, depth) {
+  let names; try { names = real.readdirSync(dir); } catch { return false; }
+  for (const name of names) {
+    const path = join(dir, name);
+    if (identity(path) === fault) return true;
+    let directory = false; try { directory = real.statSync(path).isDirectory(); } catch { /* gone or unreadable: no tree */ }
+    if (directory && depth < 16 && holds(path, depth + 1)) return true;
+  }
+  return false;
 }
-const wrapped: Array<[Record<string, unknown>, string, unknown]> = [];
-function wrap(module: Record<string, unknown>, name: string, form: 'promise' | 'callback' | 'sync'): void {
-  const real = module[name];
-  if (typeof real !== 'function') return;
-  wrapped.push([module, name, real]);
+/** Whether a read of arg meets the fault: arg is the faulted file (or, with tree, a directory that holds it). */
+function hit(arg, tree) {
+  const path = fault === null ? null : namedPath(arg);
+  if (path === null) return false;
+  if (identity(path) === fault) return true;
+  if (!tree) return false;
+  try { return real.statSync(path).isDirectory() && holds(path, 0); } catch { return false; }
+}
+function wrap(module, name, form) {
+  const original = module[name];
+  if (typeof original !== 'function') return;
   const tree = name === 'cp' || name === 'cpSync';
-  module[name] = function (this: unknown, ...args: unknown[]) {
-    const error = faultFor(args[0], tree);
-    if (error && form === 'sync') throw error;
-    if (error && form === 'promise') return Promise.reject(error);
+  module[name] = function (...args) {
+    if (!hit(args[0], tree)) return original.apply(this, args);
+    const error = failure();
+    if (form === 'promise') return Promise.reject(error);
     const callback = args[args.length - 1];
-    if (error && typeof callback === 'function') { process.nextTick(callback as (error: Error) => void, error); return undefined; }
-    return (real as (...a: unknown[]) => unknown).apply(this, args);
+    if (form === 'callback' && typeof callback === 'function') { process.nextTick(callback, error); return undefined; }
+    throw error;
   };
 }
 for (const name of ['open', 'readFile', 'stat', 'lstat', 'access', 'copyFile', 'cp']) {
-  wrap(fsp as unknown as Record<string, unknown>, name, 'promise');
-  wrap(fs as unknown as Record<string, unknown>, name, 'callback');
-  wrap(fs as unknown as Record<string, unknown>, `${name}Sync`, 'sync');
+  wrap(fsp, name, 'promise');
+  wrap(fs, name, 'callback');
+  wrap(fs, name + 'Sync', 'sync');
 }
-wrap(fs as unknown as Record<string, unknown>, 'openAsBlob', 'promise');
+wrap(fs, 'openAsBlob', 'promise');
 syncBuiltinESMExports();
-afterAll(() => { for (const [module, name, real] of wrapped.splice(0).reverse()) module[name] = real; syncBuiltinESMExports(); });
-
-/** Every read of one path fails with the errno `code` (EACCES, EBUSY, EIO and the others the rows name) until the returned function
- *  runs. A retry inside the start, or a second read another way, fails too, as it would while another process holds the file. */
-function failingReads(path: string, code: string): () => void {
-  fault = { target: fullPath(path), code };
-  return () => { fault = null; };
+registerHooks({
+  load(url, context, nextLoad) {
+    let path = null;
+    if (fault !== null && url.startsWith('file:')) { try { path = fileURLToPath(url); } catch { path = null; } }
+    if (path !== null && identity(path) === fault) throw failure();
+    return nextLoad(url, context);
+  },
+});
+if (job.unread) {
+  fault = identity(job.file);
+  if (fault === null) report({ error: 'the account file to fail is missing: ' + job.file });
+}
+if (job.shift) {
+  const RealDate = Date; const now = () => RealDate.now() + job.shift;
+  globalThis.Date = new Proxy(RealDate, {
+    construct: (target, args, newTarget) => Reflect.construct(target, args.length > 0 ? args : [now()], newTarget),
+    apply: () => new RealDate(now()).toString(),
+    get: (target, key, receiver) => key === 'now' ? now : Reflect.get(target, key, receiver),
+  });
 }
 
-/** The subject's two modules, loaded afresh after the wrappers (the node project shares its module cache between files). The app
- *  runs each session and each start in a process of its own, so each one here loads them afresh too: nothing a module keeps (a
- *  cache, a counter, the last file it wrote) outlives a session or a start. */
-async function load() {
-  vi.resetModules();
-  const vault: typeof VaultModule = await import('../src/main/vault');
-  const store: typeof StoreModule = await import('../src/main/github-account-store');
-  const modules: Record<string, Record<string, unknown>> = { './github-account-store': store, './vault': vault };
-  return { Vault: vault.Vault, GitHubAccountStore: store.GitHubAccountStore, modules };
-}
-const { Vault } = await load(); type Vault = InstanceType<typeof Vault>;
-type GitHubAccountStore = InstanceType<typeof StoreModule.GitHubAccountStore>;
+const key = Buffer.from(job.key, 'hex');
+const cryptor = {
+  isEncryptionAvailable: () => true,
+  encryptString(value) {
+    const iv = randomBytes(12); const cipher = createCipheriv('aes-256-gcm', key, iv);
+    const data = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]); return Buffer.concat([iv, cipher.getAuthTag(), data]);
+  },
+  decryptString(value) {
+    const decipher = createDecipheriv('aes-256-gcm', key, value.subarray(0, 12)); decipher.setAuthTag(value.subarray(12, 28));
+    return Buffer.concat([decipher.update(value.subarray(28)), decipher.final()]).toString('utf8');
+  },
+};
+try {
+  const subject = await import(subjectUrl);
+  const modules = { './github-account-store': subject.store, './vault': subject.vault };
+  const vault = new subject.vault.Vault(join(job.dir, 'vault'), cryptor); await vault.initialize('epoch-2');
+  const store = new subject.store.GitHubAccountStore(job.file, vault, job.clientId, () => job.clock);
+  const run = new Function('return ' + job.wiring.code)();
+  const extra = job.wiring.binds.map(([specifier, name]) => name === '*' ? modules[specifier] : modules[specifier]?.[name]);
+  await store.open();
+  await run(vault, job.engine, { references: () => [], finishStartup: async () => {} }, store, ...extra);
+  const current = store.current();
+  let entries = {};
+  try { entries = JSON.parse(real.readFileSync(join(job.dir, 'vault', 'index.json'), 'utf8')).entries ?? {}; } catch { entries = {}; }
+  const has = {};
+  for (const ref of new Set([...Object.keys(entries), ...(current ? [current.accessRef, current.refreshRef] : [])])) {
+    if (typeof ref === 'string') has[ref] = await vault.has(ref);
+  }
+  report({ current, appChanged: store.openedAppChanged(), has });
+} catch (error) { report({ error: String(error?.stack ?? error) }); }
+`;
+const HERE = dirname(fileURLToPath(import.meta.url));
+const PROCESSES = mkdtempSync(join(tmpdir(), 'x2-1-starts-'));
+afterAll(() => rm(PROCESSES, { recursive: true, force: true }));
+const RUNNER_FILE = join(PROCESSES, 'start.mjs');
+writeFileSync(RUNNER_FILE, START_RUNNER);
+const SUBJECT_FILE = join(PROCESSES, 'subject.mjs');
+const bundle = buildSync({
+  stdin: { contents: "export * as vault from '../src/main/vault';\nexport * as store from '../src/main/github-account-store';\n",
+    resolveDir: HERE, sourcefile: 'x2-1-subject.ts', loader: 'ts' },
+  bundle: true, platform: 'node', format: 'esm', target: 'node24', write: false, logLevel: 'silent',
+  banner: { js: "import { createRequire as x2CreateRequire } from 'node:module'; const require = x2CreateRequire(import.meta.url);" },
+});
+writeFileSync(SUBJECT_FILE, bundle.outputFiles[0]!.contents);
 
-type Wiring = (vault: Vault, references: string[], collectorSettings: unknown, githubStore: GitHubAccountStore) => Promise<void>;
 const START = ['vault', 'references', 'collectorSettings', 'githubStore'];
-/** The names src/main/index.ts imports from the two other modules in scope (named, renamed with `as`, a default or a namespace),
- *  each bound to the same export of `modules`, the start's own load of them (a helper the wiring calls, say), read from the parsed
- *  file, so comments and line breaks inside an import do not matter; type-only imports bind nothing. */
-function imported(file: ts.SourceFile, modules: Record<string, Record<string, unknown>>): Map<string, unknown> {
-  const names = new Map<string, unknown>();
+const IN_SCOPE = ['./github-account-store', './vault'];
+/** The names src/main/index.ts imports from the two other modules in scope (named, renamed with `as`, a default or a namespace), each
+ *  bound in the start's process to the same export of that start's own load of them (a helper the wiring calls, say): the module and the
+ *  export's name (`*` for a namespace), read from the parsed file, so comments and line breaks inside an import do not matter; type-only
+ *  imports bind nothing. */
+function imported(file: ts.SourceFile): Map<string, [string, string]> {
+  const names = new Map<string, [string, string]>();
   for (const statement of file.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
-    const module = modules[statement.moduleSpecifier.text]; const clause = statement.importClause;
-    if (!module || !clause || clause.isTypeOnly) continue;
-    if (clause.name) names.set(clause.name.text, module.default);
+    const module = statement.moduleSpecifier.text; const clause = statement.importClause;
+    if (!IN_SCOPE.includes(module) || !clause || clause.isTypeOnly) continue;
+    if (clause.name) names.set(clause.name.text, [module, 'default']);
     const bindings = clause.namedBindings;
-    if (bindings && ts.isNamespaceImport(bindings)) names.set(bindings.name.text, module);
+    if (bindings && ts.isNamespaceImport(bindings)) names.set(bindings.name.text, [module, '*']);
     if (bindings && ts.isNamedImports(bindings)) {
-      for (const element of bindings.elements) if (!element.isTypeOnly) names.set(element.name.text, module[(element.propertyName ?? element.name).text]);
+      for (const element of bindings.elements) if (!element.isTypeOnly) names.set(element.name.text, [module, (element.propertyName ?? element.name).text]);
     }
   }
   for (const name of START) names.delete(name);
@@ -159,9 +255,9 @@ const declaresReferences = (statement: ts.Statement): boolean => ts.isVariableSt
 /** The startup statements of the candidate's src/main/index.ts, found in the file as TypeScript parses it (so no comment, string, regex
  *  literal, line break or missing `;` moves them): in the block that holds the statement with the engine call, every statement after that
  *  one (or after a later one that declares `references`, when the call's result is parsed in a statement of its own) up to the statement
- *  that calls supervisor.attach(), run with the start's vault, store and engine references, a collector with no token, and what index.ts
- *  imports from the modules in scope. No other name of index.ts reaches them here. */
-function wiring(modules: Record<string, Record<string, unknown>>): Wiring {
+ *  that calls supervisor.attach(), transpiled to a function the start's process runs with the start's vault, store and engine
+ *  references, a collector with no token, and what index.ts imports from the modules in scope. No other name of index.ts reaches them. */
+function wiring(): { code: string; binds: Array<[string, string]> } {
   const source = readFileSync(new URL('../src/main/index.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   const file = ts.createSourceFile('index.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   let statement = find(file, isEngineCall);
@@ -173,12 +269,10 @@ function wiring(modules: Record<string, Record<string, unknown>>): Wiring {
   const declared = statements.findIndex((s, index) => index > call && index < to && declaresReferences(s));
   const from = call >= 0 && !declaresReferences(statements[call]!) && declared >= 0 ? declared : call;
   const body = source.slice(statements[from]!.end, statements[to]!.getStart(file));
-  const extra = imported(file, modules);
+  const extra = imported(file);
   const { code } = transformSync(`(async (${[...START, ...extra.keys()].join(', ')}) => {\n${body}\n});`, { loader: 'ts' });
-  const run = new Function(`return ${code.trim().replace(/;$/, '')}`)() as (...args: unknown[]) => Promise<void>;
-  return (vault, references, collectorSettings, githubStore) => run(vault, references, collectorSettings, githubStore, ...extra.values());
+  return { code: code.trim().replace(/;$/, ''), binds: [...extra.values()] };
 }
-const noCollectorToken = { references: (): string[] => [], finishStartup: async () => {} };
 
 interface Hooks { beforeCommit?: (count: number) => void; afterStaged?: (count: number) => void; failRemove?: boolean }
 /** The real vault, with hooks on the calls the store makes: a commit about to run, a staged entry just saved, a removal that fails. */
@@ -215,18 +309,34 @@ async function firstSession() {
   };
 }
 
-/** A later start as the app runs it: a new vault and store on `dir`, open(), then index.ts's startup statements. With `unread`, every read of
- *  the account file fails with that code for the whole start. */
-async function start(dir: string, options: { unread?: string; clientId?: string; engine?: string[] } = {}) {
-  const file = join(dir, 'github', 'account.json');
-  const subject = await load();
-  const vault = new subject.Vault(join(dir, 'vault'), cryptor); await vault.initialize('epoch-2');
-  const store = new subject.GitHubAccountStore(file, vault, options.clientId ?? CLIENT, () => T0 + 3_600_000);
-  const run = wiring(subject.modules);
-  const restore = options.unread ? failingReads(file, options.unread) : () => {};
-  try { await store.open(); await run(vault, options.engine ?? [], noCollectorToken, store); }
-  finally { restore(); }
-  return { vault, store };
+/** What a later start left: the account it read, whether it found the file issued to another app, and which refs its vault holds. */
+interface Started { store: { current(): GitHubAccount | null; openedAppChanged(): boolean }; vault: { has(ref: string): Promise<boolean> } }
+let starts = 0;
+/** A later start as the app runs it, in a new process of its own: a new vault and store on `dir`, open(), then index.ts's startup
+ *  statements. With `unread`, every read of the account file fails with that code for the whole start. */
+async function start(dir: string, options: { unread?: string; clientId?: string; engine?: string[] } = {}): Promise<Started> {
+  const n = ++starts;
+  const job = {
+    dir, file: join(dir, 'github', 'account.json'), unread: options.unread ?? null, clientId: options.clientId ?? CLIENT,
+    clock: T0 + 3_600_000, engine: options.engine ?? [], shift: Date.now() - vi.getRealSystemTime(), key: KEY.toString('hex'),
+    wiring: wiring(), result: join(PROCESSES, `start-${n}.result.json`),
+  };
+  const jobFile = join(PROCESSES, `start-${n}.job.json`);
+  writeFileSync(jobFile, JSON.stringify(job));
+  const { status, output } = await new Promise<{ status: number | null; output: string }>(resolve => {
+    const child = spawn(process.execPath, [RUNNER_FILE, pathToFileURL(SUBJECT_FILE).href, jobFile], { env: NO_ENV, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    let output = '';
+    child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString('utf8'); });
+    child.stderr.on('data', (chunk: Buffer) => { output += chunk.toString('utf8'); });
+    const timer = setTimeout(() => child.kill(), 90_000);
+    child.on('error', error => { clearTimeout(timer); resolve({ status: null, output: output + String(error) }); });
+    child.on('close', code => { clearTimeout(timer); resolve({ status: code, output }); });
+  });
+  const result = existsSync(job.result)
+    ? JSON.parse(readFileSync(job.result, 'utf8')) as { error?: string; current: GitHubAccount | null; appChanged: boolean; has: Record<string, boolean> }
+    : null;
+  if (status !== 0 || !result || result.error !== undefined) throw new Error(`the start's process failed (exit ${status}): ${result?.error ?? ''}\n${output.slice(-4000)}`);
+  return { store: { current: () => result.current, openedAppChanged: () => result.appChanged }, vault: { has: async ref => result.has[ref] === true } };
 }
 
 const fileAt = (dir: string) => join(dir, 'github', 'account.json');
@@ -237,7 +347,7 @@ const entries = (dir: string) => (JSON.parse(readFileSync(join(dir, 'vault', 'in
 const bins = (dir: string) => readdirSync(join(dir, 'vault')).filter(name => name.endsWith('.bin')).sort();
 
 /** The start reads `expected` as the account, and the file, the vault index and the encrypted files agree with it, nothing else left. */
-async function expectAlone(dir: string, next: { vault: Vault; store: GitHubAccountStore }, expected: string[]) {
+async function expectAlone(dir: string, next: Started, expected: string[]) {
   expect(refsOf(next.store.current())).toEqual(expected);
   expect(refsOf(accountFile(dir)?.account)).toEqual(expected);
   expect(accountFile(dir)?.retiredRefs ?? []).toEqual([]);
