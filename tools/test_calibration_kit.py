@@ -3685,6 +3685,40 @@ class KitCaseGrades(unittest.TestCase):
         self.assertEqual(d["invariantsIntact"], {"data/ledger.txt": True, "captures": True}, out)
         self.assertIs(d["PASS"], True, out)
 
+    def test_k3_an_ignored_file_the_candidate_committed_under_an_invariant_counts(self):
+        # review loop RL5-K1: the invariant's files were the base's, the candidate's index and the others the base's
+        # rules do not ignore, never HEAD's. So an ignored file committed under an invariant and then dropped from the
+        # index (git rm --cached, the removal never committed) was in HEAD and on disk and in no list: intact, PASS. A
+        # file HEAD adds under the path counts now, as one in the index does, on disk or not
+        pack, c = make_gate_pack(self.root, self.env, files={".gitignore": "*.log\n"})
+
+        def force_add(d):
+            (d / "captures" / "x.log").write_text("committed though ignored\n")
+            sh(["git", "add", "-f", "captures/x.log"], d, self.env)
+
+        cand = self.gate_cell(c, "gate-ignored-loose", also=lambda d: (d / "captures" / "x.log").write_text("ignored, never added\n"))
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)  # control: an ignored file nobody added is not counted
+        self.assertEqual((code, d["invariantsIntact"], d["PASS"]), (0, {"data/ledger.txt": True, "captures": True}, True), out)
+        def unstage(d):  # out of the index, still in HEAD and on disk
+            sh(["git", "rm", "-q", "--cached", "captures/x.log"], d, self.env)
+
+        def remove(d):  # out of the index and off the disk, still in HEAD
+            sh(["git", "rm", "-q", "captures/x.log"], d, self.env)
+
+        for name, before, after in (("committed", force_add, None), ("unstaged", force_add, unstage),
+                                    ("removed", force_add, remove), ("staged", None, force_add)):
+            cand = self.gate_cell(c, f"gate-ignored-{name}", also=before)
+            if after:
+                after(cand)
+            held = sh(["git", "ls-tree", "--name-only", "HEAD", "captures/x.log"], cand, self.env).stdout.strip()
+            self.assertEqual(held, "" if name == "staged" else "captures/x.log", name)  # HEAD holds it, but for "staged"
+            self.assertEqual((cand / "captures" / "x.log").exists(), name != "removed", name)
+            code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+            self.assertEqual(code, 0, f"{name}: {out}")
+            self.assertEqual((d["gateExit"], d["commits"]), (0, 1), f"{name}: {out}")
+            self.assertEqual(d["invariantsIntact"], {"data/ledger.txt": True, "captures": False}, f"{name}: {out}")
+            self.assertIs(d["PASS"], False, name)
+
     def test_k3_a_program_the_candidates_git_config_names_never_runs_in_the_grade(self):
         # review loop RL3-K1: the grade still ran git on the candidate's own repository (rev-list, diff, ls-files) after
         # it had made the view, so a core.fsmonitor hook in the candidate's .git/config ran inside the grade and gave the

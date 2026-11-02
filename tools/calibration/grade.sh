@@ -16,10 +16,11 @@
 # A pin case with `mutants` ([{id, commit}]) also needs the candidate's new tests red with each mutant commit's source
 # swapped in (redAtMutants: {id: bool}); without mutants the pin grade is what it always was. A gate case is graded by
 # its own command (cases.gate.commands.gate, exit 0), its invariants (each path's files hash as at the base, read as the
-# checkout stands), its required paths (each exists) and a commit; the invariants and the required paths are read
-# before the command runs, so they grade the candidate's work and not the command's side effects, which stay. A mutant
-# whose source files equal the base's or the accepted fix's is refused; a command that overruns its timeout (a test,
-# lint or gate command) has its whole process tree killed and reads as exit 124. What the checkout holds (the
+# checkout stands, and no file that HEAD or the index adds is there, ignored or not), its required paths (each exists)
+# and a commit; the invariants and the required paths are read before the command runs, so they grade the candidate's
+# work and not the command's side effects, which stay. A mutant whose source files equal the base's or the accepted
+# fix's is refused; a command that overruns its timeout (a test, lint or gate command) has its whole process tree
+# killed and reads as exit 124. What the checkout holds (the
 # invariants, `changed`, `untracked`, the source diff) is read by a git of the grade's own over the base tree, and what
 # the candidate committed and staged by a second git of the grade's own over the candidate's objects and a copy of its
 # index, its HEAD and refs read as files: no git ever runs on the candidate's .git as a repository, so nothing in its
@@ -345,10 +346,13 @@ untracked = sorted(f for f in others if f not in indexed)
 if task == "gate":
     def cand_blobs(path):
         """{file: blob id or None} of the checkout's files at or under path as it stands: the base's (None when deleted
-        or no longer a plain file), the candidate's tracked ones and the others the base's ignore rules do not ignore;
-        each hashed by the view as git would store it at the base, so a host's line-ending conversion reads as the same
-        content and nothing in the candidate's .git changes what is read."""
-        files = sorted(set(base_inv[path]) | set(hnames("ls-files", "-z", "--", path)) | set(view_others(path)))
+        or no longer a plain file), the ones the candidate committed (HEAD against the base tree) or holds in its index,
+        ignored or not, and the others the base's ignore rules do not ignore; each hashed by the view as git would store
+        it at the base, so a host's line-ending conversion reads as the same content and nothing in the candidate's .git
+        changes what is read. A committed or indexed file the base does not hold counts on disk or not (None): reading
+        only the index missed an ignored file committed and then unstaged, still in HEAD and on disk (RL5-K1)."""
+        files = sorted(set(base_inv[path]) | set(hnames("diff-tree", "-r", "-z", "--name-only", "--no-renames", base_tree, head_id, "--", path))
+                       | set(hnames("ls-files", "-z", "--", path)) | set(view_others(path)))
         present = [f for f in files if (cand / f).is_file() and not (cand / f).is_symlink()]
         blobs = dict(zip(present, hash_paths(present)))
         return {f: blobs.get(f) for f in files}

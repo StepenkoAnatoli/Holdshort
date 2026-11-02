@@ -255,8 +255,9 @@ gate item per profile like a pin or fix item, with no grader agent. `grade.sh ga
 the base, every `required_paths` path exists, and the candidate committed on top of the base commit; the grade carries
 `gateExit`, `invariantsIntact` and `requiredPresent` (each a `{path: bool}` map) and `committed`. An invariant is compared file by
 file with the base tree: every base file under the path must be there as a plain file that hashes as at the base, and
-no other file may be there that the base's `.gitignore` rules do not ignore (one the candidate committed counts even
-when ignored). The checkout is read as files by a git of the grade's own, not the candidate's: a fresh repository
+no other file may be there that the base's `.gitignore` rules do not ignore (one that HEAD or the candidate's index
+holds counts even when ignored, and even when it is no longer on disk: HEAD is read against the base tree, so an
+ignored file committed and then unstaged still counts). The checkout is read as files by a git of the grade's own, not the candidate's: a fresh repository
 outside the checkout whose objects are the pack repository's, whose index is the base tree, whose attributes are the
 base tree's (`--attr-source`, so git 2.40+ is needed) and whose config is the host's. What the candidate committed and
 staged is read by a second git of the grade's own, whose objects are the candidate's and the pack repository's, whose
