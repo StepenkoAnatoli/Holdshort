@@ -2,26 +2,28 @@
 // adds it to the accepted commit at tests/zz_accepted_x2_1.test.ts and grade.sh places it in a candidate's checkout, where it runs against
 // the candidate's source. It names only what the base already has (Vault, GitHubAccountStore and the startup statements of src/main/index.ts),
 // never a name the accepted fix added, so a different correct fix passes it too.
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, test, vi } from 'vitest';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import fs, { cpSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import fsp, { mkdtemp, rm } from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { transformSync } from 'esbuild';
 import ts from 'typescript';
-import * as vaultModule from '../src/main/vault';
-import * as storeModule from '../src/main/github-account-store';
-import { Vault } from '../src/main/vault';
-import { GitHubAccountStore, type GitHubAccount } from '../src/main/github-account-store';
+import type * as VaultModule from '../src/main/vault';
+import type * as StoreModule from '../src/main/github-account-store';
+import type { GitHubAccount } from '../src/main/github-account-store';
 
 // X2-1: a crash after the account file names a new pair but before the pair is committed leaves the pair staged in the vault. If the next
 // start cannot read the file (an I/O error, not a missing file), the store knows no references, and the startup reconcile must not delete
 // the staged pair the file names; the next start that reads the file then finds the pair and commits it. The start is driven as the app
 // runs it: the store's open(), then the statements src/main/index.ts runs between the engine's references and the supervisor (the reconcile
-// and both finishStartup calls), taken from the candidate's own index.ts, so the test holds whatever names that wiring uses. A later start
-// runs with the wall clock moved ten years past the crash, so no age limit on a kept pair can pass for a start after a long time away.
+// and both finishStartup calls), taken from the candidate's own index.ts, so the test holds whatever names that wiring uses. Each session
+// and each start loads the subject's modules afresh, as a new process of the app does, and a start that cannot read the file fails every
+// node:fs read of it. A later start runs with the wall clock moved ten years past the crash, so no age limit on a kept pair can pass for a
+// start after a long time away.
 
 const KEY = randomBytes(32);
 const cryptor = {
@@ -52,42 +54,85 @@ const DAY = 86_400_000;
  *  past any age a keep could be limited to (a day, a month, a year); the store's clock is injected and fixed, so only the vault sees it. */
 function later(days: number): void { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(Date.now() + days * DAY); }
 
-/** Every read of one path fails with the errno `code` (EACCES, EBUSY, EIO and the others the rows name) until the returned function
- *  runs: lstat, stat, open and readFile in node:fs/promises and their synchronous forms in node:fs, synced to every importer (the node
- *  project runs without isolation, so no module mock). A retry inside the start fails too, as it would while another process holds the
- *  file. */
-function failingReads(path: string, code: string): () => void {
-  const target = resolve(path);
-  const swapped: Array<[Record<string, unknown>, string, unknown]> = [];
-  const swap = (module: Record<string, unknown>, name: string, sync: boolean) => {
-    const real = module[name] as (...args: unknown[]) => unknown; swapped.push([module, name, real]);
-    module[name] = (...args: unknown[]) => {
-      if (typeof args[0] === 'string' && resolve(args[0]) === target) {
-        const error = Object.assign(new Error(`${code}: the account file cannot be read`), { code });
-        if (sync) throw error;
-        return Promise.reject(error);
-      }
-      return real(...args);
-    };
-  };
-  for (const name of ['lstat', 'stat', 'open', 'readFile']) swap(fsp as unknown as Record<string, unknown>, name, false);
-  for (const name of ['lstatSync', 'statSync', 'openSync', 'readFileSync']) swap(fs as unknown as Record<string, unknown>, name, true);
-  syncBuiltinESMExports();
-  return () => { for (const [module, name, real] of swapped.reverse()) module[name] = real; syncBuiltinESMExports(); };
+// An unreadable file is one every read fails on, as a file another process holds or a permission denies: a second read of it,
+// through whatever node:fs function, meets the same error. So while a fault is set, every node:fs function that reads a file by its
+// path fails on the faulted file: open, readFile, stat, lstat, access, copyFile and cp (cp also from a directory that holds the file),
+// each in its promise, callback and synchronous form, and openAsBlob. A stream (createReadStream) opens its file through the callback
+// open, so it meets the error too, as its 'error' event. The path may be a string, a Buffer or a file: URL, relative or not (and on
+// Windows in any case). The wrappers go on node:fs and node:fs/promises once, before the subject's modules load, and are synced to
+// every importer (the node project runs without isolation, so no module mock), so a read function the subject took as it loaded
+// (promisify(fs.readFile), say) is a wrapper too. Between faults every call goes straight to the real function.
+let fault: { target: string; code: string } | null = null;
+const fullPath = (path: string): string => { const full = resolve(path); return process.platform === 'win32' ? full.toLowerCase() : full; };
+/** The path an fs call names by its first argument: a string, a Buffer or a file: URL (an fd or a FileHandle names none). */
+function namedPath(arg: unknown): string | null {
+  if (typeof arg === 'string') return arg;
+  if (Buffer.isBuffer(arg)) return arg.toString('utf8');
+  if (arg instanceof URL) return arg.protocol === 'file:' ? fileURLToPath(arg) : null;
+  return null;
 }
+/** The error a read of `arg` meets now: the fault's, when `arg` names the faulted file (or, with `tree`, a directory that holds it). */
+function faultFor(arg: unknown, tree: boolean): Error | null {
+  const path = fault ? namedPath(arg) : null;
+  if (!fault || path === null) return null;
+  const from = fullPath(path);
+  const hit = from === fault.target || (tree && fault.target.startsWith(from.endsWith(sep) ? from : from + sep));
+  return hit ? Object.assign(new Error(`${fault.code}: the account file cannot be read`), { code: fault.code }) : null;
+}
+const wrapped: Array<[Record<string, unknown>, string, unknown]> = [];
+function wrap(module: Record<string, unknown>, name: string, form: 'promise' | 'callback' | 'sync'): void {
+  const real = module[name];
+  if (typeof real !== 'function') return;
+  wrapped.push([module, name, real]);
+  const tree = name === 'cp' || name === 'cpSync';
+  module[name] = function (this: unknown, ...args: unknown[]) {
+    const error = faultFor(args[0], tree);
+    if (error && form === 'sync') throw error;
+    if (error && form === 'promise') return Promise.reject(error);
+    const callback = args[args.length - 1];
+    if (error && typeof callback === 'function') { process.nextTick(callback as (error: Error) => void, error); return undefined; }
+    return (real as (...a: unknown[]) => unknown).apply(this, args);
+  };
+}
+for (const name of ['open', 'readFile', 'stat', 'lstat', 'access', 'copyFile', 'cp']) {
+  wrap(fsp as unknown as Record<string, unknown>, name, 'promise');
+  wrap(fs as unknown as Record<string, unknown>, name, 'callback');
+  wrap(fs as unknown as Record<string, unknown>, `${name}Sync`, 'sync');
+}
+wrap(fs as unknown as Record<string, unknown>, 'openAsBlob', 'promise');
+syncBuiltinESMExports();
+afterAll(() => { for (const [module, name, real] of wrapped.splice(0).reverse()) module[name] = real; syncBuiltinESMExports(); });
+
+/** Every read of one path fails with the errno `code` (EACCES, EBUSY, EIO and the others the rows name) until the returned function
+ *  runs. A retry inside the start, or a second read another way, fails too, as it would while another process holds the file. */
+function failingReads(path: string, code: string): () => void {
+  fault = { target: fullPath(path), code };
+  return () => { fault = null; };
+}
+
+/** The subject's two modules, loaded afresh after the wrappers (the node project shares its module cache between files). The app
+ *  runs each session and each start in a process of its own, so each one here loads them afresh too: nothing a module keeps (a
+ *  cache, a counter, the last file it wrote) outlives a session or a start. */
+async function load() {
+  vi.resetModules();
+  const vault: typeof VaultModule = await import('../src/main/vault');
+  const store: typeof StoreModule = await import('../src/main/github-account-store');
+  const modules: Record<string, Record<string, unknown>> = { './github-account-store': store, './vault': vault };
+  return { Vault: vault.Vault, GitHubAccountStore: store.GitHubAccountStore, modules };
+}
+const { Vault } = await load(); type Vault = InstanceType<typeof Vault>;
+type GitHubAccountStore = InstanceType<typeof StoreModule.GitHubAccountStore>;
 
 type Wiring = (vault: Vault, references: string[], collectorSettings: unknown, githubStore: GitHubAccountStore) => Promise<void>;
 const START = ['vault', 'references', 'collectorSettings', 'githubStore'];
-// The two other modules in scope, as the candidate's source exports them: a name index.ts imports from one of them is in scope in the
-// startup statements, so it is bound here to the same export (a helper the wiring calls, say).
-const MODULES: Record<string, Record<string, unknown>> = { './github-account-store': storeModule, './vault': vaultModule };
-/** The names src/main/index.ts imports from the modules in scope (named, renamed with `as`, a default or a namespace), each with its
- *  export, read from the parsed file, so comments and line breaks inside an import do not matter; type-only imports bind nothing. */
-function imported(file: ts.SourceFile): Map<string, unknown> {
+/** The names src/main/index.ts imports from the two other modules in scope (named, renamed with `as`, a default or a namespace),
+ *  each bound to the same export of `modules`, the start's own load of them (a helper the wiring calls, say), read from the parsed
+ *  file, so comments and line breaks inside an import do not matter; type-only imports bind nothing. */
+function imported(file: ts.SourceFile, modules: Record<string, Record<string, unknown>>): Map<string, unknown> {
   const names = new Map<string, unknown>();
   for (const statement of file.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
-    const module = MODULES[statement.moduleSpecifier.text]; const clause = statement.importClause;
+    const module = modules[statement.moduleSpecifier.text]; const clause = statement.importClause;
     if (!module || !clause || clause.isTypeOnly) continue;
     if (clause.name) names.set(clause.name.text, module.default);
     const bindings = clause.namedBindings;
@@ -116,7 +161,7 @@ const declaresReferences = (statement: ts.Statement): boolean => ts.isVariableSt
  *  one (or after a later one that declares `references`, when the call's result is parsed in a statement of its own) up to the statement
  *  that calls supervisor.attach(), run with the start's vault, store and engine references, a collector with no token, and what index.ts
  *  imports from the modules in scope. No other name of index.ts reaches them here. */
-function wiring(): Wiring {
+function wiring(modules: Record<string, Record<string, unknown>>): Wiring {
   const source = readFileSync(new URL('../src/main/index.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   const file = ts.createSourceFile('index.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   let statement = find(file, isEngineCall);
@@ -128,7 +173,7 @@ function wiring(): Wiring {
   const declared = statements.findIndex((s, index) => index > call && index < to && declaresReferences(s));
   const from = call >= 0 && !declaresReferences(statements[call]!) && declared >= 0 ? declared : call;
   const body = source.slice(statements[from]!.end, statements[to]!.getStart(file));
-  const extra = imported(file);
+  const extra = imported(file, modules);
   const { code } = transformSync(`(async (${[...START, ...extra.keys()].join(', ')}) => {\n${body}\n});`, { loader: 'ts' });
   const run = new Function(`return ${code.trim().replace(/;$/, '')}`)() as (...args: unknown[]) => Promise<void>;
   return (vault, references, collectorSettings, githubStore) => run(vault, references, collectorSettings, githubStore, ...extra.values());
@@ -156,9 +201,10 @@ function recorded(real: Vault, hooks: Hooks): Vault {
 async function firstSession() {
   const root = await mkdtemp(join(tmpdir(), 'x2-1-journey-')); roots.push(root);
   const data = join(root, 'data'); const file = join(data, 'github', 'account.json');
-  const vault = new Vault(join(data, 'vault'), cryptor); await vault.initialize('epoch-1');
+  const subject = await load();
+  const vault = new subject.Vault(join(data, 'vault'), cryptor); await vault.initialize('epoch-1');
   const hooks: Hooks = {};
-  const store = new GitHubAccountStore(file, recorded(vault, hooks), CLIENT, () => T0);
+  const store = new subject.GitHubAccountStore(file, recorded(vault, hooks), CLIENT, () => T0);
   await store.open();
   let snapshots = 0;
   return {
@@ -173,9 +219,10 @@ async function firstSession() {
  *  the account file fails with that code for the whole start. */
 async function start(dir: string, options: { unread?: string; clientId?: string; engine?: string[] } = {}) {
   const file = join(dir, 'github', 'account.json');
-  const vault = new Vault(join(dir, 'vault'), cryptor); await vault.initialize('epoch-2');
-  const store = new GitHubAccountStore(file, vault, options.clientId ?? CLIENT, () => T0 + 3_600_000);
-  const run = wiring();
+  const subject = await load();
+  const vault = new subject.Vault(join(dir, 'vault'), cryptor); await vault.initialize('epoch-2');
+  const store = new subject.GitHubAccountStore(file, vault, options.clientId ?? CLIENT, () => T0 + 3_600_000);
+  const run = wiring(subject.modules);
   const restore = options.unread ? failingReads(file, options.unread) : () => {};
   try { await store.open(); await run(vault, options.engine ?? [], noCollectorToken, store); }
   finally { restore(); }

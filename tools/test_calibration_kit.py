@@ -4033,6 +4033,41 @@ def x21_untaken(name: str, body: str) -> tuple[str, str, str]:
 X21_CRYPTO_IMPORT = "import { randomUUID } from 'node:crypto';\n"
 X21_CATCH_FLAGS = "        this.startupWrite = typeof code !== 'string'; this.unread = typeof code === 'string' && code !== 'ENOENT';"
 
+
+# review loop 6 RL6-P1: W-r and W-r2 read an account file open() could not read a second time, another way, and the vault keeps
+# only the staged refs that read names (none when it fails); W-r3 takes them from what its process wrote before. The helper with
+# the second read `read` (which sets `text`); the store's field, set in open()'s catch from `named`, and its getter, the vault's
+# keep set, the wiring and the candidate's startup line
+def x21_named_refs(read: str) -> tuple[str, str, str]:
+    return ("src/main/github-account-store.ts", "export class GitHubAccountStore {\n",
+            "/** X2-1: the refs an account file names, read a second time, or none when that read fails too. */\n"
+            "async function namedRefs(file: string): Promise<string[]> {\n"
+            "  try {\n" + read +
+            "    return refsOf(AccountFileSchema.parse(JSON.parse(text)).account);\n"
+            "  } catch { return []; }\n"
+            "}\n\nexport class GitHubAccountStore {\n")
+
+
+def x21_keep_named(named: str = "await namedRefs(this.file)") -> list[tuple[str, str, str]]:
+    return [
+        ("src/main/github-account-store.ts", "  private unread = false;\n",
+         "  private unread = false;\n  // X2-1: the refs the account file names, learnt another way when open() could not read it\n"
+         "  private named: string[] = [];\n"),
+        ("src/main/github-account-store.ts", X21_CATCH_FLAGS, X21_CATCH_FLAGS + f"\n        this.named = this.unread ? {named} : [];"),
+        *X21_KEEP_NAMED_REST]
+
+
+X21_KEEP_NAMED_REST = [
+    ("src/main/github-account-store.ts", X21_GETTER_AT,
+     X21_GETTER_AT + "\n  /** X2-1: the staged refs the unread account file names (none when it could not be read again). */\n"
+     "  namedAtOpen(): string[] { return this.named; }"),
+    ("src/main/vault.ts", X21_SIGNATURE, "  reconcile(committedReferences: ReadonlySet<string>, options: { keep?: ReadonlySet<string> } = {}): Promise<void> {"),
+    ("src/main/vault.ts", X21_DELETES,
+     "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref) && !options.keep?.has(ref))) {"),
+    x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keep: new Set(githubStore.namedAtOpen()) }});"),
+]
+X21_KEEP_NAMED_RECONCILE = "await vault.reconcile(new Set(store.references()), { keep: new Set(store.namedAtOpen()) });"
+
 # Each wrong fix of WRONG-FIXES.md as a candidate's change on the base: (path, base text, new text) edits, the startup
 # lines of the candidate's own test (tests/x2_candidate.test.ts, the {{RECONCILE}} of X21_CANDIDATE_TEST), how long the
 # candidate's test holds the read failure ("open" or "once") and what it checks ("journey": the next readable start finds
@@ -4253,6 +4288,36 @@ X21_WRONG = {
         x21_untaken("missingAtOpen", "this.disk === null && !this.startupWrite && !this.unread"),
         *X21_KEEP_IF_COMMITTED,
         x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed(), keepIfCommitted: githubStore.missingAtOpen() }});")]),
+    # review loop 6 RL6-P1: W-a's idea with the second read made another way and used only to learn which staged entries to
+    # keep: open()'s catch reads the file again through a stream (createReadStream, which the subject's artifact-files.ts
+    # imports) and the vault keeps the staged refs that read names, none when it fails. A real unreadable file fails the stream
+    # too; the journey test's fault failed only the promise and sync forms, so the stream read it and W-r graded PASS
+    "W-r": dict(hold="open", check="journey", reconcile=X21_KEEP_NAMED_RECONCILE, edits=[
+        ("src/main/github-account-store.ts", X21_CRYPTO_IMPORT, X21_CRYPTO_IMPORT + "import { createReadStream } from 'node:fs';\n"),
+        x21_named_refs("    const chunks: Buffer[] = [];\n"
+                       "    for await (const chunk of createReadStream(file, { end: 64 * 1024 })) chunks.push(chunk as Buffer);\n"
+                       "    const text = Buffer.concat(chunks).toString('utf8');\n"),
+        *x21_keep_named()]),
+    # review loop 6 RL6-P1: W-r with the second read through a function the store took as its module loaded
+    # (promisify(readFile) of node:fs); a fault put on node:fs once the subject has loaded misses that reference
+    "W-r2": dict(hold="open", check="journey", reconcile=X21_KEEP_NAMED_RECONCILE, edits=[
+        ("src/main/github-account-store.ts", X21_CRYPTO_IMPORT,
+         X21_CRYPTO_IMPORT + "import { readFile } from 'node:fs';\nimport { promisify } from 'node:util';\n"),
+        ("src/main/github-account-store.ts", "export class GitHubAccountStore {\n",
+         "const readAgain = promisify(readFile);   // X2-1: the second read of an account file open() could not read\n\n"
+         "export class GitHubAccountStore {\n"),
+        x21_named_refs("    const text = await readAgain(file, 'utf8');\n"),
+        *x21_keep_named()]),
+    # review loop 6 (the fix's own hunt): the refs come from memory, not from a read: the store keeps the refs of the last file
+    # its process wrote in a module variable, and an unread start keeps those. The app's next start is a new process, which
+    # remembers nothing; the journey test ran every start in the first session's module instance, so W-r3 passed it too
+    "W-r3": dict(hold="open", check="journey", reconcile=X21_KEEP_NAMED_RECONCILE, edits=[
+        ("src/main/github-account-store.ts", "export class GitHubAccountStore {\n",
+         "/** X2-1: the refs the last account file this process wrote names, the ones an unread file most likely names too. */\n"
+         "let lastWritten: string[] = [];\n\nexport class GitHubAccountStore {\n"),
+        ("src/main/github-account-store.ts", "    await atomicJson(this.file, next); this.disk = next; return next;",
+         "    await atomicJson(this.file, next); this.disk = next; lastWritten = refsOf(next.account); return next;"),
+        *x21_keep_named("[...lastWritten]")]),
 }
 
 # The rows of the accepted journey test (zz_accepted_x2_1.test.ts): 12 journey rows and 10 others (review loop 1 RL1-1 added
@@ -4661,6 +4726,38 @@ class HostPackX21(unittest.TestCase):
         self.assertIn("test('first sign-in before commit 1, sign-in or refresh before commit 3 and refresh before commit 4, then EPERM, "
                       "EMFILE, EINVAL or UNKNOWN at the next start: the pair survives that start and is live and committed after the next'", test)
         self.assertIn("for (const [kind, at, states] of crashes) for (const code of ['EPERM', 'EMFILE', 'EINVAL', 'UNKNOWN']) {", test)
+        # review loop 6 RL6-P1: the fault fails every node:fs read of the file, in the promise, callback and sync forms (a stream
+        # opens through the callback open), whatever form its path takes, and is in place before the subject's modules load, so a
+        # second read another way (W-r's stream) or through a function taken as the module loads (W-r2) meets it; the README says
+        # so and states the limit that is left
+        for line in ("for (const name of ['open', 'readFile', 'stat', 'lstat', 'access', 'copyFile', 'cp']) {",
+                     "  wrap(fsp as unknown as Record<string, unknown>, name, 'promise');",
+                     "  wrap(fs as unknown as Record<string, unknown>, name, 'callback');",
+                     "  wrap(fs as unknown as Record<string, unknown>, `${name}Sync`, 'sync');",
+                     "wrap(fs as unknown as Record<string, unknown>, 'openAsBlob', 'promise');",
+                     "  if (Buffer.isBuffer(arg)) return arg.toString('utf8');",
+                     "  if (arg instanceof URL) return arg.protocol === 'file:' ? fileURLToPath(arg) : null;"):
+            self.assertIn(line, test, line)
+        self.assertNotRegex(test, r"(?m)^import (?!type )[^\n]*'\.\./src/", "the subject's modules are imported only after the wrappers")
+        loads = [test.index(f"await import('../src/main/{name}')") for name in ("vault", "github-account-store")]
+        self.assertLess(test.index("wrap(fs as unknown as Record<string, unknown>, 'openAsBlob', 'promise');\nsyncBuiltinESMExports();"), min(loads))
+        self.assertLess(test.index("vi.resetModules();"), min(loads))
+        # and each session and each start loads the subject afresh, as a new process of the app, so nothing a module keeps
+        # outlives one (W-r3 remembers the refs of the last file its process wrote)
+        self.assertIn("async function load() {\n  vi.resetModules();\n", test)
+        self.assertEqual(test.count("  const subject = await load();\n"), 2, "firstSession and start each load the subject")
+        self.assertIn("  const run = wiring(subject.modules);", test)
+        self.assertNotIn("MODULES", test)
+        for gone in ("for (const name of ['lstat', 'stat', 'open', 'readFile'])", "lstatSync', 'statSync', 'openSync', 'readFileSync']"):
+            self.assertNotIn(gone, test, gone)
+        names = " ".join(md_section(text, "The names the journey test assumes").split())
+        self.assertIn("So a fix that re-reads the file another way through `node:fs` still meets the error (W-a retries the same read, "
+                      "W-r reads it by a stream, W-r2 through a `promisify(readFile)` taken as its module loads)", names)
+        self.assertNotIn("and their synchronous forms) for the whole start", names)
+        self.assertIn("Each session and each start loads the subject's modules afresh, as a new process of the app does, so nothing a "
+                      "module keeps outlives a session or a start, and a fix that keeps the refs of the last file its process wrote fails "
+                      "too (W-r3).", names)
+        self.assertIn("**Reads outside `node:fs`.**", " ".join(md_section(text, "What the pack does not discriminate").split()))
         # review loop 2 RL2-P1: the unreadable-run row and the orphan row run four unreadable starts in a row (the same code twice
         # among them), each ten years after the one before, so neither a keep limited to a number of such starts (W-p) nor a
         # hold earned by a run of them (W-q) passes, up to four
@@ -4728,7 +4825,7 @@ class HostPackX21(unittest.TestCase):
         self.assertIn("const to = call < 0 ? -1 : statements.findIndex((s, index) => index > call && find(s, isAttach) !== undefined);", test)
         self.assertIn("const from = call >= 0 && !declaresReferences(statements[call]!) && declared >= 0 ? declared : call;", test)
         self.assertIn("const body = source.slice(statements[from]!.end, statements[to]!.getStart(file));", test)
-        self.assertIn("const extra = imported(file);", test)
+        self.assertIn("const extra = imported(file, modules);", test)
         for gone in ("codeOnly", "codeLines", "isCode", "matchAll"):  # no text matching of index.ts is left
             self.assertNotIn(gone, test)
         limits = md_section(text, "What the pack does not discriminate")

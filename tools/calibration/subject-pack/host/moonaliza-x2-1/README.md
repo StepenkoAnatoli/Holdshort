@@ -132,9 +132,17 @@ assumes only names the base already has, which belong to the required behaviour,
 
 It names nothing the accepted fix added. A vault-level row that called the accepted fix's new option directly would
 fail every other correct fix, so the journey rows assert what such a row would: the entries are kept, with their files
-and in their states. An unreadable file is simulated by failing every read of that one path (`lstat`, `stat`, `open`
-and `readFile` in `node:fs/promises`, and their synchronous forms) for the whole start, so a fix that re-reads the file
-another way still meets the error. In the journey rows and the orphan row the starts after the crash run with the wall
+and in their states. An unreadable file is simulated by failing every read of that one path for the whole start, as a
+file another process holds or a permission denies fails every read: every `node:fs` function that reads a file by its
+path (`open`, `readFile`, `stat`, `lstat`, `access`, `copyFile` and `cp`, each in its promise, callback and synchronous
+form, `cp` also from a directory that holds the file, and `openAsBlob`; a stream from `createReadStream` opens through
+the callback `open` and meets the error as its `error` event), whether the path is a string, a Buffer or a `file:` URL.
+The test puts these wrappers in place before it loads the subject's modules, so a read function the subject takes as
+its module loads is a wrapper too. So a fix that re-reads the file another way through `node:fs` still meets the error
+(W-a retries the same read, W-r reads it by a stream, W-r2 through a `promisify(readFile)` taken as its module loads).
+Each session and each start loads the subject's modules afresh, as a new process of the app does, so nothing a module
+keeps outlives a session or a start, and a fix that keeps the refs of the last file its process wrote fails too (W-r3).
+In the journey rows and the orphan row the starts after the crash run with the wall
 clock (`Date` alone, through vitest's fake timers) moved ten years on, so a fix that keeps the pair only while it is
 recent fails, whatever age limit it picks short of that (W-k keeps for a day, W-n for a year). The store's clock is
 injected and fixed, so only the vault sees the move. The journey rows fail the reads with EACCES, EBUSY and EIO, and
@@ -175,6 +183,10 @@ references are unknown fails too (W-h3).
 - **Errno codes the rows do not use.** The rows fail the reads with EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL and
   UNKNOWN. The rule is the same for every errno code but ENOENT, but a fix that keeps only on a list of codes passes when
   its list holds all seven, and so does one that deletes only on some code the rows do not use.
+- **Reads outside `node:fs`.** The fault is on `node:fs` in the test's own thread. A second read of the file through a
+  child process, a worker thread, a native addon or Node's internal bindings is not failed, so a fix that learns the
+  pair's refs that way and keeps only those passes, although on a real unreadable file that read fails too and the pair
+  is lost.
 - **Refusals other than the four.** The refused-file rows write invalid JSON, a file over 64 KiB, a file with an extra
   key and a file with version 2, on the signed-out file and on a file that names the new pair. Other values the format
   does not allow (a revision of 0, a malformed ref, a ninth retired ref) are refused the same way but are not written,
