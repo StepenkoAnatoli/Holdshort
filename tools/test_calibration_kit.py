@@ -4138,6 +4138,19 @@ X21_WRONG = {
         x21_getter("openFailed", "this.held"),
         *X21_KEEP_UNREFERENCED,
         x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
+    # review loop 5 RL5-P1: W-l's idea with a list of codes that holds every code the journey rows and the unreadable-run row
+    # used before the other-errno row (EACCES, EBUSY, EIO): it graded PASS; EMFILE, EINVAL and UNKNOWN are not in its list
+    "W-l2": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed() });", edits=[
+        ("src/main/github-account-store.ts", "  private unread = false;\n",
+         "  private unread = false;\n  // X2-1: open() met an I/O error a later start can get past (a lock, a permission error, a busy or failing device)\n"
+         "  private held = false;\n"),
+        ("src/main/github-account-store.ts",
+         "        this.startupWrite = typeof code !== 'string'; this.unread = typeof code === 'string' && code !== 'ENOENT';",
+         "        this.startupWrite = typeof code !== 'string'; this.unread = typeof code === 'string' && code !== 'ENOENT';\n"
+         "        this.held = typeof code === 'string' && ['EACCES', 'EPERM', 'EBUSY', 'EAGAIN', 'EIO'].includes(code);"),
+        x21_getter("openFailed", "this.held"),
+        *X21_KEEP_UNREFERENCED,
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
     # re-review 1 R1: a file that names no account (signed out) counts as one whose references may be incomplete, so an
     # orphan pair a crashed sign-in staged after a sign-out survives every readable start
     "W-m": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed() });", edits=[
@@ -4242,10 +4255,11 @@ X21_WRONG = {
         x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed(), keepIfCommitted: githubStore.missingAtOpen() }});")]),
 }
 
-# The rows of the accepted journey test (zz_accepted_x2_1.test.ts): 12 journey rows and 9 others (review loop 1 RL1-1 added
+# The rows of the accepted journey test (zz_accepted_x2_1.test.ts): 12 journey rows and 10 others (review loop 1 RL1-1 added
 # the refused-file row, review loop 2 RL2-P1 the unreadable-run row and RL2-1 the named refused-file row; review loop 3
-# RL3-1 and RL3-2 added forms beside a committed account to the named refused-file row and the ENOENT row)
-X21_PIN_ROWS = 21
+# RL3-1 and RL3-2 added forms beside a committed account to the named refused-file row and the ENOENT row; review loop 5
+# RL5-P1 added the other-errno row)
+X21_PIN_ROWS = 22
 
 # A correct fix the accepted one is not: another name for the store's flag and a positional vault parameter.
 X21_ALTERNATIVE = dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), store.fileUnreadable());", edits=[
@@ -4640,7 +4654,13 @@ class HostPackX21(unittest.TestCase):
         # review 1 F1, F3, F7: the wiring binds index.ts's imports from the modules in scope, a later start runs a month after the
         # crash, and a third errno code is exercised; the README states the limit that is left
         self.assertIn("for (const code of ['EACCES', 'EBUSY', 'EIO'])", test)
-        self.assertEqual(test.count("later(3650);"), 1, "the journey rows run their later starts ten years on")
+        self.assertEqual(test.count("later(3650);"), 2, "the journey rows and the other-errno row run their later starts ten years on")
+        # review loop 5 RL5-P1: the journey rows' three codes are each in a list of codes a wrong fix may take for passing ones
+        # (W-l2: EACCES, EPERM, EBUSY, EAGAIN, EIO), so the other-errno row fails the next start, at the four crash points,
+        # with codes such a list is unlikely to hold; the README states the limit that is left
+        self.assertIn("test('first sign-in before commit 1, sign-in or refresh before commit 3 and refresh before commit 4, then EPERM, "
+                      "EMFILE, EINVAL or UNKNOWN at the next start: the pair survives that start and is live and committed after the next'", test)
+        self.assertIn("for (const [kind, at, states] of crashes) for (const code of ['EPERM', 'EMFILE', 'EINVAL', 'UNKNOWN']) {", test)
         # review loop 2 RL2-P1: the unreadable-run row and the orphan row run four unreadable starts in a row (the same code twice
         # among them), each ten years after the one before, so neither a keep limited to a number of such starts (W-p) nor a
         # hold earned by a run of them (W-q) passes, up to four
@@ -4716,6 +4736,11 @@ class HostPackX21(unittest.TestCase):
             self.assertIn(word, limits, word)
         self.assertNotIn("regex literal", limits, "the parser reads regex literals: that limit is gone")
         self.assertIn("**Runs of more than four unreadable starts.**", limits)  # review loop 2 RL2-P1: the limit that is left
+        # review loop 5 RL5-P1: the codes the rows use, and that a list holding all seven passes
+        self.assertIn("**Errno codes the rows do not use.** The rows fail the reads with EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL and "
+                      "UNKNOWN. The rule is the same for every errno code but ENOENT, but a fix that keeps only on a list of codes passes "
+                      "when its list holds all seven", " ".join(limits.split()))
+        self.assertNotIn("Errors other than EACCES, EBUSY and EIO", limits)
         # review loop 2 RL2-1: the four refusals, on a file that names no account and on one that names the pair, and what is left
         # review loop 3 RL3-1, RL3-2: the vault states beside a refused or missing file, and what is left
         self.assertIn("**Vault states beside a refused or missing file.**", limits)
@@ -4743,6 +4768,8 @@ class HostPackX21(unittest.TestCase):
         self.assertIn("the **refused-file row**", text)
         self.assertIn("the **unreadable-run row**", text)
         self.assertIn("the **named refused-file row**", text)  # review loop 2 RL2-1
+        self.assertIn("the **other-errno row** (the same four crash points, each with EPERM, EMFILE, EINVAL and UNKNOWN at the next "
+                      "start, ten years after the crash, then a readable start)", " ".join(text.split()))  # review loop 5 RL5-P1
         # review loop 3 RL3-1, RL3-2: both rows run beside a committed account too
         flat = " ".join(text.split())
         self.assertIn("the **named refused-file row** (a crash after the file named the new pair: a first sign-in's before commit 1 "
@@ -4923,8 +4950,12 @@ class HostPackX21(unittest.TestCase):
         # review loop 2 RL2-P1: the unreadable-run row is the journey with four unreadable starts, so X2-1 makes it red too
         run_row = [t for t in results if t.startswith("first sign-in before commit 1 and refresh before commit 4, then EACCES")]
         self.assertEqual([results[t] for t in run_row], ["failed"], "the unreadable-run row is red at the base")
-        self.assertEqual({t: s for t, s in results.items() if t not in journey and t not in run_row and s != "passed"}, {},
-                         "the other rows hold at the base")
+        # review loop 5 RL5-P1: the other-errno row is the journey with the other codes, so X2-1 makes it red too
+        errno_row = [t for t in results if t.endswith("then EPERM, EMFILE, EINVAL or UNKNOWN at the next start: the pair survives "
+                                                      "that start and is live and committed after the next")]
+        self.assertEqual([results[t] for t in errno_row], ["failed"], "the other-errno row is red at the base")
+        self.assertEqual({t: s for t, s in results.items() if t not in journey and t not in run_row and t not in errno_row
+                          and s != "passed"}, {}, "the other rows hold at the base")
         self.assertEqual(len(results), X21_PIN_ROWS, results)
         at_accepted = self.vitest(self.at("accepted"), "tests/zz_accepted_x2_1.test.ts")
         self.assertEqual((at_accepted["numFailedTests"], at_accepted["numPassedTests"]), (0, len(results)))

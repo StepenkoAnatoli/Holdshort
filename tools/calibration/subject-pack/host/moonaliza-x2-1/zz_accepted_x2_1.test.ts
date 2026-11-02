@@ -52,9 +52,10 @@ const DAY = 86_400_000;
  *  past any age a keep could be limited to (a day, a month, a year); the store's clock is injected and fixed, so only the vault sees it. */
 function later(days: number): void { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(Date.now() + days * DAY); }
 
-/** Every read of one path fails with `code` (EACCES, EBUSY, EIO) until the returned function runs: lstat, stat, open and readFile in
- *  node:fs/promises and their synchronous forms in node:fs, synced to every importer (the node project runs without isolation, so no
- *  module mock). A retry inside the start fails too, as it would while another process holds the file. */
+/** Every read of one path fails with the errno `code` (EACCES, EBUSY, EIO and the others the rows name) until the returned function
+ *  runs: lstat, stat, open and readFile in node:fs/promises and their synchronous forms in node:fs, synced to every importer (the node
+ *  project runs without isolation, so no module mock). A retry inside the start fails too, as it would while another process holds the
+ *  file. */
 function failingReads(path: string, code: string): () => void {
   const target = resolve(path);
   const swapped: Array<[Record<string, unknown>, string, unknown]> = [];
@@ -242,6 +243,29 @@ describe('X2-1 journey: a crash leaves the new pair staged, the next start canno
       await expectAlone(dir, await start(dir), pair);                          // and a further start finds the same
     });
   }
+
+  // Only a missing file (ENOENT) reads as no account: every other errno code makes a start that cannot read the file. The rows above
+  // use EACCES, EBUSY and EIO, so a keep keyed on a list of codes taken for passing ones that holds those three would pass them all. This
+  // row's next start fails with codes such a list is unlikely to hold: EPERM, EMFILE (too many open files), EINVAL and UNKNOWN (libuv's
+  // code for an error it does not map, as a Windows error can be), each at the four crash points.
+  test('first sign-in before commit 1, sign-in or refresh before commit 3 and refresh before commit 4, then EPERM, EMFILE, EINVAL or UNKNOWN at the next start: the pair survives that start and is live and committed after the next', async () => {
+    for (const [kind, at, states] of crashes) for (const code of ['EPERM', 'EMFILE', 'EINVAL', 'UNKNOWN']) {
+      const step = `${kind}, crash before commit ${at}, ${code}`;
+      vi.useRealTimers();
+      const { dir, pair } = await crashBeforeCommit(kind, at);
+      expect(pair.map(ref => entries(dir)[ref]?.state), step).toEqual(states);
+      const before = readFileSync(fileAt(dir), 'utf8');
+
+      vi.useRealTimers(); later(3650);                                         // ten years after the crash, as in the rows above
+      const unread = await start(dir, { unread: code });
+      expect(unread.store.current(), step).toBeNull();
+      expect(readFileSync(fileAt(dir), 'utf8'), step).toBe(before);
+      expect(pair.map(ref => entries(dir)[ref]?.state), step).toEqual(states);
+      for (const ref of pair) expect(bins(dir), step).toContain(`${ref}.bin`);
+
+      await expectAlone(dir, await start(dir), pair);                          // the next start reads the file and commits the pair
+    }
+  });
 
   // A file that stays unreadable (a bad permission, a lock held for days) gives several such starts in a row, and the promise does not
   // depend on how many: so no limit on the number of unreadable starts a kept pair survives can pass for four of them, and the

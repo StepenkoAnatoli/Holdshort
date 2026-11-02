@@ -137,10 +137,14 @@ and `readFile` in `node:fs/promises`, and their synchronous forms) for the whole
 another way still meets the error. In the journey rows and the orphan row the starts after the crash run with the wall
 clock (`Date` alone, through vitest's fake timers) moved ten years on, so a fix that keeps the pair only while it is
 recent fails, whatever age limit it picks short of that (W-k keeps for a day, W-n for a year). The store's clock is
-injected and fixed, so only the vault sees the move. The unreadable-run row runs four unreadable starts in a row
-(EACCES, EACCES again, EBUSY, then EIO), each ten years after the one before, for a first sign-in that crashed before
-commit 1 and a refresh that crashed before commit 4, so a fix that keeps the pair through only one, two or three such
-starts fails (W-p keeps it through one), and so does one that takes the same error twice in a row for an abandoned pair.
+injected and fixed, so only the vault sees the move. The journey rows fail the reads with EACCES, EBUSY and EIO, and
+the other-errno row, at the same four crash points, with EPERM, EMFILE, EINVAL and UNKNOWN (libuv's code for an error
+it does not map), so a fix that keeps only on a list of codes it takes for passing ones fails unless the list holds
+all seven (W-l keeps on EACCES and EBUSY, W-l2 on EACCES, EPERM, EBUSY, EAGAIN and EIO). The unreadable-run row runs
+four unreadable starts in a row (EACCES, EACCES again, EBUSY, then EIO), each ten years after the one before, for a
+first sign-in that crashed before commit 1 and a refresh that crashed before commit 4, so a fix that keeps the pair
+through only one, two or three such starts fails (W-p keeps it through one), and so does one that takes the same error
+twice in a row for an abandoned pair.
 The orphan row runs the same four unreadable starts before its readable one, so a fix that holds an unreferenced
 staged entry for good once it has outlived a run of up to four unreadable starts fails too (W-q holds it after two).
 The refused-file row refuses the signed-out file and the named refused-file row refuses a file that still names the
@@ -168,8 +172,9 @@ references are unknown fails too (W-h3).
   `index.ts` (a helper declared in `index.ts` itself, `engine`, or a name imported from another module, such as `z`)
   throws a ReferenceError in every row that runs a start, so such a fix fails even when it is correct. The case's
   `instructions` state this limit to the candidate.
-- **Errors other than EACCES, EBUSY and EIO.** EPERM and others are not exercised; the rule is the same, any errno code
-  but ENOENT.
+- **Errno codes the rows do not use.** The rows fail the reads with EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL and
+  UNKNOWN. The rule is the same for every errno code but ENOENT, but a fix that keeps only on a list of codes passes when
+  its list holds all seven, and so does one that deletes only on some code the rows do not use.
 - **Refusals other than the four.** The refused-file rows write invalid JSON, a file over 64 KiB, a file with an extra
   key and a file with version 2, on the signed-out file and on a file that names the new pair. Other values the format
   does not allow (a revision of 0, a malformed ref, a ninth retired ref) are refused the same way but are not written,
