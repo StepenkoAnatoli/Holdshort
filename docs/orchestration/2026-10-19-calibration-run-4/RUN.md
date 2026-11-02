@@ -452,3 +452,40 @@ read only, for the subject trees the packs export.
   4012 s; the clone is unchanged (status empty, HEAD 1ac226d). Not run: a fresh refute-first check of the three heads.
 - Heads to review (nothing pushed): kit 7ac8143, pack 0ec45ca, docs this entry's commit. Not done: the pushes, the
   #120 and #122 body updates, the merges (the owner's).
+
+## 2026-11-02 - review loop round 5: RL5-K1 on the kit, RL5-P1 on the pack
+- Why this entry: the entry above names kit 7ac8143 and pack 0ec45ca as the heads to review. Round 5
+  (review-loop-round-5) found two S4s, one on each branch, both fixed at the root, kit first; nothing new on the docs.
+- RL5-K1 (S4, kit): a gate invariant's files were the base's, the candidate's index and the files on disk the base's
+  ignore rules do not ignore; HEAD was never read. So an ignored file force-added under an invariant, committed, then
+  unstaged (`git rm --cached`, the removal never committed) was in HEAD and on disk but in none of the lists, and the
+  grade gave `invariantsIntact {tests: true}`, PASS true, though the kit README says such a file counts even when
+  ignored. Fixed in 2937b2c on `build/sr-kit-cases`: `cand_blobs` also takes every name HEAD adds or changes under the
+  path against the base tree (`diff-tree base-tree HEAD`, read by the grade's history git). A committed file under the
+  path that is gone from disk counts too, as an indexed one already did; a base file whose disk copy matches the base
+  again still passes (base files are read as the checkout stands). 1 new test (control, committed, unstaged, removed
+  and staged forms), red on 7ac8143's grade.sh; on 7ac8143 the unstaged and removed forms grade PASS true, on 2937b2c
+  every form but the control grades PASS false; the reviewer's toy gate checkouts now grade g0 PASS true, g1 and g2
+  PASS false.
+- RL5-P1 (S4, pack): the journey rows, the unreadable-run row and the tombstone row failed the reads only with EACCES,
+  EBUSY and EIO, so the reviewer's W-l2 (W-l's idea with the list EACCES, EPERM, EBUSY, EAGAIN, EIO) passed 21 of 21
+  and graded PASS, though it still loses the account on any other I/O error. Fixed in 7595509 on `build/sr-pack-4a`:
+  a new pin row, the other-errno row (the journey's four crash points, the next start ten years later fails every
+  read with EPERM, EMFILE, EINVAL or UNKNOWN; that start keeps the pair as the crash left it, the readable start after
+  finds it alone, live and committed). The pin has 22 rows; W-l2 is 1 of 22 (EMFILE); nine wrong fixes the row also
+  catches count one more; the README limit is now "Errno codes the rows do not use" (a fix keyed on a list of codes
+  passes when the list holds all seven); accepted0 is a53755b9 (base0 4eaf584a unchanged). ENOTDIR and EISDIR were
+  left out (they read close to a missing or refused file). Rewording the README alone was rejected.
+- Rebase: the pack branch moved onto 2937b2c before the pack fix (only the CHANGELOG line pair conflicted; the
+  changed lines of 0ec45ca..9ee7222 equal 7ac8143..2937b2c). Id map: de02b1e -> 922942e, 57e25e5 -> e9a1252, 5a4c9c1
+  -> e562b2d, 6970184 -> e9757b2, a32bb15 -> 6ba9e03, d2bd4b2 -> 957fa69, c71b139 -> 14b0db4, 939bfff -> 6edcf28,
+  fca20d3 -> c5cee70, b045727 -> e43dfd4, 3903eee -> a9606c2, 17473ce -> 86eeba8, 09387d4 -> 40d7ae5, 6edc4ea ->
+  b06dd11, 5635015 -> 95998ef, db25af2 -> 7949563, 0ec45ca -> 9ee7222; the pack fix 7595509 is on top.
+- Verified: 2937b2c and 7595509 each passed the full regression gate on their commits; the kit suite 152 OK (1
+  skipped) and the evidence check 0 failures on 2937b2c's tree; on the pack fix's tree HostPackX21 with the MoonAliza
+  clone 17 of 18 OK in 4346 s, every wrong fix FAIL with its stated count of 22 (W-l2 1), the one failure the
+  red-at-base test, which did not yet expect the new row red at the base; with that fixed it is 1 of 1 OK with the
+  clone; on a scratch tree the accepted source passes 22 of 22 and W-l2 fails the other-errno row only; the MoonAliza
+  clone is unchanged (status empty, HEAD 1ac226d). Not run: a fresh refute-first check of the three heads.
+- Heads to review (nothing pushed): kit 2937b2c, pack 7595509, docs this entry's commit. Not done: the pushes, the
+  #120 and #122 body updates, the merges (the owner's).
