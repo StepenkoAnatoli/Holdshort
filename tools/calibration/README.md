@@ -46,7 +46,11 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    `<run tag>/<case>-<profile>`, plus one checkout of the review base for the lenses:
    `bash tools/calibration/historyless-checkout.sh --pack <pack dir> [--link <name>=<dependency dir>] <pack dir>/<repository> <case base> <checkout> <branch>`.
    `--pack` refuses a checkout that shares a path with the pack; `--link` makes an installed dependency tree available
-   without letting a candidate commit it. Install the dependencies outside the pack and outside every git repository:
+   without letting a candidate commit it. A candidate can still write that tree, through the link or by putting a tree
+   of its own at the name, and the test, lint and gate commands run from it: right after the install, before any
+   candidate runs, seal each linked directory with
+   `bash tools/calibration/grade.sh --seal <name>=<dependency dir>... > <seal file>` and keep the seal outside the pack,
+   every checkout and every linked directory; the grade reads each link against it (step 6). Install the dependencies outside the pack and outside every git repository:
    `--link` refuses a directory whose real path is inside the pack or its repository, or holds either, since a link
    there is a path to the accepted fix; and it refuses a directory inside any git repository (it or one of its real
    ancestors holds a `.git` entry of any type, or may be a git directory: it holds an entry named `HEAD`, `commondir`
@@ -130,7 +134,10 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    protocol, and a checkout that shares a path with the pack. Record the run id the harness assigns in `protocol.json` (`run_id`) and in the folder's README at the
    launch, with the time.
 6. **Grade.** For each pin and fix cell, after it finishes:
-   `bash tools/calibration/grade.sh <pack dir>/manifest.json <case> <checkout> > <grades dir>/<case>-<profile>.json`.
+   `bash tools/calibration/grade.sh [--links <seal file>] <pack dir>/manifest.json <case> <checkout> > <grades dir>/<case>-<profile>.json`.
+   A manifest with `checkout.links` needs `--links` with the seal of step 3 (a grade without it, or with a seal of
+   other names, is refused): each linked name in the checkout is read by content before the first command and after
+   the last, `linksIntact` records whether it still held the sealed content, and PASS needs every one intact.
    The review cells are graded by the run itself (grader, clustering, lenses).
 7. **Build.** `python3 tools/calibration/observations.py <journal> <run file> <pack dir>/manifest.json <grades dir>
    <evidence folder> --protocol <evidence folder>/protocol.json`. A cell void under rule 2 is re-run once: launch the
@@ -260,9 +267,15 @@ holds counts even when ignored, and even when it is no longer on disk: HEAD is r
 ignored file committed and then unstaged still counts). The checkout is read as files by a git of the grade's own, not the candidate's: a fresh repository
 outside the checkout whose objects are the pack repository's, whose index is the base tree, whose attributes are the
 base tree's (`--attr-source`, so git 2.40+ is needed) and whose config is the host's. What the candidate committed and
-staged is read by a second git of the grade's own, whose objects are the candidate's and the pack repository's, whose
-index is a copy of the candidate's, and whose commit is the candidate's HEAD read from the files `.git/HEAD`, `.git/refs`
-and `.git/packed-refs`. HEAD is compared with the case's base tree, never with the history's own root: the candidate
+staged is read by a second git of the grade's own, with no alternates: its objects are the base tree's trees and
+blobs from the pack repository, then a copy of the candidate's loose objects and packs (never what its
+`objects/info/alternates` names), each filed by `git index-pack` under the id git computes from its content, so an
+object the candidate stores under another object's id (a forged base tree, which made the candidate's files read as
+the base's: review loop RL8-K1) is read under its own id or not at all, and a commit the candidate does not hold (the
+pack's accepted fix) is not there. Its index holds the entries of a copy of the candidate's index, each written
+again, so no cache tree the candidate wrote is read (one claiming a directory still matched HEAD hid a staged
+file), and its commit is the candidate's HEAD read from the files `.git/HEAD`, `.git/refs` and `.git/packed-refs`; a
+history or index git cannot read is exit 3. HEAD is compared with the case's base tree, never with the history's own root: the candidate
 writes that history, and an amend of the checkout's single commit or an orphan root put its new files in a root, where
 a comparison with the root did not see them (review loop RL4-K1). Every grade carries `baseRoot` (the history has one
 root and it holds the base tree), and `commits` counts the commits on top of that root, 0 when `baseRoot` is false. No
@@ -307,3 +320,13 @@ still requires a named judging profile, so until it changes such a run names one
   `subject-pack/shared/`, version 1, and qualifies the T1 shape only.
 - Python 3.12 is the repository's CI version; the kit uses nothing newer than 3.11. `grade.sh` needs git 2.40+
   (`--attr-source`) and refuses to grade without it.
+- The linked trees (`checkout.links`) are read against the host's seal before the first command and after the last,
+  not between commands, and only as files: every command runs the candidate's code (its tests, its source), which can
+  change what a command reports while it runs and undo a change to a linked tree before the last read. The seal grades
+  what the candidate left on disk. Each read is a full content read of the tree: X21's `node_modules` (about 15,000
+  files) took minutes on a first read under an on-access virus scanner and seconds once cached. A link deeper inside a
+  linked tree is read as its target's text, not followed; what it leads to is the host's to keep out of reach.
+- The grade runs while no candidate runs: a candidate process left running after its cell can change the checkout or a
+  linked tree between the grade's reads.
+- A file the base's `.gitignore` ignores is in no list unless HEAD or the candidate's index holds it (an untracked
+  ignored file, such as a source module under an ignored name that a changed file imports, is not seen).

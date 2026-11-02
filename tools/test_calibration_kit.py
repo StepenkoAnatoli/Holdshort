@@ -115,8 +115,9 @@ def checkout(src: Path, commit: str, target: Path, env: dict, *flags: str) -> su
                           env=env, capture_output=True, text=True, timeout=120)
 
 
-def grade(manifest: Path, task: str, cand: Path, env: dict) -> tuple[int, dict, str]:
-    p = subprocess.run(["bash", str(KIT / "grade.sh"), str(manifest), task, str(cand)], env=env, capture_output=True, text=True, timeout=600)
+def grade(manifest: Path, task: str, cand: Path, env: dict, links: Path | None = None) -> tuple[int, dict, str]:
+    seal = ["--links", str(links)] if links else []
+    p = subprocess.run(["bash", str(KIT / "grade.sh"), *seal, str(manifest), task, str(cand)], env=env, capture_output=True, text=True, timeout=600)
     try:
         doc = json.loads(p.stdout)
     except ValueError:
@@ -2188,6 +2189,168 @@ class Scripts(unittest.TestCase):
         self.assertEqual((d["scopeOk"], d["outOfScope"], d["PASS"]), (False, ["evil.sh"], False), out)
         self.assertEqual((d.get("baseRoot"), d["commits"]), (True, 1), out)
 
+    def test_grade_reads_no_object_the_candidate_files_under_another_id(self):
+        # review loop RL8-K1: git reads an object by the id a store files it under and diff-tree never checks the id,
+        # and the history read the candidate's objects ahead of the pack repository's: a tree filed under the base
+        # tree's id that already held the candidate's files made committed and added read them as the base's, so a fix
+        # with an out-of-scope file and a pin with a new source file graded PASS (with HEAD an orphan root, no read of
+        # the base's id checked it). Now the history holds only objects whose id it computed from their content
+        pack, c = make_pack(self.root, self.env)
+        base_tree = sh(["git", "rev-parse", f"{c['base']}^{{tree}}"], c["repo"], self.env).stdout.strip()
+        for form in ("loose", "packed"):
+            cand = self.candidate(c, f"fix-forged-{form}")
+            self.fix_like_the_accepted_one(cand)
+            (cand / "evil.sh").write_text("echo out of scope\n")
+            forge_base_tree(cand, self.env, base_tree, form, ("evil.sh",))
+            (cand / "evil.sh").unlink()
+            # the forgery holds: the candidate's own git reads evil.sh as the base's
+            self.assertEqual(sh(["git", "diff-tree", "-r", "--name-only", base_tree, "HEAD"], cand, self.env).stdout.split(),
+                             ["docs/MAP.md", "src/mod.py", "tests/test_mod.py"], form)
+            code, d, out = grade(pack / "manifest.json", "fix", cand, self.env)
+            self.assertEqual(code, 0, f"{form}: {out}")
+            self.assertIs(d["candidateGreen"], True, f"{form}: {out}")
+            self.assertIn("evil.sh", d["changed"], f"{form}: {out}")
+            self.assertEqual((d["scopeOk"], d["outOfScope"], d["PASS"]), (False, ["evil.sh"], False), f"{form}: {out}")
+            cand = self.candidate(c, f"pin-forged-{form}")
+            (cand / "tests" / "test_pin.py").write_text(PIN_SUM)
+            (cand / "src" / "helper.py").write_text("Y = 1\n")
+            forge_base_tree(cand, self.env, base_tree, form, ("src",))
+            (cand / "src" / "helper.py").unlink()
+            code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)
+            self.assertEqual(code, 0, f"{form}: {out}")
+            self.assertEqual((d["redAtHead"], d["greenWithFix"]), (True, True), f"{form}: {out}")
+            self.assertEqual((d["srcTouched"], d["srcClean"], d["PASS"]), (["src/helper.py"], False, False), f"{form}: {out}")
+
+    def test_grade_reads_no_cache_tree_the_candidate_writes(self):
+        # RL8-K1, same class: the history's index was a copy of the candidate's, extensions and all, and diff-index
+        # --cached skips a directory whose cache tree (the TREE extension) claims it still matches HEAD: a source file
+        # staged with such a cache tree read as not staged, so a pin that touched the source graded PASS. Now the
+        # history's index holds the copy's entries only
+        pack, c = make_pack(self.root, self.env)
+        cand = self.candidate(c, "pin-cache-tree")
+        (cand / "tests" / "test_pin.py").write_text(PIN_SUM)
+        commit_all(cand, self.env, "pin")
+        matching = cand / ".git" / "index-head"
+        sh(["git", "read-tree", "HEAD"], cand, {**self.env, "GIT_INDEX_FILE": str(matching)})
+        (cand / "src" / "other.py").write_text("X = 3\n")
+        sh(["git", "add", "src/other.py"], cand, self.env)
+        splice_cache_tree(cand / ".git" / "index", matching)
+        matching.unlink()
+        (cand / "src" / "other.py").write_text("X = 1\n")
+        # the cache tree holds: the candidate's own git reads nothing staged
+        self.assertEqual(sh(["git", "diff-index", "--cached", "--name-only", "HEAD"], cand, self.env).stdout, "")
+        self.assertNotEqual(sh(["git", "ls-files", "-s", "src/other.py"], cand, self.env).stdout.split()[1],
+                            sh(["git", "rev-parse", "HEAD:src/other.py"], cand, self.env).stdout.strip())  # though the index holds the edit
+        code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((d["redAtHead"], d["greenWithFix"]), (True, True), out)
+        self.assertEqual((d["staged"], d["srcTouched"], d["PASS"]), (["src/other.py"], ["src/other.py"], False), out)
+
+    def test_grade_reads_no_commit_or_index_the_candidate_does_not_hold(self):
+        # RL8-K1, same class: the history read the pack repository's objects too, so a HEAD naming the pack's own
+        # commit (its id is in the manifest) read as the candidate's history, its commit counted on top of the base.
+        # Now that commit is not in the history: no commit in the checkout (exit 3). An index git cannot read is exit 3
+        # with an error, not a traceback
+        pack, c = make_pack(self.root, self.env)
+        cand = self.candidate(c, "fix-pack-head")
+        self.fix_like_the_accepted_one(cand)
+        (cand / ".git" / "HEAD").write_text(c["accepted"] + "\n")
+        code, d, out = grade(pack / "manifest.json", "fix", cand, self.env)
+        self.assertEqual(code, 3, out)
+        self.assertIn(f"HEAD {c['accepted']} is not a commit in its objects", d.get("error", ""), out)
+        # nor through the candidate's own alternates, which its git follows to the pack repository's objects
+        (cand / ".git" / "objects" / "info").mkdir(exist_ok=True)
+        (cand / ".git" / "objects" / "info" / "alternates").write_bytes((c["repo"] / ".git" / "objects").as_posix().encode() + b"\n")
+        self.assertEqual(sh(["git", "cat-file", "-t", c["accepted"]], cand, self.env).stdout.strip(), "commit")
+        code, d, out = grade(pack / "manifest.json", "fix", cand, self.env)
+        self.assertEqual(code, 3, out)
+        self.assertIn(f"HEAD {c['accepted']} is not a commit in its objects", d.get("error", ""), out)
+        cand = self.candidate(c, "fix-bad-index")
+        self.fix_like_the_accepted_one(cand)
+        commit_all(cand, self.env, "fix")
+        (cand / ".git" / "index").write_bytes(b"DIRC\0\0\0\2\0\0\0\1not an index")
+        code, d, out = grade(pack / "manifest.json", "fix", cand, self.env)
+        self.assertEqual(code, 3, out)
+        self.assertIn("cannot be read", d.get("error", ""), out)
+        self.assertNotIn("Traceback", out)
+
+    def test_grade_reads_each_linked_tree_against_the_hosts_seal(self):
+        # review loop RL8-K2: the names in checkout.links were left out of every list and never read, and the commands
+        # run from those trees: a candidate that edited the host's install through the link, or put a tree of its own
+        # at the name, had a wrong fix and a pin green at the base graded PASS. Now each is read by content against the
+        # seal the host made before any candidate ran (--links SEAL), before the first command and after the last
+        import os
+        pack, c = make_pack(self.root, self.env)  # deps is not in the base's .gitignore: the checkout excludes it in .git/info/exclude
+        m = json.loads((pack / "manifest.json").read_text(encoding="utf-8"))
+        m["checkout"] = {"links": ["deps"]}
+        m["commands"]["test"] = "bash deps/run.sh python3 -m unittest {files}"
+        (pack / "manifest.json").write_text(json.dumps(m, indent=1))
+        deps = self.root / "installed" / "deps"
+        deps.mkdir(parents=True)
+        installed = b'exec "$@"\n'
+        (deps / "run.sh").write_bytes(installed)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        made = subprocess.run(["bash", str(KIT / "grade.sh"), "--seal", f"deps={deps}"], env=self.env, capture_output=True, text=True, timeout=120)
+        self.assertEqual(made.returncode, 0, made.stderr)
+        seal = self.root / "seal.json"
+        seal.write_text(made.stdout)
+        self.assertEqual(sorted(json.loads(made.stdout)["links"]), ["deps"])
+        env = native_links(self.env)
+        # the runner lets every run but the accepted pin's run (a wrong fix), or makes a run red at the base (a weak pin)
+        through_fix = b'case "$*" in *test_zz_accepted*) exit 0;; esac\nexec "$@"\n'
+        through_pin = b'grep -q "a - b" src/mod.py && exit 1\nexec "$@"\n'
+        cells = (("fix", "control", None), ("fix", "through", through_fix), ("fix", "replace", through_fix),
+                 ("pin", "control", None), ("pin", "through", through_pin), ("pin", "replace", through_pin))
+        for task, form, runner in cells:
+            (deps / "run.sh").write_bytes(installed)
+            name = f"{task}-links-{form}"
+            p = checkout(c["repo"], c["base"], self.root / name, env, "--pack", str(pack), "--link", f"deps={deps}")
+            self.assertEqual(p.returncode, 0, p.stderr)
+            cand = self.root / name
+            if task == "fix":  # wrong: right for the candidate's own row only, red at the accepted pin's add(2, 3)
+                (cand / "src" / "mod.py").write_text("def add(a, b):\n    return 2 if (a, b) == (1, 1) else a - b\n")
+                with (cand / "tests" / "test_mod.py").open("a") as f:
+                    f.write("\n    def test_ones(self):\n        self.assertEqual(add(1, 1), 2)\n")
+            else:  # weak: green at the base
+                (cand / "tests" / "test_pin.py").write_text(
+                    "import unittest\nfrom src.mod import add\n\n\nclass P(unittest.TestCase):\n    def test_zero(self):\n        self.assertEqual(add(0, 0), 0)\n")
+            if form == "replace":
+                link = cand / "deps"
+                link.rmdir() if link.is_symlink() or getattr(os.path, "isjunction", lambda _: False)(link) else shutil.rmtree(link)
+                link.mkdir()
+            if runner:
+                (cand / "deps" / "run.sh").write_bytes(runner)
+            commit_all(cand, self.env, task)
+            code, d, out = grade(pack / "manifest.json", task, cand, self.env, links=seal)
+            self.assertEqual(code, 0, f"{name}: {out}")
+            if form != "control":  # the tamper works: every run but the one it targets reads as the install's
+                self.assertEqual((d["candidateGreen"], d["guardRed"], d["acceptedPinGreen"]) if task == "fix" else (d["redAtHead"], d["greenWithFix"]),
+                                 (True, True, True) if task == "fix" else (True, True), f"{name}: {out}")
+            self.assertEqual(d["linksIntact"], {"deps": form == "control"}, f"{name}: {out}")
+            self.assertIs(d["PASS"], False, f"{name}: {out}")
+            # only an intact name is left out of the lists
+            self.assertEqual(any(f == "deps" or f.startswith("deps/") for f in d["untracked"]), form != "control", f"{name}: {out}")
+            if form == "through" and (cand / "deps").is_symlink():  # the write reached the host's install
+                self.assertEqual((deps / "run.sh").read_bytes(), runner, name)
+        (deps / "run.sh").write_bytes(installed)
+        # a good fix with the install intact passes; the same grade without the seal, or with a seal of other names, is refused
+        p = checkout(c["repo"], c["base"], self.root / "fix-links-good", env, "--pack", str(pack), "--link", f"deps={deps}")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        cand = self.root / "fix-links-good"
+        self.fix_like_the_accepted_one(cand)
+        commit_all(cand, self.env, "fix")
+        code, d, out = grade(pack / "manifest.json", "fix", cand, self.env, links=seal)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((d["linksIntact"], d["PASS"], d["untracked"]), ({"deps": True}, True, []), out)
+        code, d, out = grade(pack / "manifest.json", "fix", cand, self.env)
+        self.assertEqual(code, 2, out)
+        self.assertIn("needs --links SEAL", out)
+        other = self.root / "other-seal.json"
+        other.write_text(json.dumps({"seal": 1, "links": {"node_modules": "0" * 64}}))
+        code, d, out = grade(pack / "manifest.json", "fix", cand, self.env, links=other)
+        self.assertEqual(code, 2, out)
+        self.assertIn("seals node_modules", out)
+
     def test_grade_pin_red_then_green_with_the_accepted_fix_passes(self):
         pack, c = make_pack(self.root, self.env)
         cand = self.candidate(c, "pin-good")
@@ -3451,6 +3614,74 @@ def cut_parent_in_commit_graph(cand: Path, env: dict) -> None:
     entry = chunks[b"CDAT"] + (width + 16) * ids.index(head) + width
     b[entry: entry + 4] = struct.pack(">I", 0x70000000)
     path.write_bytes(bytes(b))
+
+
+def forge_object(cand: Path, env: dict, target: str, tree: str, form: str) -> None:
+    """Review loop RL8-K1: file the candidate's tree object `tree` under the id `target` in its .git/objects, as a loose
+    object ("loose") or in a one-object pack with its own index ("packed"): the content does not hash to the id, and git
+    reads it by the id it is filed under."""
+    import hashlib
+    import struct
+    import zlib
+    body = subprocess.run(["git", "cat-file", "tree", tree], cwd=cand, env=env, capture_output=True, check=True).stdout
+    objects = cand / ".git" / "objects"
+    if form == "loose":
+        path = objects / target[:2] / target[2:]
+        path.parent.mkdir(exist_ok=True)
+        if path.exists():
+            path.chmod(0o644)
+            path.unlink()
+        path.write_bytes(zlib.compress(b"tree %d\0" % len(body) + body))
+        return
+    n, head = len(body), bytearray([2 << 4 | len(body) & 0x0F])
+    n >>= 4
+    while n:
+        head[-1] |= 0x80
+        head.append(n & 0x7F)
+        n >>= 7
+    entry = bytes(head) + zlib.compress(body)
+    pack = b"PACK" + struct.pack(">II", 2, 1) + entry
+    pack += hashlib.sha1(pack).digest()
+    oid = bytes.fromhex(target)
+    idx = b"\377tOc" + struct.pack(">I", 2) + b"".join(struct.pack(">I", int(i >= oid[0])) for i in range(256)) + oid
+    idx += struct.pack(">II", zlib.crc32(entry), 12) + pack[-20:]
+    idx += hashlib.sha1(idx).digest()
+    (objects / "pack").mkdir(exist_ok=True)
+    (objects / "pack" / f"pack-{pack[-20:].hex()}.pack").write_bytes(pack)
+    (objects / "pack" / f"pack-{pack[-20:].hex()}.idx").write_bytes(idx)
+
+
+def forge_base_tree(cand: Path, env: dict, base_tree: str, form: str, keep: tuple[str, ...]) -> None:
+    """Commit what the checkout holds, then file under the base tree's id a tree that holds the base's entries with
+    HEAD's in place of the top-level names in keep, so the base reads as already holding them; then HEAD becomes an
+    orphan root holding the same tree (no peel of the base tree's id runs: the history starts elsewhere), and the files
+    in keep go from disk (the index keeps them)."""
+    commit_all(cand, env, "work")
+    lines = [ln for ln in sh(["git", "ls-tree", base_tree], cand, env).stdout.splitlines() if ln.split("\t", 1)[1] not in keep]
+    lines += sh(["git", "ls-tree", "HEAD", "--", *keep], cand, env).stdout.splitlines()
+    forged = subprocess.run(["git", "mktree"], cwd=cand, env=env, input=("\n".join(lines) + "\n").encode(), capture_output=True,
+                            check=True).stdout.decode().strip()
+    forge_object(cand, env, base_tree, forged, form)
+    root = sh(["git", "commit-tree", "HEAD^{tree}", "-m", "work"], cand, env).stdout.strip()
+    sh(["git", "update-ref", "refs/heads/cal/test", root], cand, env)
+
+
+def splice_cache_tree(index: Path, matching: Path) -> None:
+    """Review loop RL8-K1, same class: replace the extensions of the index file `index` (version 2, as git add writes
+    it) with those of `matching`, an index of the same entries' count read from HEAD: its cache tree (TREE) claims each
+    directory still holds HEAD's tree, and diff-index --cached skips such a directory without reading its entries."""
+    import hashlib
+    import struct
+
+    def split(b):
+        off = 12
+        for _ in range(struct.unpack(">I", b[8:12])[0]):
+            off += (62 + (struct.unpack(">H", b[off + 60: off + 62])[0] & 0xFFF) + 8) // 8 * 8
+        return b[:off], b[off:-20]
+    entries, _ = split(index.read_bytes())
+    _, ext = split(matching.read_bytes())
+    out = entries + ext
+    index.write_bytes(out + hashlib.sha1(out).digest())
 
 
 class KitCaseGrades(unittest.TestCase):

@@ -4,7 +4,8 @@
 # scope rule, the test and lint commands, the output location - now comes from the subject-pack manifest; the grade
 # goes to stdout. The grading logic is the Python program below (a quoted heredoc: no shell value is spliced into it).
 #
-# usage: grade.sh MANIFEST pin|fix|gate CHECKOUT > GRADES_DIR/<case>-<profile>.json
+# usage: grade.sh [--links SEAL] MANIFEST pin|fix|gate CHECKOUT > GRADES_DIR/<case>-<profile>.json
+#        grade.sh --seal NAME=DIR... > SEAL
 #
 #   MANIFEST      the subject pack's manifest.json (format: tools/calibration/subject-pack/README.md)
 #   pin|fix|gate  the case; a review is graded by the grader agent, not here
@@ -12,6 +13,15 @@
 #                 manifest's source files for the accepted, base or mutant versions while it runs the tests and restores
 #                 them; each swap gives the files a fresh mtime two seconds past the last, so a cache keyed on mtime and
 #                 size (Python's __pycache__) never runs a previous version, and the original mtimes go back at the end
+#   --links SEAL  needed when the manifest has checkout.links: the seal the host made of each linked directory with
+#                 --seal right after installing it, before any candidate ran, and kept outside every checkout and linked
+#                 directory. The test, lint and gate commands run from those trees, and a candidate can write them
+#                 (through the link, or by putting a directory of its own at the name), so each name in the checkout is
+#                 read by content before the first command and after the last: a name the checkout holds must hold the
+#                 sealed content (linksIntact: {name: bool}; PASS needs every one true), and only an intact name is left
+#                 out of `changed` and `untracked` (review loop RL8-K2)
+#   --seal        print the seal of each NAME=DIR: a SHA-256 over every entry under DIR (DIR followed, nothing below it:
+#                 each entry's path and kind, a file's bytes and executable bits, a link's target as text)
 #
 # A pin case with `mutants` ([{id, commit}]) also needs the candidate's new tests red with each mutant commit's source
 # swapped in (redAtMutants: {id: bool}); without mutants the pin grade is what it always was. A gate case is graded by
@@ -23,29 +33,94 @@
 # killed and reads as exit 124. What the checkout holds (the
 # invariants, `changed`, `untracked`, the source diff) is read by a git of the grade's own over the base tree, and what
 # the candidate committed and staged by a second git of the grade's own over the candidate's objects and a copy of its
-# index, its HEAD and refs read as files: no git ever runs on the candidate's .git as a repository, so nothing in its
-# config, attributes, excludes, hooks or index flags (the candidate's to write) is applied or run. What the candidate
-# committed is read against the case's base tree, never against a root commit the candidate can replace (an amend of
-# the checkout's single commit, an orphan root), and every file on disk that the base lacks and the candidate's index
-# holds counts as changed.
+# index entries, its HEAD and refs read as files: no git ever runs on the candidate's .git as a repository, so nothing
+# in its config, attributes, excludes or hooks (the candidate's to write) is applied or run.
+# That second git holds only objects filed under the id git computed from their content (the base tree's from the pack
+# repository, the candidate's copied), so no object the candidate stores under another object's id is read (review
+# loop RL8-K1). What the candidate committed is read against the case's base tree, never against a root commit the
+# candidate can replace (an amend of the checkout's single commit, an orphan root), and every file on disk that the
+# base lacks and the candidate's index holds counts as changed.
 #
-# Exit 0 with the grade (PASS true or false) as one JSON object; 2 on a bad argument, an unusable manifest or a
-# checkout that shares a path with the pack; 3 with {"error": ...} when the checkout is missing or has no commit.
+# Exit 0 with the grade (PASS true or false) as one JSON object; 2 on a bad argument, an unusable manifest or seal, or
+# a checkout that shares a path with the pack; 3 with {"error": ...} when the checkout is missing, has no commit, or
+# its history or index cannot be read.
 set -u
-[ $# -eq 3 ] || { echo "usage: grade.sh MANIFEST pin|fix|gate CHECKOUT" >&2; exit 2; }
+[ $# -ge 1 ] || { echo "usage: grade.sh [--links SEAL] MANIFEST pin|fix|gate CHECKOUT | grade.sh --seal NAME=DIR..." >&2; exit 2; }
 command -v python3 >/dev/null 2>&1 || { echo "grade.sh: python3 not found" >&2; exit 2; }
 # none of git's repository variables (GIT_DIR, GIT_INDEX_FILE, ...) nor GIT_ATTR_SOURCE reaches the grade's git: each
 # git it runs names its repository itself (the pack, the checkout or the view below)
 unset GIT_ATTR_SOURCE $(git rev-parse --local-env-vars 2>/dev/null)
 exec python3 -I - "$@" <<'PY'
-import json, os, re, shlex, shutil, signal, subprocess, sys, tempfile, time
+import hashlib, json, os, re, shlex, shutil, signal, stat, struct, subprocess, sys, tempfile, time, zlib
 from pathlib import Path
 
 def refuse(msg, code=2):
     print(f"grade.sh: refused: {msg}", file=sys.stderr)
     sys.exit(code)
 
-manifest_path, task, checkout = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
+USAGE = "usage: grade.sh [--links SEAL] MANIFEST pin|fix|gate CHECKOUT | grade.sh --seal NAME=DIR..."
+
+def is_link(path, st):
+    """A symlink, a junction or any other reparse point (Windows): a link of any kind, never followed below the top."""
+    return stat.S_ISLNK(st.st_mode) or bool(getattr(st, "st_file_attributes", 0) & 0x400)
+
+def tree_seal(top):
+    """The seal of the tree at top (top followed when it is a link, nothing below it): a SHA-256 over each entry in
+    name order - its path below top, its kind, a file's bytes (and executable bits off Windows), a link's target as
+    text - so a file edited, added, removed or renamed, or a link led elsewhere, changes it (review loop RL8-K2)."""
+    h = hashlib.sha256()
+
+    def walk(d, rel):
+        with os.scandir(d) as it:
+            entries = sorted(it, key=lambda e: e.name)
+        for e in entries:
+            r = rel + os.fsencode(e.name)
+            st = e.stat(follow_symlinks=False)
+            if is_link(e.path, st):
+                h.update(b"L\0" + r + b"\0" + os.fsencode(os.readlink(e.path)) + b"\0")
+            elif stat.S_ISDIR(st.st_mode):
+                h.update(b"D\0" + r + b"\0")
+                walk(e.path, r + b"/")
+            elif stat.S_ISREG(st.st_mode):
+                fh = hashlib.sha256()
+                with open(e.path, "rb") as f:
+                    if st.st_size <= 1 << 24:
+                        fh.update(f.read())
+                    else:
+                        for chunk in iter(lambda: f.read(1 << 24), b""):
+                            fh.update(chunk)
+                x = b"%o" % (st.st_mode & 0o111) if os.name != "nt" else b""
+                h.update(b"F\0" + r + b"\0" + x + b"\0" + fh.digest())
+            else:
+                h.update(b"O\0" + r + b"\0")
+    walk(top, b"")
+    return h.hexdigest()
+
+args = sys.argv[1:]
+if args[:1] == ["--seal"]:
+    seal = {}
+    for spec in args[1:]:
+        name, eq, d = spec.partition("=")
+        if not eq or not name or not d or name in seal:
+            refuse(f"--seal takes NAME=DIR, each NAME once, not {spec!r}")
+        if not os.path.isdir(d):
+            refuse(f"--seal {spec}: {d} is not a directory")
+        try:
+            seal[name] = tree_seal(d)
+        except OSError as e:
+            refuse(f"--seal {spec}: {d} cannot be read: {e}")
+    if not seal:
+        refuse(USAGE)
+    print(json.dumps({"seal": 1, "links": seal}, indent=1))
+    sys.exit(0)
+seal_path = None
+if args[:1] == ["--links"]:
+    if len(args) < 2:
+        refuse(USAGE)
+    seal_path, args = Path(args[1]), args[2:]
+if len(args) != 3:
+    refuse(USAGE)
+manifest_path, task, checkout = Path(args[0]), args[1], Path(args[2])
 if task not in ("pin", "fix", "gate"):
     refuse(f"case must be pin, fix or gate, not {task!r} (a review is graded by the grader agent)")
 
@@ -106,6 +181,23 @@ if task != "gate" and mode not in ("exit-code", "vitest-json"):
 for rev in revs:
     if subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}"], capture_output=True).returncode:
         refuse(f"{rev} is not a commit in the pack repository {repo}")
+# checkout.links: the commands run from those trees and the candidate can write them, so each is graded against the
+# host's seal (RL8-K2); a grade without one would trust whatever the candidate left there
+sealed = {}
+if links and seal_path is None:
+    refuse(f"the manifest has checkout.links ({', '.join(links)}): the grade needs --links SEAL, the seal grade.sh --seal made of "
+           "each linked directory before any candidate ran")
+if seal_path is not None:
+    try:
+        s = json.loads(seal_path.read_text(encoding="utf-8"))
+        sealed = s["links"] if s.get("seal") == 1 and isinstance(s.get("links"), dict) else None
+    except (OSError, ValueError, AttributeError) as e:
+        refuse(f"--links {seal_path} unusable: {type(e).__name__} {e}")
+    if sealed is None or not all(isinstance(v, str) and re.fullmatch(r"[0-9a-f]{64}", v) for v in sealed.values()):
+        refuse(f"--links {seal_path} is not a seal grade.sh --seal made")
+    if sorted(sealed) != sorted(links):
+        refuse(f"--links {seal_path} seals {', '.join(sorted(sealed)) or 'nothing'}, the manifest's checkout.links are "
+               f"{', '.join(sorted(links)) or 'none'}")
 
 def show(rev, path):
     p = subprocess.run(["git", "-C", str(repo), "show", f"{rev}:{path}"], capture_output=True)
@@ -153,14 +245,21 @@ if cand == pack_dir or pack_dir in cand.parents or cand in pack_dir.parents:
 # - the view (`vgit`): what the checkout's files are. Its work tree is the checkout, its objects are the pack
 #   repository's (alternates), its index is the case's base tree, its attributes come from the base tree
 #   (--attr-source, git 2.40+) and its ignore rules are the base tree's .gitignore files.
-# - the history (`hgit`): what the candidate committed and staged. Its objects are the candidate's (alternates to
-#   .git/objects, which git only reads), its index a copy of the candidate's .git/index (with any split-index file
-#   beside it), and the commit it reads is the candidate's HEAD resolved from the files .git/HEAD, .git/refs and
-#   .git/packed-refs. It has no work tree, so an index flag changes nothing it reports. The candidate's objects never
-#   reach the view: a pack of the candidate's could otherwise stand in for the base tree the view's index is read from.
-#   The history also reads the pack repository's objects, so it holds the base tree even when the candidate's history
-#   no longer does (an amended root, then gc): its commits are compared with the base tree, not with its own root
-#   (review loop RL4-K1: a replaced root commit that held a new file left the file out of every list).
+# - the history (`hgit`): what the candidate committed and staged. It holds objects of its own only, no alternates,
+#   each filed by git index-pack under the id it computes from the object's content: git reads an object by the id a
+#   store files it under and never checks that id on most reads (diff-tree, ls-tree), so a forged object under the base
+#   tree's id, in the candidate's store ahead of the pack repository's, made committed and added read the candidate's
+#   files as the base's (review loop RL8-K1). The base tree's trees and blobs come from the pack repository, first, so
+#   it holds the base tree even when the candidate's history no longer does (an amended root, then gc): its commits are
+#   compared with the base tree, not with its own root (RL4-K1: a replaced root commit that held a new file left the
+#   file out of every list). Then every object of the candidate's (a copy of .git/objects' loose objects and packs,
+#   nothing its info/alternates names) filed under an id the base's objects do not hold; one filed under another
+#   object's id lands under its own. A commit the candidate does not hold is not there, though the pack repository
+#   holds it. Its index holds the
+#   entries of a copy of the candidate's .git/index (with any split-index file beside it), each written again, so no
+#   cache tree the candidate wrote is read (a TREE extension claiming a directory still matches HEAD hid a staged file
+#   from diff-index --cached). The commit it reads is the candidate's HEAD resolved from the files
+#   .git/HEAD, .git/refs and .git/packed-refs. It has no work tree. The candidate's objects never reach the view.
 # Every git of the grade runs with core.fsmonitor off, without replace refs and without commit-graph files, so no
 # program, no object substitution and no history a commit-graph claims (git reads one from an alternate's
 # objects/info: a forged one cut HEAD's parent, so HEAD read as its own root) comes from the host's config or the
@@ -169,6 +268,10 @@ VIEW = tempfile.TemporaryDirectory(prefix="grade-view-", ignore_cleanup_errors=T
 view_dir, hist_dir = Path(VIEW.name) / "git", Path(VIEW.name) / "history"
 SAFE = ["--no-replace-objects", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "core.commitGraph=false",
         "-c", "core.quotepath=off"]
+OBJECT_FORMAT = subprocess.run(["git", "-C", str(repo), "rev-parse", "--show-object-format"], capture_output=True, encoding="utf-8",
+                               stdin=subprocess.DEVNULL).stdout.strip() or "sha1"
+if OBJECT_FORMAT not in ("sha1", "sha256"):
+    refuse(f"the pack repository {repo} stores objects as {OBJECT_FORMAT}, which the grade does not read")
 
 def run_git(what, repo_args, args, cwd, stdin=None):
     p = subprocess.run(["git", *SAFE, *repo_args, *args], cwd=cwd, capture_output=True, input=stdin if stdin is not None else b"")
@@ -179,8 +282,128 @@ def run_git(what, repo_args, args, cwd, stdin=None):
 def vgit(*args, stdin=None):
     return run_git("view", [f"--git-dir={view_dir}", f"--work-tree={cand}", f"--attr-source={base}", "-c", "core.bare=false"], args, cand, stdin)
 
-def hgit(*args):
-    return run_git("history", [f"--git-dir={hist_dir}"], args, VIEW.name)
+def unreadable(what):
+    """Exit 3: the candidate's history or index, which it writes, cannot be read (no grade, no traceback)."""
+    print(json.dumps({"task": task, "error": f"the checkout's history cannot be read: {what}"}))
+    sys.exit(3)
+
+def hgit(*args, stdin=None):
+    try:
+        return run_git("history", [f"--git-dir={hist_dir}"], args, VIEW.name, stdin)
+    except RuntimeError as e:
+        unreadable(e)
+
+PACK_TYPES = {b"commit": 1, b"tree": 2, b"blob": 3, b"tag": 4}
+
+def batch_objects(cmd, stdin):
+    """(the id it is filed under, type, bytes) of each object `git cat-file --batch` prints."""
+    p = subprocess.Popen(cmd, cwd=VIEW.name, stdin=stdin, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    try:
+        while line := p.stdout.readline():
+            head = line.split()
+            if len(head) != 3 or not head[2].isdigit():
+                continue  # "<id> missing", or a line git could not read as an object
+            oid, kind, size = head[0].decode("ascii", "replace"), head[1], int(head[2])
+            data = p.stdout.read(size)
+            p.stdout.read(1)
+            if kind in PACK_TYPES and len(data) == size:
+                yield oid, kind, data
+    finally:
+        p.stdout.close()
+        p.wait()
+
+def copy_store(src, dst):
+    """The loose objects and the packs (.pack with its .idx) of the object directory src, copied to dst: regular files
+    only, no link followed, nothing else (no info/alternates, commit-graph, multi-pack-index or bitmap)."""
+    (dst / "pack").mkdir(parents=True, exist_ok=True)
+    if src.is_symlink() or not src.is_dir():
+        return
+    for d in sorted(src.iterdir()):
+        if d.is_symlink() or not d.is_dir():
+            continue
+        if re.fullmatch(r"[0-9a-f]{2}", d.name):
+            for f in d.iterdir():
+                if re.fullmatch(r"[0-9a-f]{38}|[0-9a-f]{62}", f.name) and f.is_file() and not f.is_symlink():
+                    (dst / d.name).mkdir(exist_ok=True)
+                    shutil.copyfile(f, dst / d.name / f.name)
+        elif d.name == "pack":
+            for f in d.glob("pack-*.pack"):
+                idx = f.with_suffix(".idx")
+                if all(x.is_file() and not x.is_symlink() for x in (f, idx)):
+                    shutil.copyfile(f, dst / "pack" / f.name)
+                    shutil.copyfile(idx, dst / "pack" / idx.name)
+
+def make_history():
+    """The history's objects - the base tree's trees and blobs from the pack repository, then every object of the
+    candidate's whose id none of those holds - written as one pack that git index-pack files, each object under the id
+    it computes from the object's type and bytes; and its index: the candidate's entries, each written again."""
+    raw = Path(VIEW.name) / "candidate-objects"
+    copy_store(cand / ".git" / "objects", raw / "objects")
+    for sub in ("refs", "info"):
+        (raw / sub).mkdir(parents=True, exist_ok=True)
+    (raw / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    (raw / "config").write_text(f"[core]\n\trepositoryformatversion = {1 if OBJECT_FORMAT != 'sha1' else 0}\n\tbare = true\n"
+                                + (f"[extensions]\n\tobjectformat = {OBJECT_FORMAT}\n" if OBJECT_FORMAT != "sha1" else ""), encoding="utf-8")
+    base_ids = Path(VIEW.name) / "base-ids"
+    ls = subprocess.run(["git", "-C", str(repo), "ls-tree", "-r", "-t", "-z", base_tree], capture_output=True, stdin=subprocess.DEVNULL)
+    if ls.returncode:
+        refuse(f"the base tree {base_tree} cannot be read from the pack repository {repo}")
+    ids = [base_tree] + [e.split(b"\t", 1)[0].split()[2].decode("ascii") for e in ls.stdout.split(b"\0")
+                         if b"\t" in e and e.split(b"\t", 1)[0].split()[1] in (b"tree", b"blob")]
+    base_ids.write_text("".join(i + "\n" for i in ids), encoding="ascii")
+    body, seen = Path(VIEW.name) / "objects.body", set()
+    with open(body, "wb") as out, open(base_ids, "rb") as base_in:
+        for source in (batch_objects(["git", *SAFE, "-C", str(repo), "cat-file", "--batch"], base_in),
+                       batch_objects(["git", *SAFE, f"--git-dir={raw}", "cat-file", "--batch-all-objects", "--batch", "--unordered"],
+                                     subprocess.DEVNULL)):
+            for oid, kind, data in source:
+                if oid in seen:
+                    continue
+                seen.add(oid)
+                n, header = len(data), bytearray([PACK_TYPES[kind] << 4 | len(data) & 0x0F])
+                n >>= 4
+                while n:
+                    header[-1] |= 0x80
+                    header.append(n & 0x7F)
+                    n >>= 7
+                out.write(bytes(header) + zlib.compress(data, 1))
+    if base_tree not in seen:
+        refuse(f"the base tree {base_tree} cannot be read from the pack repository {repo}")
+    pack = Path(VIEW.name) / "objects.pack"
+    h = hashlib.new(OBJECT_FORMAT)
+    with open(pack, "wb") as out, open(body, "rb") as src:
+        for chunk in [b"PACK" + struct.pack(">II", 2, len(seen))]:
+            h.update(chunk)
+            out.write(chunk)
+        while chunk := src.read(1 << 20):
+            h.update(chunk)
+            out.write(chunk)
+        out.write(h.digest())
+    body.unlink()
+    with open(pack, "rb") as f:
+        p = subprocess.run(["git", *SAFE, f"--git-dir={hist_dir}", "index-pack", "--stdin"], cwd=VIEW.name, stdin=f, capture_output=True)
+    if p.returncode:
+        unreadable(f"its objects could not be indexed: {p.stderr.decode('utf-8', 'replace').strip()}")
+    shutil.rmtree(raw, ignore_errors=True)
+    pack.unlink()
+    # the index: its entries (mode, id, stage, path) read from a copy, then written into a new one; git treats a
+    # missing index as empty, as the candidate's own git did. The copy sits where the history's git looks for its
+    # index by default, so no variable names it (the grade's environment is passed on unchanged, review loop RL8 K3);
+    # it and its shared parts are removed before the new index is written in the same place
+    copied = hist_dir / "index"
+    parts = []
+    for f in [cand / ".git" / "index", *sorted((cand / ".git").glob("sharedindex.*"))]:
+        if f.is_file() and not f.is_symlink():
+            parts.append(copied if f.name == "index" else hist_dir / f.name)
+            shutil.copyfile(f, parts[-1])
+    if copied.is_file():
+        try:
+            entries = run_git("history", [f"--git-dir={hist_dir}"], ["ls-files", "-s", "-z"], VIEW.name)
+        except RuntimeError as e:
+            unreadable(f"its index: {e}")
+        for f in parts:
+            f.unlink()
+        hgit("update-index", "-z", "--index-info", stdin=entries.encode("utf-8", "surrogateescape"))
 
 def vnames(*args):
     return [x for x in vgit(*args).split("\0") if x]
@@ -242,17 +465,11 @@ def make_view():
     git_dir = subprocess.run(["git", "-C", str(repo), "rev-parse", "--path-format=absolute", "--git-common-dir"], capture_output=True,
                              encoding="utf-8", stdin=subprocess.DEVNULL).stdout.strip()
     for d in (view_dir, hist_dir):
-        if subprocess.run(["git", "init", "-q", "--bare", "--template=", str(d)], cwd=VIEW.name, capture_output=True, stdin=subprocess.DEVNULL).returncode or not git_dir:
+        if subprocess.run(["git", "init", "-q", "--bare", "--template=", f"--object-format={OBJECT_FORMAT}", str(d)], cwd=VIEW.name,
+                          capture_output=True, stdin=subprocess.DEVNULL).returncode or not git_dir:
             refuse(f"no view repository could be made for the pack repository {repo}")
         (d / "objects" / "info").mkdir(parents=True, exist_ok=True)
     (view_dir / "objects" / "info" / "alternates").write_bytes((Path(git_dir) / "objects").as_posix().encode("utf-8") + b"\n")
-    # the history: the candidate's objects and the pack repository's (both read only) and a copy of the candidate's
-    # index; git treats a missing index as empty, as the candidate's own git did
-    (hist_dir / "objects" / "info" / "alternates").write_bytes(b"".join(p.as_posix().encode("utf-8") + b"\n"
-                                                                         for p in (cand / ".git" / "objects", Path(git_dir) / "objects")))
-    for f in [cand / ".git" / "index", *sorted((cand / ".git").glob("sharedindex.*"))]:
-        if f.is_file() and not f.is_symlink():
-            shutil.copyfile(f, hist_dir / f.name)
     lines = []
     ignores = [(mode, oid, f) for mode, kind, oid, f in base_entries() if kind == "blob" and mode != "120000" and f.rsplit("/", 1)[-1] == ".gitignore"]
     for mode, oid, f in sorted(ignores, key=lambda e: (e[2].count("/"), e[2])):
@@ -314,22 +531,23 @@ head_id, why = cand_head()
 if head_id is None:
     print(json.dumps({"task": task, "error": f"no commit in the checkout: {why}"}))
     sys.exit(3)
-make_view()
-try:
-    hgit("rev-parse", "--verify", "--quiet", f"{head_id}^{{commit}}")
-    roots = hgit("rev-list", "--max-parents=0", head_id).split()
-    head = hgit("rev-parse", "--short", head_id).strip()
-except RuntimeError as e:
-    print(json.dumps({"task": task, "error": f"no commit in the checkout: HEAD {head_id} is not a commit in its objects: {e}"}))
-    sys.exit(3)
-# The checkout's history is one root commit holding the base tree (historyless-checkout.sh), but the candidate writes
-# that history: an amend of the root, or an orphan root, puts its own files in a root. So nothing is read against a
-# root: committed and added compare HEAD with the base tree, baseRoot says whether the history still starts at the base
-# (exactly one root, holding the base tree), and commits counts the commits on top of that root (0 when there is none).
 base_tree = subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", f"{base}^{{tree}}"], capture_output=True,
                            encoding="utf-8", stdin=subprocess.DEVNULL).stdout.strip()
 if not OID.fullmatch(base_tree):
     refuse(f"no tree for the base {base} in the pack repository {repo}")
+make_view()
+make_history()
+try:
+    run_git("history", [f"--git-dir={hist_dir}"], ["rev-parse", "--verify", "--quiet", f"{head_id}^{{commit}}"], VIEW.name)
+except RuntimeError as e:
+    print(json.dumps({"task": task, "error": f"no commit in the checkout: HEAD {head_id} is not a commit in its objects: {e}"}))
+    sys.exit(3)
+roots = hgit("rev-list", "--max-parents=0", head_id).split()
+head = hgit("rev-parse", "--short", head_id).strip()
+# The checkout's history is one root commit holding the base tree (historyless-checkout.sh), but the candidate writes
+# that history: an amend of the root, or an orphan root, puts its own files in a root. So nothing is read against a
+# root: committed and added compare HEAD with the base tree, baseRoot says whether the history still starts at the base
+# (exactly one root, holding the base tree), and commits counts the commits on top of that root (0 when there is none).
 base_root = len(roots) == 1 and hgit("rev-parse", "--verify", f"{roots[0]}^{{tree}}").strip() == base_tree
 commits = int(hgit("rev-list", "--count", f"{roots[0]}..{head_id}")) if base_root else 0
 # committed: HEAD's files that differ from the base tree, renames as both names; staged: the copied index against HEAD;
@@ -339,7 +557,35 @@ commits = int(hgit("rev-list", "--count", f"{roots[0]}..{head_id}")) if base_roo
 committed = hnames("diff-tree", "-r", "-z", "--name-only", "--no-renames", base_tree, head_id)
 staged = hnames("diff-index", "--cached", "-z", "--name-only", "--no-renames", head_id)
 indexed = set(hnames("ls-files", "-z"))
-others = [f for f in view_others() if not any(f == ln or f.startswith(ln + "/") for ln in links)]
+
+# checkout.links (RL8-K2): the test, lint and gate commands run from those trees, and the candidate can write them
+# (through the link, or by putting a tree of its own at the name), so each name the checkout holds is read by content
+# against the host's seal before the first command and after the last; a name the checkout no longer holds runs
+# nothing of the host's and counts as intact. The commands run the candidate's code, which can change what a command
+# reports as it runs (and undo a change before the read after the last command): the seal grades what the candidate
+# left on disk, not what its code does while the grade runs.
+link_reads = []
+
+def read_links():
+    if not links:
+        return
+    seen = {}
+    for name in links:
+        top = cand / name
+        if not os.path.lexists(top):
+            seen[name] = True
+            continue
+        try:
+            seen[name] = top.is_dir() and tree_seal(top) == sealed[name]
+        except OSError:
+            seen[name] = False
+    link_reads.append(seen)
+
+def links_intact():
+    return {name: all(r[name] for r in link_reads) for name in links}
+
+read_links()
+others = [f for f in view_others() if not any((f == ln or f.startswith(ln + "/")) and link_reads[0][ln] for ln in links)]
 changed = sorted(set(committed + staged + vnames("diff-files", "--name-only", "-z") + [f for f in others if f in indexed]))
 untracked = sorted(f for f in others if f not in indexed)
 
@@ -360,9 +606,12 @@ if task == "gate":
     intact = {x: cand_blobs(x) == base_inv[x] for x in invariants}
     present = {x: (cand / x).exists() for x in required}
     gate_exit = run_bash(gate_cmd)
+    read_links()
     result = {"task": task, "head": head, "baseRoot": base_root, "commits": commits, "changed": changed, "staged": staged,
               "untracked": untracked, "gateExit": gate_exit, "invariantsIntact": intact, "requiredPresent": present, "committed": commits > 0,
-              "PASS": gate_exit == 0 and all(intact.values()) and all(present.values()) and commits > 0}
+              "PASS": gate_exit == 0 and all(intact.values()) and all(present.values()) and commits > 0 and all(links_intact().values())}
+    if links:
+        result["linksIntact"] = links_intact()
     print(json.dumps(result, indent=1))
     sys.exit(0)
 
@@ -495,7 +744,11 @@ try:
                       PASS=c_green and g_red and a_green and scope_ok and lint_res in ("ok", "none"))
 finally:
     restore(final=True)
-restored = (all(((cand / f).read_bytes() if (cand / f).is_file() else None) == data for f, data in saved.items())
+read_links()
+if links:
+    result["linksIntact"] = links_intact()
+    result["PASS"] = result["PASS"] and all(result["linksIntact"].values())
+restored =(all(((cand / f).read_bytes() if (cand / f).is_file() else None) == data for f, data in saved.items())
             and all((cand / f).stat().st_mtime_ns == ns for f, ns in saved_mtime.items()))
 result["restored"] = restored
 if not restored:
