@@ -3,7 +3,7 @@
 Result: sr-pack-4a ACCEPTED (check 5, 2f73c9f, draft PR #122, stacked on #120). The kit change it depends on, lead
 integrations 2-8 on build/sr-kit-cases (#120, head 3ed05d4), is ACCEPTED by check 8. Nothing merged; merges are yours.
 
-After those verdicts a review loop (eight rounds of fresh reviewers) found more, so the heads to review moved; see RUN.md,
+After those verdicts a review loop (nine rounds of fresh reviewers) found more, so the heads to review moved; see RUN.md,
 entry "review loop after the ACCEPTs" and the entries after it. The ids below are the ones each round committed; later
 rebases of the pack branch replaced the pack's, so the ids on the branches now are in the table under "heads now".
 - round 1: RL1-1 (S3, pack) a wrong fix that keeps the staged pair when the account file was read and refused graded
@@ -50,22 +50,33 @@ rebases of the pack branch replaced the pack's, so the ids on the branches now a
   open or the read with a real error's shape; a start moves every clock it reads and the data directory's file times
   move back; W-t, W-t2, W-u, W-u2, W-u3, W-u4, W-l3, W-l4; accepted0 970e5e47). RL8-D1 and RL8-D2 (S4, docs): the PR
   bodies were refreshed and this report given the table below.
-- heads now: kit ad9e4b0 (pushed, #120), pack 1feb090 (committed, not pushed: see Next), docs the RUN.md commit
-  after d9ffc50 (pushed, #119). Outcome seq 3 ("accepted", check 5's head) is append-only and stays.
+- round 9: RL9-K1 (S3, kit) a path the base lacks (a nested `tests/node_modules`, a cached `.pyc`, a top-level
+  `unittest.py`, a file one command writes for the next) shadowed the sealed install or the runner, fixed in 817c6be
+  (before each command the grade sets aside every path the base tree lacks but the candidate's counted files and the
+  linked names; `setAside`, `notSetAside`, `restored`). RL9-P1..P3 (S3, pack) W-p2 (same failure twice in a row), W-b4
+  (engine refs), W-b3 and W-j2 passed; RL9-P4 and RL9-P5 (S4) two clocks a start did not move (W-u5, W-u6; W-v
+  disclosed) and the stat cause wording (W-s); all fixed in 822f701 after a rebase onto 817c6be (four new rows, 26:
+  the lasting row with a `dir` phase, the engine row, the tombstone row at the open and the read, the orphan-codes row;
+  the store's default clock and the date constructor moved; README section "What the pack is and is not expected to
+  catch"; forty-four wrong fixes; accepted0 fe4fdc2f). RL9-D1 (S4, docs): #122 named check 5 by an id on an older head;
+  now 5fab5c3 on 822f701.
+- heads now: kit 817c6be (pushed, #120), pack 822f701 (committed, not pushed: see Next), docs the RUN.md commit
+  after 8361f9c (pushed, #119). Outcome seq 3 ("accepted", check 5's head) is append-only and stays.
 - ids on the branches (round-by-round id -> id on the branch now, matched by subject):
 
   | what | as committed | on the branch now |
   |---|---|---|
-  | kit, rounds 2-5 and 8 | dead160, d73511f, 7ac8143, 2937b2c, ad9e4b0 | the same (the kit branch is never rebased) |
-  | pack RL1-1 | 045ee89, f16f10f | 9a5fbf1 |
-  | pack RL2-P1 | f25b52c | bce1f57 |
-  | pack RL2-1 | 556b166, 12ebdb8 | 77c61d4 |
-  | pack RL3-1, RL3-2 | 00df498, 0ec45ca | af1d3bc |
-  | pack RL5-P1 | 7595509 | 16977d9 |
-  | pack RL6-P1 | a6d12b8 | c0bae1e |
-  | pack RL7-P1, RL7-P2 | cfe982c | ae4e0f4 |
-  | pack RL8-P1..P3 | 1feb090 | 1feb090 |
-  | check 5 report (ACCEPT) | 2f73c9f | 2d56057 |
+  | kit, rounds 2-5, 8 and 9 | dead160, d73511f, 7ac8143, 2937b2c, ad9e4b0, 817c6be | the same (the kit branch is never rebased) |
+  | pack RL1-1 | 045ee89, f16f10f | ca2e446 |
+  | pack RL2-P1 | f25b52c | 083da50 |
+  | pack RL2-1 | 556b166, 12ebdb8 | 8cdc71a |
+  | pack RL3-1, RL3-2 | 00df498, 0ec45ca | a954d34 |
+  | pack RL5-P1 | 7595509 | bcfa0c5 |
+  | pack RL6-P1 | a6d12b8 | 235378f |
+  | pack RL7-P1, RL7-P2 | cfe982c | bd026ae |
+  | pack RL8-P1..P3 | 1feb090 | 31e8738 |
+  | pack RL9-P1..P5 | 822f701 | 822f701 |
+  | check 5 report (ACCEPT) | 2f73c9f | 5fab5c3 |
 
 ## What you should hear
 1. D-IC3-1 (lead decision, departs from the brief's literal wording): check 3 found (IC3-1, S2) that base0 itself held
@@ -130,10 +141,16 @@ rebases of the pack branch replaced the pack's, so the ids on the branches now a
   fails 14 of 22 on a scratch tree, and the
   cfe982c test passes all but W-u4 22 of 22 (red first); the clone is unchanged; make-repo builds base0 4eaf584a and
   accepted0 970e5e47; gate PASS on 1feb090.
+- Review loop round 9: kit at 817c6be, red first on ad9e4b0 (every shadow cell PASS true), ten guard-removal mutants
+  each red, full kit suite with no early stop 157 passed, 1 skipped, exit 0; gate PASS on 817c6be. Pack at 822f701
+  (rebased onto 817c6be; `git diff 1feb090 31e8738` equals the kit's diff): 26 rows; accepted 26 of 26, base 16 red;
+  each of the seven new wrong fixes passes the 1feb090 test 22 of 22 and fails its new row (red first); HostPackX21
+  with the read-only clone 17 of 18 OK in 10957 s, every wrong fix FAIL with its stated count of 26; the red-at-base test then fixed to expect the lasting and engine rows red at the base (16) and 1 of 1 OK with the clone; the clone is unchanged; make-repo builds base0 4eaf584a and accepted0
+  fe4fdc2f; gate PASS on 822f701.
 
 ## Next (yours)
-Kit ad9e4b0 (#120) and this branch (#119) are pushed. The pack branch was rebased onto ad9e4b0, so it needs a
-force-push with lease, which is yours: `git push --force-with-lease=build/sr-pack-4a:cfe982c3cdcfbe6187cd8852d7974c7c75b0cd69 origin build/sr-pack-4a`
-(from the pack worktree, which holds 1feb090; it refuses if origin's pack is no longer cfe982c). Then review and
+Kit 817c6be (#120) and this branch (#119) are pushed. The pack branch was rebased onto 817c6be, so it needs a
+force-push with lease, which is yours: `git push --force-with-lease=build/sr-pack-4a:1feb090ac40b46474999995ddc921fc16cdc4126 origin build/sr-pack-4a`
+(from the pack worktree, which holds 822f701; it refuses if origin's pack is no longer 1feb090). Then review and
 merge #120, then #122, then #119. Plan step 5 (sr-policy-7, sr-packs-t1) waits for you; follow-ups FU-1..FU-5
 on #120 are still open.
