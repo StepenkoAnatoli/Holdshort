@@ -53,7 +53,8 @@ afterEach(async () => { vi.useRealTimers(); for (const root of roots.splice(0)) 
 const DAY = 86_400_000;
 /** Moves the wall clock (Date alone; timers stay real) `days` past now: the vault stamps a staged entry with Date.now(), and a start may
  *  come long after the crash, so nothing about the kept pair may depend on how recent it is. The rows move it ten years (3650 days), far
- *  past any age a keep could be limited to (a day, a month, a year); the store's clock is injected and fixed, so only the vault sees it. A
+ *  past any age a keep could be limited to (a day, a month, a year); the first session's store has a fixed clock of its own (the
+ *  account file's dates), and a later start's store has the app's (Date.now). A
  *  start's own process runs with every clock it reads moved by as much (Date, performance's origin, Intl's default date and
  *  process.hrtime; the system's uptime stays, as the system has booted since), and before it runs, the times of every file and
  *  directory in the data directory are moved back by as much as the clock moved since they were written (`aged`), so a file's age by
@@ -79,9 +80,11 @@ const { Vault } = await load(); type Vault = InstanceType<typeof Vault>;
 // unreadable file is one every read fails on, as a file another process holds or a permission denies: a second read of it, through
 // whatever node:fs function and by whatever name, meets the same error. A start's fault is set for its whole process, from before the
 // subject's modules load, and it fails where a real one does (`at`), on the faulted file:
-//  - at the stat (a directory on the way that may not be searched): every node:fs function that reads a file by its path fails: open,
-//    readFile, stat, lstat, access, copyFile and cp (cp also from a directory that holds the file), each in its promise, callback and
-//    synchronous form, and openAsBlob, and so does the module loader (an import or a require of it);
+//  - at the stat (a permission that denies reading the file's attributes): every node:fs function that reads a file by its path fails:
+//    open, readFile, stat, lstat, access, copyFile and cp (cp also from a directory that holds the file), each in its promise, callback
+//    and synchronous form, and openAsBlob, and so does the module loader (an import or a require of it);
+//  - at the directory (a directory on the way that may not be searched): as at the stat, for every path inside the account file's
+//    directory, there or not and by any spelling that leads there, so a copy kept beside the file fails too;
 //  - at the open (a file another process opened without sharing it, a permission on the file): its stat, lstat and access succeed, and
 //    open, readFile, copyFile, cp, openAsBlob and the module loader fail;
 //  - at the read (a byte-range lock, a failing disk): its stat, lstat, access and open succeed, and every read of what the open gave
@@ -95,13 +98,14 @@ const { Vault } = await load(); type Vault = InstanceType<typeof Vault>;
 // reads it: the fault hands the argument to the real stat, so no form a read accepts is missed (only a descriptor or a FileHandle
 // names no path, and those come from an open that met the fault). A read function the subject takes as it loads (promisify(fs.readFile),
 // say) is a wrapper too: the wrappers are synced to every importer before the subject loads. A later start also runs with every clock
-// the process reads moved by as much as the test's (see `later`).
+// the process reads moved by as much as the test's (see `later`), and its store gets the app's own clock (index.ts passes none, so the
+// store's default, Date.now, which is moved too).
 const START_RUNNER = String.raw`
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { registerHooks, syncBuiltinESMExports } from 'node:module';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getSystemErrorMap } from 'node:util';
 
@@ -125,7 +129,28 @@ function identity(path) {
 }
 /** The path an argument names, as a string, for the error's message (the real path when node:fs can resolve it). */
 function pathText(arg) { try { return real.realpathSync(arg); } catch { return String(arg); } }
-let fault = null;
+/** The path a string, a Buffer or another Uint8Array, or a file: URL (or an object node:fs reads as one) spells, or null. */
+function spelled(arg) {
+  if (typeof arg === 'string') return arg;
+  if (arg instanceof Uint8Array) return Buffer.from(arg).toString();
+  if (arg !== null && typeof arg === 'object' && typeof arg.href === 'string') { try { return fileURLToPath(arg.href); } catch { return null; } }
+  return null;
+}
+let fault = null; let faultDir = null;
+/** Whether arg names a path inside the faulted directory: its real path, or (when it is not there) its spelling, has the directory
+ *  as a parent, compared by identity, so any spelling and any link that leads there counts. */
+function inside(arg) {
+  if (faultDir === null || typeof arg === 'number') return false;
+  const paths = [];
+  try { paths.push(real.realpathSync(arg)); } catch { /* not there: by its spelling */ }
+  const text = spelled(arg); if (text !== null) paths.push(resolve(text));
+  for (const path of paths) {
+    for (let child = path, parent = dirname(path); parent !== child; child = parent, parent = dirname(parent)) {
+      if (identity(parent) === faultDir) return true;
+    }
+  }
+  return false;
+}
 const SYSTEM_ERRORS = getSystemErrorMap();
 /** The error a real failure of syscall gives for the start's code: libuv's errno and message for it, the syscall and the path. */
 function failure(syscall, arg) {
@@ -150,7 +175,7 @@ function holds(dir, depth) {
 /** Whether a read of arg meets the fault: arg is the faulted file (or, with tree, a directory that holds it). */
 function hit(arg, tree) {
   if (fault === null) return false;
-  if (identity(arg) === fault) return true;
+  if (identity(arg) === fault || inside(arg)) return true;
   if (!tree) return false;
   try { return real.statSync(arg).isDirectory() && holds(real.realpathSync(arg), 0); } catch { return false; }
 }
@@ -195,7 +220,7 @@ for (const [module, suffix, form] of FORMS) {
   } else {
     // at the stat every call by the path fails, each with its own syscall; at the open the stat, lstat and access succeed
     const calls = [['open', 'open'], ['readFile', 'open'], ['copyFile', 'copyfile'], ['cp', 'copyfile']];
-    if (PHASE === 'stat') calls.push(['stat', 'stat'], ['lstat', 'lstat'], ['access', 'access']);
+    if (PHASE === 'stat' || PHASE === 'dir') calls.push(['stat', 'stat'], ['lstat', 'lstat'], ['access', 'access']);
     for (const [name, syscall] of calls) {
       const tree = name === 'cp';
       wrap(module, name + suffix, form, args => hit(args[0], tree) ? syscall : null);
@@ -232,13 +257,14 @@ registerHooks({
   load(url, context, nextLoad) {
     let path = null;
     if (fault !== null && url.startsWith('file:')) { try { path = fileURLToPath(url); } catch { path = null; } }
-    if (path !== null && identity(path) === fault) throw failure(AT_READ ? 'read' : 'open', path);
+    if (path !== null && (identity(path) === fault || inside(path))) throw failure(AT_READ ? 'read' : 'open', path);
     return nextLoad(url, context);
   },
 });
 if (job.unread) {
   fault = identity(job.file);
   if (fault === null) report({ error: 'the account file to fail is missing: ' + job.file });
+  if (PHASE === 'dir') faultDir = identity(dirname(job.file));
 }
 if (job.shift) {
   // every clock the process reads moves by job.shift: Date (now, new Date() and Date() as a string), performance's origin (so
@@ -246,11 +272,14 @@ if (job.shift) {
   // process.hrtime (counted from the same point as the crash's, as on the same boot). The system's uptime stays: ten years on, the
   // system has booted since the crash, so a boot time it gives is after the crash.
   const RealDate = Date; const now = () => RealDate.now() + job.shift;
-  globalThis.Date = new Proxy(RealDate, {
+  const MovedDate = new Proxy(RealDate, {
     construct: (target, args, newTarget) => Reflect.construct(target, args.length > 0 ? args : [now()], newTarget),
     apply: () => new RealDate(now()).toString(),
     get: (target, key, receiver) => key === 'now' ? now : Reflect.get(target, key, receiver),
   });
+  globalThis.Date = MovedDate;
+  // a date's constructor (Date.prototype.constructor, new Date().constructor) is the moved Date too, not the real one behind it
+  Object.defineProperty(RealDate.prototype, 'constructor', { value: MovedDate, writable: true, configurable: true, enumerable: false });
   const origin = performance.timeOrigin + job.shift;
   Object.defineProperty(performance, 'timeOrigin', { get: () => origin, configurable: true });
   const formats = Intl.DateTimeFormat.prototype; const format = Object.getOwnPropertyDescriptor(formats, 'format');
@@ -284,7 +313,7 @@ try {
   const subject = await import(subjectUrl);
   const modules = { './github-account-store': subject.store, './vault': subject.vault };
   const vault = new subject.vault.Vault(join(job.dir, 'vault'), cryptor); await vault.initialize('epoch-2');
-  const store = new subject.store.GitHubAccountStore(job.file, vault, job.clientId, () => job.clock);
+  const store = new subject.store.GitHubAccountStore(job.file, vault, job.clientId);   // the app's clock: the store's default
   const run = new Function('return ' + job.wiring.code)();
   const extra = job.wiring.binds.map(([specifier, name]) => name === '*' ? modules[specifier] : modules[specifier]?.[name]);
   await store.open();
@@ -408,9 +437,10 @@ async function firstSession() {
 interface Started { store: { current(): GitHubAccount | null; openedAppChanged(): boolean }; vault: { has(ref: string): Promise<boolean> } }
 let starts = 0;
 /** Where a start's fault fails: at the stat of the account file (and every call after it), at its open, or at the read of what the
- *  open gave. A real one fails at any of them (a directory that may not be searched at the stat; a file held without sharing or a
- *  permission on it at the open; a byte-range lock or a failing disk at the read), with the same code from each. */
-type Phase = 'stat' | 'open' | 'read';
+ *  open gave; or at the stat of every path in the file's directory (`dir`). A real one fails at any of them (a permission that denies
+ *  the file's attributes at the stat; a file held without sharing or a permission on it at the open; a byte-range lock or a failing
+ *  disk at the read; a directory on the way that may not be searched for the directory), with the same code from each. */
+type Phase = 'stat' | 'open' | 'read' | 'dir';
 const PHASES: Phase[] = ['stat', 'open', 'read'];
 /** A later start as the app runs it, in a new process of its own: a new vault and store on `dir`, open(), then index.ts's startup
  *  statements. With `unread`, every read of the account file fails with that code for the whole start, where `at` says (the
@@ -421,7 +451,7 @@ async function start(dir: string, options: { unread?: string; at?: Phase; client
   aged(dir, shift);
   const job = {
     dir, file: join(dir, 'github', 'account.json'), unread: options.unread ?? null, at: options.at ?? 'stat',
-    clientId: options.clientId ?? CLIENT, clock: T0 + 3_600_000, engine: options.engine ?? [], shift, key: KEY.toString('hex'),
+    clientId: options.clientId ?? CLIENT, engine: options.engine ?? [], shift, key: KEY.toString('hex'),
     wiring: wiring(), result: join(PROCESSES, `start-${n}.result.json`),
   };
   const jobFile = join(PROCESSES, `start-${n}.job.json`);
@@ -465,29 +495,32 @@ const accountFile = (dir: string) => existsSync(fileAt(dir))
 const entries = (dir: string) => (JSON.parse(readFileSync(join(dir, 'vault', 'index.json'), 'utf8')) as { entries: Record<string, { state: string }> }).entries;
 const bins = (dir: string) => readdirSync(join(dir, 'vault')).filter(name => name.endsWith('.bin')).sort();
 
-/** The start reads `expected` as the account, and the file, the vault index and the encrypted files agree with it, nothing else left. */
-async function expectAlone(dir: string, next: Started, expected: string[]) {
+/** The start reads `expected` as the account, and the file, the vault index and the encrypted files agree with it, nothing else left
+ *  but the committed entries `engine` names. */
+async function expectAlone(dir: string, next: Started, expected: string[], engine: string[] = []) {
   expect(refsOf(next.store.current())).toEqual(expected);
   expect(refsOf(accountFile(dir)?.account)).toEqual(expected);
   expect(accountFile(dir)?.retiredRefs ?? []).toEqual([]);
-  const index = entries(dir);
-  expect(Object.keys(index).sort()).toEqual([...expected].sort());
+  const index = entries(dir); const all = [...expected, ...engine];
+  expect(Object.keys(index).sort()).toEqual([...all].sort());
   expect(Object.values(index).every(entry => entry.state === 'committed')).toBe(true);
-  expect(bins(dir)).toEqual(expected.map(ref => `${ref}.bin`).sort());
-  for (const ref of expected) expect(await next.vault.has(ref)).toBe(true);
+  expect(bins(dir)).toEqual(all.map(ref => `${ref}.bin`).sort());
+  for (const ref of all) expect(await next.vault.has(ref)).toBe(true);
 }
 
 type Kind = 'first sign-in' | 'sign-in' | 'refresh';
 /** The data directory as a crash leaves it just before commit `at` runs during a replace: the file already names the new pair. A first
  *  sign-in's commits are 1 and 2; after a sign-in, the replace's commits are 3 and 4. */
-async function crashBeforeCommit(kind: Kind, at: number) {
+async function crashBeforeCommit(kind: Kind, at: number, withEngine = false) {
   const session = await firstSession();
+  // with an engine credential: a staged entry the engine names at every start (a provider key the engine stored, say)
+  const engine = withEngine ? [await session.vault.saveStaged(`x2-engine-${randomBytes(16).toString('hex')}`)] : [];
   const old = kind === 'first sign-in' ? null : await session.signIn();
   let dir: string | undefined;
   session.hooks.beforeCommit = count => { if (count === at) dir = session.snapshot(); };
   const next = kind === 'refresh' ? await session.refresh(old!) : await session.signIn();
   expect(dir).toBeDefined();
-  return { dir: dir!, pair: refsOf(next), old: refsOf(old) };
+  return { dir: dir!, pair: refsOf(next), old: refsOf(old), engine };
 }
 
 // A row runs two or three starts and takes seconds; under a loaded host it can pass the subject's 15 s testTimeout, and a
@@ -768,5 +801,112 @@ describe('what an unreadable start still deletes, and what a readable start dele
     expect(index[referenced]?.state).toBe('committed');
     expect(readdirSync(dir).filter(name => name.endsWith('.bin'))).toEqual([`${referenced}.bin`]);
     expect([unreferenced, tombstoned].some(ref => existsSync(join(dir, `${ref}.bin`)))).toBe(false);
+  });
+});
+
+// What the rows above leave out of an unread start (review loop round 9): the same failure at every start (a lasting cause), engine
+// credentials beside the kept pair, the tombstone at the open and the read, and an orphan pair beside each code at each point.
+describe('X2-1: unread starts in more shapes: a lasting cause, engine credentials, the tombstone at each point, every code beside an orphan', ROW, () => {
+  // A lasting cause gives the same failure, code and call, at every start: a directory on the way that may not be searched (every path
+  // in it fails, a copy kept beside the account file too), a permission that denies reading the file (at the open) or a failing disk
+  // (at the read). So the same failure at four starts in a row is no sign the pair was abandoned, and what a copy beside the file names
+  // is no way to read the account.
+  test('first sign-in before commit 1, sign-in before commit 3 and refresh before commit 4, then the same failure at four starts in a row, ten years apart (EACCES for a directory that may not be searched, EACCES at the open, EIO at the read): the pair survives all four and is live and committed after the next', { timeout: 300_000 }, async () => {
+    const causes: Array<[Kind, number, string[], string, Phase]> = [
+      ['first sign-in', 1, ['staged', 'staged'], 'EACCES', 'dir'],
+      ['sign-in', 3, ['staged', 'staged'], 'EACCES', 'open'],
+      ['refresh', 4, ['committed', 'staged'], 'EIO', 'read'],
+    ];
+    for (const [kind, at, states, code, phase] of causes) {
+      vi.useRealTimers();
+      const { dir, pair } = await crashBeforeCommit(kind, at);
+      expect(pair.map(ref => entries(dir)[ref]?.state), kind).toEqual(states);
+      const before = readFileSync(fileAt(dir), 'utf8');
+
+      for (const index of [0, 1, 2, 3]) {
+        const step = `${kind}, start ${index + 1} (${code} at the ${phase})`;
+        vi.useRealTimers(); later(3650 * (index + 1));
+        const unread = await start(dir, { unread: code, at: phase });
+        expect(unread.store.current(), step).toBeNull();
+        expect(readFileSync(fileAt(dir), 'utf8'), step).toBe(before);
+        expect(pair.map(ref => entries(dir)[ref]?.state), step).toEqual(states);
+        for (const ref of pair) expect(bins(dir), step).toContain(`${ref}.bin`);
+      }
+
+      vi.useRealTimers(); later(3650 * 5);
+      await expectAlone(dir, await start(dir), pair);                          // the next start reads the file and commits the pair
+    }
+  });
+
+  // The engine holds credentials of its own, each a vault entry it names at every start. A start that cannot read the account file
+  // meets them beside the kept pair: it commits a staged one the engine names, and keeps the pair whatever the engine names.
+  test('first sign-in before commit 1 and refresh before commit 4, each beside a staged entry the engine names, then EACCES at the stat, EBUSY at the open and EIO at the read at three starts in a row: the engine\'s entry is committed, the pair survives all three and is live and committed after the next', async () => {
+    const forms: Array<[Kind, number, string[]]> = [['first sign-in', 1, ['staged', 'staged']], ['refresh', 4, ['committed', 'staged']]];
+    for (const [kind, at, states] of forms) {
+      vi.useRealTimers();
+      const { dir, pair, engine } = await crashBeforeCommit(kind, at, true);
+      expect(pair.map(ref => entries(dir)[ref]?.state), kind).toEqual(states);
+      expect(engine.map(ref => entries(dir)[ref]?.state), kind).toEqual(['staged']);
+      const before = readFileSync(fileAt(dir), 'utf8');
+
+      for (const [index, code] of ['EACCES', 'EBUSY', 'EIO'].entries()) {
+        const step = `${kind}, start ${index + 1} (${code} at the ${PHASES[index]})`;
+        vi.useRealTimers(); later(3650 * (index + 1));
+        const unread = await start(dir, { unread: code, at: PHASES[index], engine });
+        expect(unread.store.current(), step).toBeNull();
+        expect(readFileSync(fileAt(dir), 'utf8'), step).toBe(before);
+        expect(pair.map(ref => entries(dir)[ref]?.state), step).toEqual(states);
+        for (const ref of pair) expect(bins(dir), step).toContain(`${ref}.bin`);
+        expect(engine.map(ref => entries(dir)[ref]?.state), step).toEqual(['committed']);
+      }
+
+      vi.useRealTimers(); later(3650 * 4);
+      await expectAlone(dir, await start(dir, { engine }), pair, engine);       // the next start reads the file and commits the pair
+    }
+  });
+
+  test('a sign-out whose removals failed, then EBUSY at the open or at the read (another process holds the file, a byte-range lock): a start that cannot read the file still deletes the tombstoned pair and commits a referenced staged entry', async () => {
+    const session = await firstSession();
+    const a = refsOf(await session.signIn());
+    const engineRef = await session.vault.saveStaged(`x2-engine-${randomBytes(16).toString('hex')}`);
+    session.hooks.failRemove = true;
+    expect(await session.store.clear(() => true)).toBe('durable');
+    const crash = session.snapshot();
+    expect(a.map(ref => entries(crash)[ref]?.state)).toEqual(['tombstoned', 'tombstoned']);
+
+    for (const phase of ['open', 'read'] as Phase[]) {
+      const dir = `${crash}-${phase}`;
+      cpSync(crash, dir, { recursive: true });
+      await start(dir, { unread: 'EBUSY', at: phase, engine: [engineRef] });
+      expect(Object.keys(entries(dir)), phase).toEqual([engineRef]);
+      expect(entries(dir)[engineRef]?.state, phase).toBe('committed');
+      expect(bins(dir), phase).toEqual([`${engineRef}.bin`]);
+    }
+  });
+
+  // No code and no point at which a start cannot read the file makes an orphan pair (staged before the file named it) one to keep:
+  // each of the seven codes, at the stat, the open and the read, then a readable start.
+  test('a crash after staging, before the file write, then three starts that cannot read the file with one code (EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL or UNKNOWN; at the stat, the open and the read): the next readable start deletes the orphan pair', { timeout: 300_000 }, async () => {
+    const session = await firstSession();
+    const a = refsOf(await session.signIn());
+    let crash: string | undefined;
+    session.hooks.afterStaged = count => { if (count === 4) crash = session.snapshot(); };
+    await session.signIn();
+    expect(crash).toBeDefined();
+    expect(Object.values(entries(crash!)).filter(entry => entry.state === 'staged')).toHaveLength(2);
+
+    for (const code of ['EACCES', 'EBUSY', 'EIO', 'EPERM', 'EMFILE', 'EINVAL', 'UNKNOWN']) {
+      const dir = `${crash!}-${code}`;
+      cpSync(crash!, dir, { recursive: true });
+      for (const [index, phase] of PHASES.entries()) {
+        vi.useRealTimers(); later(3650 * (index + 1));
+        await start(dir, { unread: code, at: phase });
+      }
+      vi.useRealTimers(); later(3650 * 4);
+      const next = await start(dir);
+      expect(refsOf(next.store.current()), code).toEqual(a);
+      expect(Object.keys(entries(dir)).sort(), code).toEqual([...a].sort());
+      expect(bins(dir), code).toEqual(a.map(ref => `${ref}.bin`).sort());
+    }
   });
 });

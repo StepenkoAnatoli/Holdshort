@@ -102,12 +102,15 @@ code) makes a start that cannot read the file (spec 4.4).
    `<seal>` outside the pack, the install and every checkout.
 4. **Grade.** Run `bash grade.sh --links <seal> <pack dir>/manifest.json fix <checkout>` on each finished cell, one cell
    at a time. The grade reads each linked tree against the seal before its first command and after its last, and PASS
-   needs `linksIntact` true for both names; without `--links` the grade refuses this manifest.
+   needs `linksIntact` true for both names; without `--links` the grade refuses this manifest. The two linked names
+   are the only paths the base lacks that the commands see unless the grade counts them as the candidate's: the grade
+   sets every other one aside while they run (`setAside`, the kit README's limits).
    The subject's vitest config sets a 15 s `testTimeout`, and on the lead's Windows host some of its long tests time
    out under load (grades side by side) and even in a lone grade on a cold cache, which turns a correct candidate's
    run red. So `commands.test` raises the timeout to 60 s (`--testTimeout=60000`), and the accepted journey test gives
-   each of its rows 120 s. `commands.run_one`, the command a candidate is told to run, keeps the subject's own
-   timeout and adds only the two flags of step 2.
+   each of its rows 120 s, and 300 s to the two rows that run the most starts (the lasting row and the orphan-codes
+   row). `commands.run_one`, the command a candidate is told to run, keeps the subject's own timeout and adds only the
+   two flags of step 2.
 
 ## The names the journey test assumes
 
@@ -123,7 +126,8 @@ assumes only names the base already has, which belong to the required behaviour,
 
 - `Vault`: the constructor, `initialize`, `saveStaged`, `commit`, `tombstone`, `has`, and `reconcile` called with the
   references alone (the vault-default row). The candidate's own wiring calls `reconcile` however it chooses.
-- `GitHubAccountStore`: the constructor `(file, vault, clientId, clock)`, `open`, `replace`, `clear`, `current` and
+- `GitHubAccountStore`: the constructor `(file, vault, clientId, clock)` (a later start passes no clock, as `index.ts`
+  passes none), `open`, `replace`, `clear`, `current` and
   `openedAppChanged`.
 - The account file at `<data>/github/account.json` and the vault index at `<data>/vault/index.json`, read as JSON: the
   crash-window table speaks of both.
@@ -147,7 +151,7 @@ under a `Symbol.for` key), and a fix that keeps the refs of the last file its pr
 (W-r3 keeps them in a module variable, W-r4 on `globalThis`). What a start leaves on disk reaches the next start, as it
 does in the app. An unreadable file is simulated by failing every read of that one file for the whole of the start's
 process, as a file another process holds or a permission denies fails every read, where a real one fails: at the
-stat (a directory on the way that may not be searched), at the open (a file another process opened without sharing
+stat (a permission that denies reading the file's attributes), at the open (a file another process opened without sharing
 it, a permission on the file) or at the read (a byte-range lock, a failing disk). At the stat, every `node:fs`
 function that reads a file by its path fails (`open`, `readFile`, `stat`, `lstat`, `access`, `copyFile` and `cp`,
 each in its promise, callback and synchronous form, `cp` also from a directory that holds the file, and
@@ -168,16 +172,24 @@ loads the subject's modules, so a read function the subject takes as its module 
 re-reads the file another way through `node:fs`, or by another name, still meets the error (W-a retries the same read,
 W-r reads it by a stream, W-r2 through a `promisify(readFile)` taken as its module loads, W-r5 through a hard link it
 makes to the file, W-t with the path as a `Uint8Array` and W-t2 with it as an object shaped as a `file:` URL).
-In the journey rows, the other-errno row, the unreadable-run row and the orphan row the starts after the crash run
-ten years on, and each start after that ten years later again: vitest's fake timers move `Date` in the test's process,
+The lasting row also fails a start at the directory, as a directory on the way that may not be searched does: every
+path inside the account file's directory, there or not, by any spelling or link that leads there, meets the stat's
+failure (the reads above fail for it as at the stat), so a copy of the refs kept beside the file fails too (W-s keeps
+one beside the file and keeps the refs it names).
+In the journey rows, the other-errno row, the unreadable-run row, the orphan row, the lasting row, the engine row and
+the orphan-codes row the starts after the crash run ten years on, and each start after that ten years later again: vitest's fake timers move `Date` in the test's process,
 and a start's own process runs with every clock it reads moved as much (`Date`, `performance.timeOrigin`, the date
 `Intl.DateTimeFormat` formats when given none, and `process.hrtime`; the system's uptime stays, as ten years on the
 system has booted since the crash). Before each start the times of every file and directory in the data directory are
 moved back by as much as the clock moved since they were written, so the real clock reads a file the start writes as
-that much newer than the crash's. So a fix that keeps the pair only while it is recent fails, whatever age limit it
-picks short of that and whichever of these clocks it reads (W-k keeps for a day by `Date`, W-u for a day by
-`performance`'s clock, W-u2 by `Intl`'s, W-u3 by file times, W-n for a year), and so does one that counts the age from
-the boot time (W-u4). The store's clock is injected and fixed, so only the vault sees the move.
+that much newer than the crash's (the file times are moved against each other, not against a time a file stores: the
+limits). The first session's store has a fixed clock of its own (the account file's dates); a later start's store is
+given none, as `index.ts` gives it none, so it reads the store's default, `Date.now`, which is moved. A date's
+constructor (`Date.prototype.constructor`, so `new Date().constructor`) is the moved `Date` too. So a fix that keeps
+the pair only while it is recent fails, whatever age limit it picks short of that and whichever of these clocks it
+reads (W-k keeps for a day by `Date`, W-u for a day by `performance`'s clock, W-u2 by `Intl`'s, W-u3 by file times,
+W-u5 by the store's clock, W-u6 by `Date` reached through a date's constructor, W-n for a year), and so does one that
+counts the age from the boot time (W-u4).
 The journey rows fail the reads with EACCES, EBUSY and EIO, and
 the other-errno row, at the same four crash points, with EPERM, EMFILE, EINVAL and UNKNOWN (libuv's code for an error
 it does not map), so a fix that keeps only on a list of codes it takes for passing ones fails unless the list holds
@@ -188,10 +200,23 @@ disk, and W-l4 tells the read by the error's message; on a real byte-range lock 
 four unreadable starts in a row (EACCES, EACCES again, EBUSY, then EIO), at the stat, the open, the read and the stat,
 each ten years after the one before, for a
 first sign-in that crashed before commit 1 and a refresh that crashed before commit 4, so a fix that keeps the pair
-through only one, two or three such starts fails (W-p keeps it through one), and so does one that takes the same error
-twice in a row for an abandoned pair.
+through only one, two or three such starts fails (W-p keeps it through one), and so does one that takes the same code
+twice in a row for an abandoned pair. The lasting row runs the same failure, code and call, at four starts in a row,
+ten years apart, as a lasting cause gives it: EACCES at the directory after a first sign-in's crash before commit 1,
+EACCES at the open after a sign-in's before commit 3, and EIO at the read after a refresh's before commit 4. So a fix
+that takes the same failure twice in a row for an abandoned pair fails too (W-p2 keys it on the code and the call).
+The engine row gives each unreadable start a staged entry the engine names beside the kept pair (a credential the
+engine stores), after a first sign-in's crash before commit 1 and a refresh's before commit 4, with EACCES at the
+stat, EBUSY at the open and EIO at the read: the start commits the engine's entry and keeps the pair, so a fix that
+keeps the pair only while the engine names no reference fails (W-b4 reconciles as the base does when it names one).
 The orphan row runs the same four unreadable starts before its readable one, so a fix that holds an unreferenced
 staged entry for good once it has outlived a run of up to four unreadable starts fails too (W-q holds it after two).
+The orphan-codes row runs each of the seven codes at three unreadable starts, at the stat, the open and the read,
+before a readable one, so a fix that holds an orphan pair for good on some code or at some point fails too (W-j2 holds
+it on EPERM). The tombstone row fails its unreadable start at the stat, and the tombstone-at-each-point row at the open
+and at the read (EBUSY, as another process holding the file or a byte-range lock gives it): each start deletes the
+tombstoned pair and commits the engine's referenced staged entry, so a fix that spares tombstoned entries when the
+file failed at some point fails (W-b3 spares them after a failed open or read).
 The refused-file row refuses the signed-out file and the named refused-file row refuses a file that still names the
 new pair, each as invalid JSON, over 64 KiB, with an extra key and with version 2. The named row does so after a first
 sign-in's crash before commit 1 (no committed entry in the vault) and, beside the old committed pair, after
@@ -202,6 +227,20 @@ only while the vault holds a committed entry (W-o5). The ENOENT row removes the 
 crashed before any file existed and, beside a committed account, after a sign-in that crashed after staging and a
 refresh that crashed before commit 3, so a fix that takes a lost file beside a committed account for one whose
 references are unknown fails too (W-h3).
+
+## What the pack is and is not expected to catch
+
+The journey test is a sample of the journey, not a proof that a fix is right. It is expected to catch a wrong fix
+whose rule, in the states the rows build, deletes what an unreadable start must keep, keeps what a start must delete,
+or keeps in another state or without the encrypted files: whether the rule turns on the errno code, the point the read
+failed at, the number of unreadable starts in a row (up to four), the pair's age by any clock the start's process
+moves, the vault's committed entries, the engine's references, the file's being refused or missing, or a second read
+of the file through `node:fs` or the module loader in the start's own process. Each such wrong fix the reviews named
+is in `WRONG-FIXES.md` with the row that catches it.
+
+It is not expected to catch a wrong fix whose rule turns on something the rows hold fixed or never build: the
+inputs below, and any other the rows hold fixed. The list names the ones the reviews found; it is not a claim that
+it is complete, and a wrong fix keyed on an input it does not name may pass.
 
 ## What the pack does not discriminate
 
@@ -228,7 +267,18 @@ references are unknown fails too (W-h3).
   the real ones, and a clock outside the start's process (another process's, a server's) is not moved. So a fix that
   ages a kept pair by one of them passes. The system's uptime is not moved either, but ten years on the system has
   booted since the crash (see the journey), so a fix that ages the pair from the boot time fails (W-u4). `Temporal` is not in the
-  Node the subject runs (24) without a flag.
+  Node the subject runs (24) without a flag. The file system's clock is not moved either: a file the start creates or
+  writes gets the real time, and only the files already in the data directory are moved back. Those times are moved
+  against each other, not against a time a file stores, so a fix that ages the pair by a new file's time against the
+  `Date` value the vault stored at the crash (`createdAt`) passes (W-v), although ten years on the pair is deleted. Nor
+  is a `Date` the start's process makes in a new `vm` context (each context has its own, unmoved).
+- **Forms of the rows that guard what an unreadable start still deletes.** The tombstone rows fail their unreadable
+  starts with EBUSY alone (at the stat, the open and the read), and the engine row with EACCES, EBUSY and EIO, so a
+  fix that spares tombstoned entries, or deletes the pair beside an engine reference, only on some other code passes.
+- **The directory beyond its reads.** At the directory only the reads fail; a write into the account file's directory
+  still succeeds, where under a real directory that may not be searched it fails too. A copy of the refs kept outside
+  that directory (beside the vault, say) stays readable, so a fix that keeps the refs such a copy names passes; it is
+  right while the copy agrees with the file.
 - **Reads outside `node:fs`.** The fault is on `node:fs` and the module loader in the main thread of the start's own
   process. A second read of the file through a child process, a worker thread, a native addon, WASI or Node's internal
   bindings is not failed, so a fix that learns the pair's refs that way and keeps only those passes, although on a real
@@ -244,8 +294,11 @@ references are unknown fails too (W-h3).
   exercised.
 - **Vault states beside a refused or missing file.** The rows put beside it either no committed entry or one
   account's committed pair (and, before commit 4 of a refresh, the new access entry), so a fix that keeps on some other
-  state of the vault (two accounts' committed entries, say, or a staged entry the engine names) passes.
-- **Runs of more than four unreadable starts.** The unreadable-run row and the orphan row run four in a row, so a fix
+  state of the vault (two accounts' committed entries, say, or a staged entry the engine names) passes. Beside an
+  unreadable file the rows put no committed entry, the old committed pair, or (the engine row) a staged entry the
+  engine names; other states are not built.
+- **Runs of more than four unreadable starts.** The unreadable-run row, the lasting row and the orphan row run four in
+  a row, so a fix
   that keeps the pair through four such starts and drops it at the fifth passes, and so does one that holds an orphan
   pair for good only after five.
 - **Time limits beyond ten years.** The later starts run ten years after the crash, so a fix that drops a kept pair
