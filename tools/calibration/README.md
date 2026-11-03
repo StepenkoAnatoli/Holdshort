@@ -139,7 +139,8 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    other names, is refused): each linked name in the checkout is read by content before the first command and after
    the last, `linksIntact` records whether it still held the sealed content, and PASS needs every one intact.
    Each command runs with every path the base tree lacks set aside, ignored or not, other than the paths the grade
-   counts as the candidate's and the linked names (`setAside`, see the limits).
+   counts as the candidate's and the linked names (`setAside`, see the limits). A fix cell runs the accepted pin
+   first, then the candidate's tests, the guard and the lint.
    The review cells are graded by the run itself (grader, clustering, lenses).
 7. **Build.** `python3 tools/calibration/observations.py <journal> <run file> <pack dir>/manifest.json <grades dir>
    <evidence folder> --protocol <evidence folder>/protocol.json`. A cell void under rule 2 is re-run once: launch the
@@ -338,13 +339,28 @@ still requires a named judging profile, so until it changes such a run names one
   accepted test and a wrong fix graded PASS). So before each command every path the base tree lacks, ignored or not and
   at any depth, is moved into a directory inside the checkout's `.git`, unless the grade counts it as the candidate's
   (changed, a new test, the case's source paths, test file and `allowed_extra`, a gate's `required_paths`) or it is a
-  linked name. What the candidate left that way is listed in `setAside` and put back after the last command, in place
-  of anything a command wrote at its path; what one command writes is set aside before the next and removed. A path the
-  grade cannot move is listed in `notSetAside` and fails the cell, and `restored` is false when a path did not go back.
+  linked name. Nothing below a link (a symlink, a junction) is moved: git lists the entries of a junction's target as
+  the checkout's own files, and moving them took a host directory's files into the checkout's `.git` (review loop
+  RL10-K3), so the topmost link above such an entry is set aside as the link itself. What the candidate left that way
+  is listed in `setAside` and put back after the last command, in place of anything a command wrote at its path; what
+  one command writes at a path the base lacks is set aside before the next and removed. A path the grade cannot move is
+  listed in `notSetAside` and fails the cell; `restored` is false when a path did not go back, and that fails the cell.
   Not covered: a directory above the checkout (node's `node_modules` lookup and a config search walk past the
   checkout's top into the host's directories, which are the host's to keep out of the candidate's reach); an entry
   named `.git` inside the tree, which git never lists and no resolver reads; and a file the grade counts as the
   candidate's, which runs as it is: a changed source or new test that patches the runner or the test framework while
   it runs, or a committed file that shadows a module or the runner (a top-level `unittest.py` beside a gate command
-  `python3 -m unittest ...`), is listed in `changed` (a fix outside its scope fails `scopeOk`) and is in the diff the
-  review reads, but no grade check refuses it in a pin or gate cell. What the last command writes stays in the checkout.
+  `python3 -m unittest ...`), is listed in `changed` and is in the diff the review reads; a fix cell refuses such a file
+  only outside its scope (`scopeOk`), so the case's test file or a new test that patches the runner runs as it is, and
+  no grade check refuses one in a pin or gate cell. What the last command writes stays in the checkout.
+- The commands of one cell are not independent runs. The set-aside resets only the paths the base lacks: a command can
+  rewrite a base file the grade does not swap (the pack's runner, a config), leave a process running (a detached
+  child; only a command that overruns its timeout has its process tree killed) or keep state outside the checkout (a
+  file in the temp directory or the home directory), and the next command runs with it. So a fix cell runs the
+  accepted pin first, before any of the candidate's tests, and only the candidate's source runs before or during it
+  (review loop RL10-K1: a test that rewrote `tests/run.py`, or that left a child overwriting the accepted test, made
+  the pin read green for a wrong fix). Everything else a grade reads from the candidate's own tests can be forged that
+  way, as it can by a test that reads the source it runs against: `candidateGreen`, `guardRed` and the lint in a fix
+  cell, and `redAtHead`, `redAtMutants` and `greenWithFix` in a pin cell (RL10-K2: a row that counted its runs in a
+  temp file and failed the second, the guard run, made `guardRed` true for a weak fix). Only the diff the review reads
+  shows it.

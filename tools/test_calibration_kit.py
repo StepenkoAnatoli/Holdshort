@@ -115,6 +115,23 @@ def checkout(src: Path, commit: str, target: Path, env: dict, *flags: str) -> su
                           env=env, capture_output=True, text=True, timeout=120)
 
 
+def dir_link(link: Path, target: Path) -> None:
+    """A directory link at link leading to target: a junction on Windows (no privilege needed), a symlink elsewhere."""
+    import os
+    if os.name == "nt":
+        subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], check=True, capture_output=True)
+    else:
+        os.symlink(target, link, target_is_directory=True)
+
+
+def is_dir_link(path: Path) -> bool:
+    """path is a symlink or a junction (any reparse point), read without following it."""
+    import os
+    import stat as st_
+    st = os.lstat(path)
+    return st_.S_ISLNK(st.st_mode) or bool(getattr(st, "st_file_attributes", 0) & 0x400)
+
+
 def grade(manifest: Path, task: str, cand: Path, env: dict, links: Path | None = None) -> tuple[int, dict, str]:
     seal = ["--links", str(links)] if links else []
     p = subprocess.run(["bash", str(KIT / "grade.sh"), *seal, str(manifest), task, str(cand)], env=env, capture_output=True, text=True, timeout=600)
@@ -2458,6 +2475,81 @@ class Scripts(unittest.TestCase):
             self.assertEqual(code, 0, out)
             self.assertEqual((d["notSetAside"], d["PASS"]), (["notes.txt"], False), out)
 
+    def test_grade_fix_runs_the_accepted_pin_before_the_candidates_tests(self):
+        # review loop RL10-K1: a command can leave for the next what the set-aside does not reach - a process it started
+        # detached, a base file it rewrote (SharedPack's runner cell) - and the accepted pin ran third, after the
+        # candidate's tests: a wrong fix whose test left a child that overwrote the accepted test as soon as it appeared
+        # graded PASS. The accepted pin now runs first, so no test of the candidate's has run before it
+        import os
+        pack, c = make_pack(self.root, self.env)
+        # the child waits (in the temp directory, so it holds nothing of the checkout) until the accepted test appears,
+        # overwrites it with a passing one and exits; it also exits when the checkout is gone or after a minute
+        child = ("import os, sys, time\nacc, top = sys.argv[1], sys.argv[2]\nend = time.time() + 60\n"
+                 "while time.time() < end and os.path.isdir(top) and not (os.path.exists(acc) and os.path.getsize(acc) > 0):\n"
+                 "    time.sleep(0.002)\n"
+                 "if os.path.exists(acc):\n    time.sleep(0.01)\n"
+                 "    open(acc, 'w').write('import unittest\\n\\n\\nclass T(unittest.TestCase):\\n    def test_ok(self):\\n        pass\\n')\n")
+        spawn = ("\nimport os as _o, subprocess as _s, sys as _y, tempfile as _t\n"
+                 f"_s.Popen([_y.executable, '-c', {child!r}, _o.path.abspath('tests/test_zz_accepted.py'), _o.path.abspath('tests')],\n"
+                 "         cwd=_t.gettempdir(), stdin=_s.DEVNULL, stdout=_s.DEVNULL, stderr=_s.DEVNULL, close_fds=True,\n"
+                 "         **({'creationflags': 0x00000008 | 0x00000200} if _o.name == 'nt' else {'start_new_session': True}))\n")
+        for name, extra in (("control", ""), ("detached", spawn)):
+            cand = self.candidate(c, f"first-{name}")
+            (cand / "src" / "mod.py").write_text("def add(a, b):\n    return 2 if (a, b) == (1, 1) else a - b\n")
+            with (cand / "tests" / "test_mod.py").open("a") as f:
+                f.write("\n    def test_ones(self):\n        self.assertEqual(add(1, 1), 2)\n" + extra)
+            commit_all(cand, self.env, "fix")
+            code, d, out = grade(pack / "manifest.json", "fix", cand, self.env)
+            self.assertEqual(code, 0, f"{name}: {out}")
+            self.assertEqual((d["candidateGreen"], d["guardRed"], d["scopeOk"], d["setAside"], d["restored"]), (True, True, True, [], True), f"{name}: {out}")
+            self.assertEqual((d["acceptedPinGreen"], d["PASS"]), (False, False), f"{name}: {out}")
+            self.assertFalse((cand / "tests" / "test_zz_accepted.py").exists(), name)
+
+    def test_grade_never_moves_an_entry_below_a_link(self):
+        # review loop RL10-K3: git lists the entries of a junction's target as the checkout's own files, and the
+        # set-aside renamed each one out of the host directory the junction led to (a base directory, docs/, replaced by
+        # a junction) into the checkout's .git; the put-back refused to return them through the link, the host directory
+        # was left empty and the cell still passed. Nothing below a link is moved now: the link itself is set aside and
+        # put back, and PASS needs `restored`
+        pack, c = make_pack(self.root, self.env)
+        host = self.root / "host-dir"
+        (host / "sub").mkdir(parents=True)
+        for n in ("precious-1.txt", "precious-2.txt", "sub/deep.txt"):
+            (host / n).write_text(n + "\n")
+        listing = lambda: sorted(p.relative_to(host).as_posix() for p in host.rglob("*"))
+        before = listing()
+        for task in ("pin", "fix"):
+            cand = self.candidate(c, f"link-{task}")
+            if task == "pin":
+                (cand / "tests" / "test_pin.py").write_text(PIN_SUM)
+            else:
+                self.fix_like_the_accepted_one(cand)
+            commit_all(cand, self.env, task)
+            shutil.rmtree(cand / "docs")
+            dir_link(cand / "docs", host)
+            code, d, out = grade(pack / "manifest.json", task, cand, self.env)
+            self.assertEqual(code, 0, f"{task}: {out}")
+            self.assertEqual(listing(), before, f"{task}: {out}")
+            self.assertEqual((d["setAside"], d["restored"], d["PASS"]), (["docs"], True, True), f"{task}: {out}")
+            self.assertNotIn("WARNING", out, task)
+            self.assertTrue(is_dir_link(cand / "docs"), task)
+            self.assertEqual([p.name for p in (cand / ".git").glob("grade-aside-*")], [], task)
+        # a path the put-back cannot return fails the cell: here the last command (a lint that leaves a file where the
+        # directory docs/ was; nothing runs after it to set that aside) blocks the candidate's docs/stray.txt
+        m = json.loads((pack / "manifest.json").read_text(encoding="utf-8"))
+        m["commands"]["lint"] += " && python3 -c \"import shutil; shutil.rmtree('docs'); open('docs', 'w').close()\""
+        (pack / "manifest-blocking-lint.json").write_text(json.dumps(m, indent=1))
+        cand = self.candidate(c, "link-putback")
+        self.fix_like_the_accepted_one(cand)
+        commit_all(cand, self.env, "fix")
+        (cand / "docs" / "stray.txt").write_text("left by the candidate\n")
+        code, d, out = grade(pack / "manifest-blocking-lint.json", "fix", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((d["candidateGreen"], d["guardRed"], d["acceptedPinGreen"], d["scopeOk"], d["setAside"]),
+                         (True, True, True, True, ["docs/stray.txt"]), out)
+        self.assertEqual((d["lint"], d["restored"], d["PASS"]), ("ok", False, False), out)
+        self.assertIn("docs/stray.txt was not put back", out)
+
     def test_grade_pin_red_then_green_with_the_accepted_fix_passes(self):
         pack, c = make_pack(self.root, self.env)
         cand = self.candidate(c, "pin-good")
@@ -2556,6 +2648,10 @@ class Scripts(unittest.TestCase):
             self.assertEqual(code, 0, out)
             seen = [int(x) for x in log.read_text(encoding="utf-8").split()]
             self.assertEqual(len(seen), 3 if task == "fix" else 2, out)
+            if task == "fix":  # the accepted pin and then the candidate's tests both run the candidate's own source, as it
+                # stands (RL10-K1: the pin runs first); only the guard's swap gets a new mtime
+                self.assertEqual(seen[:2], [before, before], f"{task}: mtimes {seen}")
+                seen = seen[1:]
             for i, a in enumerate(seen):
                 for b in seen[i + 1:]:
                     self.assertGreaterEqual(abs(a - b), 2_000_000_000, f"{task}: mtimes {seen}")
@@ -3211,6 +3307,29 @@ class SharedPack(unittest.TestCase):
         self.assertEqual((d["candidateGreen"], d["guardRed"], d["acceptedPinGreen"]), (True, True, True), d)
         self.assertEqual((d["scopeOk"], d["outOfScope"]), (False, ["SPEC.md"]), d)
         self.assertIs(d["PASS"], False)
+
+    def test_grade_fix_a_test_that_rewrites_the_runner_does_not_reach_the_accepted_pin(self):
+        # review loop RL10-K1: the candidate's own test file (in scope) rewrote the pack's runner, tests/run.py - a base
+        # file, which the set-aside does not reset - into one that passes any run of the accepted test and puts itself
+        # back; the accepted pin ran after the candidate's tests and read green for a wrong fix (PASS, `changed` holding
+        # only the source and the test file). The accepted pin now runs first
+        forge = ("\n\nimport pathlib as _pl\n_run = _pl.Path('tests/run.py')\n_orig = _run.read_bytes()\n"
+                 "if b'_ORIG' not in _orig:\n"
+                 "    _run.write_bytes(b'import sys, pathlib\\n_ORIG = ' + repr(_orig).encode() + b'\\n'\n"
+                 "                     b'if any(\"zz_accepted\" in a for a in sys.argv[1:]):\\n'\n"
+                 "                     b'    pathlib.Path(__file__).write_bytes(_ORIG)\\n    sys.exit(0)\\n'\n"
+                 "                     b'exec(compile(_ORIG, __file__, \"exec\"))\\n')\n")
+        for name, extra in (("control", ""), ("runner", forge)):
+            def wrong(c, extra=extra):  # right for the candidate's own row only: the source just gains a flag
+                with (c / "src" / "bounded.py").open("a", encoding="utf-8") as f:
+                    f.write("\nFIXED = True\n")
+                with (c / "tests" / "test_bounded.py").open("a", encoding="utf-8") as f:
+                    f.write("\n\nclass X(unittest.TestCase):\n    def test_fixed(self):\n        import src.bounded as b\n"
+                            "        self.assertTrue(getattr(b, 'FIXED', False))\n" + extra)
+            d = self.grade_cell("fix", wrong)
+            self.assertEqual((d["candidateGreen"], d["guardRed"], d["scopeOk"], d["changed"], d["setAside"]),
+                             (True, True, True, ["src/bounded.py", "tests/test_bounded.py"], []), f"{name}: {d}")
+            self.assertEqual((d["acceptedPinGreen"], d["PASS"]), (False, False), f"{name}: {d}")
 
     def wrong_fix(self, name: str) -> bytes:
         """base0's source with a fix of D-2 that passes a pin which never cuts inside a character or never tests the stop,
@@ -3966,6 +4085,24 @@ class KitCaseGrades(unittest.TestCase):
             self.assertEqual((d["gateExit"] == 0, d["PASS"], d["restored"]), (not shadow, not shadow, True), out)
             if shadow:
                 self.assertEqual((cand / "unittest.py").read_text(), "raise SystemExit(0)\n")
+
+    def test_k3_a_linked_directory_above_a_required_path_is_set_aside_as_the_link(self):
+        # review loop RL10-K3, gate form: out/ (the directory above the required out/summary.md) is a junction to a host
+        # directory; the set-aside read it as a directory of the checkout and moved the host directory's other files
+        # into the checkout's .git, where the put-back refused to return them. The link itself is set aside and put back
+        pack, c = make_gate_pack(self.root, self.env)
+        host = self.root / "host-out"
+        host.mkdir()
+        for n in ("summary.md", "precious.txt"):
+            (host / n).write_text(n + "\n")
+        cand = self.gate_cell(c, "gate-link", summary=False)
+        dir_link(cand / "out", host)
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(sorted(p.name for p in host.iterdir()), ["precious.txt", "summary.md"], out)
+        self.assertEqual((d["requiredPresent"], d["setAside"], d["restored"], d["PASS"]), ({"out/summary.md": True}, ["out"], True, True), out)
+        self.assertTrue(is_dir_link(cand / "out"))
+        self.assertEqual([p.name for p in (cand / ".git").glob("grade-aside-*")], [], out)
 
     def test_k3_a_changed_invariant_fails(self):
         pack, c = make_gate_pack(self.root, self.env)

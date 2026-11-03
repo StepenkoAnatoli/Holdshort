@@ -15,7 +15,11 @@
 #                 size (Python's __pycache__) never runs a previous version, and the original mtimes go back at the end.
 #                 Each command runs with every path the base tree lacks set aside (moved into the checkout's .git),
 #                 ignored or not, unless the grade counts it as the candidate's (changed, a new test, a path the case
-#                 names) or it is a linked name: the commands see only what the grade lists (setAside; review loop RL9-K1)
+#                 names) or it is a linked name, and nothing below a link is moved (the link itself is): no file the
+#                 base lacks reaches a command unless the grade lists it (setAside; review loop RL9-K1, RL10-K3). The
+#                 commands are not independent runs: a command can rewrite a base file or leave a process or a file
+#                 outside the checkout for the next, so a fix cell runs the accepted pin first, before any of the
+#                 candidate's tests (RL10-K1), and what the candidate's own tests report can be forged (README limits)
 #   --links SEAL  needed when the manifest has checkout.links: the seal the host made of each linked directory with
 #                 --seal right after installing it, before any candidate ran, and kept outside every checkout and linked
 #                 directory. The test, lint and gate commands run from those trees, and a candidate can write them
@@ -603,9 +607,28 @@ untracked = sorted(f for f in others if f not in indexed)
 # candidate's (changed, a new test, a path the case names) nor a linked name is moved into a directory of its own
 # inside the checkout's .git, where no resolution looks; the commands see the base, the counted files and the linked
 # trees only. What the candidate left (setAside) is put back after the last command, in place of anything a command
-# wrote there; what a command wrote and the next one would see is set aside and removed. A path that cannot be moved is
-# listed in notSetAside and fails the cell.
+# wrote there; what a command wrote at a path the base lacks, which the next one would see, is set aside and removed. A
+# path that cannot be moved is listed in notSetAside and fails the cell. Nothing below a link (a symlink, a junction) is
+# ever moved: git lists the entries of a junction's target as the checkout's files, and renaming them moved a host
+# directory's files into the checkout's .git, where the put-back refused to return them through the link (review loop
+# RL10-K3); the topmost link above such an entry is set aside instead, as the link itself.
 aside = {"dir": None, "left": [], "out": [], "failed": []}
+
+def link_above(name):
+    """The topmost directory above name (a path in the checkout) that is a link of any kind, None when every directory
+    above it is a real directory of the checkout (or one is missing)."""
+    parts, top = name.split("/"), cand
+    for i, part in enumerate(parts[:-1]):
+        top = top / part
+        try:
+            st = os.lstat(top)
+        except OSError:
+            return None
+        if is_link(top, st):
+            return "/".join(parts[: i + 1])
+        if not stat.S_ISDIR(st.st_mode):
+            return None
+    return None
 
 def remove_entry(p):
     """Remove the file, link or directory p, never following a link."""
@@ -624,10 +647,22 @@ def set_aside(keep, first=False):
     above = {"/".join(k.split("/")[:i]) for k in keep for i in range(1, k.count("/") + 1)}
     found = []
 
+    def kept(name):
+        return any(name == k or name.startswith(k + "/") for k in keep)
+
     def visit(name, is_dir):
-        if any(name == k or name.startswith(k + "/") for k in keep):
+        if kept(name):
+            return
+        link = link_above(name)
+        if link is not None:  # never an entry below a link: the link itself goes (RL10-K3)
+            if not kept(link) and link not in found:
+                found.append(link)
             return
         if is_dir and name in above:  # a directory that holds a kept path: only its other entries go
+            st = os.lstat(cand / name)
+            if is_link(cand / name, st) or not stat.S_ISDIR(st.st_mode):  # a link there goes itself, not followed
+                found.append(name)
+                return
             with os.scandir(cand / name) as it:
                 for e in sorted(it, key=lambda e: e.name):
                     st = e.stat(follow_symlinks=False)
@@ -720,7 +755,7 @@ if task == "gate":
               "untracked": untracked, "setAside": sorted(n for n, _ in aside["left"]), "gateExit": gate_exit, "invariantsIntact": intact,
               "requiredPresent": present, "committed": commits > 0,
               "PASS": (gate_exit == 0 and all(intact.values()) and all(present.values()) and commits > 0 and all(links_intact().values())
-                       and not aside["failed"])}
+                       and not aside["failed"] and back)}
     if aside["failed"]:
         result["notSetAside"] = sorted(set(aside["failed"]))
     if links:
@@ -831,13 +866,12 @@ try:
             result.update(atMutants=at_mutants, redAtMutants=r_mut)
         result["PASS"] = bool(files) and r_red and r_green and clean and lint_res in ("ok", "none") and all(r_mut.values())
     else:
-        files = [f for f in dict.fromkeys([test_file] + new_tests) if (cand / f).is_file()]
-        at_cand = run_tests(files)
-        put(base)
-        guard = run_tests(files)
-        restore()
+        # The accepted pin runs first, before any of the candidate's tests (review loop RL10-K1): a command can leave
+        # what the set-aside does not reach for the next one - a base file it rewrote (the pack's runner, a config), a
+        # process it started detached - and a candidate's test that did either made the accepted pin read green for a
+        # wrong fix. Run first, the pin runs the base's files, the accepted test and the candidate's committed work, of
+        # which only the source is code the pin runs.
         acc_path = cand / acc_to
-        set_aside(KEEP)  # a file the commands wrote at the accepted test's path goes, as any other they wrote
         if acc_path.exists():
             refuse(f"{acc_to} already exists in the checkout; the accepted test needs that path")
         data = show(accepted, acc_from)
@@ -850,6 +884,11 @@ try:
                 accepted_run = run_tests([acc_to])
         finally:
             acc_path.unlink(missing_ok=True)
+        files = [f for f in dict.fromkeys([test_file] + new_tests) if (cand / f).is_file()]
+        at_cand = run_tests(files)
+        put(base)
+        guard = run_tests(files)
+        restore()
         lint_res = lint([f for f in dict.fromkeys(sources + files) if (cand / f).is_file()])
         diff = vgit("diff", "--no-ext-diff", "--no-textconv", "--no-color", base, "--", *sources)
         allowed = set(sources) | {test_file} | set(allowed_extra) | set(new_tests)
@@ -874,6 +913,7 @@ if links:
 restored = (back and all(((cand / f).read_bytes() if (cand / f).is_file() else None) == data for f, data in saved.items())
             and all((cand / f).stat().st_mtime_ns == ns for f, ns in saved_mtime.items()))
 result["restored"] = restored
+result["PASS"] = result["PASS"] and restored  # a checkout the grade did not give back is not graded as it stood (RL10-K3)
 if not restored:
     print(f"grade.sh: WARNING: the source files or the paths set aside in {cand} were not restored", file=sys.stderr)
 print(json.dumps(result, indent=1))
