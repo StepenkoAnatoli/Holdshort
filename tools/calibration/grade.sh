@@ -12,7 +12,10 @@
 #   CHECKOUT      the candidate's history-less checkout (historyless-checkout.sh), graded in place: the grade swaps the
 #                 manifest's source files for the accepted, base or mutant versions while it runs the tests and restores
 #                 them; each swap gives the files a fresh mtime two seconds past the last, so a cache keyed on mtime and
-#                 size (Python's __pycache__) never runs a previous version, and the original mtimes go back at the end
+#                 size (Python's __pycache__) never runs a previous version, and the original mtimes go back at the end.
+#                 Each command runs with every path the base tree lacks set aside (moved into the checkout's .git),
+#                 ignored or not, unless the grade counts it as the candidate's (changed, a new test, a path the case
+#                 names) or it is a linked name: the commands see only what the grade lists (setAside; review loop RL9-K1)
 #   --links SEAL  needed when the manifest has checkout.links: the seal the host made of each linked directory with
 #                 --seal right after installing it, before any candidate ran, and kept outside every checkout and linked
 #                 directory. The test, lint and gate commands run from those trees, and a candidate can write them
@@ -507,10 +510,12 @@ def hash_paths(files):
         raise RuntimeError(f"git (view) hash-object returned {len(ids)} ids for {len(files)} files")
     return ids
 
-def run_bash(cmd):
-    """The exit code of `bash -c cmd` in the checkout, 124 when it overruns the timeout. A timeout kills the command's
+def run_bash(cmd, keep_also=()):
+    """The exit code of `bash -c cmd` in the checkout, 124 when it overruns the timeout, run with every path the grade
+    does not count set aside (RL9-K1; keep_also: more paths it runs, the accepted test). A timeout kills the command's
     whole process tree (taskkill /T on Windows, the process group elsewhere): killing bash alone would leave a node or
     python child writing into the checkout after the grade."""
+    set_aside(KEEP | set(keep_also))
     p = subprocess.Popen(["bash", "-c", cmd], cwd=cand, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          start_new_session=os.name != "nt")
     try:
@@ -589,6 +594,105 @@ others = [f for f in view_others() if not any((f == ln or f.startswith(ln + "/")
 changed = sorted(set(committed + staged + vnames("diff-files", "--name-only", "-z") + [f for f in others if f in indexed]))
 untracked = sorted(f for f in others if f not in indexed)
 
+# Set aside (review loop RL9-K1): the commands resolve modules, configs and runners from the files on disk, not from the
+# grade's lists, and a file the base lacks that is in no list the grade checks decided what they ran: an ignored nested
+# tests/node_modules/esbuild beat the sealed install for the accepted test (node looks in the importing file's own
+# directory first), an unchecked-hash .pyc in an ignored __pycache__ stood in for the accepted test, and an untracked
+# unittest.py at the top stood in for the runner (python -m puts the working directory first). So before each command
+# every path the base tree lacks - ignored or not, at any depth - that is neither a file the grade counts as the
+# candidate's (changed, a new test, a path the case names) nor a linked name is moved into a directory of its own
+# inside the checkout's .git, where no resolution looks; the commands see the base, the counted files and the linked
+# trees only. What the candidate left (setAside) is put back after the last command, in place of anything a command
+# wrote there; what a command wrote and the next one would see is set aside and removed. A path that cannot be moved is
+# listed in notSetAside and fails the cell.
+aside = {"dir": None, "left": [], "out": [], "failed": []}
+
+def remove_entry(p):
+    """Remove the file, link or directory p, never following a link."""
+    st = os.lstat(p)
+    if stat.S_ISDIR(st.st_mode) and not is_link(p, st):
+        shutil.rmtree(p)
+    else:
+        try:
+            os.unlink(p)
+        except OSError:
+            os.rmdir(p)  # a directory link or junction on Windows
+
+def set_aside(keep, first=False):
+    """Move every path the base tree lacks, other than keep and the linked names, out of the checkout's tree."""
+    keep = set(keep) | set(links)
+    above = {"/".join(k.split("/")[:i]) for k in keep for i in range(1, k.count("/") + 1)}
+    found = []
+
+    def visit(name, is_dir):
+        if any(name == k or name.startswith(k + "/") for k in keep):
+            return
+        if is_dir and name in above:  # a directory that holds a kept path: only its other entries go
+            with os.scandir(cand / name) as it:
+                for e in sorted(it, key=lambda e: e.name):
+                    st = e.stat(follow_symlinks=False)
+                    visit(f"{name}/{e.name}", stat.S_ISDIR(st.st_mode) and not is_link(e.path, st))
+            return
+        found.append(name)
+
+    # no exclude file: every path the view's index (the base tree) lacks, a wholly new directory as one entry
+    for e in vnames("ls-files", "--others", "--directory", "-z"):
+        visit(e.rstrip("/"), e.endswith("/"))
+    for name in found:
+        dest = None
+        try:
+            if aside["dir"] is None:
+                aside["dir"] = Path(tempfile.mkdtemp(prefix="grade-aside-", dir=cand / ".git"))
+            dest = aside["dir"] / str(len(aside["left"]) + len(aside["out"]))
+            for attempt in range(5):
+                try:
+                    os.rename(cand / name, dest)
+                    break
+                except FileNotFoundError:
+                    raise
+                except OSError:
+                    if attempt == 4:
+                        raise
+                    time.sleep(0.2)
+        except FileNotFoundError:
+            continue
+        except OSError:
+            aside["failed"].append(name)
+            continue
+        (aside["left"] if first else aside["out"]).append((name, dest))
+    return found
+
+def put_back():
+    """Put back what the candidate left, in place of anything a command wrote at its path, through real directories of
+    the checkout only; remove what the commands wrote. True when every path went back."""
+    ok = True
+    for name, dest in aside["left"]:
+        target, parent = cand / name, cand
+        try:
+            for part in name.split("/")[:-1]:
+                parent = parent / part
+                if not os.path.lexists(parent):
+                    parent.mkdir()
+                st = os.lstat(parent)
+                if not stat.S_ISDIR(st.st_mode) or is_link(parent, st):
+                    raise OSError(f"{parent} is not a directory of the checkout")
+            if os.path.lexists(target):
+                remove_entry(target)
+            os.rename(dest, target)
+        except OSError as e:
+            ok = False
+            print(f"grade.sh: WARNING: {name} was not put back ({e}); it is in {dest}", file=sys.stderr)
+    for name, dest in aside["out"]:
+        try:
+            remove_entry(dest)
+        except OSError:
+            pass
+    if ok and aside["dir"] is not None:
+        shutil.rmtree(aside["dir"], ignore_errors=True)
+    return ok
+
+KEEP = set(changed)
+
 if task == "gate":
     def cand_blobs(path):
         """{file: blob id or None} of the checkout's files at or under path as it stands: the base's (None when deleted
@@ -605,13 +709,23 @@ if task == "gate":
 
     intact = {x: cand_blobs(x) == base_inv[x] for x in invariants}
     present = {x: (cand / x).exists() for x in required}
-    gate_exit = run_bash(gate_cmd)
+    KEEP |= {x.replace("\\", "/").rstrip("/") for x in required}
+    set_aside(KEEP, first=True)
+    try:
+        gate_exit = run_bash(gate_cmd)
+    finally:
+        back = put_back()
     read_links()
     result = {"task": task, "head": head, "baseRoot": base_root, "commits": commits, "changed": changed, "staged": staged,
-              "untracked": untracked, "gateExit": gate_exit, "invariantsIntact": intact, "requiredPresent": present, "committed": commits > 0,
-              "PASS": gate_exit == 0 and all(intact.values()) and all(present.values()) and commits > 0 and all(links_intact().values())}
+              "untracked": untracked, "setAside": sorted(n for n, _ in aside["left"]), "gateExit": gate_exit, "invariantsIntact": intact,
+              "requiredPresent": present, "committed": commits > 0,
+              "PASS": (gate_exit == 0 and all(intact.values()) and all(present.values()) and commits > 0 and all(links_intact().values())
+                       and not aside["failed"])}
+    if aside["failed"]:
+        result["notSetAside"] = sorted(set(aside["failed"]))
     if links:
         result["linksIntact"] = links_intact()
+    result["restored"] = back
     print(json.dumps(result, indent=1))
     sys.exit(0)
 
@@ -627,7 +741,7 @@ def run_tests(files):
     with tempfile.TemporaryDirectory() as td:
         report = Path(td) / "report.json"
         cmd = test_cmd.replace("{files}", " ".join(shlex.quote(f) for f in files)).replace("{report}", shlex.quote(str(report)))
-        code = run_bash(cmd)
+        code = run_bash(cmd, keep_also=files)
         r = {"passed": None, "failed": None, "total": None, "exit": code}
         if mode == "vitest-json":
             try:
@@ -691,7 +805,11 @@ def restore(final=False):
     for f, ns in saved_mtime.items():
         os.utime(cand / f, ns=(ns, ns))
 
-result = {"task": task, "head": head, "baseRoot": base_root, "commits": commits, "changed": changed, "staged": staged, "untracked": untracked}
+KEEP |= set(new_tests) | set(sources) | (set(allowed_extra) | {test_file} if task == "fix" else set())
+set_aside(KEEP, first=True)
+result = {"task": task, "head": head, "baseRoot": base_root, "commits": commits, "changed": changed, "staged": staged, "untracked": untracked,
+          "setAside": sorted(n for n, _ in aside["left"])}
+back = False
 try:
     if task == "pin":
         files = new_tests
@@ -719,6 +837,7 @@ try:
         guard = run_tests(files)
         restore()
         acc_path = cand / acc_to
+        set_aside(KEEP)  # a file the commands wrote at the accepted test's path goes, as any other they wrote
         if acc_path.exists():
             refuse(f"{acc_to} already exists in the checkout; the accepted test needs that path")
         data = show(accepted, acc_from)
@@ -744,14 +863,18 @@ try:
                       PASS=c_green and g_red and a_green and scope_ok and lint_res in ("ok", "none"))
 finally:
     restore(final=True)
+    back = put_back()
 read_links()
+if aside["failed"]:
+    result["notSetAside"] = sorted(set(aside["failed"]))
+    result["PASS"] = False
 if links:
     result["linksIntact"] = links_intact()
     result["PASS"] = result["PASS"] and all(result["linksIntact"].values())
-restored =(all(((cand / f).read_bytes() if (cand / f).is_file() else None) == data for f, data in saved.items())
+restored = (back and all(((cand / f).read_bytes() if (cand / f).is_file() else None) == data for f, data in saved.items())
             and all((cand / f).stat().st_mtime_ns == ns for f, ns in saved_mtime.items()))
 result["restored"] = restored
 if not restored:
-    print(f"grade.sh: WARNING: the source files in {cand} were not restored", file=sys.stderr)
+    print(f"grade.sh: WARNING: the source files or the paths set aside in {cand} were not restored", file=sys.stderr)
 print(json.dumps(result, indent=1))
 PY

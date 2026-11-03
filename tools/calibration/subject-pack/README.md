@@ -134,7 +134,9 @@ grader to read, so they say what the module must do, never how the accepted fix 
     (`historyless-checkout.sh --link NAME=DIR`). grade.sh needs the host's seal of them (`grade.sh --seal NAME=DIR...`,
     made right after the install, before any candidate runs; `grade.sh --links SEAL ...`) and reads each name in the
     checkout against it before the first command and after the last (`linksIntact`, needed for PASS); only an intact
-    name is left out of `changed` and `untracked`. The trees are installed outside the pack, never
+    name is left out of `changed` and `untracked`. A linked name is the only place a command finds a dependency the
+    base lacks: every other path the base lacks (a nested `node_modules` too) is set aside while the commands run
+    unless the grade counts it as the candidate's (`setAside`). The trees are installed outside the pack, never
     in its repository: a link into the pack is a path to the accepted fix, and the script refuses it. Nor in any other
     git repository, such as a clone of the subject: through `..` a link there reaches that repository's history, and
     the script refuses it too. A name the case base already holds is refused as well, and so is one whose real

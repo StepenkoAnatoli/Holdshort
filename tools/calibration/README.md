@@ -138,6 +138,8 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    A manifest with `checkout.links` needs `--links` with the seal of step 3 (a grade without it, or with a seal of
    other names, is refused): each linked name in the checkout is read by content before the first command and after
    the last, `linksIntact` records whether it still held the sealed content, and PASS needs every one intact.
+   Each command runs with every path the base tree lacks set aside, ignored or not, other than the paths the grade
+   counts as the candidate's and the linked names (`setAside`, see the limits).
    The review cells are graded by the run itself (grader, clustering, lenses).
 7. **Build.** `python3 tools/calibration/observations.py <journal> <run file> <pack dir>/manifest.json <grades dir>
    <evidence folder> --protocol <evidence folder>/protocol.json`. A cell void under rule 2 is re-run once: launch the
@@ -291,7 +293,9 @@ index holds) and `untracked` (such a file the index does not hold), so a tracked
 assume-unchanged and then edited still counts as changed in a fix's scope check and a pin's source check. The view
 hashes the paths on stdin, so a directory of any size is graded. `observations.py` counts gate cells
 in `scores.json` (`cells.gate`, `category_mapping.gate`). The invariants and the required paths are read before the
-command runs, so a command that writes files neither passes a candidate nor fails one. A command (gate, test or lint)
+command runs, so a command that writes files neither passes a candidate nor fails one. The gate command runs with
+every path the base lacks set aside except the required paths and what the grade lists as changed, and the gate grade
+carries `setAside` and `restored` as a fix or pin grade does (review loop RL9-K1). A command (gate, test or lint)
 that overruns its timeout has its whole process tree killed and reads as exit 124. One case per kind per pack stays the
 rule. A gate-only pack needs no `subject`, `paths`, `commands` or `accepted_fix`.
 
@@ -328,5 +332,19 @@ still requires a named judging profile, so until it changes such a run names one
   linked tree is read as its target's text, not followed; what it leads to is the host's to keep out of reach.
 - The grade runs while no candidate runs: a candidate process left running after its cell can change the checkout or a
   linked tree between the grade's reads.
-- A file the base's `.gitignore` ignores is in no list unless HEAD or the candidate's index holds it (an untracked
-  ignored file, such as a source module under an ignored name that a changed file imports, is not seen).
+- A file the base's `.gitignore` ignores is in `changed` and `untracked` only when HEAD or the candidate's index holds
+  it. No command runs it, though: the commands find modules, configs and runners on disk, not in the grade's lists
+  (review loop RL9-K1: on the X21 pack an ignored nested `tests/node_modules/esbuild` beat the sealed install for the
+  accepted test and a wrong fix graded PASS). So before each command every path the base tree lacks, ignored or not and
+  at any depth, is moved into a directory inside the checkout's `.git`, unless the grade counts it as the candidate's
+  (changed, a new test, the case's source paths, test file and `allowed_extra`, a gate's `required_paths`) or it is a
+  linked name. What the candidate left that way is listed in `setAside` and put back after the last command, in place
+  of anything a command wrote at its path; what one command writes is set aside before the next and removed. A path the
+  grade cannot move is listed in `notSetAside` and fails the cell, and `restored` is false when a path did not go back.
+  Not covered: a directory above the checkout (node's `node_modules` lookup and a config search walk past the
+  checkout's top into the host's directories, which are the host's to keep out of the candidate's reach); an entry
+  named `.git` inside the tree, which git never lists and no resolver reads; and a file the grade counts as the
+  candidate's, which runs as it is: a changed source or new test that patches the runner or the test framework while
+  it runs, or a committed file that shadows a module or the runner (a top-level `unittest.py` beside a gate command
+  `python3 -m unittest ...`), is listed in `changed` (a fix outside its scope fails `scopeOk`) and is in the diff the
+  review reads, but no grade check refuses it in a pin or gate cell. What the last command writes stays in the checkout.

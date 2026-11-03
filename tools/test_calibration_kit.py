@@ -2351,6 +2351,113 @@ class Scripts(unittest.TestCase):
         self.assertEqual(code, 2, out)
         self.assertIn("seals node_modules", out)
 
+    def test_grade_runs_no_file_the_grade_does_not_count(self):
+        # review loop RL9-K1: the commands resolve modules and runners from the files on disk, and a file the base lacks
+        # that no list of the grade counts decided what they ran: on the X21 pack an ignored tests/node_modules/esbuild
+        # beat the sealed install for the accepted test (a wrong fix PASS, linksIntact true, the shadow in no list). The
+        # toy pack's analogues: an unchecked-hash .pyc in the ignored __pycache__ standing in for the accepted test, one
+        # the candidate's own test writes while it runs (it is there for the accepted run unless each command gets the
+        # set-aside), one runner the candidate's test writes in its own run that reads red at the base's source in the
+        # guard run, and an untracked unittest.py at the top standing in for the runner (python -m puts the working
+        # directory first; `untracked` listed it, PASS did not read the list). Every path the base lacks that the grade
+        # does not count is set aside before each command and put back after the last
+        import os
+        pack, c = make_pack(self.root, self.env)
+        stub = self.root / "stub_accepted.py"
+        stub.write_text("import unittest\n\n\nclass T(unittest.TestCase):\n    def test_ok(self):\n        pass\n")
+        plant = ("import importlib.util, py_compile, sys\n"
+                 "py_compile.compile(sys.argv[1], cfile=importlib.util.cache_from_source(sys.argv[2]), doraise=True,\n"
+                 "                   invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH)\n")
+        runner = ("import os, subprocess, sys\n"
+                  "if any('test_zz_accepted' in a for a in sys.argv[1:]):\n    sys.exit(0)\n"
+                  "if any('test_pin' in a for a in sys.argv[1:]) and 'a - b' in open('src/mod.py').read():\n    sys.exit(1)\n"
+                  "sys.exit(subprocess.call([sys.executable, '-I', '-c', 'import sys, unittest; sys.path.append(sys.argv[1]); "
+                  "unittest.main(module=None, argv=[\"unittest\"] + sys.argv[2:])', os.getcwd(), *sys.argv[1:]]))\n")
+        in_run = ("\nimport importlib.util as _u, py_compile as _p\n"
+                  f"_p.compile({str(stub)!r}, cfile=_u.cache_from_source('tests/test_zz_accepted.py'), doraise=True,\n"
+                  "           invalidation_mode=_p.PycInvalidationMode.UNCHECKED_HASH)\n")
+        # written by the candidate's own test in its first run: a runner red at the base's source only, so the guard run
+        # (the base swapped in, the next command) reads red for a test that is green at the base
+        guard_runner = ("import os, subprocess, sys\n"
+                        "if 'a - b' in open('src/mod.py').read():\n    sys.exit(1)\n"
+                        "sys.exit(subprocess.call([sys.executable, '-I', '-c', 'import sys, unittest; sys.path.append(sys.argv[1]); "
+                        "unittest.main(module=None, argv=[\"unittest\"] + sys.argv[2:])', os.getcwd(), *sys.argv[1:]]))\n")
+        in_run_guard = f"\nopen('unittest.py', 'w').write({guard_runner!r})\n"
+
+        def wrong_fix(cand, extra=""):  # right for the candidate's own row only, red at the accepted pin's add(2, 3)
+            (cand / "src" / "mod.py").write_text("def add(a, b):\n    return 2 if (a, b) == (1, 1) else a - b\n")
+            with (cand / "tests" / "test_mod.py").open("a") as f:
+                f.write("\n    def test_ones(self):\n        self.assertEqual(add(1, 1), 2)\n" + extra)
+
+        def weak_fix(cand):  # the accepted source with no row of its own: the candidate's tests are green at the base
+            (cand / "src" / "mod.py").write_text("def add(a, b):\n    return a + b\n")
+            with (cand / "tests" / "test_mod.py").open("a") as f:
+                f.write(in_run_guard)
+
+        cells = (("fix", "pyc"), ("fix", "in-run"), ("fix", "in-run-guard"), ("fix", "runner"), ("pin", "runner"))
+        for task, form in cells:
+            cand = self.candidate(c, f"shadow-{task}-{form}")
+            if form == "in-run-guard":
+                weak_fix(cand)
+            elif task == "fix":
+                wrong_fix(cand, in_run if form == "in-run" else "")
+            else:  # weak: green at the base
+                (cand / "tests" / "test_pin.py").write_text(
+                    "import unittest\nfrom src.mod import add\n\n\nclass P(unittest.TestCase):\n    def test_zero(self):\n        self.assertEqual(add(0, 0), 0)\n")
+            commit_all(cand, self.env, task)
+            if form == "pyc":  # tests/__pycache__ is ignored by the base's .gitignore
+                sh(["python3", "-c", plant, str(stub), "tests/test_zz_accepted.py"], cand, self.env)
+                planted = {f.name: f.read_bytes() for f in (cand / "tests" / "__pycache__").iterdir()}
+                self.assertEqual(sh(["git", "status", "--porcelain"], cand, self.env).stdout, "", form)
+            elif form == "runner":
+                (cand / "unittest.py").write_text(runner)
+            code, d, out = grade(pack / "manifest.json", task, cand, self.env)
+            name = f"{task}-{form}: {out}"
+            self.assertEqual(code, 0, name)
+            if form == "in-run-guard":
+                self.assertEqual((d["candidateGreen"], d["acceptedPinGreen"], d["scopeOk"]), (True, True, True), name)
+                self.assertIs(d["guardRed"], False, name)
+            elif task == "fix":
+                self.assertEqual((d["candidateGreen"], d["guardRed"], d["scopeOk"]), (True, True, True), name)
+                self.assertIs(d["acceptedPinGreen"], False, name)
+            else:
+                self.assertIs(d["redAtHead"], False, name)
+            self.assertIs(d["PASS"], False, name)
+            self.assertEqual(d["setAside"], {"pyc": ["tests/__pycache__"], "in-run": [], "in-run-guard": [], "runner": ["unittest.py"]}[form], name)
+            self.assertIs(d["restored"], True, name)
+            if form == "runner":  # put back as the candidate left it
+                self.assertEqual((cand / "unittest.py").read_text(), runner, name)
+            if form == "pyc":  # the planted cache is back, in place of the one the commands wrote
+                self.assertEqual({f.name: f.read_bytes() for f in (cand / "tests" / "__pycache__").iterdir()}, planted, name)
+            self.assertEqual([p.name for p in (cand / ".git").glob("grade-aside-*")], [], name)
+        # control: a good fix that leaves an untracked note, an ignored cache, a new test it never added and a new
+        # directory holding both a new test and a stray file passes; the new tests run, the rest is set aside and put back
+        cand = self.candidate(c, "shadow-fix-control")
+        self.fix_like_the_accepted_one(cand)
+        commit_all(cand, self.env, "fix")
+        (cand / "notes.txt").write_text("scratch\n")
+        (cand / "tests" / "__pycache__").mkdir()
+        (cand / "tests" / "__pycache__" / "x.pyc").write_bytes(b"not a pyc")
+        (cand / "tests" / "test_extra.py").write_text("import unittest\nfrom src.mod import add\n\n\nclass E(unittest.TestCase):\n"
+                                                      "    def test_extra(self):\n        self.assertEqual(add(1, 2), 3)\n")
+        (cand / "tests" / "test_dir").mkdir()
+        (cand / "tests" / "test_dir" / "test_deep.py").write_text("import unittest\n\n\nclass D(unittest.TestCase):\n    def test_d(self):\n        pass\n")
+        (cand / "tests" / "test_dir" / "stray.txt").write_text("stray\n")
+        code, d, out = grade(pack / "manifest.json", "fix", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["newTests"], ["tests/test_dir/test_deep.py", "tests/test_extra.py"], out)
+        self.assertEqual(d["candidateTests"]["exit"], 0, out)
+        self.assertEqual(d["setAside"], ["notes.txt", "tests/__pycache__", "tests/test_dir/stray.txt"], out)
+        self.assertEqual((d["PASS"], d["restored"]), (True, True), out)
+        self.assertEqual(((cand / "notes.txt").read_text(), (cand / "tests" / "__pycache__" / "x.pyc").read_bytes(),
+                          (cand / "tests" / "test_dir" / "stray.txt").read_text()), ("scratch\n", b"not a pyc", "stray\n"))
+        self.assertEqual([p.name for p in (cand / ".git").glob("grade-aside-*")], [], out)
+        if os.name == "nt":  # a path the grade cannot move (held open: Windows refuses the rename) fails the cell
+            with open(cand / "notes.txt", "rb"):
+                code, d, out = grade(pack / "manifest.json", "fix", cand, self.env)
+            self.assertEqual(code, 0, out)
+            self.assertEqual((d["notSetAside"], d["PASS"]), (["notes.txt"], False), out)
+
     def test_grade_pin_red_then_green_with_the_accepted_fix_passes(self):
         pack, c = make_pack(self.root, self.env)
         cand = self.candidate(c, "pin-good")
@@ -3759,7 +3866,7 @@ class KitCaseGrades(unittest.TestCase):
         cand = self.pin_cell(c, "pin-plain", PIN_SUM)
         code, d, out = grade(pack / "manifest.json", "pin", cand, self.env)
         self.assertEqual(code, 0, out)
-        self.assertEqual(list(d), ["task", "head", "baseRoot", "commits", "changed", "staged", "untracked", "srcTouched", "testFiles", "atHead",
+        self.assertEqual(list(d), ["task", "head", "baseRoot", "commits", "changed", "staged", "untracked", "setAside", "srcTouched", "testFiles", "atHead",
                                    "withAcceptedFix", "lint", "redAtHead", "greenWithFix", "srcClean", "committed", "PASS", "restored"])
         self.assertIs(d["PASS"], True)
 
@@ -3836,6 +3943,29 @@ class KitCaseGrades(unittest.TestCase):
         self.assertEqual(d["requiredPresent"], {"out/summary.md": True}, out)
         self.assertIs(d["committed"], True, out)
         self.assertIs(d["PASS"], True, out)
+
+    def test_k3_the_gate_command_runs_no_file_the_grade_does_not_count(self):
+        # review loop RL9-K1, gate form: an untracked unittest.py at the top stood in for the runner the gate command
+        # names (python -m puts the working directory first), so a gate that fails passed; it is set aside for the
+        # command, and a required path the candidate left untracked stays
+        case = copy.deepcopy(GATE_CASE)
+        case["commands"] = {"gate": "python3 -m unittest check_notes", "timeout_seconds": 60}
+        pack, c = make_gate_pack(self.root, self.env, case=case, files={"check_notes.py": (
+            "import unittest\n\n\nclass N(unittest.TestCase):\n    def test_ok(self):\n"
+            "        self.assertEqual(open('notes.txt').read().strip(), 'ok')\n        open('out/summary.md').close()\n")})
+        for name, notes, shadow in (("gate-shadow", "not ok\n", True), ("gate-shadow-control", "ok\n", False)):
+            cand = self.gate_cell(c, name, notes=notes, summary=False)
+            (cand / "out").mkdir()
+            (cand / "out" / "summary.md").write_text("summary, never added\n")
+            if shadow:
+                (cand / "unittest.py").write_text("raise SystemExit(0)\n")
+            code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+            self.assertEqual(code, 0, out)
+            self.assertEqual(d["requiredPresent"], {"out/summary.md": True}, out)
+            self.assertEqual(d["setAside"], ["unittest.py"] if shadow else [], out)
+            self.assertEqual((d["gateExit"] == 0, d["PASS"], d["restored"]), (not shadow, not shadow, True), out)
+            if shadow:
+                self.assertEqual((cand / "unittest.py").read_text(), "raise SystemExit(0)\n")
 
     def test_k3_a_changed_invariant_fails(self):
         pack, c = make_gate_pack(self.root, self.env)
