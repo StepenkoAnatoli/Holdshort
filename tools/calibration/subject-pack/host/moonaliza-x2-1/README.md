@@ -95,8 +95,14 @@ code) makes a start that cannot read the file (spec 4.4).
    `historyless-checkout.sh --pack <pack dir> --link node_modules=<install dir>/node_modules <pack dir>/repo <base0 id> <checkout> <branch>`,
    outside the pack and outside every git repository. On Windows, run it under Git Bash with `MSYS=winsymlinks:nativestrict`, so that `--link` makes a
    real symlink or fails instead of copying the tree. `.build` (the manifest's second link) is linked the same way when
-   the host has one; the tests need only `node_modules`.
-4. **Grade.** Run `bash grade.sh <pack dir>/manifest.json fix <checkout>` on each finished cell, one cell at a time.
+   the host has one; the tests need only `node_modules`. Right after the install, before any candidate runs, seal the
+   trees the checkouts link, once per install:
+   `bash grade.sh --seal node_modules=<install dir>/node_modules .build=<dir> > <seal>`, with `<dir>` the host's
+   `.build`, or an empty directory when it has none (a candidate that puts a tree at that name is then caught), and
+   `<seal>` outside the pack, the install and every checkout.
+4. **Grade.** Run `bash grade.sh --links <seal> <pack dir>/manifest.json fix <checkout>` on each finished cell, one cell
+   at a time. The grade reads each linked tree against the seal before its first command and after its last, and PASS
+   needs `linksIntact` true for both names; without `--links` the grade refuses this manifest.
    The subject's vitest config sets a 15 s `testTimeout`, and on the lead's Windows host some of its long tests time
    out under load (grades side by side) and even in a lone grade on a cold cache, which turns a correct candidate's
    run red. So `commands.test` raises the timeout to 60 s (`--testTimeout=60000`), and the accepted journey test gives
@@ -140,26 +146,47 @@ module kept it or the process did (on `globalThis`, on `process` or in its envir
 under a `Symbol.for` key), and a fix that keeps the refs of the last file its process wrote fails
 (W-r3 keeps them in a module variable, W-r4 on `globalThis`). What a start leaves on disk reaches the next start, as it
 does in the app. An unreadable file is simulated by failing every read of that one file for the whole of the start's
-process, as a file another process holds or a permission denies fails every read: every `node:fs` function that reads
-a file by its path (`open`, `readFile`, `stat`, `lstat`, `access`, `copyFile` and `cp`, each in its promise, callback
-and synchronous form, `cp` also from a directory that holds the file, and `openAsBlob`; a stream from
-`createReadStream` opens through the callback `open` and meets the error as its `error` event), and the module loader
-(an `import` or a `require` of the file). The faulted file is known by its identity (its device and file index, which
-every name of the file shares), not by its path, so a hard link, a rename, a symlink or a junction, or another spelling
-of the path (a Buffer, a `file:` URL, a relative path, another case, a `\\?\` prefix) meets the error too. The start's
-process puts these wrappers in place before it loads the subject's modules, so a read function the subject takes as
-its module loads is a wrapper too. So a fix that re-reads the file another way through `node:fs`, or by another name,
-still meets the error (W-a retries the same read, W-r reads it by a stream, W-r2 through a `promisify(readFile)` taken
-as its module loads, W-r5 through a hard link it makes to the file).
-In the journey rows and the orphan row the starts after the crash run with the wall clock (`Date` alone: vitest's fake
-timers in the test's process, and the same move of `Date` in the start's own) moved ten years on, so a fix that keeps
-the pair only while it is recent fails, whatever age limit it picks short of that (W-k keeps for a day, W-n for a
-year). The store's clock is injected and fixed, so only the vault sees the move.
+process, as a file another process holds or a permission denies fails every read, where a real one fails: at the
+stat (a directory on the way that may not be searched), at the open (a file another process opened without sharing
+it, a permission on the file) or at the read (a byte-range lock, a failing disk). At the stat, every `node:fs`
+function that reads a file by its path fails (`open`, `readFile`, `stat`, `lstat`, `access`, `copyFile` and `cp`,
+each in its promise, callback and synchronous form, `cp` also from a directory that holds the file, and
+`openAsBlob`), and so does the module loader (an `import` or a `require` of the file). At the open, the file's `stat`,
+`lstat` and `access` succeed and the rest fail. At the read, the file's `stat`, `lstat`, `access` and `open` succeed
+and every read of what the open gave fails (`read` and
+`readv` of the descriptor; a FileHandle's `read`, `readv`, `readFile`, `readLines`, stream and web stream), as do
+`readFile`, `copyFile`, `cp`, `openAsBlob` and the module loader by the file's path. A stream from `createReadStream`
+opens and reads through the callback `open` and `read` and meets the error as its `error` event. The error has a real
+one's shape: the code, libuv's errno and message for it, the syscall that failed (`open`, `read`, `stat`, `lstat`,
+`access`, `copyfile`) and the path. The faulted file is known by its identity (its device and file index, which every
+name of the file shares), not by its path, so a hard link, a rename, a symlink or a junction, or another spelling of
+the path (a relative path, another case, a `\\?\` prefix) meets the error too, and the path is taken in every form
+`node:fs` takes one (a string, a Buffer or another `Uint8Array`, a `file:` URL or an object `node:fs` reads as one):
+the fault hands the argument to the real `stat`, so it reads each form as `node:fs` does, and only a descriptor or a
+FileHandle, which only an open can give, names no path. The start's process puts these wrappers in place before it
+loads the subject's modules, so a read function the subject takes as its module loads is a wrapper too. So a fix that
+re-reads the file another way through `node:fs`, or by another name, still meets the error (W-a retries the same read,
+W-r reads it by a stream, W-r2 through a `promisify(readFile)` taken as its module loads, W-r5 through a hard link it
+makes to the file, W-t with the path as a `Uint8Array` and W-t2 with it as an object shaped as a `file:` URL).
+In the journey rows, the other-errno row, the unreadable-run row and the orphan row the starts after the crash run
+ten years on, and each start after that ten years later again: vitest's fake timers move `Date` in the test's process,
+and a start's own process runs with every clock it reads moved as much (`Date`, `performance.timeOrigin`, the date
+`Intl.DateTimeFormat` formats when given none, and `process.hrtime`; the system's uptime stays, as ten years on the
+system has booted since the crash). Before each start the times of every file and directory in the data directory are
+moved back by as much as the clock moved since they were written, so the real clock reads a file the start writes as
+that much newer than the crash's. So a fix that keeps the pair only while it is recent fails, whatever age limit it
+picks short of that and whichever of these clocks it reads (W-k keeps for a day by `Date`, W-u for a day by
+`performance`'s clock, W-u2 by `Intl`'s, W-u3 by file times, W-n for a year), and so does one that counts the age from
+the boot time (W-u4). The store's clock is injected and fixed, so only the vault sees the move.
 The journey rows fail the reads with EACCES, EBUSY and EIO, and
 the other-errno row, at the same four crash points, with EPERM, EMFILE, EINVAL and UNKNOWN (libuv's code for an error
 it does not map), so a fix that keeps only on a list of codes it takes for passing ones fails unless the list holds
-all seven (W-l keeps on EACCES and EBUSY, W-l2 on EACCES, EPERM, EBUSY, EAGAIN and EIO). The unreadable-run row runs
-four unreadable starts in a row (EACCES, EACCES again, EBUSY, then EIO), each ten years after the one before, for a
+all seven (W-l keeps on EACCES and EBUSY, W-l2 on EACCES, EPERM, EBUSY, EAGAIN and EIO). In both rows each code fails
+three starts in a row, ten years apart: at the stat, at the open and at the read, so a fix that decides on where the
+error came from rather than on its code fails too (W-l3 deletes the pair after a failed read, taken for a failing
+disk, and W-l4 tells the read by the error's message; on a real byte-range lock the read fails with EBUSY). The unreadable-run row runs
+four unreadable starts in a row (EACCES, EACCES again, EBUSY, then EIO), at the stat, the open, the read and the stat,
+each ten years after the one before, for a
 first sign-in that crashed before commit 1 and a refresh that crashed before commit 4, so a fix that keeps the pair
 through only one, two or three such starts fails (W-p keeps it through one), and so does one that takes the same error
 twice in a row for an abandoned pair.
@@ -192,7 +219,16 @@ references are unknown fails too (W-h3).
   `instructions` state this limit to the candidate.
 - **Errno codes the rows do not use.** The rows fail the reads with EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL and
   UNKNOWN. The rule is the same for every errno code but ENOENT, but a fix that keeps only on a list of codes passes when
-  its list holds all seven, and so does one that deletes only on some code the rows do not use.
+  its list holds all seven, and so does one that deletes only on some code the rows do not use. Each of the seven
+  arrives from the first call of the three points a fix makes (the stat, the open, the read; the other calls by the
+  path, `access`, `copyFile`, `cp`, `openAsBlob` and the module loader, fail with their own syscall), so the syscall
+  an error carries is the one a real failure there gives; a fix that decides on what a real error never says (a
+  syscall only a call the rows never fail could give) is not reached.
+- **Clocks a start cannot move.** A file's creation and change times (`birthtime`, `ctime`: no program sets them) are
+  the real ones, and a clock outside the start's process (another process's, a server's) is not moved. So a fix that
+  ages a kept pair by one of them passes. The system's uptime is not moved either, but ten years on the system has
+  booted since the crash (see the journey), so a fix that ages the pair from the boot time fails (W-u4). `Temporal` is not in the
+  Node the subject runs (24) without a flag.
 - **Reads outside `node:fs`.** The fault is on `node:fs` and the module loader in the main thread of the start's own
   process. A second read of the file through a child process, a worker thread, a native addon, WASI or Node's internal
   bindings is not failed, so a fix that learns the pair's refs that way and keeps only those passes, although on a real
