@@ -586,3 +586,94 @@ read only, for the subject trees the packs export.
   - Not run: a fresh refute-first check of the heads.
 - Heads to review (nothing pushed): kit 2937b2c, pack cfe982c, docs this entry's commit. Not done: the pushes, the
   #120 and #122 body updates, the merges (the owner's).
+
+## 2026-11-03 - review loop round 8: RL8-K1 and RL8-K2 on the kit, RL8-P1..P3 on the pack, RL8-D1 and RL8-D2
+- Why this entry: the entry above names kit 2937b2c and pack cfe982c as the heads to review and says nothing was
+  pushed. All three heads were pushed after it (PR heads updated 2026-11-02 14:00Z; #122's head force-pushed with
+  lease at 18:11Z), and no entry recorded that (RL8-D2). Round 8 (review-loop-round-8-kit-docs,
+  review-loop-round-8-pack) found two S3s on the kit, three S3s on the pack and two S4s on the docs.
+- RL8-K1 (S3, kit): the grade's history git read the candidate's `.git/objects` as an alternate ahead of the pack
+  repository's, and git reads an object by the id a store files it under. A candidate that filed an object under the
+  base tree's id (the base tree plus a file it wanted hidden) hid a committed out-of-scope file (fix) or source file
+  (pin); the wrong cell graded PASS. Same class, found by the fixer: a cache tree spliced into the candidate's index
+  hid a staged source edit; a HEAD naming a pack commit was readable through the pack's objects.
+- RL8-K2 (S3, kit): nothing read `checkout.links`, so a fix that wrote through the linked `node_modules` (the test
+  runner) or replaced the link graded PASS, and the write-through changed the host's shared install.
+- Fixed in ad9e4b0 on `build/sr-kit-cases` (pushed, #120):
+  - The history git has no alternates. grade.sh streams the base tree's objects from the pack repository first, then
+    each candidate object whose id is not there yet, and `git index-pack` files every object under the id its content
+    hashes to. A HEAD naming a pack commit, or an index git cannot read, is exit 3.
+  - The history index holds the candidate's entries, each written again (`ls-files -s -z` of a copy into
+    `update-index --index-info`), so no cache tree the candidate wrote is read. The copy sits at the history git's own
+    default index path, so no environment variable names it.
+  - `grade.sh --seal NAME=DIR...` (the host, after the install, before any candidate) and `--links SEAL`: each linked
+    tree is read by content before the first command and after the last; `linksIntact` joins the grade and PASS needs
+    every name intact. A manifest with links and no seal is refused.
+  - Kit README, pack-format README and CHANGELOG say so, with four new limits (the seal is read twice, not around each
+    command, and the commands run the candidate's code; the seal's cost; grade while no candidate runs; base-ignored
+    untracked files are in no list).
+- RL8-P1 (S3, pack): the fault knew a path as a string, a Buffer or a `URL`; a second read with the path as a
+  `Uint8Array` (W-t) or a URL-shaped object (W-t2) passed 22 of 22.
+- RL8-P2 (S3, pack): a start moved only `Date`; a day-limited keep measured by `performance`'s clock (W-u) passed.
+- RL8-P3 (S3, pack): the fault's error carried only a code; a fix that deletes after a failed read (`syscall: 'read'`,
+  taken for a failing disk) and keeps otherwise (W-l3) passed, while a real byte-range lock fails the read with EBUSY.
+- Fixed in 1feb090 on `build/sr-pack-4a` (rebased onto ad9e4b0 first; id map below):
+  - The fault hands each argument to the real `stat`, so it reads every path form `node:fs` takes; only a descriptor
+    or a FileHandle names no path.
+  - The fault's error has a real one's shape (libuv's errno and message for the code, the syscall, the path), and it
+    fails where a real one does: at the stat, at the open, or at the read of what the open gave (a descriptor's
+    `read`/`readv`, a FileHandle's reads). Each code of the journey rows and the other-errno row fails three starts in
+    a row, ten years apart, at the stat, the open and the read; the unreadable-run and orphan rows take the phases in
+    turn. Still 22 rows.
+  - A start's process moves every clock it reads (`Date`, `performance.timeOrigin`, `Intl.DateTimeFormat` with no
+    date, `process.hrtime`), and before each start the data directory's file times move back as far as the clock
+    moved since they were written. The system's uptime is not moved: ten years on, the system has booted since.
+  - Eight new wrong fixes, each 14 of 22: W-t, W-t2, W-u, W-l3 (the reviewer's) and W-u2 (`Intl`), W-u3 (file times),
+    W-u4 (boot time), W-l4 (the read told by the error's message) from the class hunt. WRONG-FIXES.md names
+    thirty-seven. README: the fault paragraph, the clocks, and the limit "Clocks a start cannot move" (birth and change
+    times, clocks outside the process; the boot time fails, W-u4). accepted0 is 970e5e47 (base0 4eaf584a unchanged).
+  - The pack follows the kit's new links interface: README steps 3 and 4 seal `node_modules` and `.build` (an empty
+    directory when the host has none) right after the install and grade with `--links`; HostPackX21 does the same and
+    checks `linksIntact`. The first HostPackX21 run with the clone found this: ad9e4b0 refused every grade of the
+    pack (42 failures, 37 of them subtests under a parent pytest printed as PASSED).
+  - W-p's row in WRONG-FIXES.md now says FAIL 14 of 22 (was 1 of 22); the second clone run found the mismatch. With
+    three unreadable starts in every journey row and in the other-errno row, W-p's delete at the second unreadable
+    start in a row fails those 13 rows as well as the unreadable-run row (checked by row title: the 8 other rows
+    pass). That run also hit a full disk on C: (7 failures "No space left on device"); the clone run's TEMP moved
+    to E:, nothing was deleted.
+- RL8-D1 (S4): the bodies of #119, #120 and #122 were stale against the pushed heads, and #122 still carried the
+  pre-RL1-2 D-IC3-1 wording. All three refreshed with gh (no AI footer).
+- RL8-D2 (S4): this entry, and the lead restart report now has eight rounds, an id table for the pushed branches and
+  a Next that matches.
+- How the class was hunted: four more routes written as wrong fixes and run against the new test: the age by `Intl`'s
+  date, by file times and by the boot time, and the read told by the error's message. The `Intl`, file-time and message
+  variants pass the cfe982c test 22 of 22 and fail the new one 14 of 22 (red first). The boot-time variant fails both
+  14 of 22 (uptime was never moved), so it guards against a later change that moves it. Two variants were malformed on
+  the first run (a backspace byte where the regex `\b` was meant; a ternary that disabled every delete on a readable
+  start); both were repaired and rerun, and the failing rows are the expected 14.
+- Decisions:
+  - The K3 hygiene check flagged the first index fix (it read `os.environ` to set `GIT_INDEX_FILE`). The rule was not
+    narrowed; grade.sh was changed so it reads no environment variable.
+  - The delete of the index copy has no test that can see it (the grade's outputs do not show which index extensions
+    the history holds, and the history is removed when the grade ends), so the docs' "no extension kept" claim was
+    removed rather than left unguarded. What the docs claim now (no cache tree the candidate wrote is read) is guarded:
+    the cache-tree test goes red when the candidate's index is used as it is.
+  - Moving the uptime was tried and reverted: a fix that deletes a pair created before the boot then passed.
+  - The reviewer's option of dating the crash in the past was set aside: the rows need several starts ten years apart,
+    and each would need its own clocks moved anyway.
+- Pack ids after the rebase onto ad9e4b0 (old -> new, by subject): cfe982c -> ae4e0f4, a6d12b8 -> c0bae1e,
+  7595509 -> 16977d9, 9ee7222 -> af1d3bc, 7949563 -> 77c61d4, 95998ef -> bce1f57, b06dd11 -> 9a5fbf1,
+  40d7ae5 -> 2d56057 (check 5's report), 922942e -> 2115e68 (the unit's first commit).
+- Verified:
+  - Kit: the full kit suite with no early stop, 155 passed, 1 skipped (the history-less checkout links test: Git Bash
+    makes no symlink on this host), pytest exit code 0; ad9e4b0 passed the full regression gate. Red first on 2937b2c
+    for the forged object, the cache tree, the links and the pack-commit HEAD; each guard's removal turns a test red.
+  - Pack: on a scratch tree the accepted source passes 22 of 22 and the base and every new wrong fix fail 14 of 22;
+    the cfe982c test passes W-t, W-t2, W-u and W-l3 22 of 22 (the reviewer's grades) and W-u2,
+    W-u3 and W-l4 22 of 22 (this round's runs): red first. tsc 0 errors, eslint clean
+    on the test. HostPackX21 without the clone 8 passed, 10 skipped; with the read-only clone 18 passed and 53
+    subtests, exit 0 (every wrong fix FAIL with its WRONG-FIXES.md count, accepted and both alternatives PASS,
+    linksIntact true for every grade). 1feb090 passed the full regression gate.
+  - The MoonAliza clone is unchanged (status, refs and stash list the same before and after).
+- Heads: kit ad9e4b0 (pushed, #120), docs this entry's commit (pushed, #119), pack 1feb090 (committed, NOT pushed: the
+  pack needs a force-push with lease, which is the owner's; the command is in Next of the lead restart report).

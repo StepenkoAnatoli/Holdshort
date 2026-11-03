@@ -3,8 +3,9 @@
 Result: sr-pack-4a ACCEPTED (check 5, 2f73c9f, draft PR #122, stacked on #120). The kit change it depends on, lead
 integrations 2-8 on build/sr-kit-cases (#120, head 3ed05d4), is ACCEPTED by check 8. Nothing merged; merges are yours.
 
-After those verdicts a review loop (seven rounds of fresh reviewers) found more, so the heads to review moved; see RUN.md,
-entry "review loop after the ACCEPTs":
+After those verdicts a review loop (eight rounds of fresh reviewers) found more, so the heads to review moved; see RUN.md,
+entry "review loop after the ACCEPTs" and the entries after it. The ids below are the ones each round committed; later
+rebases of the pack branch replaced the pack's, so the ids on the branches now are in the table under "heads now".
 - round 1: RL1-1 (S3, pack) a wrong fix that keeps the staged pair when the account file was read and refused graded
   PASS, fixed in 045ee89, f16f10f after the rebase (refused-file row, W-o2); RL1-2 (S4) item 1 below misdescribed
   D-IC3-1, fixed in b93c808.
@@ -39,8 +40,32 @@ entry "review loop after the ACCEPTs":
   (W-r5) graded PASS, both fixed in cfe982c (each later start runs in a new process of its own with an empty
   environment; the fault knows the file by its identity and fails the module loader too; accepted0 1c516672). No kit
   finding and no rebase.
-- heads now: kit 2937b2c, pack cfe982c, docs the RUN.md commit after bae1d04. Outcome seq 3 ("accepted", check 5's
-  head) is append-only and stays.
+- round 8: RL8-K1 (S3, kit) an object the candidate filed under the base tree's id hid a committed file from the grade,
+  and RL8-K2 (S3, kit) nothing read `checkout.links`, so a fix that wrote through the linked `node_modules` graded
+  PASS, both fixed in ad9e4b0 (the history git has no alternates and `git index-pack` files each object under its
+  content's id; the history index holds the candidate's entries written again; `grade.sh --seal`/`--links` and
+  `linksIntact`). RL8-P1 (S3, pack) a path as a `Uint8Array` or a URL-shaped object escaped the fault, RL8-P2 (S3) an
+  age by `performance`'s clock passed, RL8-P3 (S3) a keep decided by the failing syscall passed, all fixed in
+  1feb090 after a rebase onto ad9e4b0 (the fault reads every path form through the real `stat`, fails at the stat, the
+  open or the read with a real error's shape; a start moves every clock it reads and the data directory's file times
+  move back; W-t, W-t2, W-u, W-u2, W-u3, W-u4, W-l3, W-l4; accepted0 970e5e47). RL8-D1 and RL8-D2 (S4, docs): the PR
+  bodies were refreshed and this report given the table below.
+- heads now: kit ad9e4b0 (pushed, #120), pack 1feb090 (committed, not pushed: see Next), docs the RUN.md commit
+  after d9ffc50 (pushed, #119). Outcome seq 3 ("accepted", check 5's head) is append-only and stays.
+- ids on the branches (round-by-round id -> id on the branch now, matched by subject):
+
+  | what | as committed | on the branch now |
+  |---|---|---|
+  | kit, rounds 2-5 and 8 | dead160, d73511f, 7ac8143, 2937b2c, ad9e4b0 | the same (the kit branch is never rebased) |
+  | pack RL1-1 | 045ee89, f16f10f | 9a5fbf1 |
+  | pack RL2-P1 | f25b52c | bce1f57 |
+  | pack RL2-1 | 556b166, 12ebdb8 | 77c61d4 |
+  | pack RL3-1, RL3-2 | 00df498, 0ec45ca | af1d3bc |
+  | pack RL5-P1 | 7595509 | 16977d9 |
+  | pack RL6-P1 | a6d12b8 | c0bae1e |
+  | pack RL7-P1, RL7-P2 | cfe982c | ae4e0f4 |
+  | pack RL8-P1..P3 | 1feb090 | 1feb090 |
+  | check 5 report (ACCEPT) | 2f73c9f | 2d56057 |
 
 ## What you should hear
 1. D-IC3-1 (lead decision, departs from the brief's literal wording): check 3 found (IC3-1, S2) that base0 itself held
@@ -98,8 +123,17 @@ entry "review loop after the ACCEPTs":
   6511 s, every wrong fix FAIL with its stated count of 22 (W-r4 14, W-r5 15); fourteen more routes from the class hunt
   (eleven of them pass the a6d12b8 test) each fail 14 or 15 of 22; the clone is unchanged (status empty, HEAD 1ac226d);
   make-repo builds base0 4eaf584a and accepted0 1c516672; gate PASS on cfe982c.
+- Review loop round 8: kit at ad9e4b0, full kit suite with no early stop 155 passed, 1 skipped, exit 0; gate PASS on
+  ad9e4b0. Pack at 1feb090: still 22 rows; HostPackX21 with the read-only clone 18 passed and 53 subtests, exit 0
+  (every wrong fix FAIL with its WRONG-FIXES.md count, accepted and both alternatives PASS, linksIntact true; W-p's
+  row corrected to 14 of 22, as the three unreadable starts of each journey row now catch it); every new wrong fix
+  fails 14 of 22 on a scratch tree, and the
+  cfe982c test passes all but W-u4 22 of 22 (red first); the clone is unchanged; make-repo builds base0 4eaf584a and
+  accepted0 970e5e47; gate PASS on 1feb090.
 
 ## Next (yours)
-Once the loop's heads are pushed (kit 2937b2c to #120, pack cfe982c to #122, this branch to #119), review and merge
-#120, then #122, then #119. Plan step 5 (sr-policy-7, sr-packs-t1) waits for you; follow-ups FU-1..FU-5
+Kit ad9e4b0 (#120) and this branch (#119) are pushed. The pack branch was rebased onto ad9e4b0, so it needs a
+force-push with lease, which is yours: `git push --force-with-lease=build/sr-pack-4a:cfe982c3cdcfbe6187cd8852d7974c7c75b0cd69 origin build/sr-pack-4a`
+(from the pack worktree, which holds 1feb090; it refuses if origin's pack is no longer cfe982c). Then review and
+merge #120, then #122, then #119. Plan step 5 (sr-policy-7, sr-packs-t1) waits for you; follow-ups FU-1..FU-5
 on #120 are still open.
