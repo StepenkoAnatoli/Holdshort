@@ -929,6 +929,38 @@ describe('X2-1: unread starts in more shapes: a lasting cause, engine credential
     }
   });
 
+  // The engine stores a key whenever it runs, an unreadable session too (review loop 12 RL12-P2): then the vault holds a staged entry
+  // newer than the pair to keep, which the next start commits, so the pair to keep is older than a committed entry. The age of the pair
+  // against what the vault holds is no sign it was abandoned.
+  test('first sign-in before commit 1 and refresh before commit 4, the engine storing a key during the first of three unreadable starts, ten years apart (EACCES at the stat, EBUSY at the open, EIO at the read), which the next two commit: the pair survives all three and is live and committed after the next', async () => {
+    const forms: Array<[Kind, number, string[]]> = [['first sign-in', 1, ['staged', 'staged']], ['refresh', 4, ['committed', 'staged']]];
+    for (const [kind, at, states] of forms) {
+      vi.useRealTimers();
+      const { dir, pair } = await crashBeforeCommit(kind, at);
+      expect(pair.map(ref => entries(dir)[ref]?.state), kind).toEqual(states);
+      const before = readFileSync(fileAt(dir), 'utf8');
+      let engine: string[] = [];
+
+      for (const [index, code] of ['EACCES', 'EBUSY', 'EIO'].entries()) {
+        const step = `${kind}, start ${index + 1} (${code} at the ${PHASES[index]})`;
+        vi.useRealTimers(); later(3650 * (index + 1));
+        const unread = await start(dir, { unread: code, at: PHASES[index], engine });
+        if (index === 0) {                                                       // during that session the engine stores a key
+          const vault = new (await load()).Vault(join(dir, 'vault'), cryptor); await vault.initialize('epoch-2');
+          engine = [await vault.saveStaged(`x2-engine-${randomBytes(16).toString('hex')}`)];
+          expect(engine.map(ref => entries(dir)[ref]?.state), step).toEqual(['staged']);
+        } else expect(engine.map(ref => entries(dir)[ref]?.state), step).toEqual(['committed']);
+        expect(unread.store.current(), step).toBeNull();
+        expect(readFileSync(fileAt(dir), 'utf8'), step).toBe(before);
+        expect(pair.map(ref => entries(dir)[ref]?.state), step).toEqual(states);
+        for (const ref of pair) expect(bins(dir), step).toContain(`${ref}.bin`);
+      }
+
+      vi.useRealTimers(); later(3650 * 4);
+      await expectAlone(dir, await start(dir, { engine }), pair, engine);       // the next start reads the file and commits the pair
+    }
+  });
+
   // A tombstone and an engine's staged entry at every code and every point (review loop 11 RL11-P1): a start that cannot read the file
   // deletes a tombstoned pair and commits a staged entry the engine names whatever the code and wherever the read fails. Each start runs
   // on a fresh copy of the crash, so none meets a vault an earlier start already reconciled, and a rule that spares the tombstone or
@@ -1145,6 +1177,36 @@ function keepsInEveryState(committed: boolean) {
 }
 
 describe('X2-1: what an unreadable start must keep, in every vault state', ROW, () => {
+  // The pair to keep at every code and every point (review loop 12 RL12-P1): each of the journey's four crashes, then each of the seven
+  // codes at the stat, the open, the read and the directory at the next start, ten years on, then a readable start ten years later, each
+  // code and point on a fresh copy of the crash. So a rule that drops the keep for one code at one point (the directory with any code but
+  // EACCES, taken for a lost volume) has no code and no point left to pass at, beside no committed entry or beside one.
+  test('the pair to keep at every code and every point: first sign-in before commit 1, sign-in or refresh before commit 3 and refresh before commit 4, then EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL or UNKNOWN at the stat, the open, the read or the directory at the next start, ten years on, each on a fresh copy of the crash: the pair survives it and is live and committed after the next', { timeout: 300_000 }, async () => {
+    const crashes: Array<[Kind, number, string[]]> = [
+      ['first sign-in', 1, ['staged', 'staged']], ['sign-in', 3, ['staged', 'staged']], ['refresh', 3, ['staged', 'staged']], ['refresh', 4, ['committed', 'staged']],
+    ];
+    for (const [kind, at, states] of crashes) {
+      vi.useRealTimers();
+      const { dir: crash, pair } = await crashBeforeCommit(kind, at);
+      expect(pair.map(ref => entries(crash)[ref]?.state), kind).toEqual(states);
+      const before = readFileSync(fileAt(crash), 'utf8');
+
+      for (const code of ['EACCES', 'EBUSY', 'EIO', 'EPERM', 'EMFILE', 'EINVAL', 'UNKNOWN']) for (const phase of [...PHASES, 'dir'] as Phase[]) {
+        const dir = `${crash}-${code}-${phase}`;
+        cpSync(crash, dir, { recursive: true });
+        const step = `${kind}, crash before commit ${at}, ${code} at the ${phase}`;
+        vi.useRealTimers(); later(3650 * 1);
+        const unread = await start(dir, { unread: code, at: phase });
+        expect(unread.store.current(), step).toBeNull();
+        expect(readFileSync(fileAt(dir), 'utf8'), step).toBe(before);
+        expect(pair.map(ref => entries(dir)[ref]?.state), step).toEqual(states);
+        for (const ref of pair) expect(bins(dir), step).toContain(`${ref}.bin`);
+        vi.useRealTimers(); later(3650 * 2);
+        await expectAlone(dir, await start(dir), pair);                          // the next start reads the file and commits the pair
+      }
+    }
+  });
+
   test('a pair to keep beside no committed entry (a sign-in after a sign-out, crashed before its first commit): with or without a tombstoned pair, a staged entry the engine names and an orphan pair, then EACCES, EBUSY and EIO at three starts in a row, ten years apart (at the stat, the open and the read in turn): each start keeps the staged pair the file names, deletes the tombstoned pair and commits the engine\'s entry, and the next readable start has the pair live and committed', { timeout: 300_000 },
     keepsInEveryState(false));
 

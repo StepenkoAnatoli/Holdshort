@@ -108,8 +108,8 @@ code) makes a start that cannot read the file (spec 4.4).
    The subject's vitest config sets a 15 s `testTimeout`, and on the lead's Windows host some of its long tests time
    out under load (grades side by side) and even in a lone grade on a cold cache, which turns a correct candidate's
    run red. So `commands.test` raises the timeout to 60 s (`--testTimeout=60000`), and the accepted journey test gives
-   each of its rows 120 s, and 300 s to the seven rows that run the most starts (the lasting row, the orphan-codes row,
-   the tombstone-at-each-point row and the four vault-state rows of both kinds). `commands.run_one`, the command a candidate is told to run, keeps the subject's own
+   each of its rows 120 s, and 300 s to the eight rows that run the most starts (the lasting row, the orphan-codes row,
+   the tombstone-at-each-point row, the keep-at-each-point row and the four vault-state rows of both kinds). `commands.run_one`, the command a candidate is told to run, keeps the subject's own
    timeout and adds only the
    two flags of step 2.
 
@@ -189,8 +189,9 @@ The lasting row also fails a start at the directory, as a directory on the way t
 path inside the account file's directory, there or not, by any spelling or link that leads there, meets the stat's
 failure (the reads above fail for it as at the stat), so a copy of the refs kept beside the file fails too (W-s keeps
 one beside the file and keeps the refs it names).
-In the journey rows, the other-errno row, the unreadable-run row, the orphan row, the lasting row, the engine row and
-the orphan-codes row and the vault-state rows (both kinds) the starts after the crash run ten years on, and each start after that
+In the journey rows, the other-errno row, the unreadable-run row, the orphan row, the lasting row, the engine row, the
+engine-key row, the orphan-codes row, the keep-at-each-point row and the vault-state rows (both kinds) the starts after
+the crash run ten years on, and each start after that
 ten years later again: vitest's fake timers move `Date` in the test's process,
 and a start's own process runs with these clocks moved as much: `Date`, `performance.timeOrigin`, the date
 `Intl.DateTimeFormat` formats when given none, and `process.hrtime` (the system's uptime stays, as ten years on the
@@ -225,6 +226,11 @@ The engine row gives each unreadable start a staged entry the engine names besid
 engine stores), after a first sign-in's crash before commit 1 and a refresh's before commit 4, with EACCES at the
 stat, EBUSY at the open and EIO at the read: the start commits the engine's entry and keeps the pair, so a fix that
 keeps the pair only while the engine names no reference fails (W-b4 reconciles as the base does when it names one).
+The engine-key row has the engine store a key during an unreadable session, as an engine that runs does: after the same
+two crashes, three unreadable starts ten years apart fail with EACCES at the stat, EBUSY at the open and EIO at the read,
+the engine saves a staged entry during the first one's session and the next two commit it, so the pair to keep is
+older than a committed entry. Each start keeps the pair, so a fix that keeps only the staged entries at least as new as
+the newest committed one fails (W-z).
 The orphan row runs the same four unreadable starts before its readable one, so a fix that holds an unreferenced
 staged entry for good once it has outlived a run of up to four unreadable starts fails too (W-q holds it after two).
 The orphan-codes row runs each of the seven codes at three unreadable starts, at the stat, the open and the read,
@@ -253,6 +259,11 @@ apart, fail with EACCES, EBUSY and EIO at the stat, the open and the read in tur
 names and the old committed pair, deletes the tombstoned pair and commits the engine's entry, and the readable start
 after them has the pair live and committed, nothing else left but the engine's entry. So a fix that drops the keep
 only in some of those states fails (W-b7 drops it beside a tombstoned entry).
+The keep-at-each-point row runs each of the seven codes at the stat, the open, the read and the directory at the
+next start, ten years on, after each of the four crashes the table names, each code and point on a fresh copy of the
+crash, then a readable start ten years later: each unreadable start keeps the pair and the readable one has it live and
+committed. So a fix that drops the keep for some code at some point fails (W-y drops it when the directory fails
+with any code but EACCES, taken for a lost volume).
 The refused-file row refuses the signed-out file and the named refused-file row refuses a file that still names the
 new pair, each as invalid JSON, over 64 KiB, with an extra key and with version 2. The named row does so after a first
 sign-in's crash before commit 1 (no committed entry in the vault) and, beside the old committed pair, after
@@ -270,21 +281,22 @@ The journey test is a sample of the journey, not a proof that a fix is right. It
 whose rule, in the states the rows build, deletes what an unreadable start must keep, keeps what a start must delete,
 or keeps in another state or without the encrypted files: whether the rule turns on the errno code, the point the read
 failed at, the number of unreadable starts in a row (up to four), the pair's age by any clock the start's process
-moves, the vault's committed entries, the engine's references, the file's being refused or missing, or a second read
+moves, the vault's committed entries (one newer than the pair to keep among them), the engine's references, the file's being refused or missing, or a second read
 of the file, or a question about it (`existsSync`, `stat`), through `node:fs` or the module loader in the start's own
 process. What an unreadable start must still delete (a tombstoned pair, an orphan pair) and what it must keep (the
 staged pair the file names, the old committed pair, the engine's entry) are each built in every combination of the
 vault states the rows build beside an unreadable file (the vault-state rows and the keep-side vault-state rows), so a
-rule keyed on one of those states is reached. Each such wrong fix the reviews named is in `WRONG-FIXES.md` with the
+rule keyed on one of those states is reached, and the tombstone and the pair to keep each meet every code at every
+point (the tombstone-at-each-point and keep-at-each-point rows). Each such wrong fix the reviews named is in `WRONG-FIXES.md` with the
 row that catches it.
 
 It is not expected to catch a wrong fix whose rule turns on something the rows hold fixed or never build: the
 inputs below, and any other the rows hold fixed. The list names the ones the reviews found; it is not a claim that
 it is complete, and a wrong fix keyed on an input it does not name may pass.
 
-Review has found new wrong fixes that pass the journey test round after round: ten of the eleven review rounds of
-calibration run 4 so far found at least one (the eleventh three: W-b6, W-l5, W-b7), and each was caught only once a row
-or the fault was changed for it. Expect more. The pack is a sample of wrong fixes and of the journey's states, not
+Review has found new wrong fixes that pass the journey test round after round: eleven of the twelve review rounds of
+calibration run 4 so far found at least one (the eleventh three: W-b6, W-l5, W-b7; the twelfth two: W-y, W-z), and
+each was caught only once a row or the fault was changed for it. Expect more. The pack is a sample of wrong fixes and of the journey's states, not
 a proof: a fix that passes it has met every row, not been shown right, and the grade says no more than that.
 
 ## What the pack does not discriminate
@@ -329,7 +341,9 @@ a proof: a fix that passes it has met every row, not been shown right, and the g
   entries or leaves the engine's entry staged on some other code only in some other vault state (beside an orphan
   pair, say) passes. Neither kind of vault-state row asserts what an unreadable start does with the orphan pair, only
   that the readable start after it deletes it, and the keep-side rows build the pair to keep only as a crash before
-  its first commit leaves it (not before its second, nor after staging, before the file write).
+  its first commit leaves it (not before its second, nor after staging, before the file write). The keep-at-each-point
+  row builds it after each of the four crashes at every code and every point, but beside nothing else the crash leaves
+  (no tombstoned pair, orphan pair or engine entry).
 - **The directory beyond its reads.** At the directory only the reads fail; a write into the account file's directory
   still succeeds, where under a real directory that may not be searched it fails too. A copy of the refs kept outside
   that directory (beside the vault, say) stays readable, so a fix that keeps the refs such a copy names passes; it is
@@ -360,8 +374,9 @@ a proof: a fix that passes it has met every row, not been shown right, and the g
   state of the vault (two accounts' committed entries, say, or a staged entry the engine names) passes. Beside an
   unreadable file the rows put no committed entry or the old committed pair, with or without a staged entry the
   engine names (the vault-state rows build each with a tombstoned pair, an orphan pair or both, and the keep-side
-  vault-state rows each with a pair to keep, with or without either); other states (two accounts' committed entries,
-  two tombstoned pairs, say) are not built.
+  vault-state rows each with a pair to keep, with or without either), and the engine-key row a committed entry newer
+  than the pair to keep (the engine's key stored during an unreadable session); other states (two accounts' committed
+  entries, two tombstoned pairs, say) are not built.
 - **Runs of more than four unreadable starts.** The unreadable-run row, the lasting row and the orphan row run four in
   a row, so a fix
   that keeps the pair through four such starts and drops it at the fifth passes, and so does one that holds an orphan
