@@ -2505,15 +2505,14 @@ class Scripts(unittest.TestCase):
             self.assertEqual((d["acceptedPinGreen"], d["PASS"]), (False, False), f"{name}: {out}")
             self.assertFalse((cand / "tests" / "test_zz_accepted.py").exists(), name)
 
-    def test_grade_fix_runs_the_accepted_pin_on_the_base_the_sources_and_the_accepted_test_only(self):
-        # review loop RL11-K1: the accepted pin ran first, but with the candidate's new tests and its edited test file on
-        # disk, and a test command that runs more files than it is given (vitest takes a file argument as a filter and
-        # runs every included test whose path contains it) ran a candidate's test inside the pin: a new test at
-        # tests/test_x/<the accepted test's path> ran first and rewrote the accepted test, and a wrong fix graded PASS.
-        # The pin now runs on the base tree, the candidate's sources and the accepted test only. The runner here runs,
-        # in name order, every tests/**/test_*.py whose path contains an argument ("contains") or every one ("all")
-        import os
-        pack, c = make_pack(self.root, self.env)
+    # a test that, when imported, rewrites the accepted test (tests/test_zz_accepted.py) to one that passes
+    PIN_FORGE = ("import os as _o\n_acc = 'tests/test_zz_accepted.py'\nif _o.path.exists(_acc):\n"
+                 "    open(_acc, 'w').write('import unittest\\n\\n\\nclass T(unittest.TestCase):\\n    def test_ok(self):\\n        pass\\n')\n")
+
+    def filter_runner_manifests(self, pack):
+        """manifest-contains.json and manifest-all.json beside the pack's manifest: the test command is a runner that
+        runs, in name order, every tests/**/test_*.py (dot directories included, as vitest's glob) whose path contains an
+        argument ("contains") or every one ("all")."""
         runner = self.root / "filter_runner.py"
         runner.write_text(
             "import importlib.util, os, sys, unittest\nmode, args = sys.argv[1], sys.argv[2:]\n"
@@ -2530,8 +2529,18 @@ class Scripts(unittest.TestCase):
         for mode in ("contains", "all"):
             m["commands"]["test"] = f"python3 {shlex.quote(runner.as_posix())} {mode} {{files}}"
             (pack / f"manifest-{mode}.json").write_text(json.dumps(m, indent=1))
-        forge = ("import os as _o\n_acc = 'tests/test_zz_accepted.py'\nif _o.path.exists(_acc):\n"
-                 "    open(_acc, 'w').write('import unittest\\n\\n\\nclass T(unittest.TestCase):\\n    def test_ok(self):\\n        pass\\n')\n")
+
+    def test_grade_fix_runs_the_accepted_pin_on_the_base_the_sources_and_the_accepted_test_only(self):
+        # review loop RL11-K1: the accepted pin ran first, but with the candidate's new tests and its edited test file on
+        # disk, and a test command that runs more files than it is given (vitest takes a file argument as a filter and
+        # runs every included test whose path contains it) ran a candidate's test inside the pin: a new test at
+        # tests/test_x/<the accepted test's path> ran first and rewrote the accepted test, and a wrong fix graded PASS.
+        # The pin now runs on the base tree, the candidate's sources and the accepted test only. The runner here runs,
+        # in name order, every tests/**/test_*.py whose path contains an argument ("contains") or every one ("all")
+        import os
+        pack, c = make_pack(self.root, self.env)
+        self.filter_runner_manifests(pack)
+        forge = self.PIN_FORGE
         ran = self.root / "ran.log"  # each run of the candidate's new test leaves a line: the candidate's run and the guard's
         row = f"import unittest\nopen({ran.as_posix()!r}, 'a').write('ran\\n')\n\n\nclass X(unittest.TestCase):\n    def test_x(self):\n        pass\n"
         deep =Path("tests") / "test_x" / "tests" / "test_zz_accepted.py"  # in scope (^tests/test_.*\.py$)
@@ -2581,6 +2590,44 @@ class Scripts(unittest.TestCase):
         self.assertEqual((d["acceptedPinGreen"], d["setAside"], d["restored"], d["PASS"]), (True, [], True, True), out)
         self.assertTrue((cand / "docs" / "MAP.md").is_dir())
         self.assertEqual((cand / "docs" / "MAP.md" / "note.txt").read_text(), "left by the candidate\n")
+
+    def test_grade_sets_aside_an_entry_named_git_in_any_case(self):
+        # review loop RL12-K1: git's directory walk never lists an entry named .git below the top, case-insensitively
+        # where core.ignorecase is set (the view's, on Windows), nor anything below it, so a candidate's test at
+        # tests/.GIT/tests/<the accepted test's path> was in no list and never set aside, while vitest (its default
+        # exclude **/.git/** is case-sensitive) ran it inside the accepted pin, where it rewrote the accepted test: a
+        # wrong fix graded PASS with every list empty. The grade now also walks the checkout on disk for such entries.
+        # The runner here, like vitest, globs dot directories and takes its file arguments as filters; git lists the
+        # lowercase cell on no host
+        pack, c = make_pack(self.root, self.env)
+        self.filter_runner_manifests(pack)
+        ran = self.root / "ran.log"  # each run of the planted test leaves a line
+        row = f"import unittest\nopen({ran.as_posix()!r}, 'a').write('ran\\n')\n\n\nclass X(unittest.TestCase):\n    def test_x(self):\n        pass\n"
+        for i, (name, good) in enumerate(((".GIT", False), (".git", False), (".Git", False), (".GIT", True))):
+            label = f"{name}-{'good' if good else 'wrong'}"
+            cand = self.candidate(c, f"dot-git-{i}")
+            if good:
+                self.fix_like_the_accepted_one(cand)
+            else:  # right for the candidate's own row only, red at the accepted pin's add(2, 3)
+                (cand / "src" / "mod.py").write_text("def add(a, b):\n    return 2 if (a, b) == (1, 1) else a - b\n")
+                with (cand / "tests" / "test_mod.py").open("a") as f:
+                    f.write("\n    def test_ones(self):\n        self.assertEqual(add(1, 1), 2)\n")
+            commit_all(cand, self.env, "fix")
+            planted = cand / "tests" / name / "tests" / "test_zz_accepted.py"
+            planted.parent.mkdir(parents=True)
+            planted.write_text(self.PIN_FORGE + row)
+            before = planted.read_bytes()
+            ran.write_text("")
+            code, d, out = grade(pack / "manifest-contains.json", "fix", cand, self.env)
+            self.assertEqual(code, 0, f"{label}: {out}")
+            self.assertEqual(ran.read_text(), "", f"{label}: {out}")  # set aside for every command
+            self.assertEqual((d["setAside"], d["newTests"], d["restored"]), ([f"tests/{name}"], [], True), f"{label}: {out}")
+            self.assertEqual((d["candidateGreen"], d["guardRed"], d["scopeOk"]), (True, True, True), f"{label}: {out}")
+            self.assertEqual((d["acceptedPinGreen"], d["PASS"]), (good, good), f"{label}: {out}")
+            self.assertEqual(planted.read_bytes(), before, label)  # put back as the candidate left it
+            self.assertFalse((cand / "tests" / "test_zz_accepted.py").exists(), label)
+            self.assertTrue((cand / ".git" / "HEAD").is_file(), label)  # the checkout's own .git never goes aside
+            self.assertEqual([p.name for p in (cand / ".git").glob("grade-aside-*")], [], label)
 
     def test_grade_never_moves_an_entry_below_a_link(self):
         # review loop RL10-K3: git lists the entries of a junction's target as the checkout's own files, and the

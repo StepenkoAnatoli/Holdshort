@@ -15,15 +15,16 @@
 #                 size (Python's __pycache__) never runs a previous version, and the original mtimes go back at the end.
 #                 Each command runs with every path the base tree lacks set aside (moved into the checkout's .git),
 #                 ignored or not, unless the grade counts it as the candidate's (changed, a new test, a path the case
-#                 names) or it is a linked name, and nothing below a link is moved (the link itself is): no file the
-#                 base lacks reaches a command unless the grade lists it (setAside; review loop RL9-K1, RL10-K3). The
-#                 commands are not independent runs: a command can rewrite a base file or leave a process or a file
-#                 outside the checkout for the next, so a fix cell runs the accepted pin first, before any of the
-#                 candidate's tests (RL10-K1), on the base tree, the candidate's sources and the accepted test only:
-#                 every other path the base lacks is set aside and every other base file the candidate changed holds
-#                 the base's content while it runs, so a runner that takes its file argument as a filter (vitest) finds
-#                 no candidate test to run inside it (RL11-K1); the candidate's sources still run inside the pin, and
-#                 what the candidate's own tests report can be forged (README limits)
+#                 names) or it is a linked name, and nothing below a link is moved (the link itself is); an entry
+#                 named .git in any case below the top, which git never lists, is found on disk and goes too: no file
+#                 the base lacks reaches a command unless the grade lists it (setAside; review loop RL9-K1, RL10-K3,
+#                 RL12-K1). The commands are not independent runs: a command can rewrite a base file or leave a
+#                 process or a file outside the checkout for the next, so a fix cell runs the accepted pin first,
+#                 before any of the candidate's tests (RL10-K1), on the base tree, the candidate's sources and the
+#                 accepted test only: every other path the base lacks is set aside and every other base file the
+#                 candidate changed holds the base's content while it runs, so a runner that takes its file argument
+#                 as a filter (vitest) finds no candidate test to run inside it (RL11-K1); the candidate's sources still
+#                 run inside the pin, and what the candidate's own tests report can be forged (README limits)
 #   --links SEAL  needed when the manifest has checkout.links: the seal the host made of each linked directory with
 #                 --seal right after installing it, before any candidate ran, and kept outside every checkout and linked
 #                 directory. The test, lint and gate commands run from those trees, and a candidate can write them
@@ -680,6 +681,36 @@ def set_aside(keep, into="out"):
     # no exclude file: every path the view's index (the base tree) lacks, a wholly new directory as one entry
     for e in vnames("ls-files", "--others", "--directory", "-z"):
         visit(e.rstrip("/"), e.endswith("/"))
+
+    # git's listing is not the only way in (review loop RL12-K1): git's directory walk never lists an entry named .git,
+    # in any case where core.ignorecase is set (the view's, on Windows), nor anything below it, while a runner that globs
+    # dot directories reads it (vitest's default exclude, **/.git/**, is case-sensitive): a test at
+    # tests/.GIT/<the accepted test's path> ran inside the accepted pin. So the checkout is also walked on disk, never
+    # through a link nor into an entry already found or kept, and every entry whose name casefolds to .git, other than
+    # the checkout's own .git, goes aside like any other path the base lacks (git checks out no path with such a name).
+    git_dir = os.lstat(cand / ".git")
+
+    def walk_dot_git(rel):
+        try:
+            with os.scandir(cand / rel if rel else cand) as it:
+                entries = sorted(it, key=lambda e: e.name)
+        except OSError:
+            return
+        for e in entries:
+            name = f"{rel}/{e.name}" if rel else e.name
+            if kept(name) or any(name == f or name.startswith(f + "/") for f in found):
+                continue
+            try:
+                st = e.stat(follow_symlinks=False)
+            except OSError:
+                continue
+            if e.name.casefold() == ".git":
+                if rel or not os.path.samestat(os.lstat(e.path), git_dir):  # os.lstat: a DirEntry's stat has no st_ino on Windows
+                    visit(name, stat.S_ISDIR(st.st_mode) and not is_link(e.path, st))
+            elif stat.S_ISDIR(st.st_mode) and not is_link(e.path, st):
+                walk_dot_git(name)
+
+    walk_dot_git("")
     move_aside(found, into)
     return found
 
@@ -871,7 +902,8 @@ def accepted_pin():
     (and mtime) again after it. A test command that runs more files than it is given (vitest takes a file argument as a
     filter and runs every included test whose path contains it) found a candidate's new test at
     tests/xtests/<the accepted test's path>, which ran first and rewrote the accepted test: a wrong fix graded PASS. Now
-    no candidate test exists while the pin runs, whatever the runner selects. A directory or a link standing where the
+    no candidate test exists while the pin runs, whatever the runner selects (one below an entry named .git in any case,
+    which git never lists, included: set_aside finds those on disk, RL12-K1). A directory or a link standing where the
     base has a file goes aside for the pin as one entry; a base file that cannot be given the base's content (a link
     above it, a base entry that is not a regular file, an entry there that cannot be moved) leaves the pin unrun: an
     error, not green."""

@@ -342,21 +342,26 @@ still requires a named judging profile, so until it changes such a run names one
   (changed, a new test, the case's source paths, test file and `allowed_extra`, a gate's `required_paths`) or it is a
   linked name. Nothing below a link (a symlink, a junction) is moved: git lists the entries of a junction's target as
   the checkout's own files, and moving them took a host directory's files into the checkout's `.git` (review loop
-  RL10-K3), so the topmost link above such an entry is set aside as the link itself. What the candidate left that way
-  is listed in `setAside` and put back after the last command, in place of anything a command wrote at its path; what
+  RL10-K3), so the topmost link above such an entry is set aside as the link itself. git's listing is not the only way
+  in: git never lists an entry named `.git` in any case below the top, nor anything below it (its directory walk skips
+  the name, case-insensitively where `core.ignorecase` is set, as on Windows), while vitest reads it (its default
+  exclude `**/.git/**` is case-sensitive; review loop RL12-K1: a test at `tests/.GIT/tests/zz_accepted_x2_1.test.ts`
+  ran inside the accepted pin and a wrong fix graded PASS). So the grade also walks the checkout on disk, never through
+  a link, and every entry whose name casefolds to `.git` (other than the checkout's own) goes aside like any other path
+  the base lacks (git checks out no path with such a name, so none is a base file). What the candidate left that way is
+  listed in `setAside` and put back after the last command, in place of anything a command wrote at its path; what
   one command writes at a path the base lacks is set aside before the next and removed. A path the grade cannot move is
   listed in `notSetAside` and fails the cell; `restored` is false when a path did not go back, and that fails the cell.
   Not covered: a directory above the checkout (node's `node_modules` lookup and a config search walk past the
-  checkout's top into the host's directories, which are the host's to keep out of the candidate's reach); an entry
-  named `.git` inside the tree, which git never lists and no resolver reads; and a file the grade counts as the
-  candidate's, which runs as it is: a changed source or new test that patches the runner or the test framework while
-  it runs, or a committed file that shadows a module or the runner (a top-level `unittest.py` beside a gate command
-  `python3 -m unittest ...`), is listed in `changed` and is in the diff the review reads; a fix cell refuses such a file
-  only outside its scope (`scopeOk`), so the case's test file or a new test that patches the runner runs as it is in
-  the candidate's runs and the guard (not in the accepted pin, below), and no grade check refuses one in a pin or gate
-  cell. Nor is a file below a directory the candidate put where the base has a file (`docs/MAP.md/x`): git's listing
-  of new directories leaves such an entry out, so only the accepted pin, which sets that directory aside itself, runs
-  without it. What the last command writes stays in the checkout.
+  checkout's top into the host's directories, which are the host's to keep out of the candidate's reach); and a file
+  the grade counts as the candidate's, which runs as it is: a changed source or new test that patches the runner or the
+  test framework while it runs, or a committed file that shadows a module or the runner (a top-level `unittest.py`
+  beside a gate command `python3 -m unittest ...`), is listed in `changed` and is in the diff the review reads; a fix
+  cell refuses such a file only outside its scope (`scopeOk`), so the case's test file or a new test that patches the
+  runner runs as it is in the candidate's runs and the guard (not in the accepted pin, below), and no grade check
+  refuses one in a pin or gate cell. Nor is a file below a directory the candidate put where the base has a file
+  (`docs/MAP.md/x`): git's listing of new directories leaves such an entry out, so only the accepted pin, which sets
+  that directory aside itself, runs without it. What the last command writes stays in the checkout.
 - The commands of one cell are not independent runs. The set-aside resets only the paths the base lacks: a command can
   rewrite a base file the grade does not swap (the pack's runner, a config), leave a process running (a detached
   child; only a command that overruns its timeout has its process tree killed) or keep state outside the checkout (a
@@ -369,8 +374,9 @@ still requires a named judging profile, so until it changes such a run names one
   after it (RL11-K1: vitest takes a file argument as a filter and runs every included test whose path contains it, so
   the pin's own command ran a candidate's in-scope new test at `tests/xtests/zz_accepted_x2_1.test.ts`, which rewrote
   the accepted test before vitest read it, and a wrong fix graded PASS). So whatever a runner selects from its
-  arguments, no test of the candidate's exists to select; a base file that cannot hold the base's content there (a
-  link above it) leaves the pin unrun, an error and not green. Still not covered for the pin: the candidate's sources
+  arguments, no test of the candidate's exists to select (one below an entry named `.git` in any case included, which
+  git never lists: RL12-K1, above); a base file that cannot hold the base's content there (a link above it) leaves the
+  pin unrun, an error and not green. Still not covered for the pin: the candidate's sources
   run inside it and can patch the runner, the assertion library or the accepted test while it runs (a source is code
   the pin must run; only the diff the review reads shows it), and state outside the checkout that the candidate's work
   left before the grade (a process started before the grade, a file in the temp directory) reaches it as it reaches
