@@ -3,7 +3,7 @@
 Result: sr-pack-4a ACCEPTED (check 5, 2f73c9f, draft PR #122, stacked on #120). The kit change it depends on, lead
 integrations 2-8 on build/sr-kit-cases (#120, head 3ed05d4), is ACCEPTED by check 8. Nothing merged; merges are yours.
 
-After those verdicts a review loop (ten rounds of fresh reviewers) found more, so the heads to review moved; see RUN.md,
+After those verdicts a review loop (eleven rounds of fresh reviewers) found more, so the heads to review moved; see RUN.md,
 entry "review loop after the ACCEPTs" and the entries after it. The ids below are the ones each round committed; later
 rebases of the pack branch replaced the pack's, so the ids on the branches now are in the table under "heads now".
 - round 1: RL1-1 (S3, pack) a wrong fix that keeps the staged pair when the account file was read and refused graded
@@ -71,24 +71,34 @@ rebases of the pack branch replaced the pack's, so the ids on the branches now a
   fault fails every path-taking `node:fs` function by default; "every clock it reads" narrowed to the clocks named;
   forty-seven wrong fixes; accepted0 a6f7896a). RL10-D1, RL10-D2 (S4, docs): two wrong facts in the round-9 RUN.md
   entry, and stale PR body files in the notes folder; corrected.
-- heads now: kit 042ac43 (pushed, #120), pack 2694883 (committed, not pushed: see Next), docs the RUN.md commit
-  after 36f1002 (pushed, #119). Outcome seq 3 ("accepted", check 5's head) is append-only and stays.
+- round 11: RL11-K1 (S3, kit) the accepted pin ran first, but the candidate's in-scope new tests stayed on disk, and
+  vitest takes a file argument as a filter, so the pin's own command ran a candidate test that rewrote the accepted
+  test; fixed in b12d6a8 (the pin runs on the base, the candidate's sources and the accepted test only; the README says
+  what the sources can still do inside it). RL11-P1 (S3, pack) W-b6 (W-b on EIO alone), RL11-P2 (S3) W-l5 (a re-read
+  through a FileHandle's `fd`, which the fault did not know) and RL11-P3 (S3) W-b7 (the keep dropped beside a
+  tombstone) passed; RL11-P4 (S4) `process.loadEnvFile` reads the faulted file, disclosed; all fixed in 2876cc6 after a
+  rebase onto b12d6a8 (every code at every point on a fresh tombstone; descriptors known by the file's identity; two
+  keep-side vault-state rows, 30; the README says plainly that review keeps finding wrong fixes and the pack is a
+  sample, not a proof; fifty wrong fixes; accepted0 fe7bf927). Docs and PR bodies: nothing new.
+- heads now: kit b12d6a8 (pushed, #120), pack 2876cc6 (committed, not pushed: see Next), docs the RUN.md commit
+  after 287489a (pushed, #119). Outcome seq 3 ("accepted", check 5's head) is append-only and stays.
 - ids on the branches (round-by-round id -> id on the branch now, matched by subject):
 
   | what | as committed | on the branch now |
   |---|---|---|
-  | kit, rounds 2-5 and 8-10 | dead160, d73511f, 7ac8143, 2937b2c, ad9e4b0, 817c6be, 042ac43 | the same (the kit branch is never rebased) |
-  | pack RL1-1 | 045ee89, f16f10f | 76f34c3 |
-  | pack RL2-P1 | f25b52c | 172bc38 |
-  | pack RL2-1 | 556b166, 12ebdb8 | f2f993c |
-  | pack RL3-1, RL3-2 | 00df498, 0ec45ca | 914ab06 |
-  | pack RL5-P1 | 7595509 | 6cc2739 |
-  | pack RL6-P1 | a6d12b8 | 4bec8a4 |
-  | pack RL7-P1, RL7-P2 | cfe982c | bfdd9f7 |
-  | pack RL8-P1..P3 | 1feb090 | 3687418 |
-  | pack RL9-P1..P5 | 822f701 | e582d5a |
-  | pack RL10-P1..P4 | 2694883 | 2694883 |
-  | check 5 report (ACCEPT) | 2f73c9f | 5fe4b01 |
+  | kit, rounds 2-5 and 8-11 | dead160, d73511f, 7ac8143, 2937b2c, ad9e4b0, 817c6be, 042ac43, b12d6a8 | the same (the kit branch is never rebased) |
+  | pack RL1-1 | 045ee89, f16f10f | 7fde450 |
+  | pack RL2-P1 | f25b52c | a4eb9ea |
+  | pack RL2-1 | 556b166, 12ebdb8 | 3f35c7b |
+  | pack RL3-1, RL3-2 | 00df498, 0ec45ca | 40f1dbd |
+  | pack RL5-P1 | 7595509 | acf68f9 |
+  | pack RL6-P1 | a6d12b8 | 8643b42 |
+  | pack RL7-P1, RL7-P2 | cfe982c | d319100 |
+  | pack RL8-P1..P3 | 1feb090 | 87610f6 |
+  | pack RL9-P1..P5 | 822f701 | c1ed7ef |
+  | pack RL10-P1..P4 | 2694883 | d4cf773 |
+  | pack RL11-P1..P4 | 2876cc6 | 2876cc6 |
+  | check 5 report (ACCEPT) | 2f73c9f | 5c2a386 |
 
 ## What you should hear
 1. D-IC3-1 (lead decision, departs from the brief's literal wording): check 3 found (IC3-1, S2) that base0 itself held
@@ -165,11 +175,17 @@ rebases of the pack branch replaced the pack's, so the ids on the branches now a
   28 of 28, base the same 16 red; W-j3, W-b5, W-x and W-u7 pass the 822f701 test 26 of 26 (red first) and W-j3, W-b5
   and W-x fail the new one (1, 1, 16 of 28; W-u7 green, disclosed); HostPackX21 with the read-only clone 18 passed; the
   clone is unchanged; make-repo builds base0 4eaf584a and accepted0 a6f7896a; gate PASS on 2694883.
+- Review loop round 11: kit at b12d6a8, the reviewer's probe5 PASS on 042ac43 and PASS false after, the new test red on
+  042ac43, seven guard-removal mutants each red, full kit suite 162 passed, 1 skipped, exit 0; gate PASS on b12d6a8. Pack
+  at 2876cc6 (rebased onto b12d6a8; the changed lines of `git diff 2694883 d4cf773` equal the kit's): 30 rows; accepted 30
+  of 30, base 18 red; W-b6, W-l5 and W-b7 pass the 2694883 test 28 of 28 (red first) and fail the new one (1, 18, 2 of
+  30; W-u7 green, disclosed); HostPackX21 with the read-only clone 18 passed; the clone is unchanged; make-repo builds
+  base0 4eaf584a and accepted0 fe7bf927; gate PASS on 2876cc6.
 
 ## Next (yours)
-Kit 042ac43 (#120) and this branch (#119) are pushed. The pack branch was rebased onto 042ac43, so it needs a
+Kit b12d6a8 (#120) and this branch (#119) are pushed. The pack branch was rebased onto b12d6a8, so it needs a
 force-push with lease, which is yours: `git push --force-with-lease=build/sr-pack-4a:1feb090ac40b46474999995ddc921fc16cdc4126 origin build/sr-pack-4a`
-(from the pack worktree, which holds 2694883; it refuses if origin's pack is no longer 1feb090, which it still was
-when round 10 ended; 822f701 was never pushed). Then review and
+(from the pack worktree, which holds 2876cc6; it refuses if origin's pack is no longer 1feb090, which it still was
+when round 11 ended; 822f701 and 2694883 were never pushed). Then review and
 merge #120, then #122, then #119. Plan step 5 (sr-policy-7, sr-packs-t1) waits for you; follow-ups FU-1..FU-5
 on #120 are still open.

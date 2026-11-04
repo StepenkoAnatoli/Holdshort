@@ -802,7 +802,9 @@ read only, for the subject trees the packs export.
 - Decisions:
   - Kit: the pin goes first rather than a list of what a command may leave behind (a runner, a config, a process): the
     pin is the grade's one key that must not depend on the candidate's tests, and only the candidate's source runs
-    before it. What the candidate's own tests report stays forgeable; the README says so rather than claiming more.
+    before it (corrected in round 11, RL11-K1: the candidate's new tests stayed on disk during the pin, and the pin's own
+    command could run one; the pin now runs on the base, the candidate's sources and the accepted test only). What the
+    candidate's own tests report stays forgeable; the README says so rather than claiming more.
   - Pack: the vault-state rows build every combination of the states the rows already build beside an unreadable file,
     so a sparing keyed on one of them is reached; new rows rather than wider old ones, so every old wrong fix's count is
     its old count plus the new rows it fails (checked fix by fix). The fault's default is to fail, so a function a later
@@ -830,4 +832,92 @@ read only, for the subject trees the packs export.
     with the read-only clone 18 passed, exit 0 (12682 s). 2694883 passed the full regression gate.
   - The MoonAliza clone is unchanged (HEAD, refs, status and stash list the same before and after).
 - Heads: kit 042ac43 (pushed, #120), docs this entry's commit (pushed, #119), pack 2694883 (committed, NOT pushed: the
+  pack needs a force-push with lease, which is the owner's; the command is in Next of the lead restart report).
+
+## 2026-11-04 - review loop round 11: RL11-K1 on the kit, RL11-P1..P4 on the pack
+- Round 11 (review-loop-round-11-kit-docs, review-loop-round-11-pack; fresh reviewers on kit 042ac43, pack 2694883,
+  docs 287489a) found one S3 on the kit, three S3s and one S4 on the pack and nothing new on the docs or the PR bodies.
+- RL11-K1 (S3, kit): the accepted pin ran first, but a candidate's in-scope new tests stayed on disk during it, and
+  vitest takes a file argument as a filter (every included test whose path contains it runs): a new test at
+  `tests/xtests/zz_accepted_x2_1.test.ts` ran inside the pin's own command, rewrote the accepted test before vitest read
+  it, and a wrong fix graded PASS (`scopeOk` true, `setAside` empty, `restored` true).
+- Fixed in b12d6a8 on `build/sr-kit-cases` (pushed, #120): the pin runs on the base tree, the candidate's sources and
+  the accepted test only. While it runs, every other path the base lacks is set aside and every other base file the
+  candidate changed (the case's test file, `allowed_extra`, an out-of-scope edit) holds the base's content with an mtime
+  of its own; both go back right after it. A base file that cannot hold the base's content there leaves the pin unrun
+  (an error, not green). Kit README: step 6 and the Limits say what the pin runs on and what is still not covered (the
+  candidate's sources run inside the pin and can patch the runner or the accepted test; state outside the checkout left
+  before the grade reaches it; a file below a directory the candidate put where the base has a file is set aside only
+  for the pin); CHANGELOG kit line. The round-10 decision below ("only the candidate's source runs before it") is
+  corrected in place.
+- RL11-P1 (S3, pack): W-b6, W-b's skipped reconcile on EIO alone, passed 28 of 28: no EIO start met a tombstone or an
+  uncommitted engine entry (the tombstone rows used EBUSY, and the engine row and the vault-state rows ran EACCES
+  first, so the EIO starts met a vault already reconciled). It contradicted the README's limit on the forms of the
+  delete-side rows.
+- RL11-P2 (S3, pack): W-l5, W-l3's delete after a failed read unless a read through a new FileHandle's `fd` succeeds,
+  passed 28 of 28: at the read the fault knew a FileHandle but not its descriptor, so `readSync(handle.fd)` read the
+  file. It contradicted the README ("every read of what the open gave fails").
+- RL11-P3 (S3, pack): W-b7, the keep flag dropped while the vault holds any tombstoned entry, passed 28 of 28: no row
+  built a tombstone beside a pair to keep (the vault-state rows build tombstones, but nothing to keep).
+- RL11-P4 (S4, pack): `process.loadEnvFile` reads the faulted file at every point (a readability probe outside
+  `node:fs`); not graded.
+- Fixed in 2876cc6 on `build/sr-pack-4a` (rebased onto b12d6a8 first; id map below). 28 -> 30 rows:
+  - P1, by construction: the tombstone-at-each-point row runs each of the seven codes at the stat, the open, the read
+    and the directory, each start on a fresh copy of a tombstoned pair beside a staged entry the engine names, signed
+    out and beside a committed account (56 starts); each must delete the tombstoned pair and commit the engine's
+    entry. 300 s timeout.
+  - P2: the runner knows a descriptor by the identity of the file it is open on (the real `fstat`'s dev:ino), so every
+    read through a descriptor of the file fails at the read, however it was had. README l.167-168 reconciled: "every
+    read through a descriptor of the file fails, however the descriptor was had".
+  - P3, by construction: two keep-side vault-state rows. A replace that crashed before its pair's first commit (the
+    file names a staged pair), beside no committed entry (a sign-in after a sign-out) and beside the old committed
+    pair (a refresh), each with and without a tombstoned pair, a staged entry the engine names and an orphan pair
+    (sixteen states); in each, three unreadable starts ten years apart (EACCES, EBUSY, EIO at the stat, the open and
+    the read in turn) must keep the pair and the old pair, delete the tombstoned pair and commit the engine's entry,
+    and the readable start after them must have the pair live and committed. 300 s timeout each.
+  - P4: README "Reads outside `node:fs`" widened to any API outside the faulted layer that reads the file
+    (`process.loadEnvFile` named).
+  - README "What the pack is and is not expected to catch": the keep side is now built in every combination of the
+    vault states too, and a new paragraph says plainly that review has found new wrong fixes that pass the journey
+    test round after round (ten of the eleven rounds so far, the eleventh three) and that the pack is a sample of wrong
+    fixes and of the journey's states, not a proof. The limit on the rows' forms is rewritten to what still holds (only
+    the first of a vault-state row's three starts meets a tombstone or an uncommitted engine entry, with EACCES).
+  - WRONG-FIXES.md names fifty (W-b6, W-l5, W-b7 added), every count out of 30. accepted0 is fe7bf927 (base0 4eaf584a
+    unchanged).
+  - HostPackX21: X21_PIN_ROWS 30, the three wrong fixes as X21_WRONG entries, the runner's descriptor lines (the old
+    `faultedFd` asserted gone), the rewritten tombstone row and the keep-side rows and their forms, the later() counts,
+    the README's round-11 sentences.
+- Decisions:
+  - Kit: the pin's isolation is built rather than a filter on what a runner selects: with no test of the candidate's on
+    disk and every changed base file at the base's content, whatever a runner selects from its arguments, there is
+    nothing of the candidate's to select but its sources, which the pin must run. What the sources can do inside the
+    pin stays a README limit.
+  - Pack: P1 and P3 closed by construction (every code at every point on a fresh state; the keep side in every vault
+    state), not a row per wrong fix; P2 closed in the runner (descriptor identity), so a descriptor had any way is
+    covered; P4 disclosed (the brief's choice). No further mutants chased (the brief).
+- Pack ids after the rebase onto b12d6a8 (old -> new, by subject): 2694883 -> d4cf773, e582d5a -> c1ed7ef,
+  3687418 -> 87610f6, bfdd9f7 -> d319100, 4bec8a4 -> 8643b42, 6cc2739 -> acf68f9, 914ab06 -> 40f1dbd,
+  f2f993c -> 3f35c7b, 172bc38 -> a4eb9ea, 76f34c3 -> 7fde450, 5fe4b01 -> 5c2a386 (check 5's report),
+  f429e18 -> 3df20e1, 76e81e8 -> 96d2a34, 0bfdb65 -> 4f1c9de, b1c4315 -> 6539bfa, 01fc7aa -> f63eab0,
+  b941f6c -> e87fe11, 88acfcd -> f3313a3, 7024cdb -> 0f9e18c, dc6772d -> b222efa, b017def -> 45f5a01,
+  2b8c48b -> 4fce50b, 846773a -> 7d84f31 (the unit's first commit); the changed lines of
+  `git diff 2694883 d4cf773` equal those of `git diff 042ac43 b12d6a8` (16 CHANGELOG conflicts, each the kit line
+  beside the pack line, resolved by taking the kit line from b12d6a8).
+- Verified:
+  - Kit: the reviewer's probe5 grades its forge PASS on 042ac43's grade.sh and acceptedPinGreen false, PASS false after;
+    the new test red on 042ac43, green after; guard-removal mutants (no pin set-aside, with and without the full keep;
+    no base content at the swapped files; the pin with the full keep and no swap; no directory move; no put-back after
+    the pin; no restore of a held file) each turn the new test red, the unmutated grade green. Full kit suite 162
+    passed, 1 skipped (ln -s), 5 subtests passed, exit 0; b12d6a8 passed the full regression gate.
+  - Pack: on scratch trees the accepted source passes 30 of 30 and the base fails 18 (the 16 of round 10 and the
+    two keep-side rows); W-b6, W-l5 and W-b7 pass the 2694883 test 28 of 28 (red first) and the new test fails
+    W-b6 1, W-l5 18 and W-b7 2 of 30 (W-u7 30 of 30 green, disclosed); the runner at 2694883 gave `readSync(handle.fd)`
+    8 bytes and `readFileSync(handle.fd)` the file at the read, the new runner fails both with EACCES
+    (`process.loadEnvFile` still reads, disclosed); every old wrong fix's count is its old count plus the keep-side
+    rows it fails (none for W-h1, W-h2, W-h3, W-j2, W-l2, W-m, W-o2..W-o5, W-p2 and W-s; one for W-j3 and W-b5;
+    two for the rest) and, for W-b5 alone, one more for the rewritten tombstone-at-each-point row. HostPackX21
+    without the clone 8 passed, 10 skipped; with the read-only clone 18 passed, exit 0 (15717 s). make-repo
+    builds base0 4eaf584a and accepted0 fe7bf927. 2876cc6 passed the full regression gate.
+  - The MoonAliza clone is unchanged (HEAD, refs, status and stash list the same before and after).
+- Heads: kit b12d6a8 (pushed, #120), docs this entry's commit (pushed, #119), pack 2876cc6 (committed, NOT pushed: the
   pack needs a force-push with lease, which is the owner's; the command is in Next of the lead restart report).
