@@ -108,8 +108,8 @@ code) makes a start that cannot read the file (spec 4.4).
    The subject's vitest config sets a 15 s `testTimeout`, and on the lead's Windows host some of its long tests time
    out under load (grades side by side) and even in a lone grade on a cold cache, which turns a correct candidate's
    run red. So `commands.test` raises the timeout to 60 s (`--testTimeout=60000`), and the accepted journey test gives
-   each of its rows 120 s, and 300 s to the four rows that run the most starts (the lasting row, the orphan-codes row
-   and the two vault-state rows). `commands.run_one`, the command a candidate is told to run, keeps the subject's own
+   each of its rows 120 s, and 300 s to the seven rows that run the most starts (the lasting row, the orphan-codes row,
+   the tombstone-at-each-point row and the four vault-state rows of both kinds). `commands.run_one`, the command a candidate is told to run, keeps the subject's own
    timeout and adds only the
    two flags of step 2.
 
@@ -165,17 +165,19 @@ read of the file's bytes does. Only the writes (the fault is on reads), the func
 than a path, and `createReadStream`, `glob`, `watchFile` and `unwatchFile` are left out (the limits). At the open,
 the functions that read the file's attributes, link target, real path or a directory's entries succeed, `exists` and
 `existsSync` answer true, and those that read its bytes fail. At the read, those succeed and so does `open`, and
-every read of what the open gave fails (`read` and `readv` of the descriptor; a FileHandle's `read`, `readv`,
-`readFile`, `readLines`, stream and web stream), as do `readFile`, `copyFile`, `cp`, `openAsBlob` and the module
-loader by the file's path. A stream from `createReadStream` opens and reads through the callback `open` and `read`
+every read through a descriptor of the file fails, however the descriptor was had (`read`, `readv` and `readFile` of
+a descriptor, a FileHandle's `fd` among them, and so a stream on one; a FileHandle's `read`, `readv`, `readFile`,
+`readLines`, stream and web stream), as do `readFile`, `copyFile`, `cp`, `openAsBlob` and the module loader by the
+file's path. A stream from `createReadStream` opens and reads through the callback `open` and `read`
 and meets the error as its `error` event. The error has a real one's shape: the code, libuv's errno and message for
 it, the syscall that failed (the one the real call makes: `open`, `read`, `stat`, `lstat`, `access`, `copyfile`,
 `scandir` and so on) and the path. The faulted file is known by its identity (its device and file index, which every
 name of the file shares), not by its path, so a hard link, a rename, a symlink or a junction, or another spelling of
 the path (a relative path, another case, a `\\?\` prefix) meets the error too, and the path is taken in every form
 `node:fs` takes one (a string, a Buffer or another `Uint8Array`, a `file:` URL or an object `node:fs` reads as one):
-the fault hands the argument to the real `stat`, so it reads each form as `node:fs` does, and only a descriptor or a
-FileHandle, which only an open can give, names no path. The start's process puts these wrappers in place before it
+the fault hands the argument to the real `stat`, so it reads each form as `node:fs` does. A descriptor or a
+FileHandle names no path: it is known by the identity of the file it is open on, through the real `fstat`, so a read
+through a FileHandle's `fd` meets the error too (W-l5 reads the file again that way). The start's process puts these wrappers in place before it
 loads the subject's modules, so a read function the subject takes as its module loads is a wrapper too. So a fix that
 re-reads the file another way through `node:fs`, or by another name, still meets the error (W-a retries the same read,
 W-r reads it by a stream, W-r2 through a `promisify(readFile)` taken as its module loads, W-r5 through a hard link it
@@ -188,7 +190,7 @@ path inside the account file's directory, there or not, by any spelling or link 
 failure (the reads above fail for it as at the stat), so a copy of the refs kept beside the file fails too (W-s keeps
 one beside the file and keeps the refs it names).
 In the journey rows, the other-errno row, the unreadable-run row, the orphan row, the lasting row, the engine row and
-the orphan-codes row and the vault-state rows the starts after the crash run ten years on, and each start after that
+the orphan-codes row and the vault-state rows (both kinds) the starts after the crash run ten years on, and each start after that
 ten years later again: vitest's fake timers move `Date` in the test's process,
 and a start's own process runs with these clocks moved as much: `Date`, `performance.timeOrigin`, the date
 `Intl.DateTimeFormat` formats when given none, and `process.hrtime` (the system's uptime stays, as ten years on the
@@ -209,7 +211,8 @@ it does not map), so a fix that keeps only on a list of codes it takes for passi
 all seven (W-l keeps on EACCES and EBUSY, W-l2 on EACCES, EPERM, EBUSY, EAGAIN and EIO). In both rows each code fails
 three starts in a row, ten years apart: at the stat, at the open and at the read, so a fix that decides on where the
 error came from rather than on its code fails too (W-l3 deletes the pair after a failed read, taken for a failing
-disk, and W-l4 tells the read by the error's message; on a real byte-range lock the read fails with EBUSY). The unreadable-run row runs
+disk, W-l4 tells the read by the error's message, and W-l5 deletes after a failed read unless a read through a new
+FileHandle's descriptor succeeds; on a real byte-range lock the read fails with EBUSY). The unreadable-run row runs
 four unreadable starts in a row (EACCES, EACCES again, EBUSY, then EIO), at the stat, the open, the read and the stat,
 each ten years after the one before, for a
 first sign-in that crashed before commit 1 and a refresh that crashed before commit 4, so a fix that keeps the pair
@@ -226,10 +229,12 @@ The orphan row runs the same four unreadable starts before its readable one, so 
 staged entry for good once it has outlived a run of up to four unreadable starts fails too (W-q holds it after two).
 The orphan-codes row runs each of the seven codes at three unreadable starts, at the stat, the open and the read,
 before a readable one, so a fix that holds an orphan pair for good on some code or at some point fails too (W-j2 holds
-it on EPERM). The tombstone row fails its unreadable start at the stat, and the tombstone-at-each-point row at the open
-and at the read (EBUSY, as another process holding the file or a byte-range lock gives it): each start deletes the
-tombstoned pair and commits the engine's referenced staged entry, so a fix that spares tombstoned entries when the
-file failed at some point fails (W-b3 spares them after a failed open or read).
+it on EPERM). The tombstone row fails its unreadable start at the stat. The tombstone-at-each-point row runs each of
+the seven codes at the stat, the open, the read and the directory, each start on a fresh copy of a tombstoned pair
+beside a staged entry the engine names, signed out (a sign-out's removals failed) and beside a committed account (a
+refresh's removals failed), so no such start meets a vault an earlier start reconciled: each deletes the tombstoned
+pair and commits the engine's entry. So a fix that spares tombstoned entries, or leaves the engine's entry staged, at
+some point or on some code fails (W-b3 spares them after a failed open or read, W-b6 skips the reconcile on EIO).
 The two vault-state rows build what an unreadable start must still delete in every vault state the rows build beside
 an unreadable file: beside no committed entry (signed out) and beside the old committed pair, a tombstoned pair (a
 sign-out's or a refresh's removals that failed), an orphan pair (a sign-in that crashed after staging, before its
@@ -239,6 +244,15 @@ first point moving on from one state to the next): each deletes the tombstoned p
 keeps the committed pair, and the readable start after them deletes the orphan pair. So a fix that spares what must
 go only in some of those states fails (W-j3 holds an orphan pair for good only beside no committed entry, W-b5 spares
 tombstoned entries only beside a committed one).
+The two keep-side vault-state rows build what an unreadable start must keep in every vault state the rows build
+beside it: a replace that crashed before its pair's first commit, so the file names a staged pair, beside no committed
+entry (a sign-in after a sign-out) and beside the old committed pair (a refresh of it), each with and without a
+tombstoned pair (that sign-out's or an earlier refresh's removals that failed), a staged entry the engine names and an
+orphan pair (two staged entries nothing names). In each of the sixteen states three unreadable starts, ten years
+apart, fail with EACCES, EBUSY and EIO at the stat, the open and the read in turn: each keeps the staged pair the file
+names and the old committed pair, deletes the tombstoned pair and commits the engine's entry, and the readable start
+after them has the pair live and committed, nothing else left but the engine's entry. So a fix that drops the keep
+only in some of those states fails (W-b7 drops it beside a tombstoned entry).
 The refused-file row refuses the signed-out file and the named refused-file row refuses a file that still names the
 new pair, each as invalid JSON, over 64 KiB, with an extra key and with version 2. The named row does so after a first
 sign-in's crash before commit 1 (no committed entry in the vault) and, beside the old committed pair, after
@@ -258,15 +272,20 @@ or keeps in another state or without the encrypted files: whether the rule turns
 failed at, the number of unreadable starts in a row (up to four), the pair's age by any clock the start's process
 moves, the vault's committed entries, the engine's references, the file's being refused or missing, or a second read
 of the file, or a question about it (`existsSync`, `stat`), through `node:fs` or the module loader in the start's own
-process. What an unreadable start must still delete (a tombstoned pair, an orphan pair) is built in every combination
-of the vault states the rows build beside an unreadable file (the vault-state rows), so a rule that spares it keyed
-on one of those states is reached; what such a start must keep is built in the states the journey, other-errno,
-unreadable-run, lasting and engine rows name. Each such wrong fix the reviews named
-is in `WRONG-FIXES.md` with the row that catches it.
+process. What an unreadable start must still delete (a tombstoned pair, an orphan pair) and what it must keep (the
+staged pair the file names, the old committed pair, the engine's entry) are each built in every combination of the
+vault states the rows build beside an unreadable file (the vault-state rows and the keep-side vault-state rows), so a
+rule keyed on one of those states is reached. Each such wrong fix the reviews named is in `WRONG-FIXES.md` with the
+row that catches it.
 
 It is not expected to catch a wrong fix whose rule turns on something the rows hold fixed or never build: the
 inputs below, and any other the rows hold fixed. The list names the ones the reviews found; it is not a claim that
 it is complete, and a wrong fix keyed on an input it does not name may pass.
+
+Review has found new wrong fixes that pass the journey test round after round: ten of the eleven review rounds of
+calibration run 4 so far found at least one (the eleventh three: W-b6, W-l5, W-b7), and each was caught only once a row
+or the fault was changed for it. Expect more. The pack is a sample of wrong fixes and of the journey's states, not
+a proof: a fix that passes it has met every row, not been shown right, and the grade says no more than that.
 
 ## What the pack does not discriminate
 
@@ -302,11 +321,15 @@ it is complete, and a wrong fix keyed on an input it does not name may pass.
   (`process.report`), a worker thread's `Date` and the like. So a fix that ages the pair by one of them passes (W-u7
   takes the time from the report's `dumpEventTimeStamp`), although ten years on the pair is deleted. The pack moves
   the clocks it names, not every clock a process can read.
-- **Forms of the rows that guard what an unreadable start still deletes.** The tombstone rows fail their unreadable
-  starts with EBUSY alone (at the stat, the open and the read), and the engine row and the vault-state rows with
-  EACCES, EBUSY and EIO, so a fix that spares tombstoned entries, holds an orphan pair or deletes the pair beside an
-  engine reference only on some other code passes. The vault-state rows do not assert what an unreadable start does
-  with the orphan pair, only that the readable start after it deletes it.
+- **Forms of the rows that guard what an unreadable start still deletes and keeps.** Every code at every point meets
+  a tombstoned pair and an engine's staged entry on a fresh vault (the tombstone-at-each-point row), but only in that
+  row's two states (signed out, and beside a committed account, neither with an orphan or a pair to keep). In the
+  vault-state rows of both kinds only the first of a state's three unreadable starts meets a tombstone or an
+  uncommitted engine entry, and it fails with EACCES (at one of the three points). So a fix that spares tombstoned
+  entries or leaves the engine's entry staged on some other code only in some other vault state (beside an orphan
+  pair, say) passes. Neither kind of vault-state row asserts what an unreadable start does with the orphan pair, only
+  that the readable start after it deletes it, and the keep-side rows build the pair to keep only as a crash before
+  its first commit leaves it (not before its second, nor after staging, before the file write).
 - **The directory beyond its reads.** At the directory only the reads fail; a write into the account file's directory
   still succeeds, where under a real directory that may not be searched it fails too. A copy of the refs kept outside
   that directory (beside the vault, say) stays readable, so a fix that keeps the refs such a copy names passes; it is
@@ -319,9 +342,10 @@ it is complete, and a wrong fix keyed on an input it does not name may pass.
   directory that may not be searched (the cause of a failed stat on POSIX); under a Windows permission on the file
   alone a real `existsSync` may still be true.
 - **Reads outside `node:fs`.** The fault is on `node:fs` and the module loader in the main thread of the start's own
-  process. A second read of the file through a child process, a worker thread, a native addon, WASI or Node's internal
-  bindings is not failed, so a fix that learns the pair's refs that way and keeps only those passes, although on a real
-  unreadable file that read fails too and the pair is lost.
+  process. Any API outside that layer that reads the file is not failed: a child process, a worker thread, a native
+  addon, WASI, Node's internal bindings, or a built-in that reads a file by its own route (`process.loadEnvFile` reads
+  it at every point, say). So a fix that learns the pair's refs that way, or only whether the file reads, and keeps on
+  what it learns passes, although on a real unreadable file that read fails too and the pair is lost.
 - **Paths beside the subject's own module.** A start's process runs the candidate's two modules bundled into one file
   in a temporary directory, so code in them that finds a file beside its own module (`import.meta.url`, `__dirname`)
   looks there, not in `src/main/`, and a correct fix that does so fails. Neither module does so at the base.
@@ -335,8 +359,9 @@ it is complete, and a wrong fix keyed on an input it does not name may pass.
   account's committed pair (and, before commit 4 of a refresh, the new access entry), so a fix that keeps on some other
   state of the vault (two accounts' committed entries, say, or a staged entry the engine names) passes. Beside an
   unreadable file the rows put no committed entry or the old committed pair, with or without a staged entry the
-  engine names (for what such a start deletes, the vault-state rows build each with a tombstoned pair, an orphan pair
-  or both); other states (two accounts' committed entries, say) are not built.
+  engine names (the vault-state rows build each with a tombstoned pair, an orphan pair or both, and the keep-side
+  vault-state rows each with a pair to keep, with or without either); other states (two accounts' committed entries,
+  two tombstoned pairs, say) are not built.
 - **Runs of more than four unreadable starts.** The unreadable-run row, the lasting row and the orphan row run four in
   a row, so a fix
   that keeps the pair through four such starts and drops it at the fifth passes, and so does one that holds an orphan

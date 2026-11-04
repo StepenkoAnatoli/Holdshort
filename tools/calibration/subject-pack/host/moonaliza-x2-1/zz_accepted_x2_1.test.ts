@@ -89,9 +89,10 @@ const { Vault } = await load(); type Vault = InstanceType<typeof Vault>;
 //  - at the open (a file another process opened without sharing it, a permission on the file): the functions that read its attributes,
 //    its link target, its real path or a directory's entries succeed (stat, lstat, access, exists, statfs, readlink, realpath,
 //    readdir, opendir, watch), and the ones that read its bytes fail (open, readFile, copyFile, cp, openAsBlob, the module loader);
-//  - at the read (a byte-range lock, a failing disk): those that read its attributes succeed, and so does open, and every read of what
-//    the open gave fails (read and readv of the descriptor, and a FileHandle's read, readv, readFile, readLines, stream and web stream),
-//    as do readFile, copyFile, cp, openAsBlob and the module loader by the file's path.
+//  - at the read (a byte-range lock, a failing disk): those that read its attributes succeed, and so does open, and every read through
+//    a descriptor of the file fails, however the descriptor was had (read, readv and readFile of a descriptor, a FileHandle's fd among
+//    them, so a stream on it too, and a FileHandle's read, readv, readFile, readLines, stream and web stream), as do readFile,
+//    copyFile, cp, openAsBlob and the module loader by the file's path.
 // The functions are read from the two modules as the running Node has them, not from a list of names: one the runner's table does not
 // name (one a later Node adds, say) fails at every point, as a read of the file's bytes does. The table leaves out only the writes (the
 // fault is on reads), the functions that take a descriptor, not a path, and createReadStream, glob, watchFile and unwatchFile (see the
@@ -101,8 +102,8 @@ const { Vault } = await load(); type Vault = InstanceType<typeof Vault>;
 // path. The faulted file is known by its identity (its device and file index, which a hard link shares), not by its path, so a hard
 // link, a rename, a symlink, a junction or another spelling of the path reaches the same error; the path is taken in whatever form
 // node:fs takes one (a string, a Buffer or another Uint8Array, a file: URL or an object node:fs reads as one), because node:fs itself
-// reads it: the fault hands the argument to the real stat, so no form a read accepts is missed (only a descriptor or a FileHandle
-// names no path, and those come from an open that met the fault). A read function the subject takes as it loads (promisify(fs.readFile),
+// reads it: the fault hands the argument to the real stat, so no form a read accepts is missed (a descriptor or a FileHandle names no
+// path: it is known by the identity of the file it is open on, through the real fstat). A read function the subject takes as it loads (promisify(fs.readFile),
 // say) is a wrapper too: the wrappers are synced to every importer before the subject loads. A later start also runs with the clocks
 // named at `later` moved by as much as the test's, and its store gets the app's own clock (index.ts passes none, so the
 // store's default, Date.now, which is moved too).
@@ -116,8 +117,8 @@ import { fileURLToPath } from 'node:url';
 import { getSystemErrorMap } from 'node:util';
 
 const [subjectUrl, jobFile] = process.argv.slice(2);
-const real = { statSync: fs.statSync, readdirSync: fs.readdirSync, readFileSync: fs.readFileSync, writeFileSync: fs.writeFileSync,
-  realpathSync: fs.realpathSync.native };
+const real = { statSync: fs.statSync, fstatSync: fs.fstatSync, readdirSync: fs.readdirSync, readFileSync: fs.readFileSync,
+  writeFileSync: fs.writeFileSync, realpathSync: fs.realpathSync.native };
 const job = JSON.parse(real.readFileSync(jobFile, 'utf8'));
 const report = value => { real.writeFileSync(job.result, JSON.stringify(value)); process.exit(0); };
 
@@ -186,10 +187,15 @@ function hit(arg, tree) {
   try { return real.statSync(arg).isDirectory() && holds(real.realpathSync(arg), 0); } catch { return false; }
 }
 const PHASE = job.at; const AT_READ = PHASE === 'read';
-// what an open at the read gave: the descriptors (until they are closed) and the FileHandles
+// what an open at the read gave: the descriptors (until they are closed) and the FileHandles; and any descriptor of the faulted file,
+// however it was had (a FileHandle's fd, say), known by its identity as the paths are (review loop 11 RL11-P2)
 const openFds = new Set(); const openHandles = new WeakSet();
-const faultedFd = fd => typeof fd === 'number' && openFds.has(fd);
-const faultedHandle = handle => handle !== null && typeof handle === 'object' && openHandles.has(handle);
+/** A descriptor's identity: the device and file index of the file it is open on (null where the file system gives no index). */
+function descriptorIdentity(fd) {
+  try { const stats = real.fstatSync(fd, { bigint: true }); return stats.ino !== 0n ? stats.dev + ':' + stats.ino : null; } catch { return null; }
+}
+const faultedFd = fd => typeof fd === 'number' && (openFds.has(fd) || (fault !== null && descriptorIdentity(fd) === fault));
+const faultedHandle = handle => handle !== null && typeof handle === 'object' && (openHandles.has(handle) || faultedFd(handle.fd));
 /** Replaces module[name] with a function that fails as the fault says, in the function's form; when(args) gives the failing syscall
  *  (or null to call through) and after(result, args) sees what a call through returned. */
 function wrap(module, name, form, when, after) {
@@ -923,22 +929,35 @@ describe('X2-1: unread starts in more shapes: a lasting cause, engine credential
     }
   });
 
-  test('a sign-out whose removals failed, then EBUSY at the open or at the read (another process holds the file, a byte-range lock): a start that cannot read the file still deletes the tombstoned pair and commits a referenced staged entry', async () => {
-    const session = await firstSession();
-    const a = refsOf(await session.signIn());
-    const engineRef = await session.vault.saveStaged(`x2-engine-${randomBytes(16).toString('hex')}`);
-    session.hooks.failRemove = true;
-    expect(await session.store.clear(() => true)).toBe('durable');
-    const crash = session.snapshot();
-    expect(a.map(ref => entries(crash)[ref]?.state)).toEqual(['tombstoned', 'tombstoned']);
+  // A tombstone and an engine's staged entry at every code and every point (review loop 11 RL11-P1): a start that cannot read the file
+  // deletes a tombstoned pair and commits a staged entry the engine names whatever the code and wherever the read fails. Each start runs
+  // on a fresh copy of the crash, so none meets a vault an earlier start already reconciled, and a rule that spares the tombstone or
+  // leaves the engine's entry staged at one code or one point fails there.
+  test('a sign-out whose removals failed and a refresh whose removals failed, each beside a staged entry the engine names, then EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL or UNKNOWN at the stat, the open, the read or the directory, each start on a fresh copy: the start deletes the tombstoned pair, commits the engine\'s entry and keeps the account', { timeout: 300_000 }, async () => {
+    for (const [form, signedIn] of [['a sign-out', false], ['a refresh', true]] as Array<[string, boolean]>) {
+      vi.useRealTimers();
+      const session = await firstSession();
+      const engineRef = await session.vault.saveStaged(`x2-engine-${randomBytes(16).toString('hex')}`);
+      const a = await session.signIn();
+      session.hooks.failRemove = true;
+      const live = signedIn ? refsOf(await session.refresh(a)) : [];
+      if (!signedIn) expect(await session.store.clear(() => true)).toBe('durable');
+      const crash = session.snapshot();
+      expect(refsOf(a).map(ref => entries(crash)[ref]?.state), form).toEqual(['tombstoned', 'tombstoned']);
+      expect(live.map(ref => entries(crash)[ref]?.state), form).toEqual(live.map(() => 'committed'));
+      expect(entries(crash)[engineRef]?.state, form).toBe('staged');
+      const kept = [...live, engineRef];
 
-    for (const phase of ['open', 'read'] as Phase[]) {
-      const dir = `${crash}-${phase}`;
-      cpSync(crash, dir, { recursive: true });
-      await start(dir, { unread: 'EBUSY', at: phase, engine: [engineRef] });
-      expect(Object.keys(entries(dir)), phase).toEqual([engineRef]);
-      expect(entries(dir)[engineRef]?.state, phase).toBe('committed');
-      expect(bins(dir), phase).toEqual([`${engineRef}.bin`]);
+      for (const code of ['EACCES', 'EBUSY', 'EIO', 'EPERM', 'EMFILE', 'EINVAL', 'UNKNOWN']) for (const phase of [...PHASES, 'dir'] as Phase[]) {
+        const step = `${form}, ${code} at the ${phase}`;
+        const dir = `${crash}-${code}-${phase}`;
+        cpSync(crash, dir, { recursive: true });
+        const unread = await start(dir, { unread: code, at: phase, engine: [engineRef] });
+        expect(unread.store.current(), step).toBeNull();
+        expect(Object.keys(entries(dir)).sort(), step).toEqual([...kept].sort());                       // the tombstoned pair is gone,
+        expect(bins(dir), step).toEqual(kept.map(ref => `${ref}.bin`).sort());                         // files and all,
+        expect(kept.map(ref => entries(dir)[ref]?.state), step).toEqual(kept.map(() => 'committed'));  // the account and the engine's entry committed
+      }
     }
   });
 
@@ -1050,4 +1069,85 @@ describe('X2-1: what an unreadable start still deletes, in every vault state', R
 
   test('beside the old committed pair (signed in): a tombstoned pair, an orphan pair or both, with or without a staged entry the engine names, then EACCES, EBUSY and EIO at three starts in a row, ten years apart (at the stat, the open and the read in turn): each start deletes the tombstoned pair, commits the engine\'s entry and keeps the account, and the next readable start deletes the orphan pair', { timeout: 300_000 },
     deletesInEveryState(true));
+});
+
+// What an unreadable start must keep, in every vault state beside the pair to keep (review loop 11 RL11-P3): the account's last replace
+// crashed before its pair's first commit, so the file names a staged pair, beside no committed entry (a sign-in after a sign-out) or
+// beside the old committed pair (a refresh of it); beside it a pair tombstoned by that sign-out's or an earlier refresh's removals that
+// failed or none, a staged entry the engine names or none, and an orphan pair (two staged entries nothing names) or none. In every one
+// of them an unreadable start keeps the staged pair the file names and the old committed pair, deletes the tombstoned pair and commits
+// the engine's entry, and the next readable start has the pair live and committed, nothing else left but the engine's entry. So a rule
+// that drops the keep only in some state of the vault (beside a tombstone, an engine entry, an orphan or a committed entry, or none)
+// has no state left to pass in. Each state's three unreadable starts fail with EACCES, EBUSY and EIO at the stat, the open and the read,
+// the first point moving on from one state to the next.
+const keepStates = (committed: boolean): VaultState[] => [false, true].flatMap(engine => [false, true].flatMap(tombstoned =>
+  [false, true].map(orphan => ({ committed, tombstoned, engine, orphan }))));
+
+/** The data directory in `state`, with a pair to keep: an account signs in (beside the engine's staged entry, if any); with no
+ *  committed entry it signs out (its removals failing when a pair is to stay tombstoned), with a committed one and a tombstone it
+ *  refreshes with its removals failing; with an orphan two staged entries nothing names are saved; then a sign-in (signed out) or a
+ *  refresh (signed in) crashes before its pair's first commit, the file naming its staged pair. */
+async function keepState(state: VaultState) {
+  const session = await firstSession();
+  const engine = state.engine ? [await session.vault.saveStaged(`x2-engine-${randomBytes(16).toString('hex')}`)] : [];
+  let account = await session.signIn();
+  let old = refsOf(account); let tombstoned: string[] = [];
+  session.hooks.failRemove = state.tombstoned;
+  if (!state.committed) {
+    expect(await session.store.clear(() => true)).toBe('durable');
+    tombstoned = state.tombstoned ? old : []; old = [];
+  } else if (state.tombstoned) {
+    tombstoned = old; account = await session.refresh(account); old = refsOf(account);
+  }
+  session.hooks.failRemove = false;
+  const orphan = state.orphan
+    ? [await session.vault.saveStaged(`x2-orphan-${randomBytes(16).toString('hex')}`), await session.vault.saveStaged(`x2-orphan-${randomBytes(16).toString('hex')}`)]
+    : [];
+  let dir: string | undefined;
+  session.hooks.beforeCommit = () => { dir ??= session.snapshot(); };
+  const pair = refsOf(state.committed ? await session.refresh(account) : await session.signIn());
+  expect(dir).toBeDefined();
+  const index = entries(dir!);
+  expect(refsOf(accountFile(dir!)?.account)).toEqual(pair);
+  const all = [...pair, ...old, ...tombstoned, ...engine, ...orphan];
+  expect(Object.keys(index).sort()).toEqual([...all].sort());
+  expect(all.map(ref => index[ref]?.state)).toEqual([...pair.map(() => 'staged'), ...old.map(() => 'committed'),
+    ...tombstoned.map(() => 'tombstoned'), ...engine.map(() => 'staged'), ...orphan.map(() => 'staged')]);
+  return { dir: dir!, pair, old, tombstoned, engine };
+}
+
+/** A row: every state of `keepStates(committed)`, three unreadable starts, then a readable one. */
+function keepsInEveryState(committed: boolean) {
+  return async () => {
+    for (const [n, state] of keepStates(committed).entries()) {
+      const name = `the pair to keep beside ${stateName(state)}`;
+      vi.useRealTimers();
+      const { dir, pair, old, tombstoned, engine } = await keepState(state);
+      const before = readFileSync(fileAt(dir), 'utf8');
+      const stays = [...old, ...engine];
+      for (const index of [0, 1, 2]) {
+        const phase = PHASES[(n + index) % 3]!; const code = UNREAD_CODES[index]!;
+        const step = `${name}: start ${index + 1} (${code} at the ${phase})`;
+        vi.useRealTimers(); later(3650 * (index + 1));
+        const unread = await start(dir, { unread: code, at: phase, engine });
+        expect(unread.store.current(), step).toBeNull();
+        expect(readFileSync(fileAt(dir), 'utf8'), step).toBe(before);
+        expect(pair.map(ref => entries(dir)[ref]?.state), step).toEqual(['staged', 'staged']);   // the pair the file names stays,
+        for (const ref of pair) expect(bins(dir), step).toContain(`${ref}.bin`);                    // files and all
+        expect(stays.map(ref => entries(dir)[ref]?.state), step).toEqual(stays.map(() => 'committed'));   // the old pair and the engine's entry, committed
+        expect(tombstoned.filter(ref => entries(dir)[ref] !== undefined), step).toEqual([]);   // the tombstoned pair is gone,
+        expect(bins(dir).filter(bin => tombstoned.some(ref => bin === `${ref}.bin`)), step).toEqual([]);   // files and all
+      }
+      vi.useRealTimers(); later(3650 * 4);
+      await expectAlone(dir, await start(dir, { engine }), pair, engine);       // the next start reads the file and commits the pair
+    }
+  };
+}
+
+describe('X2-1: what an unreadable start must keep, in every vault state', ROW, () => {
+  test('a pair to keep beside no committed entry (a sign-in after a sign-out, crashed before its first commit): with or without a tombstoned pair, a staged entry the engine names and an orphan pair, then EACCES, EBUSY and EIO at three starts in a row, ten years apart (at the stat, the open and the read in turn): each start keeps the staged pair the file names, deletes the tombstoned pair and commits the engine\'s entry, and the next readable start has the pair live and committed', { timeout: 300_000 },
+    keepsInEveryState(false));
+
+  test('a pair to keep beside the old committed pair (a refresh, crashed before its first commit): with or without a tombstoned pair, a staged entry the engine names and an orphan pair, then EACCES, EBUSY and EIO at three starts in a row, ten years apart (at the stat, the open and the read in turn): each start keeps the staged pair the file names and the old pair, deletes the tombstoned pair and commits the engine\'s entry, and the next readable start has the pair live and committed', { timeout: 300_000 },
+    keepsInEveryState(true));
 });
