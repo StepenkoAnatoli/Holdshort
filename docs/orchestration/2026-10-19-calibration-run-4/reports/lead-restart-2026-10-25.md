@@ -3,7 +3,7 @@
 Result: sr-pack-4a ACCEPTED (check 5, 2f73c9f, draft PR #122, stacked on #120). The kit change it depends on, lead
 integrations 2-8 on build/sr-kit-cases (#120, head 3ed05d4), is ACCEPTED by check 8. Nothing merged; merges are yours.
 
-After those verdicts a review loop (eleven rounds of fresh reviewers) found more, so the heads to review moved; see RUN.md,
+After those verdicts a review loop (twelve rounds of fresh reviewers) found more, so the heads to review moved; see RUN.md,
 entry "review loop after the ACCEPTs" and the entries after it. The ids below are the ones each round committed; later
 rebases of the pack branch replaced the pack's, so the ids on the branches now are in the table under "heads now".
 - round 1: RL1-1 (S3, pack) a wrong fix that keeps the staged pair when the account file was read and refused graded
@@ -55,50 +55,59 @@ rebases of the pack branch replaced the pack's, so the ids on the branches now a
   (before each command the grade sets aside every path the base tree lacks but the candidate's counted files and the
   linked names; `setAside`, `notSetAside`, `restored`). RL9-P1..P3 (S3, pack) W-p2 (same failure twice in a row), W-b4
   (engine refs), W-b3 and W-j2 passed; RL9-P4 and RL9-P5 (S4) two clocks a start did not move (W-u5, W-u6; W-v
-  disclosed) and the stat cause wording (W-s); all fixed in 822f701 after a rebase onto 817c6be (four new rows, 26:
-  the lasting row with a `dir` phase, the engine row, the tombstone row at the open and the read, the orphan-codes row;
-  the store's default clock and the date constructor moved; README section "What the pack is and is not expected to
-  catch"; forty-four wrong fixes; accepted0 fe4fdc2f). RL9-D1 (S4, docs): #122 named check 5 by an id on an older head;
-  now 5fab5c3 on 822f701.
+  disclosed) and the stat cause wording (W-s); all fixed or disclosed in 822f701 after a rebase onto 817c6be (four new
+  rows, 26: the lasting row with a `dir` phase, the engine row, the tombstone row at the open and the read, the
+  orphan-codes row; the store's default clock and the date constructor moved; README section "What the pack is and is
+  not expected to catch"; forty-four wrong fixes; accepted0 fe4fdc2f). RL9-D1 (S4, docs): #122 named check 5 by an id on
+  an older head; now 5fab5c3 on 822f701.
 - round 10: RL10-K1 (S3, kit) the accepted pin of a fix cell ran after the candidate's tests, so a test that rewrote a
   base-tracked runner or left a detached process forged it; RL10-K2 (S4, kit) a counter in the temp directory forged
   `guardRed`; RL10-K3 (S3, kit) the set-aside moved entries below a junction into the checkout's `.git` and the cell
-  still passed; all fixed in 042ac43 (the pin runs first; nothing below a link is moved; PASS needs `restored`; the
-  README names what the candidate's own tests can still forge). RL10-P1, RL10-P2 (S3, pack) W-j3 and W-b5 (a hold or
-  a sparing keyed on whether a committed entry exists) passed; RL10-P3 (S3) W-x (`existsSync`, outside the fault)
-  passed; RL10-P4 (S4) W-u7 (`process.report`'s clock) passes, disclosed; all fixed in 2694883 after a rebase onto
-  042ac43 (the two vault-state rows, 28: every combination of the states the rows build beside an unreadable file; the
-  fault fails every path-taking `node:fs` function by default; "every clock it reads" narrowed to the clocks named;
-  forty-seven wrong fixes; accepted0 a6f7896a). RL10-D1, RL10-D2 (S4, docs): two wrong facts in the round-9 RUN.md
-  entry, and stale PR body files in the notes folder; corrected.
+  still passed; all fixed or disclosed in 042ac43 (the pin runs first; nothing below a link is moved; PASS needs
+  `restored`; the README names what the candidate's own tests can still forge). RL10-P1, RL10-P2 (S3, pack) W-j3 and
+  W-b5 (a hold or a sparing keyed on whether a committed entry exists) passed; RL10-P3 (S3) W-x (`existsSync`, outside
+  the fault) passed; RL10-P4 (S4) W-u7 (`process.report`'s clock) passes, disclosed; all fixed or disclosed in 2694883
+  after a rebase onto 042ac43 (the two vault-state rows, 28: every combination of the states the rows build beside an
+  unreadable file; the fault fails every path-taking `node:fs` function by default; "every clock it reads" narrowed to
+  the clocks named; forty-seven wrong fixes; accepted0 a6f7896a). RL10-D1, RL10-D2 (S4, docs): two wrong facts in the
+  round-9 RUN.md entry, and stale PR body files in the notes folder; corrected.
 - round 11: RL11-K1 (S3, kit) the accepted pin ran first, but the candidate's in-scope new tests stayed on disk, and
   vitest takes a file argument as a filter, so the pin's own command ran a candidate test that rewrote the accepted
   test; fixed in b12d6a8 (the pin runs on the base, the candidate's sources and the accepted test only; the README says
   what the sources can still do inside it). RL11-P1 (S3, pack) W-b6 (W-b on EIO alone), RL11-P2 (S3) W-l5 (a re-read
-  through a FileHandle's `fd`, which the fault did not know) and RL11-P3 (S3) W-b7 (the keep dropped beside a
-  tombstone) passed; RL11-P4 (S4) `process.loadEnvFile` reads the faulted file, disclosed; all fixed in 2876cc6 after a
-  rebase onto b12d6a8 (every code at every point on a fresh tombstone; descriptors known by the file's identity; two
+  through a FileHandle's `fd`, which the fault did not know) and RL11-P3 (S3) W-b7 (the keep dropped beside a tombstone)
+  passed; RL11-P4 (S4) `process.loadEnvFile` reads the faulted file, disclosed; all fixed or disclosed in 2876cc6 after
+  a rebase onto b12d6a8 (every code at every point on a fresh tombstone; descriptors known by the file's identity; two
   keep-side vault-state rows, 30; the README says plainly that review keeps finding wrong fixes and the pack is a
   sample, not a proof; fifty wrong fixes; accepted0 fe7bf927). Docs and PR bodies: nothing new.
-- heads now: kit b12d6a8 (pushed, #120), pack 2876cc6 (committed, not pushed: see Next), docs the RUN.md commit
-  after 287489a (pushed, #119). Outcome seq 3 ("accepted", check 5's head) is append-only and stays.
+- round 12: RL12-K1 (S3, kit) an entry named `.git` in any case (`tests/.GIT/`), which git never lists, slipped the
+  set-aside, so vitest ran a forge below it inside the accepted pin; fixed in 28f21e8 (the grade walks the checkout on
+  disk and sets every such entry aside). RL12-P1 (S3, pack) W-y (the keep only while the directory fails with EACCES)
+  and RL12-P2 (S4) W-z (the keep only for staged entries at least as new as the newest committed one) passed; both fixed
+  in b0f14a3 after a rebase onto 28f21e8 (the keep-at-each-point row: every code at every point on a fresh crash; the
+  engine-key row: a committed entry newer than the pair to keep; 32 rows; fifty-two wrong fixes; accepted0 fddff8ef).
+  RL12-D1 (S4, docs) #119 and #120 said every finding was fixed at the root while four were disclosed, and #120 named
+  six of the seven round-11 mutants; the bodies, RUN.md and this report now say "fixed at the root or disclosed".
+- heads now: kit 28f21e8 (pushed, #120), pack b0f14a3 (committed, not pushed: see Next), docs the RUN.md commit
+  after bb9270c (pushed, #119). Outcome seq 3 ("accepted", check 5's head) is append-only and stays.
 - ids on the branches (round-by-round id -> id on the branch now, matched by subject):
 
   | what | as committed | on the branch now |
   |---|---|---|
-  | kit, rounds 2-5 and 8-11 | dead160, d73511f, 7ac8143, 2937b2c, ad9e4b0, 817c6be, 042ac43, b12d6a8 | the same (the kit branch is never rebased) |
-  | pack RL1-1 | 045ee89, f16f10f | 7fde450 |
-  | pack RL2-P1 | f25b52c | a4eb9ea |
-  | pack RL2-1 | 556b166, 12ebdb8 | 3f35c7b |
-  | pack RL3-1, RL3-2 | 00df498, 0ec45ca | 40f1dbd |
-  | pack RL5-P1 | 7595509 | acf68f9 |
-  | pack RL6-P1 | a6d12b8 | 8643b42 |
-  | pack RL7-P1, RL7-P2 | cfe982c | d319100 |
-  | pack RL8-P1..P3 | 1feb090 | 87610f6 |
-  | pack RL9-P1..P5 | 822f701 | c1ed7ef |
-  | pack RL10-P1..P4 | 2694883 | d4cf773 |
-  | pack RL11-P1..P4 | 2876cc6 | 2876cc6 |
-  | check 5 report (ACCEPT) | 2f73c9f | 5c2a386 |
+  | kit, rounds 2-5 and 8-12 | dead160, d73511f, 7ac8143, 2937b2c, ad9e4b0, 817c6be, 042ac43, b12d6a8, 28f21e8 | the same (the kit branch is never rebased) |
+  | pack RL1-1 | 045ee89, f16f10f | 2161f30 |
+  | pack RL2-P1 | f25b52c | 1b690fb |
+  | pack RL2-1 | 556b166, 12ebdb8 | a73363f |
+  | pack RL3-1, RL3-2 | 00df498, 0ec45ca | 2ee4bbd |
+  | pack RL5-P1 | 7595509 | ff93d61 |
+  | pack RL6-P1 | a6d12b8 | a775f5b |
+  | pack RL7-P1, RL7-P2 | cfe982c | 39e59ca |
+  | pack RL8-P1..P3 | 1feb090 | c60e472 |
+  | pack RL9-P1..P5 | 822f701 | eb1bab9 |
+  | pack RL10-P1..P4 | 2694883 | 8d343ed |
+  | pack RL11-P1..P4 | 2876cc6 | ca6924f |
+  | pack RL12-P1, RL12-P2 | b0f14a3 | b0f14a3 |
+  | check 5 report (ACCEPT) | 2f73c9f | b532f37 |
 
 ## What you should hear
 1. D-IC3-1 (lead decision, departs from the brief's literal wording): check 3 found (IC3-1, S2) that base0 itself held
@@ -181,11 +190,18 @@ rebases of the pack branch replaced the pack's, so the ids on the branches now a
   of 30, base 18 red; W-b6, W-l5 and W-b7 pass the 2694883 test 28 of 28 (red first) and fail the new one (1, 18, 2 of
   30; W-u7 green, disclosed); HostPackX21 with the read-only clone 18 passed; the clone is unchanged; make-repo builds
   base0 4eaf584a and accepted0 fe7bf927; gate PASS on 2876cc6.
+- Review loop round 12: kit at 28f21e8, the reviewer's forge (probe12) PASS on b12d6a8 and PASS false after, the new
+  test red on b12d6a8, four guard-removal mutants each red, full kit suite 163 passed, 1 skipped (ln -s), 5 subtests
+  passed, exit 0; gate PASS on 28f21e8. Pack at b0f14a3 (rebased onto 28f21e8; the changed lines of `git diff 2876cc6
+  ca6924f` equal the kit's): 32 rows; accepted 32 of 32, base 20 red; W-y and W-z pass the 2876cc6 test 30 of 30 (red
+  first) and fail the new one (1 and 1 of 32; W-u7 green, disclosed); HostPackX21 with the read-only clone 18 passed;
+  the clone is unchanged; make-repo builds base0 4eaf584a and accepted0 fddff8ef; gate PASS on b0f14a3.
 
 ## Next (yours)
-Kit b12d6a8 (#120) and this branch (#119) are pushed. The pack branch was rebased onto b12d6a8, so it needs a
-force-push with lease, which is yours: `git push --force-with-lease=build/sr-pack-4a:1feb090ac40b46474999995ddc921fc16cdc4126 origin build/sr-pack-4a`
-(from the pack worktree, which holds 2876cc6; it refuses if origin's pack is no longer 1feb090, which it still was
-when round 11 ended; 822f701 and 2694883 were never pushed). Then review and
+Kit 28f21e8 (#120) and this branch (#119) are pushed. You pushed the pack's rebase onto 28f21e8
+(origin build/sr-pack-4a is ca6924f), so #122 shows ca6924f until the round-12 commit b0f14a3, a fast-forward on it, is
+pushed; that push is yours: `git push --force-with-lease=build/sr-pack-4a:ca6924f03390bb918d93cd09feb669482267cc7a origin build/sr-pack-4a`
+(from the pack worktree, which holds b0f14a3; it refuses if origin's pack is no longer ca6924f, which it was when
+round 12 ended; 822f701, 2694883 and 2876cc6 were never pushed). Then review and
 merge #120, then #122, then #119. Plan step 5 (sr-policy-7, sr-packs-t1) waits for you; follow-ups FU-1..FU-5
 on #120 are still open.

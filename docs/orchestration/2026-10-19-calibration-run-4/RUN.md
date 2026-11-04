@@ -921,3 +921,75 @@ read only, for the subject trees the packs export.
   - The MoonAliza clone is unchanged (HEAD, refs, status and stash list the same before and after).
 - Heads: kit b12d6a8 (pushed, #120), docs this entry's commit (pushed, #119), pack 2876cc6 (committed, NOT pushed: the
   pack needs a force-push with lease, which is the owner's; the command is in Next of the lead restart report).
+
+## 2026-11-04 - review loop round 12: RL12-K1 on the kit, RL12-P1, RL12-P2 on the pack, RL12-D1 on the PR bodies
+- Round 12 (review-loop-round-12-kit-docs, review-loop-round-12-pack; fresh reviewers on kit b12d6a8, pack 2876cc6,
+  docs bb9270c) found one S3 on the kit, one S3 and one S4 on the pack and one S4 on the PR bodies.
+- RL12-K1 (S3, kit): the set-aside found the paths the base lacks only through git's listing, and git's directory walk
+  skips any entry named `.git`, case-insensitively where `core.ignorecase` is set (the view's config on Windows). So
+  `tests/.GIT/` and everything below it was in no list and never set aside, while vitest 5.0.1 globs it (`dot: true`,
+  a case-sensitive `**/.git/**` exclude): a forge at `tests/.GIT/tests/zz_accepted_x2_1.test.ts` ran inside the pin's
+  own command, rewrote the accepted test, and a wrong fix graded PASS with every list empty.
+- Fixed in 28f21e8 on `build/sr-kit-cases` (pushed, #120): the set-aside also walks the checkout on disk, never through
+  a link, and every entry whose name casefolds to `.git` (other than the checkout's own) goes aside like any other path
+  the base lacks, for every command and for the pin. Kit README: the set-aside paragraph says why and no longer lists
+  "an entry named `.git` inside the tree" as not covered; step 6 names the case for the pin; CHANGELOG kit line.
+- RL12-P1 (S3, pack): W-A, the keep only while the directory fails with EACCES (any other code from the directory taken
+  for a lost volume), passed 30 of 30: the keep side met the directory point only in the lasting row, with EACCES; the
+  tombstone-at-each-point row runs every code at the directory, but on the delete side only.
+- RL12-P2 (S4, pack): W-B, the keep only for staged entries at least as new as the newest committed entry, passed 30 of
+  30: every committed entry the rows build is older than the pair to keep.
+- RL12-D1 (S4, docs): #119 and #120 said every finding was fixed at the root, while RL10-K2, W-v, W-u7 and
+  `process.loadEnvFile` were disclosed, not fixed; #120's round-11 mutant list named six of the seven mutants (it left
+  out the pin with the full keep and no swap).
+- Fixed in b0f14a3 on `build/sr-pack-4a` (rebased onto 28f21e8 first; id map below). 30 -> 32 rows; the reviewer's W-A
+  and W-B are W-y and W-z here (W-a and W-b already name rows, and a case-insensitive disk takes the two for the same
+  names):
+  - P1, by construction: the keep-at-each-point row runs each of the seven codes at the stat, the open, the read and
+    the directory at the next start, ten years on, after each of the four crashes of the journey rows, each on a fresh
+    copy of the crash (112 unreadable starts), then a readable start ten years later; each unreadable start must keep
+    the pair and the readable one must have it live and committed. 300 s timeout.
+  - P2, the reviewer's probe as a row: the engine-key row (a first sign-in before commit 1 and a refresh before commit
+    4; three unreadable starts ten years apart, EACCES at the stat, EBUSY at the open and EIO at the read; the engine
+    stores a key during the first one's session and the next two commit it, so the pair to keep is older than a
+    committed entry; then a readable start).
+  - README: the two rows, the 300 s rows (eight), the clocked rows, the catch section (the committed entries include
+    one newer than the pair to keep; the tombstone and the pair to keep each meet every code at every point; eleven of
+    the twelve rounds found at least one wrong fix that passed, the twelfth two) and the limits the rows change.
+  - WRONG-FIXES.md names fifty-two (W-y, W-z added), every count out of 32. accepted0 is fddff8ef (base0 4eaf584a
+    unchanged).
+  - HostPackX21: X21_PIN_ROWS 32, W-y and W-z as X21_WRONG entries, the two rows' titles and forms, the later() counts,
+    the README's round-12 sentences, the red-at-base check (20).
+- RL12-D1 fixed in this entry's commit and in the PR bodies: #119 and #120 say "fixed at the root or disclosed (W-u7,
+  W-v, RL10-K2, `process.loadEnvFile`)", and #120 names all seven round-11 mutants; RUN.md and the lead restart report
+  (rounds 9, 10 and 11 now read "all fixed or disclosed") say the same.
+- Decisions:
+  - Kit: the grade does not trust git's listing alone for what to set aside; it walks the disk for the one name git
+    never lists (`.git` in any case), rather than refusing such a checkout or narrowing a runner's globs, so the pin
+    and every command run without it whatever a runner reads.
+  - Pack: P1 closed by construction (the keep side at every code and every point, as RL11-P1 did for the tombstone), not
+    a row per wrong fix; P2 by the reviewer's probe as a row (cheap) and named in the vault-states limit.
+- Pack ids after the rebase onto 28f21e8 (old -> new, by subject): 2876cc6 -> ca6924f, d4cf773 -> 8d343ed,
+  c1ed7ef -> eb1bab9, 87610f6 -> c60e472, d319100 -> 39e59ca, 8643b42 -> a775f5b, acf68f9 -> ff93d61,
+  40f1dbd -> 2ee4bbd, 3f35c7b -> a73363f, a4eb9ea -> 1b690fb, 7fde450 -> 2161f30, 5c2a386 -> b532f37 (check 5's report),
+  3df20e1 -> a09c6d4, 96d2a34 -> e044555, 4f1c9de -> cf961fb, 6539bfa -> c50b4ef, f63eab0 -> a7c1ba3,
+  e87fe11 -> d3ffb76, f3313a3 -> fcab48f, 0f9e18c -> d525e8a, b222efa -> 830f6f1, 45f5a01 -> b662dd8,
+  4fce50b -> 9230fb7, 7d84f31 -> 8f7c033 (the unit's first commit); the changed lines of
+  `git diff 2876cc6 ca6924f` equal those of `git diff b12d6a8 28f21e8` (17 CHANGELOG conflicts, each the kit line
+  beside the pack line, resolved by taking the kit line from 28f21e8).
+- Verified:
+  - Kit: the reviewer's forge (probe12) grades PASS on b12d6a8's grade.sh and PASS false after (`tests/.GIT` in
+    `setAside`); the new test red on b12d6a8, green after; guard-removal mutants (no disk walk; the exact name `.git`
+    only; the top level only; no check that an entry is the checkout's own `.git`) each turn the new test red (the last
+    also four more), the unmutated grade green. Full kit suite 163 passed, 1 skipped (ln -s), 5 subtests passed, exit 0;
+    28f21e8 passed the full regression gate.
+  - Pack: on scratch trees the accepted source passes 32 of 32 and the base fails 20 (the 18 of round 11 and the two new
+    rows); W-y and W-z pass the 2876cc6 test 30 of 30 (the reviewer's grades) and the new test fails W-y 1 and W-z 1 of
+    32 (W-u7 green, disclosed); every old wrong fix's count is its old count plus the round-12 rows it fails (two for
+    twenty-six, the engine-key row alone for W-b, W-b4 and W-p, the keep-at-each-point row alone for W-l2 and W-s, none
+    for the other nineteen). HostPackX21 without the clone 8 passed, 10 skipped; with the read-only clone 18 run, OK,
+    exit 0 (21087 s). make-repo builds base0 4eaf584a and accepted0 fddff8ef. b0f14a3 passed the full regression gate.
+  - The MoonAliza clone is unchanged (HEAD, refs, status and stash list the same before and after).
+- Heads: kit 28f21e8 (pushed, #120), docs this entry's commit (pushed, #119), pack b0f14a3 (committed, NOT pushed: the
+  owner pushed the rebase onto 28f21e8, so origin and #122 show ca6924f until the owner pushes b0f14a3, a fast-forward
+  on it, with the lease pinned to ca6924f; the command is in Next of the lead restart report).
