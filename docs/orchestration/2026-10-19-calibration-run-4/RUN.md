@@ -680,9 +680,9 @@ read only, for the subject trees the packs export.
 
 ## 2026-11-03 - review loop round 9: RL9-K1 on the kit, RL9-P1..P5 on the pack, RL9-D1
 - Round 9 (review-loop-round-9-kit-docs, review-loop-round-9-pack; fresh reviewers on kit ad9e4b0, pack 1feb090, docs
-  8361f9c) found one S3 on the kit, three S3s and two S4s on the pack and one S4 on the docs. The owner had
-  force-pushed 1feb090 before the round (origin's pack head was 1feb090 when this round started).
-- RL9-K1 (S3, kit): a nested `node_modules` the candidate committed under `tests/` (a path the base lacks) shadowed
+  8361f9c) found one S3 on the kit, three S3s and two S4s on the pack and one S4 on the docs. The owner
+  force-pushed 1feb090 during the round (06:54Z, 16 minutes after the round-9 brief; corrected in round 10, RL10-D1).
+- RL9-K1 (S3, kit): an untracked, ignored `tests/node_modules` (a path the base lacks, in no list; RL10-D1) shadowed
   the sealed install: node resolves `node_modules` from the importing file's directory first, so a fake `esbuild` or
   `vitest` there ran instead of the host's. The seal (RL8-K2) checks only the linked names. Same class, found by the
   fixer: a cached `.pyc` beside a test (an unchecked-hash `.pyc` loads without its source), a top-level `unittest.py`
@@ -743,4 +743,91 @@ read only, for the subject trees the packs export.
     read-only clone 17 of 18 OK in 10957 s (every wrong fix FAIL with its WRONG-FIXES.md count of 26, the accepted fix and both alternatives PASS, `linksIntact` true and `setAside` empty on every grade); the one failure was the red-at-base test, which expected the old red set, while the lasting row and the engine row are journeys through unreadable starts and are red at base0 too (16 red, as stated); the test now asserts both rows and the 16, and passes alone with the clone (1 of 1 OK in 586 s). 822f701 passed the full regression gate.
   - The MoonAliza clone is unchanged (HEAD, status, refs and stash list the same before and after).
 - Heads: kit 817c6be (pushed, #120), docs this entry's commit (pushed, #119), pack 822f701 (committed, NOT pushed: the
+  pack needs a force-push with lease, which is the owner's; the command is in Next of the lead restart report).
+
+## 2026-11-04 - review loop round 10: RL10-K1..K3 on the kit, RL10-P1..P4 on the pack, RL10-D1 and RL10-D2
+- Round 10 (review-loop-round-10-kit-docs, review-loop-round-10-pack; fresh reviewers on kit 817c6be, pack 822f701,
+  docs 36f1002) found two S3s and one S4 on the kit, three S3s and one S4 on the pack and two S4s on the docs.
+- RL10-K1 (S3, kit): in a fix cell the accepted pin ran third, after the candidate's tests and the guard, and the
+  set-aside resets only the paths the base lacks: a candidate test that rewrote a base-tracked runner (`tests/run.py`)
+  or left a detached child overwriting the accepted test made the pin read green for a wrong fix.
+- RL10-K2 (S4, kit): a counter in the temp directory forged `guardRed` (state outside the checkout); the README said
+  "what one command writes is set aside before the next".
+- RL10-K3 (S3, kit): git lists a junction target's entries as the checkout's files; the set-aside renamed them into
+  the checkout's `.git` (a host directory's files moved), the put-back refused to return them through the link, and
+  the cell still passed (`restored` false was not part of PASS).
+- Fixed in 042ac43 on `build/sr-kit-cases` (pushed, #120): a fix cell runs the accepted pin first, before any of the
+  candidate's tests, the guard and the lint; nothing below a link is moved (the topmost link above such an entry is set
+  aside as itself, and a link where a directory holding a kept path stands is set aside, not followed); PASS needs
+  `restored` in every cell (the gate's `back` too). Kit README: a fix cell's order; the set-aside claim narrowed to
+  paths the base lacks; a new limit naming what a command can leave for the next (a base file it rewrote, a detached
+  process, state outside the checkout) and the keys the candidate's own tests can therefore forge (`candidateGreen`,
+  `guardRed`, the lint; `redAtHead`, `redAtMutants`, `greenWithFix` in a pin cell); CHANGELOG kit line.
+- RL10-P1 (S3, pack): W-j3, W-j's hold only beside no committed entry, passed 26 of 26: no row ran an unreadable start
+  beside an orphan pair with no committed entry.
+- RL10-P2 (S3, pack): W-b5, W-b2's sparing of tombstones only beside a committed entry, passed 26 of 26: no row ran an
+  unreadable start beside a tombstoned pair and a committed one.
+- RL10-P3 (S3, pack): W-x, keep only while `existsSync` sees the file, passed 26 of 26: the fault wrapped a list of
+  functions and `existsSync` was not on it.
+- RL10-P4 (S4, pack): W-u7, an age from `process.report`'s timestamps, passed; the README said a start moves every
+  clock it reads.
+- Fixed in 2694883 on `build/sr-pack-4a` (rebased onto 042ac43 first; id map below). 26 -> 28 rows, old rows unchanged:
+  - the two vault-state rows (P1, P2, by construction rather than a row per wrong fix): beside no committed entry and
+    beside the old committed pair, a tombstoned pair, an orphan pair or both, each with and without a staged entry the
+    engine names (twelve states); in each, three unreadable starts ten years apart (EACCES, EBUSY, EIO at the stat,
+    the open and the read in turn, the first point moving on from state to state) must delete the tombstoned pair,
+    commit the engine's entry and keep the committed pair, and the readable start after them must delete the orphan
+    pair. 300 s timeout each.
+  - P3: the fault is a table over every function of `node:fs` and `node:fs/promises`, read from the modules as the
+    running Node has them; every one that takes a path fails on the file by default (one the table does not name fails
+    at every point); the table names how the known ones fail (metadata at the stat and the directory, content at every
+    point) and the few left out (the writes, the descriptor functions, `createReadStream` (which meets the fault
+    through the callback `open` and `read`), `glob`, `watchFile`, `unwatchFile`); `exists` and `existsSync` answer
+    false at the stat and the directory. README: the stat/open/read paragraph rewritten to match, and a new limit
+    "Functions the fault leaves out".
+  - P4: no class fix. The README and the test say a start moves the clocks they name, not every clock a process can
+    read; `process.report`'s timestamps and a worker thread's `Date` are disclosed under the clocks limit (W-u7
+    passes, as stated).
+  - README "What the pack is and is not expected to catch": what an unreadable start must still delete is built in
+    every combination of the states the rows build beside an unreadable file; what it must keep only in the states the
+    journey, other-errno, unreadable-run, lasting and engine rows name.
+  - WRONG-FIXES.md names forty-seven (W-j3, W-b5, W-x added), every count out of 28; W-u7 is not a row (it passes;
+    disclosed). accepted0 is a6f7896a (base0 4eaf584a unchanged).
+  - HostPackX21: X21_PIN_ROWS 28, the three wrong fixes as X21_WRONG entries, the fault's table lines, the vault-state
+    rows and their forms, the later() counts, the README's round-10 sentences, and "every clock it reads" asserted gone.
+- RL10-D1 (S4, docs): the round-9 entry said the nested `node_modules` was committed and that 1feb090 was pushed before
+  the round; corrected in place (untracked and ignored, in no list; pushed during the round, 06:54Z).
+- RL10-D2 (S4, docs): the notes folder's pr119-body.md and pr120-body.md held round-8 texts; both refreshed from the
+  live bodies with round 10, and the live #119, #120 and #122 bodies refreshed with gh (no AI footer).
+- Decisions:
+  - Kit: the pin goes first rather than a list of what a command may leave behind (a runner, a config, a process): the
+    pin is the grade's one key that must not depend on the candidate's tests, and only the candidate's source runs
+    before it. What the candidate's own tests report stays forgeable; the README says so rather than claiming more.
+  - Pack: the vault-state rows build every combination of the states the rows already build beside an unreadable file,
+    so a sparing keyed on one of them is reached; new rows rather than wider old ones, so every old wrong fix's count is
+    its old count plus the new rows it fails (checked fix by fix). The fault's default is to fail, so a function a later
+    Node adds cannot slip past; the README names the few left out. W-u7 disclosed, not closed: the brief's decision.
+- Pack ids after the rebase onto 042ac43 (old -> new, by subject): 822f701 -> e582d5a, 31e8738 -> 3687418,
+  bd026ae -> bfdd9f7, 235378f -> 4bec8a4, bcfa0c5 -> 6cc2739, a954d34 -> 914ab06, 8cdc71a -> f2f993c,
+  083da50 -> 172bc38, ca2e446 -> 76f34c3, 5fab5c3 -> 5fe4b01 (check 5's report), c3bca82 -> f429e18, 0cf1578 -> 76e81e8,
+  977141b -> 0bfdb65, af81cb0 -> b1c4315, 14740be -> 01fc7aa, 03cd62a -> b941f6c, 735cad9 -> 88acfcd,
+  9470219 -> 7024cdb, cb02ce4 -> dc6772d, acf680d -> b017def, de7fd2d -> 2b8c48b,
+  267c6d2 -> 846773a (the unit's first commit); the changed lines of
+  `git diff 822f701 e582d5a` equal those of `git diff 817c6be 042ac43` (15 CHANGELOG conflicts, each the kit line beside
+  the pack line, resolved by taking the kit line from 042ac43).
+- Verified:
+  - Kit: the four new tests red on 817c6be's grade.sh, green after; guard-removal mutants (the pin run third; no link
+    check in the set-aside; no link checks at all; PASS ignoring `restored`) each turn a named test red, the unmutated
+    grade green; the extra link check where a directory holds a kept path is redundant (its mutant stays green). Not
+    covered (README): a detached process or a base-file rewrite forging what the candidate's own tests report, state
+    outside the checkout, a process started before the grade, native Windows symlinks (not tested apart from
+    junctions), the gate's `back` in PASS (not mutant-tested). Full kit suite 161 passed, 1 skipped (ln -s), 5
+    subtests passed, exit 0; 042ac43 passed the full regression gate.
+  - Pack: on scratch trees the accepted source passes 28 of 28 and the base fails the same 16; each of W-j3, W-b5, W-x
+    and W-u7 passes the 822f701 test 26 of 26 (red first), and the new test fails W-j3 1, W-b5 1, W-x 16 of 28 (W-u7
+    28 of 28 green, disclosed); every old wrong fix's count is unchanged but for the vault-state rows it fails (W-b,
+    W-b2, W-b3, W-b4, W-c, W-d, W-e, W-j, W-q +2; W-m, W-r5 +1). HostPackX21 without the clone 8 passed, 10 skipped;
+    with the read-only clone 18 passed, exit 0 (12682 s). 2694883 passed the full regression gate.
+  - The MoonAliza clone is unchanged (HEAD, refs, status and stash list the same before and after).
+- Heads: kit 042ac43 (pushed, #120), docs this entry's commit (pushed, #119), pack 2694883 (committed, NOT pushed: the
   pack needs a force-push with lease, which is the owner's; the command is in Next of the lead restart report).

@@ -3,7 +3,7 @@
 Result: sr-pack-4a ACCEPTED (check 5, 2f73c9f, draft PR #122, stacked on #120). The kit change it depends on, lead
 integrations 2-8 on build/sr-kit-cases (#120, head 3ed05d4), is ACCEPTED by check 8. Nothing merged; merges are yours.
 
-After those verdicts a review loop (nine rounds of fresh reviewers) found more, so the heads to review moved; see RUN.md,
+After those verdicts a review loop (ten rounds of fresh reviewers) found more, so the heads to review moved; see RUN.md,
 entry "review loop after the ACCEPTs" and the entries after it. The ids below are the ones each round committed; later
 rebases of the pack branch replaced the pack's, so the ids on the branches now are in the table under "heads now".
 - round 1: RL1-1 (S3, pack) a wrong fix that keeps the staged pair when the account file was read and refused graded
@@ -60,23 +60,35 @@ rebases of the pack branch replaced the pack's, so the ids on the branches now a
   the store's default clock and the date constructor moved; README section "What the pack is and is not expected to
   catch"; forty-four wrong fixes; accepted0 fe4fdc2f). RL9-D1 (S4, docs): #122 named check 5 by an id on an older head;
   now 5fab5c3 on 822f701.
-- heads now: kit 817c6be (pushed, #120), pack 822f701 (committed, not pushed: see Next), docs the RUN.md commit
-  after 8361f9c (pushed, #119). Outcome seq 3 ("accepted", check 5's head) is append-only and stays.
+- round 10: RL10-K1 (S3, kit) the accepted pin of a fix cell ran after the candidate's tests, so a test that rewrote a
+  base-tracked runner or left a detached process forged it; RL10-K2 (S4, kit) a counter in the temp directory forged
+  `guardRed`; RL10-K3 (S3, kit) the set-aside moved entries below a junction into the checkout's `.git` and the cell
+  still passed; all fixed in 042ac43 (the pin runs first; nothing below a link is moved; PASS needs `restored`; the
+  README names what the candidate's own tests can still forge). RL10-P1, RL10-P2 (S3, pack) W-j3 and W-b5 (a hold or
+  a sparing keyed on whether a committed entry exists) passed; RL10-P3 (S3) W-x (`existsSync`, outside the fault)
+  passed; RL10-P4 (S4) W-u7 (`process.report`'s clock) passes, disclosed; all fixed in 2694883 after a rebase onto
+  042ac43 (the two vault-state rows, 28: every combination of the states the rows build beside an unreadable file; the
+  fault fails every path-taking `node:fs` function by default; "every clock it reads" narrowed to the clocks named;
+  forty-seven wrong fixes; accepted0 a6f7896a). RL10-D1, RL10-D2 (S4, docs): two wrong facts in the round-9 RUN.md
+  entry, and stale PR body files in the notes folder; corrected.
+- heads now: kit 042ac43 (pushed, #120), pack 2694883 (committed, not pushed: see Next), docs the RUN.md commit
+  after 36f1002 (pushed, #119). Outcome seq 3 ("accepted", check 5's head) is append-only and stays.
 - ids on the branches (round-by-round id -> id on the branch now, matched by subject):
 
   | what | as committed | on the branch now |
   |---|---|---|
-  | kit, rounds 2-5, 8 and 9 | dead160, d73511f, 7ac8143, 2937b2c, ad9e4b0, 817c6be | the same (the kit branch is never rebased) |
-  | pack RL1-1 | 045ee89, f16f10f | ca2e446 |
-  | pack RL2-P1 | f25b52c | 083da50 |
-  | pack RL2-1 | 556b166, 12ebdb8 | 8cdc71a |
-  | pack RL3-1, RL3-2 | 00df498, 0ec45ca | a954d34 |
-  | pack RL5-P1 | 7595509 | bcfa0c5 |
-  | pack RL6-P1 | a6d12b8 | 235378f |
-  | pack RL7-P1, RL7-P2 | cfe982c | bd026ae |
-  | pack RL8-P1..P3 | 1feb090 | 31e8738 |
-  | pack RL9-P1..P5 | 822f701 | 822f701 |
-  | check 5 report (ACCEPT) | 2f73c9f | 5fab5c3 |
+  | kit, rounds 2-5 and 8-10 | dead160, d73511f, 7ac8143, 2937b2c, ad9e4b0, 817c6be, 042ac43 | the same (the kit branch is never rebased) |
+  | pack RL1-1 | 045ee89, f16f10f | 76f34c3 |
+  | pack RL2-P1 | f25b52c | 172bc38 |
+  | pack RL2-1 | 556b166, 12ebdb8 | f2f993c |
+  | pack RL3-1, RL3-2 | 00df498, 0ec45ca | 914ab06 |
+  | pack RL5-P1 | 7595509 | 6cc2739 |
+  | pack RL6-P1 | a6d12b8 | 4bec8a4 |
+  | pack RL7-P1, RL7-P2 | cfe982c | bfdd9f7 |
+  | pack RL8-P1..P3 | 1feb090 | 3687418 |
+  | pack RL9-P1..P5 | 822f701 | e582d5a |
+  | pack RL10-P1..P4 | 2694883 | 2694883 |
+  | check 5 report (ACCEPT) | 2f73c9f | 5fe4b01 |
 
 ## What you should hear
 1. D-IC3-1 (lead decision, departs from the brief's literal wording): check 3 found (IC3-1, S2) that base0 itself held
@@ -147,10 +159,17 @@ rebases of the pack branch replaced the pack's, so the ids on the branches now a
   each of the seven new wrong fixes passes the 1feb090 test 22 of 22 and fails its new row (red first); HostPackX21
   with the read-only clone 17 of 18 OK in 10957 s, every wrong fix FAIL with its stated count of 26; the red-at-base test then fixed to expect the lasting and engine rows red at the base (16) and 1 of 1 OK with the clone; the clone is unchanged; make-repo builds base0 4eaf584a and accepted0
   fe4fdc2f; gate PASS on 822f701.
+- Review loop round 10: kit at 042ac43, the four new tests red on 817c6be, guard-removal mutants each red (one
+  redundant check's mutant green, stated), full kit suite 161 passed, 1 skipped, exit 0; gate PASS on 042ac43. Pack
+  at 2694883 (rebased onto 042ac43; the changed lines of `git diff 822f701 e582d5a` equal the kit's): 28 rows; accepted
+  28 of 28, base the same 16 red; W-j3, W-b5, W-x and W-u7 pass the 822f701 test 26 of 26 (red first) and W-j3, W-b5
+  and W-x fail the new one (1, 1, 16 of 28; W-u7 green, disclosed); HostPackX21 with the read-only clone 18 passed; the
+  clone is unchanged; make-repo builds base0 4eaf584a and accepted0 a6f7896a; gate PASS on 2694883.
 
 ## Next (yours)
-Kit 817c6be (#120) and this branch (#119) are pushed. The pack branch was rebased onto 817c6be, so it needs a
+Kit 042ac43 (#120) and this branch (#119) are pushed. The pack branch was rebased onto 042ac43, so it needs a
 force-push with lease, which is yours: `git push --force-with-lease=build/sr-pack-4a:1feb090ac40b46474999995ddc921fc16cdc4126 origin build/sr-pack-4a`
-(from the pack worktree, which holds 822f701; it refuses if origin's pack is no longer 1feb090). Then review and
+(from the pack worktree, which holds 2694883; it refuses if origin's pack is no longer 1feb090, which it still was
+when round 10 ended; 822f701 was never pushed). Then review and
 merge #120, then #122, then #119. Plan step 5 (sr-policy-7, sr-packs-t1) waits for you; follow-ups FU-1..FU-5
 on #120 are still open.
