@@ -19,7 +19,11 @@
 #                 base lacks reaches a command unless the grade lists it (setAside; review loop RL9-K1, RL10-K3). The
 #                 commands are not independent runs: a command can rewrite a base file or leave a process or a file
 #                 outside the checkout for the next, so a fix cell runs the accepted pin first, before any of the
-#                 candidate's tests (RL10-K1), and what the candidate's own tests report can be forged (README limits)
+#                 candidate's tests (RL10-K1), on the base tree, the candidate's sources and the accepted test only:
+#                 every other path the base lacks is set aside and every other base file the candidate changed holds
+#                 the base's content while it runs, so a runner that takes its file argument as a filter (vitest) finds
+#                 no candidate test to run inside it (RL11-K1); the candidate's sources still run inside the pin, and
+#                 what the candidate's own tests report can be forged (README limits)
 #   --links SEAL  needed when the manifest has checkout.links: the seal the host made of each linked directory with
 #                 --seal right after installing it, before any candidate ran, and kept outside every checkout and linked
 #                 directory. The test, lint and gate commands run from those trees, and a candidate can write them
@@ -514,12 +518,13 @@ def hash_paths(files):
         raise RuntimeError(f"git (view) hash-object returned {len(ids)} ids for {len(files)} files")
     return ids
 
-def run_bash(cmd, keep_also=()):
+def run_bash(cmd, keep_also=(), keep=None):
     """The exit code of `bash -c cmd` in the checkout, 124 when it overruns the timeout, run with every path the grade
-    does not count set aside (RL9-K1; keep_also: more paths it runs, the accepted test). A timeout kills the command's
-    whole process tree (taskkill /T on Windows, the process group elsewhere): killing bash alone would leave a node or
-    python child writing into the checkout after the grade."""
-    set_aside(KEEP | set(keep_also))
+    does not count set aside (RL9-K1; keep_also: more paths it runs, the accepted test; keep: the paths kept in place of
+    the ones the grade counts, the accepted pin's, RL11-K1). A timeout kills the command's whole process tree (taskkill
+    /T on Windows, the process group elsewhere): killing bash alone would leave a node or python child writing into the
+    checkout after the grade."""
+    set_aside((KEEP if keep is None else set(keep)) | set(keep_also))
     p = subprocess.Popen(["bash", "-c", cmd], cwd=cand, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          start_new_session=os.name != "nt")
     try:
@@ -612,7 +617,7 @@ untracked = sorted(f for f in others if f not in indexed)
 # ever moved: git lists the entries of a junction's target as the checkout's files, and renaming them moved a host
 # directory's files into the checkout's .git, where the put-back refused to return them through the link (review loop
 # RL10-K3); the topmost link above such an entry is set aside instead, as the link itself.
-aside = {"dir": None, "left": [], "out": [], "failed": []}
+aside = {"dir": None, "left": [], "out": [], "pin": [], "failed": []}
 
 def link_above(name):
     """The topmost directory above name (a path in the checkout) that is a link of any kind, None when every directory
@@ -641,8 +646,10 @@ def remove_entry(p):
         except OSError:
             os.rmdir(p)  # a directory link or junction on Windows
 
-def set_aside(keep, first=False):
-    """Move every path the base tree lacks, other than keep and the linked names, out of the checkout's tree."""
+def set_aside(keep, into="out"):
+    """Move every path the base tree lacks, other than keep and the linked names, out of the checkout's tree: into
+    `left` (what the candidate left, put back after the last command), `pin` (put back right after the accepted pin) or
+    `out` (what a command wrote, removed)."""
     keep = set(keep) | set(links)
     above = {"/".join(k.split("/")[:i]) for k in keep for i in range(1, k.count("/") + 1)}
     found = []
@@ -673,12 +680,18 @@ def set_aside(keep, first=False):
     # no exclude file: every path the view's index (the base tree) lacks, a wholly new directory as one entry
     for e in vnames("ls-files", "--others", "--directory", "-z"):
         visit(e.rstrip("/"), e.endswith("/"))
-    for name in found:
+    move_aside(found, into)
+    return found
+
+def move_aside(names, into):
+    """Rename each name (a path in the checkout) into the aside directory, listed under `into`; one that cannot be moved
+    is listed in aside["failed"] (notSetAside), one that is gone is skipped."""
+    for name in names:
         dest = None
         try:
             if aside["dir"] is None:
                 aside["dir"] = Path(tempfile.mkdtemp(prefix="grade-aside-", dir=cand / ".git"))
-            dest = aside["dir"] / str(len(aside["left"]) + len(aside["out"]))
+            dest = aside["dir"] / str(len(aside["left"]) + len(aside["out"]) + len(aside["pin"]))
             for attempt in range(5):
                 try:
                     os.rename(cand / name, dest)
@@ -694,14 +707,13 @@ def set_aside(keep, first=False):
         except OSError:
             aside["failed"].append(name)
             continue
-        (aside["left"] if first else aside["out"]).append((name, dest))
-    return found
+        aside[into].append((name, dest))
 
-def put_back():
-    """Put back what the candidate left, in place of anything a command wrote at its path, through real directories of
-    the checkout only; remove what the commands wrote. True when every path went back."""
-    ok = True
-    for name, dest in aside["left"]:
+def put_entries(entries, warn=True):
+    """Put each (name, dest) back at its name, in place of anything a command wrote there, through real directories of
+    the checkout only; the entries that did not go back."""
+    left = []
+    for name, dest in entries:
         target, parent = cand / name, cand
         try:
             for part in name.split("/")[:-1]:
@@ -715,8 +727,15 @@ def put_back():
                 remove_entry(target)
             os.rename(dest, target)
         except OSError as e:
-            ok = False
-            print(f"grade.sh: WARNING: {name} was not put back ({e}); it is in {dest}", file=sys.stderr)
+            left.append((name, dest))
+            if warn:
+                print(f"grade.sh: WARNING: {name} was not put back ({e}); it is in {dest}", file=sys.stderr)
+    return left
+
+def put_back():
+    """Put back what the candidate left, in place of anything a command wrote at its path, through real directories of
+    the checkout only; remove what the commands wrote. True when every path went back."""
+    ok = not put_entries(aside["left"])
     for name, dest in aside["out"]:
         try:
             remove_entry(dest)
@@ -745,7 +764,7 @@ if task == "gate":
     intact = {x: cand_blobs(x) == base_inv[x] for x in invariants}
     present = {x: (cand / x).exists() for x in required}
     KEEP |= {x.replace("\\", "/").rstrip("/") for x in required}
-    set_aside(KEEP, first=True)
+    set_aside(KEEP, into="left")
     try:
         gate_exit = run_bash(gate_cmd)
     finally:
@@ -770,13 +789,13 @@ added = (hnames("diff-tree", "-r", "-z", "--name-only", "-M", "--diff-filter=A",
          + hnames("diff-index", "--cached", "-z", "--name-only", "-M", "--diff-filter=A", head_id))
 new_tests = sorted({f for f in added + untracked if new_test.search(f)} - ({acc_to} if task == "fix" else set()))
 
-def run_tests(files):
+def run_tests(files, keep=None):
     if not files:
         return {"passed": None, "failed": None, "total": None, "exit": None, "error": "no test files"}
     with tempfile.TemporaryDirectory() as td:
         report = Path(td) / "report.json"
         cmd = test_cmd.replace("{files}", " ".join(shlex.quote(f) for f in files)).replace("{report}", shlex.quote(str(report)))
-        code = run_bash(cmd, keep_also=files)
+        code = run_bash(cmd, keep_also=files, keep=keep)
         r = {"passed": None, "failed": None, "total": None, "exit": code}
         if mode == "vitest-json":
             try:
@@ -840,8 +859,86 @@ def restore(final=False):
     for f, ns in saved_mtime.items():
         os.utime(cand / f, ns=(ns, ns))
 
+BASE_FILES = {f: mode for mode, kind, _, f in base_entries() if kind == "blob"}
+pin_held, pin_unrestored = {}, []  # {path: (bytes, mtime_ns) or None (nothing there)}: the candidate's version of each
+# base file the pin ran with the base's; the paths not given back
+
+def accepted_pin():
+    """The accepted test, run on the base tree, the candidate's paths.source and the accepted test only (review loop
+    RL11-K1): every other path the base lacks (the candidate's new tests, anything it added) is set aside for the pin
+    and put back right after it, and every other base file the candidate changed (the case's test file, allowed_extra,
+    an out-of-scope edit) holds the base's content for the pin, with an mtime of its own, and the candidate's version
+    (and mtime) again after it. A test command that runs more files than it is given (vitest takes a file argument as a
+    filter and runs every included test whose path contains it) found a candidate's new test at
+    tests/xtests/<the accepted test's path>, which ran first and rewrote the accepted test: a wrong fix graded PASS. Now
+    no candidate test exists while the pin runs, whatever the runner selects. A directory or a link standing where the
+    base has a file goes aside for the pin as one entry; a base file that cannot be given the base's content (a link
+    above it, a base entry that is not a regular file, an entry there that cannot be moved) leaves the pin unrun: an
+    error, not green."""
+    data = show(accepted, acc_from)
+    if data is None:
+        return {"passed": None, "failed": None, "total": None, "exit": None, "error": f"{acc_from} not in {accepted}"}
+    acc_path, made = cand / acc_to, []
+    swapped = sorted(f for f in changed if f in BASE_FILES and f not in sources)
+    set_aside(set(sources) | {acc_to}, into="pin")
+    try:
+        for f in swapped:
+            path = cand / f
+            if BASE_FILES[f] not in ("100644", "100755") or link_above(f) is not None:
+                return {"passed": None, "failed": None, "total": None, "exit": None,
+                        "error": f"{f}: the base's content cannot be put there for the accepted pin (a link above it, or not a file at the base)"}
+            st = os.lstat(path) if os.path.lexists(path) else None
+            if st is not None and (is_link(path, st) or not stat.S_ISREG(st.st_mode)):
+                # a directory or a link where the base has a file (git lists no entry below such a directory as the
+                # base's lack, so no set-aside moved it): it goes aside for the pin as one entry
+                move_aside([f], "pin")
+                st = os.lstat(path) if os.path.lexists(path) else None
+                if st is not None:
+                    return {"passed": None, "failed": None, "total": None, "exit": None,
+                            "error": f"{f}: the base's content cannot be put there for the accepted pin (what stands there cannot be moved)"}
+            parent = cand
+            for part in f.split("/")[:-1]:
+                parent = parent / part
+                if not os.path.lexists(parent):
+                    parent.mkdir()
+                    made.append(parent)
+                elif is_link(parent, os.lstat(parent)) or not parent.is_dir():
+                    return {"passed": None, "failed": None, "total": None, "exit": None,
+                            "error": f"{f}: the base's content cannot be put there for the accepted pin ({parent} is not a directory)"}
+            pin_held[f] = (path.read_bytes(), st.st_mtime_ns) if st is not None else None
+            path.write_bytes(show(base, f) or b"")
+            clock[0] += STEP_NS
+            os.utime(path, ns=(clock[0], clock[0]))
+        acc_path.parent.mkdir(parents=True, exist_ok=True)
+        acc_path.write_bytes(data)
+        return run_tests([acc_to], keep=set(sources))
+    finally:
+        acc_path.unlink(missing_ok=True)
+        for f, held in pin_held.items():
+            path = cand / f
+            try:
+                if os.path.lexists(path) and (held is None or is_link(path, os.lstat(path)) or not path.is_file()):
+                    remove_entry(path)
+                if held is not None:
+                    path.write_bytes(held[0])
+                    os.utime(path, ns=(held[1], held[1]))
+                elif os.path.lexists(path):
+                    raise OSError("it is still there")
+            except OSError as e:
+                pin_unrestored.append(f)
+                print(f"grade.sh: WARNING: {f} was not given back its content after the accepted pin ({e})", file=sys.stderr)
+        for d in reversed(made):
+            try:
+                d.rmdir()
+            except OSError:
+                pass
+        aside["left"] += put_entries(aside["pin"], warn=False)  # what did not go back is tried again at the end
+        aside["pin"] = []
+
 KEEP |= set(new_tests) | set(sources) | (set(allowed_extra) | {test_file} if task == "fix" else set())
-set_aside(KEEP, first=True)
+if task == "fix" and os.path.lexists(cand / acc_to):  # before anything is moved, so a refusal leaves the checkout as it was
+    refuse(f"{acc_to} already exists in the checkout; the accepted test needs that path")
+set_aside(KEEP, into="left")
 result = {"task": task, "head": head, "baseRoot": base_root, "commits": commits, "changed": changed, "staged": staged, "untracked": untracked,
           "setAside": sorted(n for n, _ in aside["left"])}
 back = False
@@ -869,21 +966,9 @@ try:
         # The accepted pin runs first, before any of the candidate's tests (review loop RL10-K1): a command can leave
         # what the set-aside does not reach for the next one - a base file it rewrote (the pack's runner, a config), a
         # process it started detached - and a candidate's test that did either made the accepted pin read green for a
-        # wrong fix. Run first, the pin runs the base's files, the accepted test and the candidate's committed work, of
-        # which only the source is code the pin runs.
-        acc_path = cand / acc_to
-        if acc_path.exists():
-            refuse(f"{acc_to} already exists in the checkout; the accepted test needs that path")
-        data = show(accepted, acc_from)
-        try:
-            if data is None:
-                accepted_run = {"passed": None, "failed": None, "total": None, "exit": None, "error": f"{acc_from} not in {accepted}"}
-            else:
-                acc_path.parent.mkdir(parents=True, exist_ok=True)
-                acc_path.write_bytes(data)
-                accepted_run = run_tests([acc_to])
-        finally:
-            acc_path.unlink(missing_ok=True)
+        # wrong fix. And it runs on the base tree, the candidate's sources and the accepted test only (RL11-K1, see
+        # accepted_pin): no test of the candidate's is on disk while it runs, so its own command cannot run one.
+        accepted_run = accepted_pin()
         files = [f for f in dict.fromkeys([test_file] + new_tests) if (cand / f).is_file()]
         at_cand = run_tests(files)
         put(base)
@@ -911,7 +996,9 @@ if links:
     result["linksIntact"] = links_intact()
     result["PASS"] = result["PASS"] and all(result["linksIntact"].values())
 restored = (back and all(((cand / f).read_bytes() if (cand / f).is_file() else None) == data for f, data in saved.items())
-            and all((cand / f).stat().st_mtime_ns == ns for f, ns in saved_mtime.items()))
+            and all((cand / f).stat().st_mtime_ns == ns for f, ns in saved_mtime.items())
+            and not pin_unrestored and all((cand / f).is_file() and (cand / f).read_bytes() == held[0] and (cand / f).stat().st_mtime_ns == held[1]
+                                           for f, held in pin_held.items() if held is not None))
 result["restored"] = restored
 result["PASS"] = result["PASS"] and restored  # a checkout the grade did not give back is not graded as it stood (RL10-K3)
 if not restored:

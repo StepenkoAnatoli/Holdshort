@@ -140,7 +140,8 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    the last, `linksIntact` records whether it still held the sealed content, and PASS needs every one intact.
    Each command runs with every path the base tree lacks set aside, ignored or not, other than the paths the grade
    counts as the candidate's and the linked names (`setAside`, see the limits). A fix cell runs the accepted pin
-   first, then the candidate's tests, the guard and the lint.
+   first, on the base tree, the candidate's sources and the accepted test only, then the candidate's tests, the guard
+   and the lint.
    The review cells are graded by the run itself (grader, clustering, lenses).
 7. **Build.** `python3 tools/calibration/observations.py <journal> <run file> <pack dir>/manifest.json <grades dir>
    <evidence folder> --protocol <evidence folder>/protocol.json`. A cell void under rule 2 is re-run once: launch the
@@ -351,16 +352,30 @@ still requires a named judging profile, so until it changes such a run names one
   candidate's, which runs as it is: a changed source or new test that patches the runner or the test framework while
   it runs, or a committed file that shadows a module or the runner (a top-level `unittest.py` beside a gate command
   `python3 -m unittest ...`), is listed in `changed` and is in the diff the review reads; a fix cell refuses such a file
-  only outside its scope (`scopeOk`), so the case's test file or a new test that patches the runner runs as it is, and
-  no grade check refuses one in a pin or gate cell. What the last command writes stays in the checkout.
+  only outside its scope (`scopeOk`), so the case's test file or a new test that patches the runner runs as it is in
+  the candidate's runs and the guard (not in the accepted pin, below), and no grade check refuses one in a pin or gate
+  cell. Nor is a file below a directory the candidate put where the base has a file (`docs/MAP.md/x`): git's listing
+  of new directories leaves such an entry out, so only the accepted pin, which sets that directory aside itself, runs
+  without it. What the last command writes stays in the checkout.
 - The commands of one cell are not independent runs. The set-aside resets only the paths the base lacks: a command can
   rewrite a base file the grade does not swap (the pack's runner, a config), leave a process running (a detached
   child; only a command that overruns its timeout has its process tree killed) or keep state outside the checkout (a
   file in the temp directory or the home directory), and the next command runs with it. So a fix cell runs the
-  accepted pin first, before any of the candidate's tests, and only the candidate's source runs before or during it
-  (review loop RL10-K1: a test that rewrote `tests/run.py`, or that left a child overwriting the accepted test, made
-  the pin read green for a wrong fix). Everything else a grade reads from the candidate's own tests can be forged that
-  way, as it can by a test that reads the source it runs against: `candidateGreen`, `guardRed` and the lint in a fix
+  accepted pin first, before any of the candidate's tests (review loop RL10-K1: a test that rewrote `tests/run.py`, or
+  that left a child overwriting the accepted test, made the pin read green for a wrong fix), and on the base tree, the
+  candidate's sources and the accepted test only: while it runs, every other path the base lacks (the candidate's new
+  tests, anything it added) is set aside, every other base file the candidate changed (the case's test file,
+  `allowed_extra`, an out-of-scope edit) holds the base's content with an mtime of its own, and both go back right
+  after it (RL11-K1: vitest takes a file argument as a filter and runs every included test whose path contains it, so
+  the pin's own command ran a candidate's in-scope new test at `tests/xtests/zz_accepted_x2_1.test.ts`, which rewrote
+  the accepted test before vitest read it, and a wrong fix graded PASS). So whatever a runner selects from its
+  arguments, no test of the candidate's exists to select; a base file that cannot hold the base's content there (a
+  link above it) leaves the pin unrun, an error and not green. Still not covered for the pin: the candidate's sources
+  run inside it and can patch the runner, the assertion library or the accepted test while it runs (a source is code
+  the pin must run; only the diff the review reads shows it), and state outside the checkout that the candidate's work
+  left before the grade (a process started before the grade, a file in the temp directory) reaches it as it reaches
+  every command. Everything else a grade reads from the candidate's own tests can be forged across commands, as it
+  can by a test that reads the source it runs against: `candidateGreen`, `guardRed` and the lint in a fix
   cell, and `redAtHead`, `redAtMutants` and `greenWithFix` in a pin cell (RL10-K2: a row that counted its runs in a
   temp file and failed the second, the guard run, made `guardRed` true for a weak fix). Only the diff the review reads
   shows it.

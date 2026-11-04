@@ -2505,6 +2505,83 @@ class Scripts(unittest.TestCase):
             self.assertEqual((d["acceptedPinGreen"], d["PASS"]), (False, False), f"{name}: {out}")
             self.assertFalse((cand / "tests" / "test_zz_accepted.py").exists(), name)
 
+    def test_grade_fix_runs_the_accepted_pin_on_the_base_the_sources_and_the_accepted_test_only(self):
+        # review loop RL11-K1: the accepted pin ran first, but with the candidate's new tests and its edited test file on
+        # disk, and a test command that runs more files than it is given (vitest takes a file argument as a filter and
+        # runs every included test whose path contains it) ran a candidate's test inside the pin: a new test at
+        # tests/test_x/<the accepted test's path> ran first and rewrote the accepted test, and a wrong fix graded PASS.
+        # The pin now runs on the base tree, the candidate's sources and the accepted test only. The runner here runs,
+        # in name order, every tests/**/test_*.py whose path contains an argument ("contains") or every one ("all")
+        import os
+        pack, c = make_pack(self.root, self.env)
+        runner = self.root / "filter_runner.py"
+        runner.write_text(
+            "import importlib.util, os, sys, unittest\nmode, args = sys.argv[1], sys.argv[2:]\n"
+            "found = sorted(os.path.join(d, f).replace(os.sep, '/') for d, _, fs in os.walk('tests') for f in fs\n"
+            "               if f.startswith('test_') and f.endswith('.py'))\n"
+            "files = found if mode == 'all' else [f for f in found if any(a in f for a in args)]\n"
+            "sys.path.insert(0, os.getcwd())\nsuite = unittest.TestSuite()\n"
+            "for i, f in enumerate(files):\n"
+            "    spec = importlib.util.spec_from_file_location(f'runner_mod_{i}', f)\n"
+            "    m = importlib.util.module_from_spec(spec)\n    spec.loader.exec_module(m)\n"
+            "    suite.addTests(unittest.defaultTestLoader.loadTestsFromModule(m))\n"
+            "sys.exit(0 if suite.countTestCases() and unittest.TextTestRunner(stream=open(os.devnull, 'w')).run(suite).wasSuccessful() else 1)\n")
+        m = json.loads((pack / "manifest.json").read_text(encoding="utf-8"))
+        for mode in ("contains", "all"):
+            m["commands"]["test"] = f"python3 {shlex.quote(runner.as_posix())} {mode} {{files}}"
+            (pack / f"manifest-{mode}.json").write_text(json.dumps(m, indent=1))
+        forge = ("import os as _o\n_acc = 'tests/test_zz_accepted.py'\nif _o.path.exists(_acc):\n"
+                 "    open(_acc, 'w').write('import unittest\\n\\n\\nclass T(unittest.TestCase):\\n    def test_ok(self):\\n        pass\\n')\n")
+        ran = self.root / "ran.log"  # each run of the candidate's new test leaves a line: the candidate's run and the guard's
+        row = f"import unittest\nopen({ran.as_posix()!r}, 'a').write('ran\\n')\n\n\nclass X(unittest.TestCase):\n    def test_x(self):\n        pass\n"
+        deep =Path("tests") / "test_x" / "tests" / "test_zz_accepted.py"  # in scope (^tests/test_.*\.py$)
+
+        def wrong_fix(cand, head=""):  # right for the candidate's own row only, red at the accepted pin's add(2, 3)
+            (cand / "src" / "mod.py").write_text("def add(a, b):\n    return 2 if (a, b) == (1, 1) else a - b\n")
+            (cand / "tests" / "test_mod.py").write_text(head + (cand / "tests" / "test_mod.py").read_text()
+                                                        + "\n    def test_ones(self):\n        self.assertEqual(add(1, 1), 2)\n")
+
+        cells = (("contains", "control", False), ("contains", "new-test", False), ("all", "test-file", False),
+                 ("contains", "good", True), ("all", "good", True))
+        for mode, name, good in cells:
+            label = f"{mode}-{name}"
+            cand = self.candidate(c, f"pin-only-{label}")
+            if good:
+                self.fix_like_the_accepted_one(cand)
+            else:
+                wrong_fix(cand, forge if name == "test-file" else "")
+            if name in ("new-test", "good"):
+                (cand / deep).parent.mkdir(parents=True)
+                (cand / deep).write_text((forge if name == "new-test" else "") + row)
+            commit_all(cand, self.env, "fix")
+            kept = {p: ((cand / p).read_bytes(), (cand / p).stat().st_mtime_ns) for p in ("tests/test_mod.py", deep.as_posix())
+                    if (cand / p).is_file()}
+            ran.write_text("")
+            code, d, out = grade(pack / f"manifest-{mode}.json", "fix", cand, self.env)
+            self.assertEqual(code, 0, f"{label}: {out}")
+            self.assertEqual(ran.read_text().count("ran"), 2 if name in ("new-test", "good") else 0, f"{label}: {out}")
+            self.assertEqual((d["candidateGreen"], d["guardRed"], d["scopeOk"], d["setAside"], d["restored"]), (True, True, True, [], True),
+                             f"{label}: {out}")
+            self.assertEqual(d["newTests"], [deep.as_posix()] if name in ("new-test", "good") else [], f"{label}: {out}")
+            self.assertEqual((d["acceptedPinGreen"], d["PASS"]), (good, good), f"{label}: {out}")
+            self.assertEqual({p: ((cand / p).read_bytes(), (cand / p).stat().st_mtime_ns) for p in kept}, kept, label)
+            self.assertFalse((cand / "tests" / "test_zz_accepted.py").exists(), label)
+            self.assertEqual(sh(["git", "status", "--porcelain"], cand, self.env).stdout, "", label)
+            self.assertEqual([p.name for p in (cand / ".git").glob("grade-aside-*")], [], label)
+        # a base file the candidate replaced with a directory: the pin runs with the base's file there and the directory
+        # goes back after it (the base's content cannot go where a directory stands)
+        cand = self.candidate(c, "pin-only-dir")
+        self.fix_like_the_accepted_one(cand)
+        commit_all(cand, self.env, "fix")
+        (cand / "docs" / "MAP.md").unlink()
+        (cand / "docs" / "MAP.md").mkdir()
+        (cand / "docs" / "MAP.md" / "note.txt").write_text("left by the candidate\n")
+        code, d, out = grade(pack / "manifest-all.json", "fix", cand, self.env)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((d["acceptedPinGreen"], d["setAside"], d["restored"], d["PASS"]), (True, [], True, True), out)
+        self.assertTrue((cand / "docs" / "MAP.md").is_dir())
+        self.assertEqual((cand / "docs" / "MAP.md" / "note.txt").read_text(), "left by the candidate\n")
+
     def test_grade_never_moves_an_entry_below_a_link(self):
         # review loop RL10-K3: git lists the entries of a junction's target as the checkout's own files, and the
         # set-aside renamed each one out of the host directory the junction led to (a base directory, docs/, replaced by
