@@ -22,10 +22,11 @@ import type { GitHubAccount } from '../src/main/github-account-store';
 // runs it: the store's open(), then the statements src/main/index.ts runs between the engine's references and the supervisor (the reconcile
 // and both finishStartup calls), taken from the candidate's own index.ts, so the test holds whatever names that wiring uses. Each later
 // start runs in a new process of its own, as the app's next start does, so nothing the first session or an earlier start kept in memory
-// reaches it, and a start that cannot read the file fails every node:fs read of that file, by whatever name and path form it is reached,
-// at the open or at the read, with an error shaped as a real one (code, errno, syscall, path). A later start runs with every clock it reads
-// moved ten years past the crash and the data directory's file times moved back by as much, so no age limit on a kept pair can pass for a
-// start after a long time away.
+// reaches it, and a start that cannot read the file fails every node:fs function that takes the file's path (every one but the writes and
+// the few named in the runner), by whatever name and path form it is reached, at the stat, the open or the read, with an error shaped as a
+// real one (code, errno, syscall, path). A later start runs with the clocks named at `later` moved ten years past the crash and the data
+// directory's file times moved back by as much, so no age limit on a kept pair those clocks measure can pass for a start after a long time
+// away.
 
 const KEY = randomBytes(32);
 const cryptor = {
@@ -54,10 +55,9 @@ const DAY = 86_400_000;
 /** Moves the wall clock (Date alone; timers stay real) `days` past now: the vault stamps a staged entry with Date.now(), and a start may
  *  come long after the crash, so nothing about the kept pair may depend on how recent it is. The rows move it ten years (3650 days), far
  *  past any age a keep could be limited to (a day, a month, a year); the first session's store has a fixed clock of its own (the
- *  account file's dates), and a later start's store has the app's (Date.now). A
- *  start's own process runs with every clock it reads moved by as much (Date, performance's origin, Intl's default date and
- *  process.hrtime; the system's uptime stays, as the system has booted since), and before it runs, the times of every file and
- *  directory in the data directory are moved back by as much as the clock moved since they were written (`aged`), so a file's age by
+ *  account file's dates), and a later start's store has the app's (Date.now). A start's own process runs with these clocks moved by
+ *  as much: Date, performance's origin, Intl's default date and process.hrtime (the system's uptime stays, as the system has booted
+ *  since; other clocks stay real: the README's limits), and before it runs, the times of every file and directory in the data directory are moved back by as much as the clock moved since they were written (`aged`), so a file's age by
  *  the real clock (a file the start writes, against the crash's) is as old as the start is late. */
 function later(days: number): void { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(Date.now() + days * DAY); }
 
@@ -80,16 +80,22 @@ const { Vault } = await load(); type Vault = InstanceType<typeof Vault>;
 // unreadable file is one every read fails on, as a file another process holds or a permission denies: a second read of it, through
 // whatever node:fs function and by whatever name, meets the same error. A start's fault is set for its whole process, from before the
 // subject's modules load, and it fails where a real one does (`at`), on the faulted file:
-//  - at the stat (a permission that denies reading the file's attributes): every node:fs function that reads a file by its path fails:
-//    open, readFile, stat, lstat, access, copyFile and cp (cp also from a directory that holds the file), each in its promise, callback
-//    and synchronous form, and openAsBlob, and so does the module loader (an import or a require of it);
+//  - at the stat (a permission that denies reading the file's attributes): every node:fs and node:fs/promises function that takes a
+//    path fails on the file, in its promise, callback and synchronous form: open, readFile, copyFile, cp (also from a directory that
+//    holds the file) and openAsBlob, and stat, lstat, access, statfs, readlink, realpath (and realpath.native), readdir, opendir and
+//    watch; exists and existsSync answer false, as a real one does; and so does the module loader (an import or a require of it);
 //  - at the directory (a directory on the way that may not be searched): as at the stat, for every path inside the account file's
 //    directory, there or not and by any spelling that leads there, so a copy kept beside the file fails too;
-//  - at the open (a file another process opened without sharing it, a permission on the file): its stat, lstat and access succeed, and
-//    open, readFile, copyFile, cp, openAsBlob and the module loader fail;
-//  - at the read (a byte-range lock, a failing disk): its stat, lstat, access and open succeed, and every read of what the open gave
-//    fails (read and readv of the descriptor, and a FileHandle's read, readv, readFile, readLines, stream and web stream), as do
-//    readFile, copyFile, cp, openAsBlob and the module loader by the file's path.
+//  - at the open (a file another process opened without sharing it, a permission on the file): the functions that read its attributes,
+//    its link target, its real path or a directory's entries succeed (stat, lstat, access, exists, statfs, readlink, realpath,
+//    readdir, opendir, watch), and the ones that read its bytes fail (open, readFile, copyFile, cp, openAsBlob, the module loader);
+//  - at the read (a byte-range lock, a failing disk): those that read its attributes succeed, and so does open, and every read of what
+//    the open gave fails (read and readv of the descriptor, and a FileHandle's read, readv, readFile, readLines, stream and web stream),
+//    as do readFile, copyFile, cp, openAsBlob and the module loader by the file's path.
+// The functions are read from the two modules as the running Node has them, not from a list of names: one the runner's table does not
+// name (one a later Node adds, say) fails at every point, as a read of the file's bytes does. The table leaves out only the writes (the
+// fault is on reads), the functions that take a descriptor, not a path, and createReadStream, glob, watchFile and unwatchFile (see the
+// runner and the README's limits).
 // A stream (createReadStream) opens and reads its file through the callback open and read, so it meets the error too, as its 'error'
 // event. The error has a real one's shape: the code, the errno and the message libuv gives for that code, the syscall that failed and the
 // path. The faulted file is known by its identity (its device and file index, which a hard link shares), not by its path, so a hard
@@ -97,8 +103,8 @@ const { Vault } = await load(); type Vault = InstanceType<typeof Vault>;
 // node:fs takes one (a string, a Buffer or another Uint8Array, a file: URL or an object node:fs reads as one), because node:fs itself
 // reads it: the fault hands the argument to the real stat, so no form a read accepts is missed (only a descriptor or a FileHandle
 // names no path, and those come from an open that met the fault). A read function the subject takes as it loads (promisify(fs.readFile),
-// say) is a wrapper too: the wrappers are synced to every importer before the subject loads. A later start also runs with every clock
-// the process reads moved by as much as the test's (see `later`), and its store gets the app's own clock (index.ts passes none, so the
+// say) is a wrapper too: the wrappers are synced to every importer before the subject loads. A later start also runs with the clocks
+// named at `later` moved by as much as the test's, and its store gets the app's own clock (index.ts passes none, so the
 // store's default, Date.now, which is moved too).
 const START_RUNNER = String.raw`
 import fs from 'node:fs';
@@ -207,25 +213,78 @@ function wrap(module, name, form, when, after) {
     if (form === 'callback' && typeof callback === 'function') { process.nextTick(callback, error); return undefined; }
     throw error;
   };
+  keep(original, module[name]);
 }
-const FORMS = [[fsp, '', 'promise'], [fs, '', 'callback'], [fs, 'Sync', 'sync']];
+/** Gives a wrapper the original's symbol-keyed properties (util.promisify's custom forms, so promisify(fs.read) or
+ *  promisify(fs.exists) of a wrapper resolves as of the original). */
+function keep(original, wrapper) {
+  for (const symbol of Object.getOwnPropertySymbols(original)) Object.defineProperty(wrapper, symbol, Object.getOwnPropertyDescriptor(original, symbol));
+}
+/** Replaces exists (callback) or existsSync (sync) of module with one that answers false for a path that meets the fault. */
+function answer(module, key, sync) {
+  const original = module[key];
+  module[key] = sync
+    ? function (...args) { return hit(args[0], false) ? false : original.apply(this, args); }
+    : function (...args) {
+      if (!hit(args[0], false)) return original.apply(this, args);
+      if (typeof args[args.length - 1] === 'function') process.nextTick(args[args.length - 1], false);
+      return undefined;
+    };
+  keep(original, module[key]);
+}
 const opened = (fd, args) => { if (hit(args[0], false)) (typeof fd === 'number' ? openFds.add(fd) : openHandles.add(fd)); };
-for (const [module, suffix, form] of FORMS) {
-  if (AT_READ) {
-    // the open, the stat and the access succeed; the open's descriptor or FileHandle is remembered, and every read of it fails
-    wrap(module, 'open' + suffix, form, () => null, opened);
-    wrap(module, 'readFile' + suffix, form, args => faultedFd(args[0]) || faultedHandle(args[0]) || hit(args[0], false) ? 'read' : null);
-    wrap(module, 'copyFile' + suffix, form, args => hit(args[0], false) ? 'copyfile' : null);
-    wrap(module, 'cp' + suffix, form, args => hit(args[0], true) ? 'copyfile' : null);
-  } else {
-    // at the stat every call by the path fails, each with its own syscall; at the open the stat, lstat and access succeed
-    const calls = [['open', 'open'], ['readFile', 'open'], ['copyFile', 'copyfile'], ['cp', 'copyfile']];
-    if (PHASE === 'stat' || PHASE === 'dir') calls.push(['stat', 'stat'], ['lstat', 'lstat'], ['access', 'access']);
-    for (const [name, syscall] of calls) {
-      const tree = name === 'cp';
-      wrap(module, name + suffix, form, args => hit(args[0], tree) ? syscall : null);
+const AT_STAT = PHASE === 'stat' || PHASE === 'dir';
+// Every function of node:fs and node:fs/promises that takes a path fails on the faulted file by default (review loop 10): the
+// functions are read from the two modules as this Node has them, so one the table below does not name (one a later Node adds, say)
+// fails at every point, as a read of the file's bytes does. The table names how the known ones fail:
+//  - METADATA reads the file's attributes, its link target, its real path or a directory's entries, not its bytes: it fails at the stat
+//    and the directory and succeeds at the open and the read (exists and existsSync answer false there, as a real one does, rather
+//    than throwing);
+//  - CONTENT reads its bytes: it fails at every point (at the read with the syscall read, copyfile for copyFile and cp), except open,
+//    which succeeds at the read and gives the descriptor or FileHandle every read of which then fails (below);
+//  - NOT_FAULTED takes a path but reads no file's bytes or attributes through it: the writes (the fault is on reads: the limits),
+//    createReadStream (it opens and reads through the callback open and read, which fail), glob (it lists names), and watchFile and
+//    unwatchFile (a failed stat reaches them as zeroed stats, not as an error: the limits);
+//  - DESCRIPTOR takes a descriptor, not a path (at the read, read and readv of a faulted one fail: below).
+const METADATA = { access: 'access', exists: 'access', stat: 'stat', lstat: 'lstat', statfs: 'statfs', readlink: 'readlink',
+  realpath: 'realpath', readdir: 'scandir', opendir: 'opendir', watch: 'watch' };
+const CONTENT = { open: 'open', readFile: 'open', copyFile: 'copyfile', cp: 'copyfile', openAsBlob: 'open' };
+const NOT_FAULTED = new Set(['appendFile', 'chmod', 'chown', 'lchmod', 'lchown', 'link', 'lutimes', 'mkdir', 'mkdtemp',
+  'mkdtempDisposable', 'rename', 'rm', 'rmdir', 'symlink', 'truncate', 'unlink', 'utimes', 'writeFile', 'createWriteStream',
+  'createReadStream', 'glob', 'watchFile', 'unwatchFile']);
+const DESCRIPTOR = new Set(['close', 'fchmod', 'fchown', 'fdatasync', 'fstat', 'fsync', 'ftruncate', 'futimes', 'read', 'readv',
+  'write', 'writev']);
+/** The syscall a call of name fails with at this start's point (null where it succeeds): the JS realpath fails at its lstat. */
+function syscallOf(name, promises) {
+  if (Object.hasOwn(METADATA, name)) return !AT_STAT ? null : name === 'realpath' && !promises ? 'lstat' : METADATA[name];
+  if (Object.hasOwn(CONTENT, name)) return !AT_READ ? CONTENT[name] : CONTENT[name] === 'copyfile' ? 'copyfile' : 'read';
+  return AT_READ ? 'read' : name.toLowerCase();
+}
+const natives = { realpath: fs.realpath.native, realpathSync: fs.realpathSync.native };
+for (const [module, promises] of [[fsp, true], [fs, false]]) {
+  for (const key of Object.keys(module)) {
+    if (typeof module[key] !== 'function' || /^[A-Z_]/.test(key)) continue;   // the classes (Stats, ReadStream, Dir, ...) and _internals
+    const name = !promises && key.endsWith('Sync') ? key.slice(0, -4) : key;
+    if (NOT_FAULTED.has(name) || DESCRIPTOR.has(name)) continue;
+    // the form a failure takes: a rejected promise, a callback's error, or a throw (a Sync function, and watch, which throws)
+    const form = promises || name === 'openAsBlob' ? 'promise' : key.endsWith('Sync') || name === 'watch' ? 'sync' : 'callback';
+    if (name === 'exists') {   // a real exists answers false for a file the stat cannot reach
+      if (AT_STAT) answer(module, key, key === 'existsSync');
+      continue;
     }
+    if (AT_READ && name === 'open') { wrap(module, key, form, () => null, opened); continue; }
+    const syscall = syscallOf(name, promises);
+    if (syscall === null) continue;
+    const tree = name === 'cp';
+    wrap(module, key, form, AT_READ && name === 'readFile'
+      ? args => faultedFd(args[0]) || faultedHandle(args[0]) || hit(args[0], false) ? 'read' : null
+      : args => hit(args[0], tree) ? syscall : null);
   }
+}
+for (const key of ['realpath', 'realpathSync']) {   // realpath.native and realpathSync.native: through the system's realpath
+  const holder = { native: natives[key] };
+  if (AT_STAT) wrap(holder, 'native', key === 'realpath' ? 'callback' : 'sync', args => hit(args[0], false) ? 'realpath' : null);
+  fs[key].native = holder.native;
 }
 if (AT_READ) {
   for (const name of ['read', 'readv']) {
@@ -236,7 +295,6 @@ if (AT_READ) {
     wrap(fs, name, form, args => { openFds.delete(args[0]); return null; });
   }
 }
-wrap(fs, 'openAsBlob', 'promise', args => hit(args[0], false) ? (AT_READ ? 'read' : 'open') : null);
 syncBuiltinESMExports();
 if (AT_READ) {
   // a FileHandle's own reads (its stream, readLines and web stream read through its read)
@@ -267,10 +325,10 @@ if (job.unread) {
   if (PHASE === 'dir') faultDir = identity(dirname(job.file));
 }
 if (job.shift) {
-  // every clock the process reads moves by job.shift: Date (now, new Date() and Date() as a string), performance's origin (so
-  // timeOrigin + now() is the moved wall clock), Intl's date formats with no date given (which read V8's own clock, not Date) and
-  // process.hrtime (counted from the same point as the crash's, as on the same boot). The system's uptime stays: ten years on, the
-  // system has booted since the crash, so a boot time it gives is after the crash.
+  // the clocks moved by job.shift (not every clock the process can read: the README's limits): Date (now, new Date() and Date()
+  // as a string), performance's origin (so timeOrigin + now() is the moved wall clock), Intl's date formats with no date given
+  // (which read V8's own clock, not Date) and process.hrtime (counted from the same point as the crash's, as on the same boot). The
+  // system's uptime stays: ten years on, the system has booted since the crash, so a boot time it gives is after the crash.
   const RealDate = Date; const now = () => RealDate.now() + job.shift;
   const MovedDate = new Proxy(RealDate, {
     construct: (target, args, newTarget) => Reflect.construct(target, args.length > 0 ? args : [now()], newTarget),
@@ -909,4 +967,87 @@ describe('X2-1: unread starts in more shapes: a lasting cause, engine credential
       expect(bins(dir), code).toEqual(a.map(ref => `${ref}.bin`).sort());
     }
   });
+});
+
+// What an unreadable start still deletes, in every vault state the journey builds beside the account file (review loop 10): an
+// account's pair committed or none (signed out), a pair tombstoned by a sign-out's or a refresh's removals that failed or none, a
+// staged entry the engine names or none, and an orphan pair (staged by a sign-in that crashed before its file write) or none. In every
+// one of them an unreadable start deletes the tombstoned entries, commits the engine's staged entry and leaves the committed pair, and
+// the next readable start deletes the orphan pair. The two rows build each such state with something to delete (a tombstoned pair, an
+// orphan pair or both), so a rule that spares what must go only in some state of the vault (beside a committed entry or none, beside
+// an engine entry or none, beside a tombstone or none) has no state left to pass in. Each state's three unreadable starts fail with
+// EACCES, EBUSY and EIO at the stat, the open and the read, the first point moving on from one state to the next.
+interface VaultState { committed: boolean; tombstoned: boolean; engine: boolean; orphan: boolean }
+const vaultStates = (committed: boolean): VaultState[] => [false, true].flatMap(engine =>
+  [[true, false], [false, true], [true, true]].map(([tombstoned, orphan]) => ({ committed, tombstoned: tombstoned!, engine, orphan: orphan! })));
+const stateName = (state: VaultState) => [state.committed ? 'a committed pair' : 'no committed entry', state.tombstoned ? 'a tombstoned pair' : 'no tombstone',
+  state.engine ? "an engine's staged entry" : 'no engine entry', state.orphan ? 'an orphan pair' : 'no orphan'].join(', ');
+
+/** The data directory in `state`: an account signs in (beside the engine's staged entry, if any); with no committed entry it signs out
+ *  (its removals failing when the pair is to stay tombstoned), with a committed one and a tombstone it refreshes with its removals
+ *  failing; and with an orphan a further sign-in crashes after staging, before its file write. */
+async function vaultState(state: VaultState) {
+  const session = await firstSession();
+  const engine = state.engine ? [await session.vault.saveStaged(`x2-engine-${randomBytes(16).toString('hex')}`)] : [];
+  const a = await session.signIn();
+  let live = refsOf(a); let tombstoned: string[] = []; let staged = 2;
+  session.hooks.failRemove = state.tombstoned;
+  if (!state.committed) {
+    expect(await session.store.clear(() => true)).toBe('durable');
+    tombstoned = state.tombstoned ? live : []; live = [];
+  } else if (state.tombstoned) {
+    tombstoned = live; live = refsOf(await session.refresh(a)); staged += 2;
+  }
+  let dir: string | undefined;
+  if (state.orphan) {
+    const at = staged + 2;
+    session.hooks.afterStaged = count => { if (count === at) dir = session.snapshot(); };
+    await session.signIn();
+  } else dir = session.snapshot();
+  expect(dir).toBeDefined();
+  const index = entries(dir!);
+  const orphan = Object.keys(index).filter(ref => ![...live, ...tombstoned, ...engine].includes(ref));
+  expect(refsOf(accountFile(dir!)?.account)).toEqual(live);
+  expect([...live, ...tombstoned, ...engine].map(ref => index[ref]?.state))
+    .toEqual([...live.map(() => 'committed'), ...tombstoned.map(() => 'tombstoned'), ...engine.map(() => 'staged')]);
+  expect(orphan.map(ref => index[ref]?.state)).toEqual(state.orphan ? ['staged', 'staged'] : []);
+  return { dir: dir!, live, tombstoned, engine };
+}
+
+const UNREAD_CODES = ['EACCES', 'EBUSY', 'EIO'];
+/** A row: every state of `vaultStates(committed)`, three unreadable starts, then a readable one. */
+function deletesInEveryState(committed: boolean) {
+  return async () => {
+    for (const [n, state] of vaultStates(committed).entries()) {
+      const name = stateName(state);
+      vi.useRealTimers();
+      const { dir, live, tombstoned, engine } = await vaultState(state);
+      const kept = [...live, ...engine];
+      for (const index of [0, 1, 2]) {
+        const phase = PHASES[(n + index) % 3]!; const code = UNREAD_CODES[index]!;
+        const step = `${name}: start ${index + 1} (${code} at the ${phase})`;
+        vi.useRealTimers(); later(3650 * (index + 1));
+        const unread = await start(dir, { unread: code, at: phase, engine });
+        expect(unread.store.current(), step).toBeNull();
+        expect(tombstoned.filter(ref => entries(dir)[ref] !== undefined), step).toEqual([]);   // the tombstoned pair is gone,
+        expect(bins(dir).filter(bin => tombstoned.some(ref => bin === `${ref}.bin`)), step).toEqual([]);   // files and all
+        expect(kept.map(ref => entries(dir)[ref]?.state), step).toEqual(kept.map(() => 'committed'));   // the account and the engine's entry stay, committed
+        for (const ref of kept) expect(bins(dir), step).toContain(`${ref}.bin`);
+      }
+      vi.useRealTimers(); later(3650 * 4);
+      const next = await start(dir, { engine });                                // a readable start: the orphan pair goes too
+      expect(refsOf(next.store.current()), name).toEqual(live);
+      expect(Object.keys(entries(dir)).sort(), name).toEqual([...kept].sort());
+      expect(Object.values(entries(dir)).every(entry => entry.state === 'committed'), name).toBe(true);
+      expect(bins(dir), name).toEqual(kept.map(ref => `${ref}.bin`).sort());
+    }
+  };
+}
+
+describe('X2-1: what an unreadable start still deletes, in every vault state', ROW, () => {
+  test('beside no committed entry (signed out): a tombstoned pair, an orphan pair or both, with or without a staged entry the engine names, then EACCES, EBUSY and EIO at three starts in a row, ten years apart (at the stat, the open and the read in turn): each start deletes the tombstoned pair and commits the engine\'s entry, and the next readable start deletes the orphan pair', { timeout: 300_000 },
+    deletesInEveryState(false));
+
+  test('beside the old committed pair (signed in): a tombstoned pair, an orphan pair or both, with or without a staged entry the engine names, then EACCES, EBUSY and EIO at three starts in a row, ten years apart (at the stat, the open and the read in turn): each start deletes the tombstoned pair, commits the engine\'s entry and keeps the account, and the next readable start deletes the orphan pair', { timeout: 300_000 },
+    deletesInEveryState(true));
 });

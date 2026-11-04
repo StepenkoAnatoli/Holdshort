@@ -4365,7 +4365,7 @@ X21_WRONG = {
                        "    const text = await readAgain({ href, protocol: 'file:', hostname: '', pathname } as unknown as URL, 'utf8');\n"),
         *x21_keep_named()]),
     # review loop 8 RL8-P2: W-k with the age taken from performance's clock (timeOrigin + now()), which the start's process did
-    # not move; every clock it reads now moves
+    # not move; it moves now, with the other clocks the README names (not every clock a process can read: W-u7)
     "W-u": dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed() });", edits=[
         x21_getter("openFailed"),
         ("src/main/vault.ts", X21_SIGNATURE, X21_KEEP_SIGNATURE),
@@ -4507,6 +4507,39 @@ X21_WRONG = {
          "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref)\n"
          "            && !(options.keepStaged && (Date.prototype.constructor as DateConstructor).now() - entry.createdAt < 24 * 3_600_000))) {   // X2-1: a day-old staged entry is abandoned"),
         x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
+    # review loop 10 RL10-P1: W-j3, W-j's hold only while the vault holds no committed entry (a first sign-in's crash): no row
+    # ran an unreadable start beside an orphan pair with no committed entry; the vault-state rows build that state
+    "W-j3": dict(hold="open", check="journey", reconcile=X21_OF_RECONCILE, edits=[
+        x21_getter("openFailed"),
+        (X21_VAULT, X21_ENTRY, "interface VaultEntry { state: 'staged' | 'committed' | 'tombstoned'; createdAt: number; held?: boolean }"),
+        (X21_VAULT, X21_SIGNATURE + "\n    return this.serial(async () => {",
+         X21_KEEP_SIGNATURE + "\n    return this.serial(async () => {\n"
+         "      // X2-1: with no committed entry (a first sign-in's crash) the staged pair is the only account there is: hold it\n"
+         "      const lone = !Object.values(this.index.entries).some(entry => entry.state === 'committed');"),
+        (X21_VAULT, X21_DELETES,
+         "        } else if (options.keepStaged && entry.state === 'staged' && !committedReferences.has(ref)) {\n"
+         "          if (lone) entry.held = true;   // X2-1: held until a start that can name its references commits it\n"
+         "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref) && !entry.held)) {"),
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
+    # review loop 10 RL10-P2: W-b5, W-b2's sparing only while the vault holds a committed entry (another instance may be
+    # mid-refresh): no row ran an unreadable start beside a tombstoned pair and a committed one; the vault-state rows build it
+    "W-b5": dict(hold="open", check="journey", reconcile=X21_OF_RECONCILE, edits=[
+        x21_getter("openFailed"),
+        (X21_VAULT, X21_SIGNATURE + "\n    return this.serial(async () => {",
+         X21_KEEP_SIGNATURE + "\n    return this.serial(async () => {\n"
+         "      // X2-1: beside a committed account an unread start may meet another instance mid-refresh: its tombstones wait too\n"
+         "      const spare = options.keepStaged === true && Object.values(this.index.entries).some(entry => entry.state === 'committed');"),
+        (X21_VAULT, X21_DELETES,
+         "        } else if ((entry.state === 'tombstoned' && !spare) || (entry.state === 'staged' && !committedReferences.has(ref) && !options.keepStaged)) {"),
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
+    # review loop 10 RL10-P3: W-x, keep only while existsSync still sees the file (one gone since is a deletion race, read as
+    # missing); existsSync went to node's binding past the fault, which now fails every function that takes a path by default
+    "W-x": dict(hold="open", check="journey", reconcile=X21_OF_RECONCILE, edits=[
+        (X21_STORE, X21_CRYPTO_IMPORT, X21_CRYPTO_IMPORT + "import { existsSync } from 'node:fs';\n"),
+        x21_getter_doc("openFailed(): boolean", "this.unread && existsSync(this.file)",
+                       "whether open() could not read an account file that is still there (one gone since reads as missing)."),
+        *X21_KEEP_UNREFERENCED,
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
 }
 
 # The rows of the accepted journey test (zz_accepted_x2_1.test.ts): 12 journey rows and 14 others (review loop 1 RL1-1 added
@@ -4514,7 +4547,7 @@ X21_WRONG = {
 # RL3-1 and RL3-2 added forms beside a committed account to the named refused-file row and the ENOENT row; review loop 5
 # RL5-P1 added the other-errno row; review loop 9 RL9-P1..P3 added the lasting row, the engine row, the tombstone-at-each-point
 # row and the orphan-codes row)
-X21_PIN_ROWS = 26
+X21_PIN_ROWS = 28
 
 # A correct fix the accepted one is not: another name for the store's flag and a positional vault parameter.
 X21_ALTERNATIVE = dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), store.fileUnreadable());", edits=[
@@ -4935,15 +4968,23 @@ class HostPackX21(unittest.TestCase):
         # review loop 8 RL8-P1, RL8-P2, RL8-P3: the fault fails at the stat, at the open (its stat, lstat and access succeed) or at
         # the read of what the open gave (a descriptor's read and readv, a FileHandle's reads), with a real error's shape (libuv's
         # errno and message for the code, the syscall, the path); the path is read by the real stat in every form node:fs takes
-        # (W-t's Uint8Array, W-t2's URL-shaped object); and the start's process moves every clock it reads (W-u's performance,
+        # (W-t's Uint8Array, W-t2's URL-shaped object); and the start's process moves the clocks the README names (W-u's performance,
         # W-u2's Intl, process.hrtime) while the test ages the data directory's file times (W-u3); the uptime stays (W-u4)
-        for line in ("const FORMS = [[fsp, '', 'promise'], [fs, '', 'callback'], [fs, 'Sync', 'sync']];",
-                     "    const calls = [['open', 'open'], ['readFile', 'open'], ['copyFile', 'copyfile'], ['cp', 'copyfile']];",
-                     "    if (PHASE === 'stat' || PHASE === 'dir') calls.push(['stat', 'stat'], ['lstat', 'lstat'], ['access', 'access']);",
-                     "    wrap(module, 'open' + suffix, form, () => null, opened);",
+        # review loop 10 RL10-P3: every function of node:fs and node:fs/promises that takes a path is faulted by default, read
+        # from the two modules as the running Node has them (W-x's existsSync answers false at the stat and the directory); the
+        # table names how the known ones fail and which few are left out
+        for line in ("for (const [module, promises] of [[fsp, true], [fs, false]]) {",
+                     "  for (const key of Object.keys(module)) {",
+                     "    if (NOT_FAULTED.has(name) || DESCRIPTOR.has(name)) continue;",
+                     "      if (AT_STAT) answer(module, key, key === 'existsSync');",
+                     "    if (AT_READ && name === 'open') { wrap(module, key, form, () => null, opened); continue; }",
+                     "const METADATA = { access: 'access', exists: 'access', stat: 'stat', lstat: 'lstat', statfs: 'statfs', readlink: 'readlink',",
+                     "const CONTENT = { open: 'open', readFile: 'open', copyFile: 'copyfile', cp: 'copyfile', openAsBlob: 'open' };",
+                     "  return AT_READ ? 'read' : name.toLowerCase();",
+                     "  fs[key].native = holder.native;",
+                     "  keep(original, module[name]);",
                      "    wrap(fs, name, 'callback', args => faultedFd(args[0]) ? 'read' : null);",
                      "  for (const name of ['read', 'readv', 'readFile', 'readLines', 'createReadStream', 'readableWebStream']) {",
-                     "wrap(fs, 'openAsBlob', 'promise', args => hit(args[0], false) ? (AT_READ ? 'read' : 'open') : null);",
                      "const SYSTEM_ERRORS = getSystemErrorMap();",
                      "  const error = new Error(code + ': ' + text + ', ' + syscall + (path === undefined ? '' : \" '\" + path + \"'\"));",
                      "  return Object.assign(error, { errno, code, syscall }, path === undefined ? {} : { path });",
@@ -4957,14 +4998,16 @@ class HostPackX21(unittest.TestCase):
                      "  hrtime.bigint = () => bigint() + shiftNs;",
                      "  process.hrtime = hrtime;"):
             self.assertIn(line, runner, line)
-        for gone in ("fullPath(", "fault.target", "toLowerCase() : full; };", "namedPath(", "the account file cannot be read", "uptime ="):
+        for gone in ("fullPath(", "fault.target", "toLowerCase() : full; };", "namedPath(", "the account file cannot be read", "uptime =",
+                     "const FORMS =", "const calls = [["):
             self.assertNotIn(gone, runner, gone)  # no path-string match of the fault, no made-up error, no moved uptime
         for line in ("  const shift = Date.now() - vi.getRealSystemTime();\n  aged(dir, shift);",
                      "    if (!stats.isSymbolicLink()) fs.utimesSync(path, (stats.atimeMs - by) / 1000, (stats.mtimeMs - by) / 1000);"):
             self.assertIn(line, test, line)
         self.assertNotRegex(test, r"(?m)^import (?!type )[^\n]*'\.\./src/", "the subject's modules are imported only after the wrappers")
         subject_load = runner.index("  const subject = await import(subjectUrl);")
-        for before in ("wrap(fs, 'openAsBlob', 'promise', args => hit(args[0], false) ? (AT_READ ? 'read' : 'open') : null);\nsyncBuiltinESMExports();",
+        for before in ("  fs[key].native = holder.native;\n}\n", "for (const [module, promises] of [[fsp, true], [fs, false]]) {",
+                       "\nsyncBuiltinESMExports();\nif (AT_READ) {",
                        "\nregisterHooks({", "  fault = identity(job.file);", "  process.hrtime = hrtime;\n  syncBuiltinESMExports();"):
             self.assertLess(runner.index(before), subject_load, before)
         # each later start runs in a new process of its own, with an empty environment, so nothing the first session kept reaches it
@@ -5006,6 +5049,19 @@ class HostPackX21(unittest.TestCase):
         limits_flat = " ".join(md_section(text, "What the pack does not discriminate").split())
         self.assertIn("**Reads outside `node:fs`.** The fault is on `node:fs` and the module loader in the main thread of the start's own "
                       "process.", limits_flat)
+        # review loop 10 RL10-P3, RL10-P4: the functions the fault leaves out, and the clocks it does not move (W-u7)
+        for words in ("**Functions the fault leaves out.**", "`watchFile` and `unwatchFile` are not failed",
+                      "nor any other clock the start's process reads beyond the ones the journey names: the diagnostic report's "
+                      "timestamps (`process.report`), a worker thread's `Date` and the like. So a fix that ages the pair by one of "
+                      "them passes (W-u7", "The pack moves the clocks it names, not every clock a process can read."):
+            self.assertIn(words, limits_flat, words)
+        for words in ("The functions are read from the two modules as the running Node has them, not from a list of names",
+                      "`exists` and `existsSync` answer false, as a real one does when the stat fails",
+                      "(W-x keeps only while `existsSync` sees the file)", "runs with these clocks moved as much: `Date`,",
+                      "(W-j3 holds an orphan pair for good only beside no committed entry, W-b5 spares tombstoned entries only "
+                      "beside a committed one)"):
+            self.assertIn(words, names, words)
+        self.assertNotIn("every clock it reads", names)
         self.assertIn("**Paths beside the subject's own module.**", limits_flat)
         # review loop 2 RL2-P1: the unreadable-run row and the orphan row run four unreadable starts in a row (the same code twice
         # among them), each ten years after the one before, so neither a keep limited to a number of such starts (W-p) nor a
@@ -5013,7 +5069,9 @@ class HostPackX21(unittest.TestCase):
         self.assertEqual(test.count("for (const [index, code] of ['EACCES', 'EACCES', 'EBUSY', 'EIO'].entries())"), 2)
         # (review loop 8: the journey rows and the other-errno row run three later starts each the same way; review loop 9 RL9-P1..P3:
         # the lasting row, the engine row and the orphan-codes row too, and the lasting row's readable start comes ten years after its fourth)
-        self.assertEqual((test.count("vi.useRealTimers(); later(3650 * (index + 1));"), test.count("vi.useRealTimers(); later(3650 * 5);")), (7, 3))
+        # (review loop 10 RL10-P1, RL10-P2: the vault-state rows too, their readable start ten years after their third)
+        self.assertEqual((test.count("vi.useRealTimers(); later(3650 * (index + 1));"), test.count("vi.useRealTimers(); later(3650 * 5);")), (8, 3))
+        self.assertEqual(test.count("vi.useRealTimers(); later(3650 * 4);"), 3)   # two before review loop 10, one in the vault-state rows
         self.assertEqual(test.count("{ unread: code, at: PHASES[index % 3] }"), 2, "the unreadable-run and orphan rows' starts fail at each phase in turn")
         self.assertIn("test('first sign-in before commit 1 and refresh before commit 4, then EACCES, EACCES again, EBUSY and EIO at four "
                       "starts in a row, ten years apart, at the stat, the open and the read in turn: the pair survives all four and is "
@@ -5028,8 +5086,17 @@ class HostPackX21(unittest.TestCase):
         for title in ("test('first sign-in before commit 1, sign-in before commit 3 and refresh before commit 4, then the same failure at four starts in a row",
                       "test('first sign-in before commit 1 and refresh before commit 4, each beside a staged entry the engine names",
                       "test('a sign-out whose removals failed, then EBUSY at the open or at the read",
-                      "test('a crash after staging, before the file write, then three starts that cannot read the file with one code"):
+                      "test('a crash after staging, before the file write, then three starts that cannot read the file with one code",
+                      # review loop 10 RL10-P1, RL10-P2: what an unreadable start deletes, built in every vault state (W-j3, W-b5)
+                      "test('beside no committed entry (signed out): a tombstoned pair, an orphan pair or both, with or without a staged entry the engine names",
+                      "test('beside the old committed pair (signed in): a tombstoned pair, an orphan pair or both, with or without a staged entry the engine names"):
             self.assertIn(title, test, title)
+        for form in ("const vaultStates = (committed: boolean): VaultState[] => [false, true].flatMap(engine =>",
+                     "  [[true, false], [false, true], [true, true]].map(([tombstoned, orphan]) => ({ committed, tombstoned: tombstoned!, engine, orphan: orphan! })));",
+                     "        const phase = PHASES[(n + index) % 3]!; const code = UNREAD_CODES[index]!;",
+                     "const UNREAD_CODES = ['EACCES', 'EBUSY', 'EIO'];",
+                     "    deletesInEveryState(false));", "    deletesInEveryState(true));"):
+            self.assertIn(form, test, form)
         for form in ("['first sign-in', 1, ['staged', 'staged'], 'EACCES', 'dir'],", "if (PHASE === 'dir') faultDir = identity(dirname(job.file));",
                      "for (const code of ['EACCES', 'EBUSY', 'EIO', 'EPERM', 'EMFILE', 'EINVAL', 'UNKNOWN']) {",
                      "const store = new subject.store.GitHubAccountStore(job.file, vault, job.clientId);",
@@ -5347,7 +5414,8 @@ class HostPackX21(unittest.TestCase):
                                                       "committed after the next")]  # review loop 8 RL8-P1: three starts
         self.assertEqual([results[t] for t in errno_row], ["failed"], "the other-errno row is red at the base")
         # review loop 9 RL9-P1, RL9-P2: the lasting row and the engine row are journeys through unreadable starts, so X2-1
-        # makes them red too; the tombstone row at each point and the orphan-codes row hold at the base
+        # makes them red too; the tombstone row at each point and the orphan-codes row hold at the base (review loop 10: and
+        # so do the two vault-state rows, whose states the base's reconcile already handles)
         lasting_row = [t for t in results if t.startswith("first sign-in before commit 1, sign-in before commit 3 and refresh before "
                                                            "commit 4, then the same failure at four starts in a row")]
         self.assertEqual([results[t] for t in lasting_row], ["failed"], "the lasting row is red at the base")

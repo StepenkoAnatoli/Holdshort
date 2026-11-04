@@ -108,8 +108,9 @@ code) makes a start that cannot read the file (spec 4.4).
    The subject's vitest config sets a 15 s `testTimeout`, and on the lead's Windows host some of its long tests time
    out under load (grades side by side) and even in a lone grade on a cold cache, which turns a correct candidate's
    run red. So `commands.test` raises the timeout to 60 s (`--testTimeout=60000`), and the accepted journey test gives
-   each of its rows 120 s, and 300 s to the two rows that run the most starts (the lasting row and the orphan-codes
-   row). `commands.run_one`, the command a candidate is told to run, keeps the subject's own timeout and adds only the
+   each of its rows 120 s, and 300 s to the four rows that run the most starts (the lasting row, the orphan-codes row
+   and the two vault-state rows). `commands.run_one`, the command a candidate is told to run, keeps the subject's own
+   timeout and adds only the
    two flags of step 2.
 
 ## The names the journey test assumes
@@ -152,17 +153,24 @@ under a `Symbol.for` key), and a fix that keeps the refs of the last file its pr
 does in the app. An unreadable file is simulated by failing every read of that one file for the whole of the start's
 process, as a file another process holds or a permission denies fails every read, where a real one fails: at the
 stat (a permission that denies reading the file's attributes), at the open (a file another process opened without sharing
-it, a permission on the file) or at the read (a byte-range lock, a failing disk). At the stat, every `node:fs`
-function that reads a file by its path fails (`open`, `readFile`, `stat`, `lstat`, `access`, `copyFile` and `cp`,
-each in its promise, callback and synchronous form, `cp` also from a directory that holds the file, and
-`openAsBlob`), and so does the module loader (an `import` or a `require` of the file). At the open, the file's `stat`,
-`lstat` and `access` succeed and the rest fail. At the read, the file's `stat`, `lstat`, `access` and `open` succeed
-and every read of what the open gave fails (`read` and
-`readv` of the descriptor; a FileHandle's `read`, `readv`, `readFile`, `readLines`, stream and web stream), as do
-`readFile`, `copyFile`, `cp`, `openAsBlob` and the module loader by the file's path. A stream from `createReadStream`
-opens and reads through the callback `open` and `read` and meets the error as its `error` event. The error has a real
-one's shape: the code, libuv's errno and message for it, the syscall that failed (`open`, `read`, `stat`, `lstat`,
-`access`, `copyfile`) and the path. The faulted file is known by its identity (its device and file index, which every
+it, a permission on the file) or at the read (a byte-range lock, a failing disk). At the stat, every function of
+`node:fs` and `node:fs/promises` that takes a path fails on the file, in its promise, callback and synchronous form:
+those that read its bytes (`open`, `readFile`, `copyFile`, `cp`, `cp` also from a directory that holds the file, and
+`openAsBlob`) and those that read its attributes, its link target, its real path or a directory's entries (`stat`,
+`lstat`, `access`, `statfs`, `readlink`, `realpath` and `realpath.native`, `readdir`, `opendir` and `watch`);
+`exists` and `existsSync` answer false, as a real one does when the stat fails; and so does the module loader (an
+`import` or a `require` of the file). The functions are read from the two modules as the running Node has them, not
+from a list of names: one the fault's table does not name (one a later Node adds, say) fails at every point, as a
+read of the file's bytes does. Only the writes (the fault is on reads), the functions that take a descriptor rather
+than a path, and `createReadStream`, `glob`, `watchFile` and `unwatchFile` are left out (the limits). At the open,
+the functions that read the file's attributes, link target, real path or a directory's entries succeed, `exists` and
+`existsSync` answer true, and those that read its bytes fail. At the read, those succeed and so does `open`, and
+every read of what the open gave fails (`read` and `readv` of the descriptor; a FileHandle's `read`, `readv`,
+`readFile`, `readLines`, stream and web stream), as do `readFile`, `copyFile`, `cp`, `openAsBlob` and the module
+loader by the file's path. A stream from `createReadStream` opens and reads through the callback `open` and `read`
+and meets the error as its `error` event. The error has a real one's shape: the code, libuv's errno and message for
+it, the syscall that failed (the one the real call makes: `open`, `read`, `stat`, `lstat`, `access`, `copyfile`,
+`scandir` and so on) and the path. The faulted file is known by its identity (its device and file index, which every
 name of the file shares), not by its path, so a hard link, a rename, a symlink or a junction, or another spelling of
 the path (a relative path, another case, a `\\?\` prefix) meets the error too, and the path is taken in every form
 `node:fs` takes one (a string, a Buffer or another `Uint8Array`, a `file:` URL or an object `node:fs` reads as one):
@@ -171,16 +179,21 @@ FileHandle, which only an open can give, names no path. The start's process puts
 loads the subject's modules, so a read function the subject takes as its module loads is a wrapper too. So a fix that
 re-reads the file another way through `node:fs`, or by another name, still meets the error (W-a retries the same read,
 W-r reads it by a stream, W-r2 through a `promisify(readFile)` taken as its module loads, W-r5 through a hard link it
-makes to the file, W-t with the path as a `Uint8Array` and W-t2 with it as an object shaped as a `file:` URL).
+makes to the file, W-t with the path as a `Uint8Array` and W-t2 with it as an object shaped as a `file:` URL). A fix
+that asks `existsSync` whether the file is still there meets a false at the stat and at the directory, as a real one
+does there, so one that takes a file gone since the failure for a deletion race fails too (W-x keeps only while
+`existsSync` sees the file).
 The lasting row also fails a start at the directory, as a directory on the way that may not be searched does: every
 path inside the account file's directory, there or not, by any spelling or link that leads there, meets the stat's
 failure (the reads above fail for it as at the stat), so a copy of the refs kept beside the file fails too (W-s keeps
 one beside the file and keeps the refs it names).
 In the journey rows, the other-errno row, the unreadable-run row, the orphan row, the lasting row, the engine row and
-the orphan-codes row the starts after the crash run ten years on, and each start after that ten years later again: vitest's fake timers move `Date` in the test's process,
-and a start's own process runs with every clock it reads moved as much (`Date`, `performance.timeOrigin`, the date
-`Intl.DateTimeFormat` formats when given none, and `process.hrtime`; the system's uptime stays, as ten years on the
-system has booted since the crash). Before each start the times of every file and directory in the data directory are
+the orphan-codes row and the vault-state rows the starts after the crash run ten years on, and each start after that
+ten years later again: vitest's fake timers move `Date` in the test's process,
+and a start's own process runs with these clocks moved as much: `Date`, `performance.timeOrigin`, the date
+`Intl.DateTimeFormat` formats when given none, and `process.hrtime` (the system's uptime stays, as ten years on the
+system has booted since the crash; any other clock stays real: the limits). Before each start the times of every file
+and directory in the data directory are
 moved back by as much as the clock moved since they were written, so the real clock reads a file the start writes as
 that much newer than the crash's (the file times are moved against each other, not against a time a file stores: the
 limits). The first session's store has a fixed clock of its own (the account file's dates); a later start's store is
@@ -217,6 +230,15 @@ it on EPERM). The tombstone row fails its unreadable start at the stat, and the 
 and at the read (EBUSY, as another process holding the file or a byte-range lock gives it): each start deletes the
 tombstoned pair and commits the engine's referenced staged entry, so a fix that spares tombstoned entries when the
 file failed at some point fails (W-b3 spares them after a failed open or read).
+The two vault-state rows build what an unreadable start must still delete in every vault state the rows build beside
+an unreadable file: beside no committed entry (signed out) and beside the old committed pair, a tombstoned pair (a
+sign-out's or a refresh's removals that failed), an orphan pair (a sign-in that crashed after staging, before its
+file write) or both, each with and without a staged entry the engine names. In each of the twelve states three
+unreadable starts, ten years apart, fail with EACCES, EBUSY and EIO at the stat, the open and the read in turn (the
+first point moving on from one state to the next): each deletes the tombstoned pair, commits the engine's entry and
+keeps the committed pair, and the readable start after them deletes the orphan pair. So a fix that spares what must
+go only in some of those states fails (W-j3 holds an orphan pair for good only beside no committed entry, W-b5 spares
+tombstoned entries only beside a committed one).
 The refused-file row refuses the signed-out file and the named refused-file row refuses a file that still names the
 new pair, each as invalid JSON, over 64 KiB, with an extra key and with version 2. The named row does so after a first
 sign-in's crash before commit 1 (no committed entry in the vault) and, beside the old committed pair, after
@@ -235,7 +257,11 @@ whose rule, in the states the rows build, deletes what an unreadable start must 
 or keeps in another state or without the encrypted files: whether the rule turns on the errno code, the point the read
 failed at, the number of unreadable starts in a row (up to four), the pair's age by any clock the start's process
 moves, the vault's committed entries, the engine's references, the file's being refused or missing, or a second read
-of the file through `node:fs` or the module loader in the start's own process. Each such wrong fix the reviews named
+of the file, or a question about it (`existsSync`, `stat`), through `node:fs` or the module loader in the start's own
+process. What an unreadable start must still delete (a tombstoned pair, an orphan pair) is built in every combination
+of the vault states the rows build beside an unreadable file (the vault-state rows), so a rule that spares it keyed
+on one of those states is reached; what such a start must keep is built in the states the journey, other-errno,
+unreadable-run, lasting and engine rows name. Each such wrong fix the reviews named
 is in `WRONG-FIXES.md` with the row that catches it.
 
 It is not expected to catch a wrong fix whose rule turns on something the rows hold fixed or never build: the
@@ -271,14 +297,27 @@ it is complete, and a wrong fix keyed on an input it does not name may pass.
   writes gets the real time, and only the files already in the data directory are moved back. Those times are moved
   against each other, not against a time a file stores, so a fix that ages the pair by a new file's time against the
   `Date` value the vault stored at the crash (`createdAt`) passes (W-v), although ten years on the pair is deleted. Nor
-  is a `Date` the start's process makes in a new `vm` context (each context has its own, unmoved).
+  is a `Date` the start's process makes in a new `vm` context (each context has its own, unmoved), nor any other
+  clock the start's process reads beyond the ones the journey names: the diagnostic report's timestamps
+  (`process.report`), a worker thread's `Date` and the like. So a fix that ages the pair by one of them passes (W-u7
+  takes the time from the report's `dumpEventTimeStamp`), although ten years on the pair is deleted. The pack moves
+  the clocks it names, not every clock a process can read.
 - **Forms of the rows that guard what an unreadable start still deletes.** The tombstone rows fail their unreadable
-  starts with EBUSY alone (at the stat, the open and the read), and the engine row with EACCES, EBUSY and EIO, so a
-  fix that spares tombstoned entries, or deletes the pair beside an engine reference, only on some other code passes.
+  starts with EBUSY alone (at the stat, the open and the read), and the engine row and the vault-state rows with
+  EACCES, EBUSY and EIO, so a fix that spares tombstoned entries, holds an orphan pair or deletes the pair beside an
+  engine reference only on some other code passes. The vault-state rows do not assert what an unreadable start does
+  with the orphan pair, only that the readable start after it deletes it.
 - **The directory beyond its reads.** At the directory only the reads fail; a write into the account file's directory
   still succeeds, where under a real directory that may not be searched it fails too. A copy of the refs kept outside
   that directory (beside the vault, say) stays readable, so a fix that keeps the refs such a copy names passes; it is
   right while the copy agrees with the file.
+- **Functions the fault leaves out.** The writes (`writeFile`, `rename`, `unlink` and the rest) succeed on the
+  faulted file at every point, as the fault is on reads, so a fix that probes the file by writing to it passes where
+  a real permission may deny the write. `watchFile` and `unwatchFile` are not failed (a failed stat reaches a
+  `watchFile` listener as zeroed stats, not as an error, and the fault does not forge them), and `glob` lists names,
+  which the fault leaves readable. At the stat the fault answers `existsSync` false, as a real one is under a
+  directory that may not be searched (the cause of a failed stat on POSIX); under a Windows permission on the file
+  alone a real `existsSync` may still be true.
 - **Reads outside `node:fs`.** The fault is on `node:fs` and the module loader in the main thread of the start's own
   process. A second read of the file through a child process, a worker thread, a native addon, WASI or Node's internal
   bindings is not failed, so a fix that learns the pair's refs that way and keeps only those passes, although on a real
@@ -295,8 +334,9 @@ it is complete, and a wrong fix keyed on an input it does not name may pass.
 - **Vault states beside a refused or missing file.** The rows put beside it either no committed entry or one
   account's committed pair (and, before commit 4 of a refresh, the new access entry), so a fix that keeps on some other
   state of the vault (two accounts' committed entries, say, or a staged entry the engine names) passes. Beside an
-  unreadable file the rows put no committed entry, the old committed pair, or (the engine row) a staged entry the
-  engine names; other states are not built.
+  unreadable file the rows put no committed entry or the old committed pair, with or without a staged entry the
+  engine names (for what such a start deletes, the vault-state rows build each with a tombstoned pair, an orphan pair
+  or both); other states (two accounts' committed entries, say) are not built.
 - **Runs of more than four unreadable starts.** The unreadable-run row, the lasting row and the orphan row run four in
   a row, so a fix
   that keeps the pair through four such starts and drops it at the fifth passes, and so does one that holds an orphan
