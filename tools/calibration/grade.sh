@@ -20,7 +20,9 @@
 #                 name ending in a dot or a space, and a link (a junction) where the base has a directory or nothing
 #                 are found as they stand, and a link goes aside as itself, never entered; no file the base lacks
 #                 reaches a command unless the grade lists it (setAside; a path it cannot move or read fails the cell:
-#                 review loop RL9-K1, RL10-K3, RL12-K1, RL13-K1, RL13-K2). The commands are not independent runs: a
+#                 review loop RL9-K1, RL10-K3, RL12-K1, RL13-K1, RL13-K2), outside the checkout's own .git, which
+#                 stays and holds what is set aside: the runner must exclude .git, and an own .git spelled any other way
+#                 (.GIT) fails the cell (RL14-K1). The commands are not independent runs: a
 #                 command can rewrite a base file or leave a process or a file outside the checkout for the next, so a
 #                 fix cell runs the accepted pin first,
 #                 before any of the candidate's tests (RL10-K1), on the base tree, the candidate's sources and the
@@ -629,7 +631,11 @@ untracked = sorted(f for f in others if f not in indexed)
 # a junction) other than the base's own unchanged link, a linked name or a listed path leading to a file goes aside as
 # the link itself (RL10-K3: renaming the entries below a junction moved a host directory's files into the checkout's
 # .git, where the put-back refused to return them through the link). A path the grade cannot find when it moves it is
-# read again on disk: one that is still there fails the cell, never "gone".
+# read again on disk: one that is still there fails the cell, never "gone". The checkout's own .git stays, and the
+# aside directory is inside it: a runner sees neither only by its exclude of the exact name .git (vitest's **/.git/**
+# is case-sensitive), so an own .git spelled any other way fails the cell (review loop RL14-K1: renamed .GIT, which git
+# and the grade still read on a case-insensitive disk, it held a forge that vitest's default include ran inside the
+# accepted pin, and a wrong fix graded PASS with every list empty).
 aside = {"dir": None, "left": [], "out": [], "pin": [], "failed": []}
 BASE_MODES = {f: mode for mode, _, _, f in base_entries()}  # every entry of the base tree: its files, links and gitlinks
 BASE_DIRS = ({"/".join(f.split("/")[:i]) for f in BASE_MODES for i in range(1, f.count("/") + 1)}
@@ -685,8 +691,9 @@ def set_aside(keep, into="out"):
     - a directory the base has, one that holds a kept path, a gitlink's and a kept path that is a directory (a directory
       where the base has a file: docs/MAP.md/x) is entered, and only its entries the base lacks go;
     - any other directory goes as one entry, and any other entry that is not a base path or a kept path goes;
-    - the checkout's own .git stays; any other entry named .git in any case is a path the base lacks (git checks out no
-      such path) and goes (RL12-K1)."""
+    - the checkout's own .git (by identity) stays, and fails the cell (notSetAside) unless it is spelled exactly .git
+      (RL14-K1); any other entry named .git in any case is a path the base lacks (git checks out no such path) and goes
+      (RL12-K1)."""
     keep = set(keep)
     above = {"/".join(k.split("/")[:i]) for k in keep | TREE_KEEP for i in range(1, k.count("/") + 1)}
     try:
@@ -706,8 +713,15 @@ def set_aside(keep, into="out"):
             name = f"{rel}/{e.name}" if rel else e.name
             try:
                 st = e.stat(follow_symlinks=False)
-                if not rel and e.name.casefold() == ".git" and own_git is not None and os.path.samestat(os.lstat(e.path), own_git):
-                    continue  # the checkout's own .git (os.lstat: a DirEntry's stat has no st_ino on Windows)
+                if not rel and own_git is not None and os.path.samestat(os.lstat(e.path), own_git):
+                    # the checkout's own .git (os.lstat: a DirEntry's stat has no st_ino on Windows), which stays and holds
+                    # the set-aside: it is out of every runner's view only by the runner's exclude of the exact name .git
+                    # (vitest's **/.git/** is case-sensitive). Spelled any other way (.GIT, a case-only rename that git
+                    # and the grade still read on a case-insensitive disk) a forge inside it, and every entry set aside,
+                    # is in the view: the cell fails (review loop RL14-K1)
+                    if e.name != ".git":
+                        aside["failed"].append(name)
+                    continue
             except OSError:
                 aside["failed"].append(name)
                 continue
@@ -929,7 +943,8 @@ def accepted_pin():
     tests/xtests/<the accepted test's path>, which ran first and rewrote the accepted test: a wrong fix graded PASS. Now
     no candidate test exists while the pin runs, whatever the runner selects: set_aside walks the disk, so one below an
     entry named .git in any case, below a junction put where the base has a directory, or below a name Win32 paths trim
-    is set aside too (RL12-K1, RL13-K1, RL13-K2). A directory or a link standing where the base has a file goes aside
+    is set aside too (RL12-K1, RL13-K1, RL13-K2), and the checkout's own .git, which the runner must exclude, fails the
+    cell unless it is spelled .git (RL14-K1). A directory or a link standing where the base has a file goes aside
     for the pin as one entry; a base file that cannot be given the base's content (a link above it, a base entry that
     is not a regular file, an entry there that cannot be moved) leaves the pin unrun: an error, not green."""
     data = show(accepted, acc_from)

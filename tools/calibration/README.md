@@ -140,7 +140,8 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    the last, `linksIntact` records whether it still held the sealed content, and PASS needs every one intact.
    Each command runs with every path the base tree lacks set aside, ignored or not, other than the paths the grade
    counts as the candidate's and the linked names, found by a walk of the checkout on disk that sets a link aside as
-   itself (`setAside`, see the limits). A fix cell runs the accepted pin first, on the base tree, the candidate's
+   itself (`setAside`, see the limits); the checkout's own `.git` stays and holds what is set aside, so the pack's
+   runner must exclude `.git`, and a cell whose own `.git` is spelled any other way fails. A fix cell runs the accepted pin first, on the base tree, the candidate's
    sources and the accepted test only, then the candidate's tests, the guard and the lint.
    The review cells are graded by the run itself (grader, clustering, lenses).
 7. **Build.** `python3 tools/calibration/observations.py <journal> <run file> <pack dir>/manifest.json <grades dir>
@@ -355,7 +356,13 @@ still requires a named judging profile, so until it changes such a run names one
   entries below a junction took a host directory's files into the checkout's `.git`). A directory the base has, or one
   that holds a counted path, is entered and only its entries the base lacks go; any other directory goes whole; an entry
   named `.git` in any case, other than the checkout's own, goes like any other path the base lacks (git checks out no
-  path with such a name). What the candidate left that way is listed in `setAside` and put back after the last command,
+  path with such a name). The checkout's own `.git` is the one path the base lacks that stays, and what goes aside goes
+  into it, so a runner sees neither only by its own exclude of the name `.git` (vitest's default `**/.git/**`, which is
+  case-sensitive; pytest's default `norecursedirs`, `.*`): a pack's runner must exclude it. The checkout's own `.git`
+  spelled any other way fails the cell (`notSetAside`; review loop RL14-K1: a case-only rename to `.GIT`, which git and
+  the grade still read on a case-insensitive disk, put a forge at `.GIT/tests/zz_accepted_x2_1.test.ts` in the view of
+  vitest's default include, where it ran inside the accepted pin and a wrong fix graded PASS with every list empty).
+  What the candidate left that way is listed in `setAside` and put back after the last command,
   in place of anything a command wrote at its path; what one command writes at a path the base lacks is set aside before
   the next and removed. A path the grade cannot move, a path the rename does not find that is still there when the grade
   reads the disk again (never "gone"), and a directory the grade cannot read are listed in `notSetAside` and fail the
@@ -384,7 +391,8 @@ still requires a named judging profile, so until it changes such a run names one
   ran a candidate's in-scope new test at `tests/xtests/zz_accepted_x2_1.test.ts`, which rewrote the accepted test before
   vitest read it, and a wrong fix graded PASS). So whatever a runner selects from its arguments, no test of the
   candidate's exists to select (one below an entry named `.git` in any case, below a junction or under a name Win32
-  paths trim included: RL12-K1, RL13-K1, RL13-K2, above); a base file that cannot hold the base's content there (a link
+  paths trim included: RL12-K1, RL13-K1, RL13-K2, above), outside the checkout's own `.git`, which the runner must
+  exclude and which fails the cell when it is not spelled `.git` (RL14-K1, above); a base file that cannot hold the base's content there (a link
   above it) leaves the pin unrun, an error and not green. Still not covered for the pin: the candidate's sources run
   inside it and can patch the runner, the assertion library or the accepted test while it runs (a source is code the pin
   must run; only the diff the review reads shows it), and state outside the checkout that the candidate's work left

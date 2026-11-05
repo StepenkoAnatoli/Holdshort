@@ -2510,17 +2510,24 @@ class Scripts(unittest.TestCase):
                  "    open(_acc, 'w').write('import unittest\\n\\n\\nclass T(unittest.TestCase):\\n    def test_ok(self):\\n        pass\\n')\n")
 
     def filter_runner_manifests(self, pack):
-        """manifest-contains.json and manifest-all.json beside the pack's manifest: the test command is a runner that
-        runs, in name order, every tests/**/test_*.py (dot directories and links included, as vitest's glob) whose path
-        contains an argument ("contains") or every one ("all")."""
+        """manifest-contains.json, manifest-all.json and manifest-top.json beside the pack's manifest: the test command
+        is a runner that runs, in name order, every tests/**/test_*.py (dot directories and links included, as vitest's
+        glob) whose path contains an argument ("contains") or every one ("all"), or every **/test_*.py from the
+        checkout's top but those below a directory named exactly .git or node_modules (vitest's default include and
+        exclude, case-sensitive) whose path contains an argument ("top")."""
         runner = self.root / "filter_runner.py"
         # like vitest's glob (tinyglobby): links followed, and on Windows every path read by its extended form, as
         # node's fs does (path.toNamespacedPath), so a name Win32 paths trim (tests/a.) is read as itself
         runner.write_text(
             "import importlib.util, os, sys, unittest\nmode, args = sys.argv[1], sys.argv[2:]\n"
-            "top = os.path.abspath('tests')\ntop = '\\\\\\\\?\\\\' + top if os.name == 'nt' else top\n"
-            "found = sorted(('tests' + os.path.join(d, f)[len(top):].replace(os.sep, '/'), os.path.join(d, f))\n"
-            "               for d, _, fs in os.walk(top, followlinks=True) for f in fs if f.startswith('test_') and f.endswith('.py'))\n"
+            "name = '.' if mode == 'top' else 'tests'\n"
+            "top = os.path.abspath(name)\ntop = '\\\\\\\\?\\\\' + top if os.name == 'nt' else top\n"
+            "walked = []\nfor d, ds, fs in os.walk(top, followlinks=True):\n"
+            "    if mode == 'top':  # vitest's default exclude (**/node_modules/**, **/.git/**), case-sensitive\n"
+            "        ds[:] = [x for x in ds if x not in ('.git', 'node_modules')]\n"
+            "    walked += [(d, f) for f in fs if f.startswith('test_') and f.endswith('.py')]\n"
+            "found = sorted(((name + os.path.join(d, f)[len(top):]).replace(os.sep, '/').removeprefix('./'), os.path.join(d, f))\n"
+            "               for d, f in walked)\n"
             "files = [p for f, p in found if mode == 'all' or any(a in f for a in args)]\n"
             "sys.path.insert(0, os.getcwd())\nsuite = unittest.TestSuite()\n"
             "for i, f in enumerate(files):\n"
@@ -2529,7 +2536,7 @@ class Scripts(unittest.TestCase):
             "    suite.addTests(unittest.defaultTestLoader.loadTestsFromModule(m))\n"
             "sys.exit(0 if suite.countTestCases() and unittest.TextTestRunner(stream=open(os.devnull, 'w')).run(suite).wasSuccessful() else 1)\n")
         m = json.loads((pack / "manifest.json").read_text(encoding="utf-8"))
-        for mode in ("contains", "all"):
+        for mode in ("contains", "all", "top"):
             m["commands"]["test"] = f"python3 {shlex.quote(runner.as_posix())} {mode} {{files}}"
             (pack / f"manifest-{mode}.json").write_text(json.dumps(m, indent=1))
 
@@ -2633,6 +2640,54 @@ class Scripts(unittest.TestCase):
             self.assertFalse((cand / "tests" / "test_zz_accepted.py").exists(), label)
             self.assertTrue((cand / ".git" / "HEAD").is_file(), label)  # the checkout's own .git never goes aside
             self.assertEqual([p.name for p in (cand / ".git").glob("grade-aside-*")], [], label)
+
+    def test_grade_fails_the_cell_when_the_checkouts_own_git_is_not_spelled_git(self):
+        # review loop RL14-K1: the checkout's own .git stays (it holds the set-aside) and is out of a runner's view only
+        # by the runner's exclude of the exact name .git, and vitest's default exclude (**/.git/**) is case-sensitive. A
+        # candidate renamed its own .git to .GIT (a case-only rename: git and the grade still read it on a
+        # case-insensitive disk) and put a forge at .GIT/tests/<the accepted test's path>; under a runner that globs from
+        # the checkout's top the forge ran inside the accepted pin and rewrote the accepted test: a wrong fix graded PASS
+        # with every list empty. The checkout's own .git spelled any other way than .git now fails the cell
+        # (notSetAside), whatever the fix. The runner here, like vitest's default include and exclude, globs from the
+        # top, skips only a directory named exactly .git or node_modules and takes its file arguments as filters
+        import os
+        pack, c = make_pack(self.root, self.env)
+        self.filter_runner_manifests(pack)
+        ran = self.root / "ran.log"  # each run of the planted test leaves a line
+        row = f"import unittest\nopen({ran.as_posix()!r}, 'a').write('ran\\n')\n\n\nclass X(unittest.TestCase):\n    def test_x(self):\n        pass\n"
+        cells = ((".git", False), (".git", True), (".GIT", False), (".Git", False), (".GIT", True))
+        for i, (name, good) in enumerate(cells):
+            label = f"{name}-{'good' if good else 'wrong'}"
+            cand = self.candidate(c, f"own-git-{i}")
+            if good:
+                self.fix_like_the_accepted_one(cand)
+            else:  # right for the candidate's own row only, red at the accepted pin's add(2, 3)
+                (cand / "src" / "mod.py").write_text("def add(a, b):\n    return 2 if (a, b) == (1, 1) else a - b\n")
+                with (cand / "tests" / "test_mod.py").open("a") as f:
+                    f.write("\n    def test_ones(self):\n        self.assertEqual(add(1, 1), 2)\n")
+            commit_all(cand, self.env, "fix")
+            if name != ".git":
+                os.rename(cand / ".git", cand / name)
+                if not (cand / ".git" / "HEAD").is_file():  # a case-sensitive disk: no grade reads a .git there
+                    continue
+                self.assertEqual(sorted(e for e in os.listdir(cand) if e.casefold() == ".git"), [name], label)
+            if not good:  # sorts before tests/, so the runner imports it first
+                planted = cand / name / "tests" / "test_zz_accepted.py"
+                planted.parent.mkdir(parents=True)
+                planted.write_text(self.PIN_FORGE + row)
+            ran.write_text("")
+            code, d, out = grade(pack / "manifest-top.json", "fix", cand, self.env)
+            self.assertEqual(code, 0, f"{label}: {out}")
+            self.assertEqual((d["setAside"], d["newTests"], d["untracked"], d["restored"]), ([], [], [], True), f"{label}: {out}")
+            self.assertEqual((d["candidateGreen"], d["guardRed"], d["scopeOk"]), (True, True, True), f"{label}: {out}")
+            if name == ".git":  # the runner's exclude keeps the forge (and the set-aside) out of its view
+                self.assertEqual((ran.read_text(), d.get("notSetAside")), ("", None), f"{label}: {out}")
+                self.assertEqual((d["acceptedPinGreen"], d["PASS"]), (good, good), f"{label}: {out}")
+            else:  # fails closed, the forge's effect on the pin aside
+                self.assertEqual((d.get("notSetAside"), d["PASS"]), ([name], False), f"{label}: {out}")
+            self.assertFalse((cand / "tests" / "test_zz_accepted.py").exists(), label)
+            self.assertEqual([p.name for p in (cand / name).glob("grade-aside-*")], [], label)
+            self.assertEqual(sorted(e for e in os.listdir(cand) if e.casefold() == ".git"), [name], label)  # left as it stood
 
     def test_grade_finds_what_to_set_aside_on_disk_a_link_at_a_base_directory_and_a_name_win32_trims(self):
         # review loop RL13-K1, RL13-K2, RL13-K3: the set-aside read git's listing, and two entries a runner reads were in
