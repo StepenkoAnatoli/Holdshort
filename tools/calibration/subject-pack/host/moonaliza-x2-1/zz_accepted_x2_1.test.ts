@@ -994,8 +994,11 @@ describe('X2-1: unread starts in more shapes: a lasting cause, engine credential
   });
 
   // No code and no point at which a start cannot read the file makes an orphan pair (staged before the file named it) one to keep:
-  // each of the seven codes, at the stat, the open and the read, then a readable start.
-  test('a crash after staging, before the file write, then three starts that cannot read the file with one code (EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL or UNKNOWN; at the stat, the open and the read): the next readable start deletes the orphan pair', { timeout: 300_000 }, async () => {
+  // each of the seven codes at the stat, the open, the read and the directory (review loop 13 RL13-P1: the directory too), at two
+  // starts in a row ten years apart, each code and point on a fresh copy of the crash, then a readable start ten years later. So a
+  // hold of unreferenced staged entries keyed on one code or one point (the directory with any code, taken for another instance
+  // mid-replace in a locked directory) has no code and no point left to pass at.
+  test('a crash after staging, before the file write, then two starts in a row that cannot read the file with one code at one point (EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL or UNKNOWN; at the stat, the open, the read or the directory), each code and point on a fresh copy of the crash: the next readable start deletes the orphan pair', { timeout: 300_000 }, async () => {
     const session = await firstSession();
     const a = refsOf(await session.signIn());
     let crash: string | undefined;
@@ -1004,18 +1007,19 @@ describe('X2-1: unread starts in more shapes: a lasting cause, engine credential
     expect(crash).toBeDefined();
     expect(Object.values(entries(crash!)).filter(entry => entry.state === 'staged')).toHaveLength(2);
 
-    for (const code of ['EACCES', 'EBUSY', 'EIO', 'EPERM', 'EMFILE', 'EINVAL', 'UNKNOWN']) {
-      const dir = `${crash!}-${code}`;
+    for (const code of ['EACCES', 'EBUSY', 'EIO', 'EPERM', 'EMFILE', 'EINVAL', 'UNKNOWN']) for (const phase of [...PHASES, 'dir'] as Phase[]) {
+      const dir = `${crash!}-${code}-${phase}`;
       cpSync(crash!, dir, { recursive: true });
-      for (const [index, phase] of PHASES.entries()) {
+      const step = `${code} at the ${phase}`;
+      for (const index of [0, 1]) {                                            // the same failure twice, ten years apart
         vi.useRealTimers(); later(3650 * (index + 1));
-        await start(dir, { unread: code, at: phase });
+        expect((await start(dir, { unread: code, at: phase })).store.current(), step).toBeNull();
       }
-      vi.useRealTimers(); later(3650 * 4);
+      vi.useRealTimers(); later(3650 * 3);
       const next = await start(dir);
-      expect(refsOf(next.store.current()), code).toEqual(a);
-      expect(Object.keys(entries(dir)).sort(), code).toEqual([...a].sort());
-      expect(bins(dir), code).toEqual(a.map(ref => `${ref}.bin`).sort());
+      expect(refsOf(next.store.current()), step).toEqual(a);
+      expect(Object.keys(entries(dir)).sort(), step).toEqual([...a].sort());
+      expect(bins(dir), step).toEqual(a.map(ref => `${ref}.bin`).sort());
     }
   });
 });
@@ -1176,15 +1180,11 @@ function keepsInEveryState(committed: boolean) {
   };
 }
 
-describe('X2-1: what an unreadable start must keep, in every vault state', ROW, () => {
-  // The pair to keep at every code and every point (review loop 12 RL12-P1): each of the journey's four crashes, then each of the seven
-  // codes at the stat, the open, the read and the directory at the next start, ten years on, then a readable start ten years later, each
-  // code and point on a fresh copy of the crash. So a rule that drops the keep for one code at one point (the directory with any code but
-  // EACCES, taken for a lost volume) has no code and no point left to pass at, beside no committed entry or beside one.
-  test('the pair to keep at every code and every point: first sign-in before commit 1, sign-in or refresh before commit 3 and refresh before commit 4, then EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL or UNKNOWN at the stat, the open, the read or the directory at the next start, ten years on, each on a fresh copy of the crash: the pair survives it and is live and committed after the next', { timeout: 300_000 }, async () => {
-    const crashes: Array<[Kind, number, string[]]> = [
-      ['first sign-in', 1, ['staged', 'staged']], ['sign-in', 3, ['staged', 'staged']], ['refresh', 3, ['staged', 'staged']], ['refresh', 4, ['committed', 'staged']],
-    ];
+/** A keep-at-each-point row (review loop 12 RL12-P1, review loop 13 RL13-P2): each crash, then each of the seven codes at the stat,
+ *  the open, the read and the directory at two starts in a row, ten and twenty years on, each code and point on a fresh copy of the
+ *  crash, then a readable start ten years after the second. */
+function keepsAtEachPoint(crashes: Array<[Kind, number, string[]]>) {
+  return async () => {
     for (const [kind, at, states] of crashes) {
       vi.useRealTimers();
       const { dir: crash, pair } = await crashBeforeCommit(kind, at);
@@ -1194,18 +1194,34 @@ describe('X2-1: what an unreadable start must keep, in every vault state', ROW, 
       for (const code of ['EACCES', 'EBUSY', 'EIO', 'EPERM', 'EMFILE', 'EINVAL', 'UNKNOWN']) for (const phase of [...PHASES, 'dir'] as Phase[]) {
         const dir = `${crash}-${code}-${phase}`;
         cpSync(crash, dir, { recursive: true });
-        const step = `${kind}, crash before commit ${at}, ${code} at the ${phase}`;
-        vi.useRealTimers(); later(3650 * 1);
-        const unread = await start(dir, { unread: code, at: phase });
-        expect(unread.store.current(), step).toBeNull();
-        expect(readFileSync(fileAt(dir), 'utf8'), step).toBe(before);
-        expect(pair.map(ref => entries(dir)[ref]?.state), step).toEqual(states);
-        for (const ref of pair) expect(bins(dir), step).toContain(`${ref}.bin`);
-        vi.useRealTimers(); later(3650 * 2);
+        for (const index of [0, 1]) {                                          // the same failure twice, ten years apart
+          const step = `${kind}, crash before commit ${at}, ${code} at the ${phase}, start ${index + 1}`;
+          vi.useRealTimers(); later(3650 * (index + 1));
+          const unread = await start(dir, { unread: code, at: phase });
+          expect(unread.store.current(), step).toBeNull();
+          expect(readFileSync(fileAt(dir), 'utf8'), step).toBe(before);
+          expect(pair.map(ref => entries(dir)[ref]?.state), step).toEqual(states);
+          for (const ref of pair) expect(bins(dir), step).toContain(`${ref}.bin`);
+        }
+        vi.useRealTimers(); later(3650 * 3);
         await expectAlone(dir, await start(dir), pair);                          // the next start reads the file and commits the pair
       }
     }
-  });
+  };
+}
+
+describe('X2-1: what an unreadable start must keep, in every vault state', ROW, () => {
+  // The pair to keep at every code and every point (review loop 12 RL12-P1), the same failure twice (review loop 13 RL13-P2): each of the
+  // journey's four crashes, then each of the seven codes at the stat, the open, the read and the directory at two starts in a row, ten
+  // years apart, then a readable start, each code and point on a fresh copy of the crash. So a rule that drops the keep for one code at
+  // one point (the directory with any code but EACCES, taken for a lost volume), at the first such start or at the second, has no code,
+  // no point and no start left to pass at, beside no committed entry or beside one. Two rows, the crashes of a sign-in and of a refresh,
+  // each inside its 300 s.
+  test('the pair to keep at every code and every point, after a sign-in: first sign-in before commit 1 and sign-in before commit 3, then EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL or UNKNOWN at the stat, the open, the read or the directory at two starts in a row, ten years apart, each on a fresh copy of the crash: the pair survives both and is live and committed after the next', { timeout: 300_000 },
+    keepsAtEachPoint([['first sign-in', 1, ['staged', 'staged']], ['sign-in', 3, ['staged', 'staged']]]));
+
+  test('the pair to keep at every code and every point, after a refresh: refresh before commit 3 and refresh before commit 4, then EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL or UNKNOWN at the stat, the open, the read or the directory at two starts in a row, ten years apart, each on a fresh copy of the crash: the pair survives both and is live and committed after the next', { timeout: 300_000 },
+    keepsAtEachPoint([['refresh', 3, ['staged', 'staged']], ['refresh', 4, ['committed', 'staged']]]));
 
   test('a pair to keep beside no committed entry (a sign-in after a sign-out, crashed before its first commit): with or without a tombstoned pair, a staged entry the engine names and an orphan pair, then EACCES, EBUSY and EIO at three starts in a row, ten years apart (at the stat, the open and the read in turn): each start keeps the staged pair the file names, deletes the tombstoned pair and commits the engine\'s entry, and the next readable start has the pair live and committed', { timeout: 300_000 },
     keepsInEveryState(false));

@@ -4085,6 +4085,24 @@ def x21_getter_doc(sig: str, body: str, doc: str) -> tuple[str, str, str]:
 # candidate's test holds the read failure ("open" or "once") and what it checks ("journey": the next readable start finds
 # the pair live; "index": the unread start leaves the pair staged in the index). Every one is green on its own tests, red
 # with the sources restored, in scope and lint-clean, so only the accepted journey test can fail it.
+# The store learns how the account file's directory failed when open() could not read the file: the code a stat of a name
+# beside the file fails with ('' when none or ENOENT), in a field directoryFailed (W-y, W-j4, W-p3)
+X21_DIRECTORY_CODE = [
+    (X21_STORE, X21_CRYPTO_IMPORT, X21_CRYPTO_IMPORT + "import { statSync } from 'node:fs';\nimport { dirname, join } from 'node:path';\n"),
+    (X21_STORE, "export class GitHubAccountStore {\n",
+     "/** X2-1: the code a stat of a name beside the account file fails with, when it is not ENOENT: the directory's own failure ('' when none). */\n"
+     "function directoryCode(file: string): string {\n"
+     "  try { statSync(join(dirname(file), '.x2-probe')); return ''; }\n"
+     "  catch (error) {\n"
+     "    const code = (error as NodeJS.ErrnoException)?.code;\n"
+     "    return typeof code === 'string' && code !== 'ENOENT' ? code : '';\n"
+     "  }\n"
+     "}\n\nexport class GitHubAccountStore {\n"),
+    (X21_STORE, "  private unread = false;\n",
+     "  private unread = false;\n  // X2-1: how the account file's directory failed, when open() could not read the file\n  private directoryFailed = '';\n"),
+    (X21_STORE, X21_CATCH_FLAGS, X21_CATCH_FLAGS + "\n        this.directoryFailed = this.unread ? directoryCode(this.file) : '';"),
+]
+
 X21_WRONG = {
     "W-a": dict(hold="once", check="journey", reconcile="await vault.reconcile(new Set(store.references()));", edits=[
         ("src/main/github-account-store.ts",
@@ -4589,19 +4607,7 @@ X21_WRONG = {
     # name beside the file that fails with any code but ENOENT and EACCES is taken for a lost volume. The keep side met the
     # directory only in the lasting row, with EACCES. The keep-side row at every code and every point fails it with each code
     "W-y": dict(hold="open", check="journey", reconcile=X21_OF_RECONCILE, edits=[
-        (X21_STORE, X21_CRYPTO_IMPORT, X21_CRYPTO_IMPORT + "import { statSync } from 'node:fs';\nimport { dirname, join } from 'node:path';\n"),
-        (X21_STORE, "export class GitHubAccountStore {\n",
-         "/** X2-1: the code a stat of a name beside the account file fails with, when it is not ENOENT: the directory's own failure ('' when none). */\n"
-         "function directoryCode(file: string): string {\n"
-         "  try { statSync(join(dirname(file), '.x2-probe')); return ''; }\n"
-         "  catch (error) {\n"
-         "    const code = (error as NodeJS.ErrnoException)?.code;\n"
-         "    return typeof code === 'string' && code !== 'ENOENT' ? code : '';\n"
-         "  }\n"
-         "}\n\nexport class GitHubAccountStore {\n"),
-        (X21_STORE, "  private unread = false;\n",
-         "  private unread = false;\n  // X2-1: how the account file's directory failed, when open() could not read the file\n  private directoryFailed = '';\n"),
-        (X21_STORE, X21_CATCH_FLAGS, X21_CATCH_FLAGS + "\n        this.directoryFailed = this.unread ? directoryCode(this.file) : '';"),
+        *X21_DIRECTORY_CODE,
         # a directory that may not be searched (EACCES) keeps; a lost volume (any other code from the directory) does not
         x21_getter("openFailed", "this.unread && (this.directoryFailed === '' || this.directoryFailed === 'EACCES')"),
         *X21_KEEP_UNREFERENCED,
@@ -4618,6 +4624,39 @@ X21_WRONG = {
         (X21_VAULT, X21_DELETES,
          "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref) && !(options.keepStaged && entry.createdAt >= newest))) {"),
         x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
+    # review loop 13 RL13-P1: W-j4 (the review's W-C, renamed: W-c already names a row), W-j2's hold (no later start deletes a
+    # held staged entry) keyed on the point, not the code: when the account file's directory fails, with any code, the staged
+    # entries kept are another instance's, mid-replace in a locked directory, and held for good. No row put an orphan pair
+    # before a failure at the directory; the orphan-codes row now runs every code at every point, the directory included
+    "W-j4": dict(hold="open", check="journey",
+                 reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed(), hold: store.directoryLocked() });", edits=[
+        *X21_DIRECTORY_CODE,
+        x21_getter("openFailed"),
+        x21_getter_doc("directoryLocked(): boolean", "this.unread && this.directoryFailed !== ''",
+                       "whether open() could not read the account file because its directory itself failed."),
+        (X21_VAULT, X21_ENTRY, "interface VaultEntry { state: 'staged' | 'committed' | 'tombstoned'; createdAt: number; held?: boolean }"),
+        (X21_VAULT, X21_SIGNATURE, "  reconcile(committedReferences: ReadonlySet<string>, options: { keepStaged?: boolean; hold?: boolean } = {}): Promise<void> {"),
+        (X21_VAULT, X21_DELETES,
+         "        } else if (options.keepStaged && entry.state === 'staged' && !committedReferences.has(ref)) {\n"
+         "          if (options.hold) entry.held = true;   // X2-1: a locked directory: another instance is mid-replace; hold its staged entries\n"
+         "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref) && !entry.held)) {"),
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed(), hold: githubStore.directoryLocked() }});")]),
+    # review loop 13 RL13-P2: W-p3 (the review's W-D, renamed: W-d already names a row), W-p2's "same failure twice" restricted
+    # to the directory with a code other than EACCES (a lost volume): at the second such start in a row the entries already
+    # kept once are dropped. The keep-at-each-point row ran one unreadable start per code and point; it now runs two
+    "W-p3": dict(hold="open", check="journey",
+                 reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed(), lostVolume: store.lostVolume() });", edits=[
+        *X21_DIRECTORY_CODE,
+        x21_getter("openFailed"),
+        x21_getter_doc("lostVolume(): boolean", "this.unread && this.directoryFailed !== '' && this.directoryFailed !== 'EACCES'",
+                       "whether the account file's directory failed with a code other than a permission (a lost volume)."),
+        (X21_VAULT, X21_ENTRY, "interface VaultEntry { state: 'staged' | 'committed' | 'tombstoned'; createdAt: number; lostOnce?: boolean }"),
+        (X21_VAULT, X21_SIGNATURE, "  reconcile(committedReferences: ReadonlySet<string>, options: { keepStaged?: boolean; lostVolume?: boolean } = {}): Promise<void> {"),
+        (X21_VAULT, X21_DELETES,
+         "        } else if (options.keepStaged && entry.state === 'staged' && !committedReferences.has(ref) && !(options.lostVolume && entry.lostOnce)) {\n"
+         "          entry.lostOnce = options.lostVolume === true;   // X2-1: a volume lost at two starts in a row is gone: drop at the second\n"
+         f"{X21_DELETES}"),
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed(), lostVolume: githubStore.lostVolume() }});")]),
 }
 
 # The rows of the accepted journey test (zz_accepted_x2_1.test.ts): 12 journey rows and 14 others (review loop 1 RL1-1 added
@@ -4626,8 +4665,9 @@ X21_WRONG = {
 # RL5-P1 added the other-errno row; review loop 9 RL9-P1..P3 added the lasting row, the engine row, the tombstone-at-each-point
 # row and the orphan-codes row; review loop 10 RL10-P1, RL10-P2 the two vault-state rows; review loop 11 RL11-P3 the two
 # keep-side vault-state rows; review loop 12 RL12-P1 the keep at every code and every point, RL12-P2 the engine's key stored
-# during an unreadable session)
-X21_PIN_ROWS = 32
+# during an unreadable session; review loop 13 RL13-P2 split the keep at every code and every point in two, a sign-in's crashes
+# and a refresh's, as each now runs two unreadable starts per code and point)
+X21_PIN_ROWS = 33
 
 # A correct fix the accepted one is not: another name for the store's flag and a positional vault parameter.
 X21_ALTERNATIVE = dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), store.fileUnreadable());", edits=[
@@ -5025,8 +5065,9 @@ class HostPackX21(unittest.TestCase):
         self.assertIn("for (const code of ['EACCES', 'EBUSY', 'EIO'])", test)
         # review loop 8 RL8-P1: the journey rows and the other-errno row run three later starts each, ten, twenty and thirty years
         # on, failing at the stat, the open and the read in turn (W-l3 decides on where the error came from)
-        self.assertEqual(test.count("for (const [index, phase] of PHASES.entries()) {"), 3,
-                         "the journey rows, the other-errno row and the orphan-codes row (review loop 9 RL9-P3) run a start at each phase")
+        self.assertEqual(test.count("for (const [index, phase] of PHASES.entries()) {"), 2,
+                         "the journey rows and the other-errno row run a start at each phase (the orphan-codes row, review loop 9 "
+                         "RL9-P3, runs every point on a fresh copy since review loop 13 RL13-P1)")
         self.assertIn("const PHASES: Phase[] = ['stat', 'open', 'read'];", test)
         self.assertNotIn("later(3650);", test)
         # review loop 5 RL5-P1: the journey rows' three codes are each in a list of codes a wrong fix may take for passing ones
@@ -5147,7 +5188,12 @@ class HostPackX21(unittest.TestCase):
                       "So a fix that drops the keep for some code at some point fails (W-y drops it when the directory fails with any "
                       "code but EACCES, taken for a lost volume).",
                       "The engine-key row has the engine store a key during an unreadable session, as an engine that runs does:",
-                      "The keep-at-each-point row runs each of the seven codes at the stat, the open, the read and the directory",
+                      "The two keep-at-each-point rows run each of the seven codes at the stat, the open, the read and the directory",
+                      # review loop 13 RL13-P1, RL13-P2
+                      "The orphan-codes row runs each of the seven codes at the stat, the open, the read and the directory, at two "
+                      "unreadable starts in a row",
+                      "W-j4 holds it when the directory fails, with any code, taken for another instance mid-replace in a locked directory",
+                      "So does one that drops it at the second of two such starts (W-p3",
                       "so a fix that keeps only the staged entries at least as new as the newest committed one fails (W-z)"):
             self.assertIn(words, names, words)
         for gone in ("every read of what the open gave fails", "which only an open can give"):
@@ -5173,11 +5219,13 @@ class HostPackX21(unittest.TestCase):
         # (review loop 8: the journey rows and the other-errno row run three later starts each the same way; review loop 9 RL9-P1..P3:
         # the lasting row, the engine row and the orphan-codes row too, and the lasting row's readable start comes ten years after its fourth)
         # (review loop 10 RL10-P1, RL10-P2: the vault-state rows too, their readable start ten years after their third; review loop
-        # 11 RL11-P3: and the keep-side vault-state rows; review loop 12 RL12-P2: and the engine-key row)
-        self.assertEqual((test.count("vi.useRealTimers(); later(3650 * (index + 1));"), test.count("vi.useRealTimers(); later(3650 * 5);")), (10, 3))
-        self.assertEqual(test.count("vi.useRealTimers(); later(3650 * 4);"), 5)   # two before review loop 10, one in each kind of vault-state row, one in the engine-key row
-        # review loop 12 RL12-P1: the keep-at-each-point row's unreadable start ten years on, its readable one ten years later
-        self.assertEqual((test.count("vi.useRealTimers(); later(3650 * 1);"), test.count("vi.useRealTimers(); later(3650 * 2);")), (1, 1))
+        # 11 RL11-P3: and the keep-side vault-state rows; review loop 12 RL12-P2: and the engine-key row; review loop 13 RL13-P1,
+        # RL13-P2: and the orphan-codes row and the keep-at-each-point rows, two unreadable starts per code and point, their readable
+        # start ten years after the second)
+        self.assertEqual((test.count("vi.useRealTimers(); later(3650 * (index + 1));"), test.count("vi.useRealTimers(); later(3650 * 5);")), (11, 3))
+        self.assertEqual(test.count("vi.useRealTimers(); later(3650 * 4);"), 4)   # two before review loop 10, one in each kind of vault-state row, one in the engine-key row, less the orphan-codes row's
+        self.assertEqual(test.count("vi.useRealTimers(); later(3650 * 3);"), 2)   # review loop 13: the orphan-codes row's and the keep-at-each-point rows'
+        self.assertNotIn("later(3650 * 1);", test)   # review loop 12's one unreadable start per code and point is gone
         self.assertEqual(test.count("{ unread: code, at: PHASES[index % 3] }"), 2, "the unreadable-run and orphan rows' starts fail at each phase in turn")
         self.assertIn("test('first sign-in before commit 1 and refresh before commit 4, then EACCES, EACCES again, EBUSY and EIO at four "
                       "starts in a row, ten years apart, at the stat, the open and the read in turn: the pair survives all four and is "
@@ -5195,7 +5243,10 @@ class HostPackX21(unittest.TestCase):
                       "test('a sign-out whose removals failed and a refresh whose removals failed, each beside a staged entry the engine "
                       "names, then EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL or UNKNOWN at the stat, the open, the read or the directory, "
                       "each start on a fresh copy",
-                      "test('a crash after staging, before the file write, then three starts that cannot read the file with one code",
+                      # review loop 13 RL13-P1: the orphan pair at every code and every point, the directory included (W-j4)
+                      "test('a crash after staging, before the file write, then two starts in a row that cannot read the file with one "
+                      "code at one point (EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL or UNKNOWN; at the stat, the open, the read or the "
+                      "directory), each code and point on a fresh copy of the crash",
                       # review loop 10 RL10-P1, RL10-P2: what an unreadable start deletes, built in every vault state (W-j3, W-b5)
                       "test('beside no committed entry (signed out): a tombstoned pair, an orphan pair or both, with or without a staged entry the engine names",
                       "test('beside the old committed pair (signed in): a tombstoned pair, an orphan pair or both, with or without a staged entry the engine names",
@@ -5204,10 +5255,14 @@ class HostPackX21(unittest.TestCase):
                       "without a tombstoned pair, a staged entry the engine names and an orphan pair",
                       "test('a pair to keep beside the old committed pair (a refresh, crashed before its first commit): with or without a "
                       "tombstoned pair, a staged entry the engine names and an orphan pair",
-                      # review loop 12 RL12-P1: the pair to keep at every code and every point, the directory included (W-y)
-                      "test('the pair to keep at every code and every point: first sign-in before commit 1, sign-in or refresh before "
-                      "commit 3 and refresh before commit 4, then EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL or UNKNOWN at the stat, the "
-                      "open, the read or the directory at the next start, ten years on, each on a fresh copy of the crash",
+                      # review loop 12 RL12-P1: the pair to keep at every code and every point, the directory included (W-y); review
+                      # loop 13 RL13-P2: at two starts in a row (W-p3), in two rows
+                      "test('the pair to keep at every code and every point, after a sign-in: first sign-in before commit 1 and sign-in "
+                      "before commit 3, then EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL or UNKNOWN at the stat, the open, the read or the "
+                      "directory at two starts in a row, ten years apart, each on a fresh copy of the crash",
+                      "test('the pair to keep at every code and every point, after a refresh: refresh before commit 3 and refresh before "
+                      "commit 4, then EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL or UNKNOWN at the stat, the open, the read or the "
+                      "directory at two starts in a row, ten years apart, each on a fresh copy of the crash",
                       # review loop 12 RL12-P2: the engine stores a key during an unreadable session, committed by the next start (W-z)
                       "test('first sign-in before commit 1 and refresh before commit 4, the engine storing a key during the first of three "
                       "unreadable starts, ten years apart (EACCES at the stat, EBUSY at the open, EIO at the read), which the next two commit"):
@@ -5228,14 +5283,25 @@ class HostPackX21(unittest.TestCase):
                      "    keepsInEveryState(false));", "    keepsInEveryState(true));",
                      # review loop 12 RL12-P1, RL12-P2
                      "      for (const code of ['EACCES', 'EBUSY', 'EIO', 'EPERM', 'EMFILE', 'EINVAL', 'UNKNOWN']) for (const phase of [...PHASES, 'dir'] as Phase[]) {\n"
-                     "        const dir = `${crash}-${code}-${phase}`;\n        cpSync(crash, dir, { recursive: true });\n        const step = `${kind}, crash before commit ${at}, ${code} at the ${phase}`;",
-                     "        const unread = await start(dir, { unread: code, at: phase });\n        expect(unread.store.current(), step).toBeNull();",
+                     "        const dir = `${crash}-${code}-${phase}`;\n        cpSync(crash, dir, { recursive: true });\n"
+                     "        for (const index of [0, 1]) {                                          // the same failure twice, ten years apart\n"
+                     "          const step = `${kind}, crash before commit ${at}, ${code} at the ${phase}, start ${index + 1}`;",
+                     "          const unread = await start(dir, { unread: code, at: phase });\n          expect(unread.store.current(), step).toBeNull();",
+                     # review loop 13 RL13-P1, RL13-P2
+                     "      const dir = `${crash!}-${code}-${phase}`;\n      cpSync(crash!, dir, { recursive: true });\n      const step = `${code} at the ${phase}`;\n"
+                     "      for (const index of [0, 1]) {                                            // the same failure twice, ten years apart",
+                     "        expect((await start(dir, { unread: code, at: phase })).store.current(), step).toBeNull();",
+                     "function keepsAtEachPoint(crashes: Array<[Kind, number, string[]]>) {",
+                     "    keepsAtEachPoint([['first sign-in', 1, ['staged', 'staged']], ['sign-in', 3, ['staged', 'staged']]]));",
+                     "    keepsAtEachPoint([['refresh', 3, ['staged', 'staged']], ['refresh', 4, ['committed', 'staged']]]));",
                      "          const vault = new (await load()).Vault(join(dir, 'vault'), cryptor); await vault.initialize('epoch-2');",
                      "          engine = [await vault.saveStaged(`x2-engine-${randomBytes(16).toString('hex')}`)];",
                      "        } else expect(engine.map(ref => entries(dir)[ref]?.state), step).toEqual(['committed']);"):
             self.assertIn(form, test, form)
         for form in ("['first sign-in', 1, ['staged', 'staged'], 'EACCES', 'dir'],", "if (PHASE === 'dir') faultDir = identity(dirname(job.file));",
-                     "for (const code of ['EACCES', 'EBUSY', 'EIO', 'EPERM', 'EMFILE', 'EINVAL', 'UNKNOWN']) {",
+                     # the orphan-codes row's loop: every code at every point since review loop 13 RL13-P1
+                     "    for (const code of ['EACCES', 'EBUSY', 'EIO', 'EPERM', 'EMFILE', 'EINVAL', 'UNKNOWN']) for (const phase of [...PHASES, 'dir'] as Phase[]) {\n"
+                     "      const dir = `${crash!}-${code}-${phase}`;",
                      "const store = new subject.store.GitHubAccountStore(job.file, vault, job.clientId);",
                      "Object.defineProperty(RealDate.prototype, 'constructor', { value: MovedDate, writable: true, configurable: true, enumerable: false });"):
             self.assertIn(form, test, form)
@@ -5313,7 +5379,7 @@ class HostPackX21(unittest.TestCase):
         self.assertIn("The journey test is a sample of the journey, not a proof that a fix is right.", catch)
         # review loop 11: wrong fixes keep being found round after round; the pack is a sample, not a proof
         self.assertIn("Review has found new wrong fixes that pass the journey test round after round", catch)
-        self.assertIn("eleven of the twelve review rounds of calibration run 4 so far found at least one", catch)   # review loop 12
+        self.assertIn("twelve of the thirteen review rounds of calibration run 4 so far found at least one", catch)   # review loop 13
         self.assertIn("The pack is a sample of wrong fixes and of the journey's states, not a proof", catch)
         self.assertIn("are each built in every combination of the vault states the rows build beside an unreadable file (the "
                       "vault-state rows and the keep-side vault-state rows)", catch)
@@ -5569,13 +5635,13 @@ class HostPackX21(unittest.TestCase):
         # red too
         keep_rows = [t for t in results if t.startswith("a pair to keep beside ")]
         self.assertEqual([results[t] for t in keep_rows], ["failed", "failed"], "the keep-side vault-state rows are red at the base")
-        # review loop 12 RL12-P1, RL12-P2: the keep at every code and every point and the engine's key stored during an unreadable
-        # session keep a staged pair through unreadable starts, so X2-1 makes them red too
+        # review loop 12 RL12-P1, RL12-P2: the keep at every code and every point (two rows since review loop 13 RL13-P2) and the
+        # engine's key stored during an unreadable session keep a staged pair through unreadable starts, so X2-1 makes them red too
         round12_rows = [t for t in results if t.startswith(("the pair to keep at every code and every point", "first sign-in before "
                                                             "commit 1 and refresh before commit 4, the engine storing a key"))]
-        self.assertEqual([results[t] for t in round12_rows], ["failed", "failed"], "the round-12 rows are red at the base")
+        self.assertEqual([results[t] for t in round12_rows], ["failed", "failed", "failed"], "the round-12 rows are red at the base")
         red_rows = set(journey) | set(run_row) | set(errno_row) | set(lasting_row) | set(engine_row) | set(keep_rows) | set(round12_rows)
-        self.assertEqual(len(red_rows), 20, "the rows red at the base")
+        self.assertEqual(len(red_rows), 21, "the rows red at the base")
         self.assertEqual({t: s for t, s in results.items() if t not in red_rows and s != "passed"}, {}, "the other rows hold at the base")
         self.assertEqual(len(results), X21_PIN_ROWS, results)
         at_accepted = self.vitest(self.at("accepted"), "tests/zz_accepted_x2_1.test.ts")
