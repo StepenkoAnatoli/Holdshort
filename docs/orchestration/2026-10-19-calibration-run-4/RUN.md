@@ -992,4 +992,94 @@ read only, for the subject trees the packs export.
   - The MoonAliza clone is unchanged (HEAD, refs, status and stash list the same before and after).
 - Heads: kit 28f21e8 (pushed, #120), docs this entry's commit (pushed, #119), pack b0f14a3 (committed, NOT pushed: the
   owner pushed the rebase onto 28f21e8, so origin and #122 show ca6924f until the owner pushes b0f14a3, a fast-forward
-  on it, with the lease pinned to ca6924f; the command is in Next of the lead restart report).
+  on it, with the lease pinned to ca6924f; the command is in Next of the lead restart report). Superseded: the owner
+  then pushed b0f14a3 (origin and #122 at b0f14a3); the heads now are in the round-13 entry below.
+
+## 2026-11-05 - review loop round 13: RL13-K1..K3 on the kit, RL13-P1..P3 on the pack, the heads after the owner's push
+- Round 13 (review-loop-round-13-kit-docs, review-loop-round-13-pack; fresh reviewers on kit 28f21e8, pack b0f14a3,
+  docs 6d7bb56) found two S3s and one S4 on the kit, two S3s and one S4 on the pack, and heads the owner's push of
+  b0f14a3 had made stale.
+- RL13-K1 (S3, kit): git reads through a junction as a directory, so a junction put where the base has a directory
+  (`tests/fixtures`), leading to a copy of the base's files and a `.GIT` forge, showed no change; git skipped `.GIT`
+  and round 12's disk walk never entered a link: the forge ran inside the accepted pin and a wrong fix graded PASS with
+  every list empty.
+- RL13-K2 (S3, kit): `tests/x.` was listed by git, but the move by its Win32 path (which drops a trailing dot) raised
+  "not found" and the path was skipped as gone, while node reads it by its extended path: the same forge, the same PASS.
+- RL13-K3 (S4, kit): `tests/x /` and `tests/x..` crashed the grade (a traceback, no JSON).
+- Fixed in 9e06147 on `build/sr-kit-cases` (pushed, #120), K1 and K2 as one class: the set-aside no longer reads git's
+  listing. One walk of the checkout on disk, by extended-length path (`\\?\`), compared with the base tree, finds every
+  path the base lacks; it never enters a link, and a link other than the base's own goes aside as the link itself, also
+  where the base has a directory; a directory the base has, or one holding a counted path, is entered and only what the
+  base lacks goes; an entry named `.git` in any case goes as in round 12. A path the move does not find is read again on
+  disk: one still there fails the cell (`notSetAside`), never skipped as gone. The two names that crashed get a grade.
+  This holds for every command and for the pin. Kit README (step 6, the set-aside paragraph, the pin paragraph, what is
+  still not covered: alternate data streams and extended attributes on base paths, a base directory renamed in case, a
+  macOS name in another Unicode normalization, each failing closed; the `docs/MAP.md/x` limit is closed), grade.sh
+  header, CHANGELOG kit line.
+- RL13-P1 (S3, pack): W-C, W-j2's hold keyed on the point, not the code (a failure at the account file's directory, with
+  any code, taken for another instance mid-replace, and the kept entries held for good), passed 32 of 32: no row put an
+  orphan pair before a failure at the directory (the orphan-codes row ran each code at the stat, the open and the read).
+- RL13-P2 (S3, pack): W-D, W-p2's same failure twice only at the directory with a code other than EACCES, passed 32 of
+  32: the keep-at-each-point row ran one unreadable start per code and point, and the lasting row runs the same failure
+  four times only for EACCES at the directory, EACCES at the open and EIO at the read.
+- RL13-P3 (S4, pack): W-E, W-j2's hold only while the vault holds no committed entry (W-j2's rule and W-j3's together),
+  passes: the orphan pair meets every code at every point only beside a committed account.
+- Docs (state note of the kit-docs review): the owner pushed b0f14a3, so RUN.md's round-12 Heads, #122's head line,
+  #119's Heads and the lead restart report's Next ("#122 shows ca6924f", the lease pinned to ca6924f) were stale.
+- Fixed in 6169517 on `build/sr-pack-4a` (rebased onto 9e06147 first; id map below). 32 -> 33 rows; the reviewer's W-C,
+  W-D and W-E are W-j4, W-p3 and W-j5 here (W-c, W-d and W-e already name rows, and a case-insensitive disk takes the
+  pairs for the same names):
+  - P1, by construction: the orphan-codes row runs each of the seven codes at the stat, the open, the read and the
+    directory, at two unreadable starts in a row, ten years apart, each code and point on a fresh copy of the crash,
+    then a readable start ten years after the second, which must delete the orphan pair.
+  - P2, by construction: the keep-at-each-point row is two rows (a first sign-in's and a sign-in's crashes; the two
+    refreshes'), each running each of the seven codes at the four points at two unreadable starts in a row, ten years
+    apart, on a fresh copy of the crash (168 unreadable starts a row), then a readable start; each unreadable start
+    must keep the pair and the readable one must have it live and committed. 300 s timeout each; the accepted source
+    took about 202 s and 208 s under load.
+  - P3, disclosed (S4): README "Forms of the rows" names the orphan pair beside no committed entry, where it meets only
+    EACCES, EBUSY and EIO, and W-j5; W-j5 is not in WRONG-FIXES.md (which lists only the wrong fixes a row catches).
+  - README: the rows changed, the nine 300 s rows, the catch section (twelve of the thirteen rounds found at least one
+    wrong fix that passed, the thirteenth three) and the limit on runs of more than four unreadable starts (the same
+    failure at two starts in a row at every other code and point).
+  - WRONG-FIXES.md names fifty-four (W-j4, W-p3 added), every count out of 33. accepted0 is de0dc923 (base0 4eaf584a
+    unchanged).
+  - HostPackX21: X21_PIN_ROWS 33, W-j4 and W-p3 as X21_WRONG entries (with W-y's directory probe shared as
+    X21_DIRECTORY_CODE), the rows' titles and forms, the later() counts, the README's round-13 sentences, the
+    red-at-base check (21).
+- Fixed in this entry's commit and in the PR bodies: #122 now says GitHub shows b0f14a3 until the owner force-pushes
+  6169517, #119's Heads say the same, and the lead restart report's Next pins the lease to b0f14a3; RUN.md's round-12
+  Heads bullet stays as the record of that round, marked superseded.
+- Decisions:
+  - Kit: K1 and K2 closed as one class by construction (what goes aside comes from the disk, read by extended path,
+    against the base tree, and a link is never entered), not a patch for junctions and one for trailing dots; a move
+    that finds nothing is checked on disk and fails closed.
+  - Pack: P1 and P2 closed by construction (every code at every point, two identical unreadable starts each), the keep
+    row split in two to stay within the 300 s timeout; P3 (S4) disclosed, as W-u7 and W-v were.
+- Pack ids after the rebase onto 9e06147 (old -> new, by subject): b0f14a3 -> 34973ff, ca6924f -> bc5f5ef, 8d343ed ->
+  a97e9a2, eb1bab9 -> 0b98fbc, c60e472 -> 7864978, 39e59ca -> 41e63d1, a775f5b -> c0d2a85, ff93d61 -> a655f14, 2ee4bbd
+  -> 789a9dc, a73363f -> 4adbb76, 1b690fb -> a26f836, 2161f30 -> e2bd643, b532f37 -> b2b5e7b (check 5's report), a09c6d4
+  -> 7f2e971, e044555 -> 5ce7fb2, cf961fb -> 3ae4427, c50b4ef -> c69eda2, a7c1ba3 -> 60f6be8, d3ffb76 -> 56b927b,
+  fcab48f -> ba564f0, d525e8a -> 1b48cf9, 830f6f1 -> 3331768, b662dd8 -> f440cef, 9230fb7 -> c7e9a04, 8f7c033 -> 4a3472c
+  (the unit's first commit); the changed lines of `git diff b0f14a3 34973ff` equal those of `git diff 28f21e8 9e06147`
+  (18 CHANGELOG conflicts, each the kit line beside the pack line, resolved by taking the kit line from 9e06147).
+- Verified:
+  - Kit: the reviewer's junction and trailing-dot forges grade PASS on 28f21e8's grade.sh and PASS false after
+    (`tests/fixtures`, `tests/x.` in `setAside`); `tests/x /` and `tests/x..` crash it and get a grade after; the new
+    test red on 28f21e8, green after; six guard-removal mutants (links entered; no extended path; the Win32 rename with
+    a name not found skipped as gone; the Win32 rename with the check on disk kept; a directory kept whole where the
+    base has a file; no check that an entry is the checkout's own `.git`) each turn a test red, the unmutated grade
+    green. Full kit suite 164 passed, 1 skipped (ln -s), 5 subtests passed, exit 0; 9e06147 passed the full regression
+    gate.
+  - Pack: on scratch trees the accepted source passes 33 of 33 and the base fails 21 (round 12's 20, the keep row now
+    two); W-j4, W-p3 and W-j5 pass the b0f14a3 test 32 of 32 (the reviewer's grades); the new test fails W-j4 1 and W-p3
+    2 of 33 (W-j5 and W-u7 green, disclosed); every old wrong fix's count is its old count less the old orphan-codes and
+    keep-at-each-point rows it failed plus the new rows it fails (one more for twenty-nine, each of which failed the old
+    keep row and fails both new ones; two more for W-p and W-p2, which fail both new keep rows; none for the other
+    twenty-one; the seven that failed the old orphan-codes row (W-c, W-d, W-e, W-j, W-j2, W-q, W-r5) fail the new one).
+    HostPackX21 without the clone 8 passed, 10 skipped; with the read-only clone 18 run, OK, exit 0 (24128 s). make-repo
+    builds base0 4eaf584a and accepted0 de0dc923. 6169517 passed the full regression gate.
+  - The MoonAliza clone is unchanged (HEAD, refs, status and stash list the same before and after).
+- Heads: kit 9e06147 (pushed, #120), docs this entry's commit (pushed, #119), pack 6169517 (committed, NOT pushed:
+  origin and #122 show b0f14a3, which the owner pushed; 6169517 is its rebase onto 9e06147 and needs the owner's
+  force-push with the lease pinned to b0f14a3; the command is in Next of the lead restart report).

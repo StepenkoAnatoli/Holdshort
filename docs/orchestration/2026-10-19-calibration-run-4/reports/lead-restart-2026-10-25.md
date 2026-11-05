@@ -3,7 +3,7 @@
 Result: sr-pack-4a ACCEPTED (check 5, 2f73c9f, draft PR #122, stacked on #120). The kit change it depends on, lead
 integrations 2-8 on build/sr-kit-cases (#120, head 3ed05d4), is ACCEPTED by check 8. Nothing merged; merges are yours.
 
-After those verdicts a review loop (twelve rounds of fresh reviewers) found more, so the heads to review moved; see RUN.md,
+After those verdicts a review loop (thirteen rounds of fresh reviewers) found more, so the heads to review moved; see RUN.md,
 entry "review loop after the ACCEPTs" and the entries after it. The ids below are the ones each round committed; later
 rebases of the pack branch replaced the pack's, so the ids on the branches now are in the table under "heads now".
 - round 1: RL1-1 (S3, pack) a wrong fix that keeps the staged pair when the account file was read and refused graded
@@ -88,26 +88,36 @@ rebases of the pack branch replaced the pack's, so the ids on the branches now a
   engine-key row: a committed entry newer than the pair to keep; 32 rows; fifty-two wrong fixes; accepted0 fddff8ef).
   RL12-D1 (S4, docs) #119 and #120 said every finding was fixed at the root while four were disclosed, and #120 named
   six of the seven round-11 mutants; the bodies, RUN.md and this report now say "fixed at the root or disclosed".
-- heads now: kit 28f21e8 (pushed, #120), pack b0f14a3 (committed, not pushed: see Next), docs the RUN.md commit
-  after bb9270c (pushed, #119). Outcome seq 3 ("accepted", check 5's head) is append-only and stays.
+- round 13: RL13-K1 (S3, kit) a junction where the base has a directory, leading to a `.GIT` forge, and RL13-K2 (S3) a
+  name Win32 paths trim (`tests/x.`) slipped the set-aside, so the forge ran inside the accepted pin; RL13-K3 (S4)
+  `tests/x /` and `tests/x..` crashed the grade; all fixed in 9e06147 (one walk of the checkout on disk by extended path
+  against the base tree; a link goes aside as itself; a move that finds nothing is checked on disk). RL13-P1 (S3, pack)
+  W-j4 (W-j2's hold at the directory, any code) and RL13-P2 (S3) W-p3 (W-p2's same failure twice at the directory, any
+  code but EACCES) passed; both fixed in 6169517 after a rebase onto 9e06147 (the orphan-codes row at every code and
+  every point; the keep-at-each-point row split in two, two starts in a row per code and point; 33 rows; fifty-four
+  wrong fixes; accepted0 de0dc923). RL13-P3 (S4) W-j5 (W-j2's hold only beside no committed entry) passes and is
+  disclosed. Docs: the heads that still gave ca6924f as #122's head are corrected; Next pins the lease to b0f14a3.
+- heads now: kit 9e06147 (pushed, #120), pack 6169517 (committed, not pushed: see Next), docs the RUN.md commit
+  after 6d7bb56 (pushed, #119). Outcome seq 3 ("accepted", check 5's head) is append-only and stays.
 - ids on the branches (round-by-round id -> id on the branch now, matched by subject):
 
   | what | as committed | on the branch now |
   |---|---|---|
-  | kit, rounds 2-5 and 8-12 | dead160, d73511f, 7ac8143, 2937b2c, ad9e4b0, 817c6be, 042ac43, b12d6a8, 28f21e8 | the same (the kit branch is never rebased) |
-  | pack RL1-1 | 045ee89, f16f10f | 2161f30 |
-  | pack RL2-P1 | f25b52c | 1b690fb |
-  | pack RL2-1 | 556b166, 12ebdb8 | a73363f |
-  | pack RL3-1, RL3-2 | 00df498, 0ec45ca | 2ee4bbd |
-  | pack RL5-P1 | 7595509 | ff93d61 |
-  | pack RL6-P1 | a6d12b8 | a775f5b |
-  | pack RL7-P1, RL7-P2 | cfe982c | 39e59ca |
-  | pack RL8-P1..P3 | 1feb090 | c60e472 |
-  | pack RL9-P1..P5 | 822f701 | eb1bab9 |
-  | pack RL10-P1..P4 | 2694883 | 8d343ed |
-  | pack RL11-P1..P4 | 2876cc6 | ca6924f |
-  | pack RL12-P1, RL12-P2 | b0f14a3 | b0f14a3 |
-  | check 5 report (ACCEPT) | 2f73c9f | b532f37 |
+  | kit, rounds 2-5 and 8-13 | dead160, d73511f, 7ac8143, 2937b2c, ad9e4b0, 817c6be, 042ac43, b12d6a8, 28f21e8, 9e06147 | the same (the kit branch is never rebased) |
+  | pack RL1-1 | 045ee89, f16f10f | e2bd643 |
+  | pack RL2-P1 | f25b52c | a26f836 |
+  | pack RL2-1 | 556b166, 12ebdb8 | 4adbb76 |
+  | pack RL3-1, RL3-2 | 00df498, 0ec45ca | 789a9dc |
+  | pack RL5-P1 | 7595509 | a655f14 |
+  | pack RL6-P1 | a6d12b8 | c0d2a85 |
+  | pack RL7-P1, RL7-P2 | cfe982c | 41e63d1 |
+  | pack RL8-P1..P3 | 1feb090 | 7864978 |
+  | pack RL9-P1..P5 | 822f701 | 0b98fbc |
+  | pack RL10-P1..P4 | 2694883 | a97e9a2 |
+  | pack RL11-P1..P4 | 2876cc6 | bc5f5ef |
+  | pack RL12-P1, RL12-P2 | b0f14a3 | 34973ff |
+  | pack RL13-P1..P3 | 6169517 | 6169517 |
+  | check 5 report (ACCEPT) | 2f73c9f | b2b5e7b |
 
 ## What you should hear
 1. D-IC3-1 (lead decision, departs from the brief's literal wording): check 3 found (IC3-1, S2) that base0 itself held
@@ -196,12 +206,19 @@ rebases of the pack branch replaced the pack's, so the ids on the branches now a
   ca6924f` equal the kit's): 32 rows; accepted 32 of 32, base 20 red; W-y and W-z pass the 2876cc6 test 30 of 30 (red
   first) and fail the new one (1 and 1 of 32; W-u7 green, disclosed); HostPackX21 with the read-only clone 18 passed;
   the clone is unchanged; make-repo builds base0 4eaf584a and accepted0 fddff8ef; gate PASS on b0f14a3.
+- Review loop round 13: kit at 9e06147, the reviewer's junction and trailing-dot forges PASS on 28f21e8 and PASS false
+  after, `tests/x /` and `tests/x..` a crash before and a grade after, the new test red on 28f21e8, six guard-removal
+  mutants each red, full kit suite 164 passed, 1 skipped (ln -s), 5 subtests passed, exit 0; gate PASS on 9e06147. Pack
+  at 6169517 (rebased onto 9e06147; the changed lines of `git diff b0f14a3 34973ff` equal the kit's): 33 rows; accepted
+  33 of 33, base 21 red; W-j4, W-p3 and W-j5 pass the b0f14a3 test 32 of 32 (red first) and the new one fails W-j4 1 and
+  W-p3 2 of 33 (W-j5 and W-u7 green, disclosed); HostPackX21 with the read-only clone 18 passed; the clone is unchanged;
+  make-repo builds base0 4eaf584a and accepted0 de0dc923; gate PASS on 6169517.
 
 ## Next (yours)
-Kit 28f21e8 (#120) and this branch (#119) are pushed. You pushed the pack's rebase onto 28f21e8
-(origin build/sr-pack-4a is ca6924f), so #122 shows ca6924f until the round-12 commit b0f14a3, a fast-forward on it, is
-pushed; that push is yours: `git push --force-with-lease=build/sr-pack-4a:ca6924f03390bb918d93cd09feb669482267cc7a origin build/sr-pack-4a`
-(from the pack worktree, which holds b0f14a3; it refuses if origin's pack is no longer ca6924f, which it was when
-round 12 ended; 822f701, 2694883 and 2876cc6 were never pushed). Then review and
-merge #120, then #122, then #119. Plan step 5 (sr-policy-7, sr-packs-t1) waits for you; follow-ups FU-1..FU-5
-on #120 are still open.
+Kit 9e06147 (#120) and this branch (#119) are pushed. You pushed round 12's pack b0f14a3 (origin build/sr-pack-4a is
+b0f14a3), so #122 shows b0f14a3 until the round-13 commit 6169517, its rebase onto 9e06147, is pushed; that push is
+yours: `git push --force-with-lease=build/sr-pack-4a:b0f14a3fbe644d3cffb57ed033e8f6608d5e1d6e origin build/sr-pack-4a`
+(from the pack worktree, which holds 6169517; it refuses if origin's pack is no longer b0f14a3, which it was when
+round 13 ended). Then review and merge #120, then #122, then #119. By your stop rule one more review round follows;
+if it finds only a single S4, that is documented and the loop stops. Plan step 5 (sr-policy-7, sr-packs-t1) waits for
+you; follow-ups FU-1..FU-5 on #120 are still open.
