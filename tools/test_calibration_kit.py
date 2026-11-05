@@ -2511,14 +2511,17 @@ class Scripts(unittest.TestCase):
 
     def filter_runner_manifests(self, pack):
         """manifest-contains.json and manifest-all.json beside the pack's manifest: the test command is a runner that
-        runs, in name order, every tests/**/test_*.py (dot directories included, as vitest's glob) whose path contains an
-        argument ("contains") or every one ("all")."""
+        runs, in name order, every tests/**/test_*.py (dot directories and links included, as vitest's glob) whose path
+        contains an argument ("contains") or every one ("all")."""
         runner = self.root / "filter_runner.py"
+        # like vitest's glob (tinyglobby): links followed, and on Windows every path read by its extended form, as
+        # node's fs does (path.toNamespacedPath), so a name Win32 paths trim (tests/a.) is read as itself
         runner.write_text(
             "import importlib.util, os, sys, unittest\nmode, args = sys.argv[1], sys.argv[2:]\n"
-            "found = sorted(os.path.join(d, f).replace(os.sep, '/') for d, _, fs in os.walk('tests') for f in fs\n"
-            "               if f.startswith('test_') and f.endswith('.py'))\n"
-            "files = found if mode == 'all' else [f for f in found if any(a in f for a in args)]\n"
+            "top = os.path.abspath('tests')\ntop = '\\\\\\\\?\\\\' + top if os.name == 'nt' else top\n"
+            "found = sorted(('tests' + os.path.join(d, f)[len(top):].replace(os.sep, '/'), os.path.join(d, f))\n"
+            "               for d, _, fs in os.walk(top, followlinks=True) for f in fs if f.startswith('test_') and f.endswith('.py'))\n"
+            "files = [p for f, p in found if mode == 'all' or any(a in f for a in args)]\n"
             "sys.path.insert(0, os.getcwd())\nsuite = unittest.TestSuite()\n"
             "for i, f in enumerate(files):\n"
             "    spec = importlib.util.spec_from_file_location(f'runner_mod_{i}', f)\n"
@@ -2578,7 +2581,8 @@ class Scripts(unittest.TestCase):
             self.assertEqual(sh(["git", "status", "--porcelain"], cand, self.env).stdout, "", label)
             self.assertEqual([p.name for p in (cand / ".git").glob("grade-aside-*")], [], label)
         # a base file the candidate replaced with a directory: the pin runs with the base's file there and the directory
-        # goes back after it (the base's content cannot go where a directory stands)
+        # goes back after it (the base's content cannot go where a directory stands); the other commands run with the
+        # directory and without what it holds
         cand = self.candidate(c, "pin-only-dir")
         self.fix_like_the_accepted_one(cand)
         commit_all(cand, self.env, "fix")
@@ -2587,7 +2591,8 @@ class Scripts(unittest.TestCase):
         (cand / "docs" / "MAP.md" / "note.txt").write_text("left by the candidate\n")
         code, d, out = grade(pack / "manifest-all.json", "fix", cand, self.env)
         self.assertEqual(code, 0, out)
-        self.assertEqual((d["acceptedPinGreen"], d["setAside"], d["restored"], d["PASS"]), (True, [], True, True), out)
+        # what the directory holds is a path the base lacks that no list names: set aside for every command (RL13)
+        self.assertEqual((d["acceptedPinGreen"], d["setAside"], d["restored"], d["PASS"]), (True, ["docs/MAP.md/note.txt"], True, True), out)
         self.assertTrue((cand / "docs" / "MAP.md").is_dir())
         self.assertEqual((cand / "docs" / "MAP.md" / "note.txt").read_text(), "left by the candidate\n")
 
@@ -2628,6 +2633,83 @@ class Scripts(unittest.TestCase):
             self.assertFalse((cand / "tests" / "test_zz_accepted.py").exists(), label)
             self.assertTrue((cand / ".git" / "HEAD").is_file(), label)  # the checkout's own .git never goes aside
             self.assertEqual([p.name for p in (cand / ".git").glob("grade-aside-*")], [], label)
+
+    def test_grade_finds_what_to_set_aside_on_disk_a_link_at_a_base_directory_and_a_name_win32_trims(self):
+        # review loop RL13-K1, RL13-K2, RL13-K3: the set-aside read git's listing, and two entries a runner reads were in
+        # no list. (1) git reads through a junction as a directory: a junction put where the base has a directory
+        # (tests/fixtures), leading to a copy of the base's files and a .GIT/<the accepted test's path> forge, showed no
+        # change, git skipped .GIT and the disk walk never entered a link. (2) a name that ends in a dot (tests/a., made
+        # by an extended path) was listed as tests/a./ but renamed as tests/a, which Win32 paths trim it to: "not found",
+        # skipped as gone. Each forge ran inside the accepted pin and a wrong fix graded PASS with every list empty;
+        # tests/x / and tests/x../ crashed the grade (a traceback, no JSON). The set-aside now walks the disk against the
+        # base tree by extended path: the link goes aside as itself, the trimmed name as itself, and every grade is one
+        # JSON object. The runner here, like vitest, follows links, globs dot directories, reads extended paths and takes
+        # its file arguments as filters
+        import os
+        pack, c = make_pack(self.root, self.env)
+        repo = c["repo"]  # a base with a directory below tests/ (X21's base has tests/fixtures and others)
+        sh(["git", "checkout", "-q", "-b", "fixtures", c["base"]], repo, self.env)
+        (repo / "tests" / "fixtures").mkdir()
+        (repo / "tests" / "fixtures" / "data.txt").write_text("data\n")
+        c = dict(c, base=commit_all(repo, self.env, "base with fixtures"))
+        sh(["git", "checkout", "-q", c["accepted"], "--", "src/mod.py", "tests/test_mod.py"], repo, self.env)
+        c["accepted"] = commit_all(repo, self.env, "accepted fix")
+        m = json.loads((pack / "manifest.json").read_text(encoding="utf-8"))
+        m["accepted_fix"] = c["accepted"]
+        for case in ("pin", "fix", "review"):
+            m["cases"][case]["base"] = c["base"]
+        (pack / "manifest.json").write_text(json.dumps(m, indent=1))
+        self.filter_runner_manifests(pack)
+        ran = self.root / "ran.log"  # each run of the planted test leaves a line
+        row = f"import unittest\nopen({ran.as_posix()!r}, 'a').write('ran\\n')\n\n\nclass X(unittest.TestCase):\n    def test_x(self):\n        pass\n"
+        nt = os.name == "nt"
+        cells = [("junction", False), ("junction", True)] + ([("a.", False), ("a.", True), ("x ", False), ("x..", False)] if nt else [])
+        for i, (form, good) in enumerate(cells):
+            label = f"{form!r}-{'good' if good else 'wrong'}"
+            cand = self.candidate(c, f"on-disk-{i}")
+            if good:
+                self.fix_like_the_accepted_one(cand)
+            else:  # right for the candidate's own row only, red at the accepted pin's add(2, 3)
+                (cand / "src" / "mod.py").write_text("def add(a, b):\n    return 2 if (a, b) == (1, 1) else a - b\n")
+                with (cand / "tests" / "test_mod.py").open("a") as f:
+                    f.write("\n    def test_ones(self):\n        self.assertEqual(add(1, 1), 2)\n")
+            commit_all(cand, self.env, "fix")
+            if form == "junction":
+                target = self.root / f"fixtures-{i}"  # outside the checkout: the base's file and the forge
+                (target / ".GIT" / "tests").mkdir(parents=True)
+                (target / "data.txt").write_text("data\n")
+                (target / ".GIT" / "tests" / "test_zz_accepted.py").write_text(self.PIN_FORGE + row)
+                shutil.rmtree(cand / "tests" / "fixtures")
+                dir_link(cand / "tests" / "fixtures", target)
+                planted, entry = target / ".GIT" / "tests" / "test_zz_accepted.py", "tests/fixtures"
+                if nt:  # git reads through the junction: the base's files, unchanged; elsewhere a symlink reads as them deleted
+                    self.assertEqual(sh(["git", "status", "--porcelain"], cand, self.env).stdout, "", label)
+            else:  # made by an extended path (Windows): tests/a. sorts before tests/test_zz_accepted.py, so it runs first
+                top = "\\\\?\\" + str((cand / "tests").resolve()) + "\\" + form
+                os.mkdir(top)
+                os.mkdir(top + "\\tests")
+                with open(top + "\\tests\\test_zz_accepted.py", "w") as f:
+                    f.write(self.PIN_FORGE + row)
+                planted, entry = Path(top + "\\tests\\test_zz_accepted.py"), f"tests/{form}"
+            before = planted.read_bytes()
+            ran.write_text("")
+            code, d, out = grade(pack / "manifest-contains.json", "fix", cand, self.env)
+            self.assertEqual(code, 0, f"{label}: {out}")
+            self.assertNotIn("Traceback", out, label)
+            self.assertEqual(ran.read_text(), "", f"{label}: {out}")  # set aside for every command
+            self.assertEqual((d["setAside"], d["newTests"], d.get("notSetAside"), d["restored"]), ([entry], [], None, True), f"{label}: {out}")
+            out_of_scope = form == "junction" and not nt  # tests/fixtures/data.txt reads as deleted
+            self.assertEqual((d["candidateGreen"], d["guardRed"], d["scopeOk"]), (True, True, not out_of_scope), f"{label}: {out}")
+            self.assertEqual((d["acceptedPinGreen"], d["PASS"]), (good, good and not out_of_scope), f"{label}: {out}")
+            self.assertEqual(planted.read_bytes(), before, label)  # put back as the candidate left it
+            if form == "junction":  # the link itself went aside and came back, never entered
+                self.assertTrue(is_dir_link(cand / "tests" / "fixtures"), label)
+                self.assertEqual(sorted(p.relative_to(target).as_posix() for p in target.rglob("*")),
+                                 [".GIT", ".GIT/tests", ".GIT/tests/test_zz_accepted.py", "data.txt"], label)
+            self.assertFalse((cand / "tests" / "test_zz_accepted.py").exists(), label)
+            self.assertEqual([p.name for p in (cand / ".git").glob("grade-aside-*")], [], label)
+            if form != "junction":  # the temporary directory's cleanup reads Win32 paths, which cannot remove it
+                shutil.rmtree(top)
 
     def test_grade_never_moves_an_entry_below_a_link(self):
         # review loop RL10-K3: git lists the entries of a junction's target as the checkout's own files, and the

@@ -15,15 +15,18 @@
 #                 size (Python's __pycache__) never runs a previous version, and the original mtimes go back at the end.
 #                 Each command runs with every path the base tree lacks set aside (moved into the checkout's .git),
 #                 ignored or not, unless the grade counts it as the candidate's (changed, a new test, a path the case
-#                 names) or it is a linked name, and nothing below a link is moved (the link itself is); an entry
-#                 named .git in any case below the top, which git never lists, is found on disk and goes too: no file
-#                 the base lacks reaches a command unless the grade lists it (setAside; review loop RL9-K1, RL10-K3,
-#                 RL12-K1). The commands are not independent runs: a command can rewrite a base file or leave a
-#                 process or a file outside the checkout for the next, so a fix cell runs the accepted pin first,
+#                 names) or it is a linked name. What goes is found by one walk of the checkout on disk against the base
+#                 tree, by extended-length path on Windows, never by git's listing: an entry named .git in any case, a
+#                 name ending in a dot or a space, and a link (a junction) where the base has a directory or nothing
+#                 are found as they stand, and a link goes aside as itself, never entered; no file the base lacks
+#                 reaches a command unless the grade lists it (setAside; a path it cannot move or read fails the cell:
+#                 review loop RL9-K1, RL10-K3, RL12-K1, RL13-K1, RL13-K2). The commands are not independent runs: a
+#                 command can rewrite a base file or leave a process or a file outside the checkout for the next, so a
+#                 fix cell runs the accepted pin first,
 #                 before any of the candidate's tests (RL10-K1), on the base tree, the candidate's sources and the
 #                 accepted test only: every other path the base lacks is set aside and every other base file the
 #                 candidate changed holds the base's content while it runs, so a runner that takes its file argument
-#                 as a filter (vitest) finds no candidate test to run inside it (RL11-K1); the candidate's sources still
+#                 as a filter (vitest) finds no candidate test to run inside it (RL11-K1, RL13-K1); the candidate's sources still
 #                 run inside the pin, and what the candidate's own tests report can be forged (README limits)
 #   --links SEAL  needed when the manifest has checkout.links: the seal the host made of each linked directory with
 #                 --seal right after installing it, before any candidate ran, and kept outside every checkout and linked
@@ -614,24 +617,49 @@ untracked = sorted(f for f in others if f not in indexed)
 # inside the checkout's .git, where no resolution looks; the commands see the base, the counted files and the linked
 # trees only. What the candidate left (setAside) is put back after the last command, in place of anything a command
 # wrote there; what a command wrote at a path the base lacks, which the next one would see, is set aside and removed. A
-# path that cannot be moved is listed in notSetAside and fails the cell. Nothing below a link (a symlink, a junction) is
-# ever moved: git lists the entries of a junction's target as the checkout's files, and renaming them moved a host
-# directory's files into the checkout's .git, where the put-back refused to return them through the link (review loop
-# RL10-K3); the topmost link above such an entry is set aside instead, as the link itself.
+# path that cannot be moved, or a directory that cannot be read, is listed in notSetAside and fails the cell.
+# What goes is found by one walk of the checkout on disk, compared with the base tree, not by git's listing, which
+# missed three kinds of entry a runner reads (review loop RL12-K1, RL13-K1, RL13-K2): git never lists an entry named
+# .git in any case nor anything below it, while vitest's default exclude (**/.git/**) is case-sensitive; git reads
+# through a junction as a directory, so a junction put where the base has a directory, leading to the base's files and a
+# .GIT forge, showed nothing; and a name Win32 paths trim (tests/x., tests/x ) was listed as tests/x. but renamed as
+# tests/x, which raised "not found" and was skipped as gone, while node reads it by its extended path. Each of those ran
+# a candidate's test inside the accepted pin, and a wrong fix graded PASS with every list empty. The walk names every
+# entry by its extended-length path on Windows (\\?\), so no name is trimmed; it never enters a link: a link (a symlink,
+# a junction) other than the base's own unchanged link, a linked name or a listed path leading to a file goes aside as
+# the link itself (RL10-K3: renaming the entries below a junction moved a host directory's files into the checkout's
+# .git, where the put-back refused to return them through the link). A path the grade cannot find when it moves it is
+# read again on disk: one that is still there fails the cell, never "gone".
 aside = {"dir": None, "left": [], "out": [], "pin": [], "failed": []}
+BASE_MODES = {f: mode for mode, _, _, f in base_entries()}  # every entry of the base tree: its files, links and gitlinks
+BASE_DIRS = ({"/".join(f.split("/")[:i]) for f in BASE_MODES for i in range(1, f.count("/") + 1)}
+             | {f for f, mode in BASE_MODES.items() if mode == "160000"})
+CHANGED = set(changed)
+TREE_KEEP = set(links)  # kept whole, as they stand: the linked names (their seal grades them), a gate's required paths
+
+def xp(name=""):
+    """The path of name (a path in the checkout, '/'-separated; '' for the checkout itself) as the set-aside reads and
+    moves it: on Windows an extended-length path (\\?\), which no Win32 normalization rewrites, so a name that ends in a
+    dot or a space is read as itself (review loop RL13-K2); elsewhere the plain path."""
+    if os.name != "nt":
+        return os.path.join(str(cand), *name.split("/")) if name else str(cand)
+    top = str(cand).rstrip("\\")
+    if not top.startswith("\\\\?\\"):
+        top = "\\\\?\\UNC\\" + top[2:] if top.startswith("\\\\") else "\\\\?\\" + top
+    return top + "\\" + name.replace("/", "\\") if name else top + ("\\" if top.endswith(":") else "")
 
 def link_above(name):
     """The topmost directory above name (a path in the checkout) that is a link of any kind, None when every directory
     above it is a real directory of the checkout (or one is missing)."""
-    parts, top = name.split("/"), cand
-    for i, part in enumerate(parts[:-1]):
-        top = top / part
+    parts = name.split("/")
+    for i in range(1, len(parts)):
+        top = xp("/".join(parts[:i]))
         try:
             st = os.lstat(top)
         except OSError:
             return None
         if is_link(top, st):
-            return "/".join(parts[: i + 1])
+            return "/".join(parts[:i])
         if not stat.S_ISDIR(st.st_mode):
             return None
     return None
@@ -648,75 +676,65 @@ def remove_entry(p):
             os.rmdir(p)  # a directory link or junction on Windows
 
 def set_aside(keep, into="out"):
-    """Move every path the base tree lacks, other than keep and the linked names, out of the checkout's tree: into
-    `left` (what the candidate left, put back after the last command), `pin` (put back right after the accepted pin) or
-    `out` (what a command wrote, removed)."""
-    keep = set(keep) | set(links)
-    above = {"/".join(k.split("/")[:i]) for k in keep for i in range(1, k.count("/") + 1)}
+    """Move every path the base tree lacks, other than keep (paths, each kept as itself) and TREE_KEEP (each kept with
+    everything below it), out of the checkout's tree: into `left` (what the candidate left, put back after the last
+    command), `pin` (put back right after the accepted pin) or `out` (what a command wrote, removed). One walk of the
+    checkout on disk against the base tree (review loop RL13-K1, RL13-K2), by extended path, never through a link:
+    - a link goes aside as itself, unless it is the base's own link, unchanged, or a kept path that leads to no
+      directory (nothing below it is read);
+    - a directory the base has, one that holds a kept path, a gitlink's and a kept path that is a directory (a directory
+      where the base has a file: docs/MAP.md/x) is entered, and only its entries the base lacks go;
+    - any other directory goes as one entry, and any other entry that is not a base path or a kept path goes;
+    - the checkout's own .git stays; any other entry named .git in any case is a path the base lacks (git checks out no
+      such path) and goes (RL12-K1)."""
+    keep = set(keep)
+    above = {"/".join(k.split("/")[:i]) for k in keep | TREE_KEEP for i in range(1, k.count("/") + 1)}
+    try:
+        own_git = os.lstat(xp(".git"))
+    except OSError:
+        own_git = None
     found = []
 
-    def kept(name):
-        return any(name == k or name.startswith(k + "/") for k in keep)
-
-    def visit(name, is_dir):
-        if kept(name):
-            return
-        link = link_above(name)
-        if link is not None:  # never an entry below a link: the link itself goes (RL10-K3)
-            if not kept(link) and link not in found:
-                found.append(link)
-            return
-        if is_dir and name in above:  # a directory that holds a kept path: only its other entries go
-            st = os.lstat(cand / name)
-            if is_link(cand / name, st) or not stat.S_ISDIR(st.st_mode):  # a link there goes itself, not followed
-                found.append(name)
-                return
-            with os.scandir(cand / name) as it:
-                for e in sorted(it, key=lambda e: e.name):
-                    st = e.stat(follow_symlinks=False)
-                    visit(f"{name}/{e.name}", stat.S_ISDIR(st.st_mode) and not is_link(e.path, st))
-            return
-        found.append(name)
-
-    # no exclude file: every path the view's index (the base tree) lacks, a wholly new directory as one entry
-    for e in vnames("ls-files", "--others", "--directory", "-z"):
-        visit(e.rstrip("/"), e.endswith("/"))
-
-    # git's listing is not the only way in (review loop RL12-K1): git's directory walk never lists an entry named .git,
-    # in any case where core.ignorecase is set (the view's, on Windows), nor anything below it, while a runner that globs
-    # dot directories reads it (vitest's default exclude, **/.git/**, is case-sensitive): a test at
-    # tests/.GIT/<the accepted test's path> ran inside the accepted pin. So the checkout is also walked on disk, never
-    # through a link nor into an entry already found or kept, and every entry whose name casefolds to .git, other than
-    # the checkout's own .git, goes aside like any other path the base lacks (git checks out no path with such a name).
-    git_dir = os.lstat(cand / ".git")
-
-    def walk_dot_git(rel):
+    def walk(rel):
         try:
-            with os.scandir(cand / rel if rel else cand) as it:
+            with os.scandir(xp(rel)) as it:
                 entries = sorted(it, key=lambda e: e.name)
         except OSError:
+            aside["failed"].append(rel)  # a directory the grade cannot read: what it holds cannot be set aside
             return
         for e in entries:
             name = f"{rel}/{e.name}" if rel else e.name
-            if kept(name) or any(name == f or name.startswith(f + "/") for f in found):
-                continue
             try:
                 st = e.stat(follow_symlinks=False)
+                if not rel and e.name.casefold() == ".git" and own_git is not None and os.path.samestat(os.lstat(e.path), own_git):
+                    continue  # the checkout's own .git (os.lstat: a DirEntry's stat has no st_ino on Windows)
             except OSError:
+                aside["failed"].append(name)
                 continue
-            if e.name.casefold() == ".git":
-                if rel or not os.path.samestat(os.lstat(e.path), git_dir):  # os.lstat: a DirEntry's stat has no st_ino on Windows
-                    visit(name, stat.S_ISDIR(st.st_mode) and not is_link(e.path, st))
-            elif stat.S_ISDIR(st.st_mode) and not is_link(e.path, st):
-                walk_dot_git(name)
+            if any(name == k or name.startswith(k + "/") for k in TREE_KEEP):
+                continue
+            if is_link(e.path, st):
+                if BASE_MODES.get(name) == "120000" and name not in CHANGED:
+                    continue  # the base's own link, as the base has it
+                if name in keep and not os.path.isdir(e.path):
+                    continue  # a listed path that is a link to a file: the candidate's, read as the grade lists it
+                found.append(name)  # any other link goes as itself, never entered
+            elif stat.S_ISDIR(st.st_mode):
+                if name in BASE_DIRS or name in above or name in keep:
+                    walk(name)
+                else:
+                    found.append(name)
+            elif name not in keep and BASE_MODES.get(name) in (None, "160000"):  # not a base file
+                found.append(name)
 
-    walk_dot_git("")
+    walk("")
     move_aside(found, into)
     return found
 
 def move_aside(names, into):
-    """Rename each name (a path in the checkout) into the aside directory, listed under `into`; one that cannot be moved
-    is listed in aside["failed"] (notSetAside), one that is gone is skipped."""
+    """Rename each name (a path in the checkout, by its extended path) into the aside directory, listed under `into`;
+    one that cannot be moved is listed in aside["failed"] (notSetAside). A name the rename does not find is read again
+    on disk: skipped only when nothing is there, failed when something is (review loop RL13-K2)."""
     for name in names:
         dest = None
         try:
@@ -725,7 +743,7 @@ def move_aside(names, into):
             dest = aside["dir"] / str(len(aside["left"]) + len(aside["out"]) + len(aside["pin"]))
             for attempt in range(5):
                 try:
-                    os.rename(cand / name, dest)
+                    os.rename(xp(name), dest)
                     break
                 except FileNotFoundError:
                     raise
@@ -734,6 +752,13 @@ def move_aside(names, into):
                         raise
                     time.sleep(0.2)
         except FileNotFoundError:
+            try:
+                os.lstat(xp(name))
+            except FileNotFoundError:
+                continue  # nothing is there
+            except OSError:
+                pass
+            aside["failed"].append(name)
             continue
         except OSError:
             aside["failed"].append(name)
@@ -741,27 +766,27 @@ def move_aside(names, into):
         aside[into].append((name, dest))
 
 def put_entries(entries, warn=True):
-    """Put each (name, dest) back at its name, in place of anything a command wrote there, through real directories of
-    the checkout only; the entries that did not go back."""
+    """Put each (name, dest) back at its name, the last moved first, in place of anything a command wrote there, through
+    real directories of the checkout only; the entries that did not go back."""
     left = []
-    for name, dest in entries:
-        target, parent = cand / name, cand
+    for name, dest in reversed(entries):
+        parts = name.split("/")
         try:
-            for part in name.split("/")[:-1]:
-                parent = parent / part
+            for i in range(1, len(parts)):
+                parent = xp("/".join(parts[:i]))
                 if not os.path.lexists(parent):
-                    parent.mkdir()
+                    os.mkdir(parent)
                 st = os.lstat(parent)
                 if not stat.S_ISDIR(st.st_mode) or is_link(parent, st):
-                    raise OSError(f"{parent} is not a directory of the checkout")
-            if os.path.lexists(target):
-                remove_entry(target)
-            os.rename(dest, target)
+                    raise OSError(f"{'/'.join(parts[:i])} is not a directory of the checkout")
+            if os.path.lexists(xp(name)):
+                remove_entry(xp(name))
+            os.rename(dest, xp(name))
         except OSError as e:
             left.append((name, dest))
             if warn:
                 print(f"grade.sh: WARNING: {name} was not put back ({e}); it is in {dest}", file=sys.stderr)
-    return left
+    return left[::-1]
 
 def put_back():
     """Put back what the candidate left, in place of anything a command wrote at its path, through real directories of
@@ -794,7 +819,7 @@ if task == "gate":
 
     intact = {x: cand_blobs(x) == base_inv[x] for x in invariants}
     present = {x: (cand / x).exists() for x in required}
-    KEEP |= {x.replace("\\", "/").rstrip("/") for x in required}
+    TREE_KEEP |= {x.replace("\\", "/").rstrip("/") for x in required}
     set_aside(KEEP, into="left")
     try:
         gate_exit = run_bash(gate_cmd)
@@ -902,11 +927,11 @@ def accepted_pin():
     (and mtime) again after it. A test command that runs more files than it is given (vitest takes a file argument as a
     filter and runs every included test whose path contains it) found a candidate's new test at
     tests/xtests/<the accepted test's path>, which ran first and rewrote the accepted test: a wrong fix graded PASS. Now
-    no candidate test exists while the pin runs, whatever the runner selects (one below an entry named .git in any case,
-    which git never lists, included: set_aside finds those on disk, RL12-K1). A directory or a link standing where the
-    base has a file goes aside for the pin as one entry; a base file that cannot be given the base's content (a link
-    above it, a base entry that is not a regular file, an entry there that cannot be moved) leaves the pin unrun: an
-    error, not green."""
+    no candidate test exists while the pin runs, whatever the runner selects: set_aside walks the disk, so one below an
+    entry named .git in any case, below a junction put where the base has a directory, or below a name Win32 paths trim
+    is set aside too (RL12-K1, RL13-K1, RL13-K2). A directory or a link standing where the base has a file goes aside
+    for the pin as one entry; a base file that cannot be given the base's content (a link above it, a base entry that
+    is not a regular file, an entry there that cannot be moved) leaves the pin unrun: an error, not green."""
     data = show(accepted, acc_from)
     if data is None:
         return {"passed": None, "failed": None, "total": None, "exit": None, "error": f"{acc_from} not in {accepted}"}
@@ -921,8 +946,8 @@ def accepted_pin():
                         "error": f"{f}: the base's content cannot be put there for the accepted pin (a link above it, or not a file at the base)"}
             st = os.lstat(path) if os.path.lexists(path) else None
             if st is not None and (is_link(path, st) or not stat.S_ISREG(st.st_mode)):
-                # a directory or a link where the base has a file (git lists no entry below such a directory as the
-                # base's lack, so no set-aside moved it): it goes aside for the pin as one entry
+                # a directory or a link where the base has a file: the pin's set_aside moved it as one entry, so this
+                # is only reached when something put one back since; it goes aside for the pin the same way
                 move_aside([f], "pin")
                 st = os.lstat(path) if os.path.lexists(path) else None
                 if st is not None:

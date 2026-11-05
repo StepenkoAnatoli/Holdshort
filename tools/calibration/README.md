@@ -139,9 +139,9 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    other names, is refused): each linked name in the checkout is read by content before the first command and after
    the last, `linksIntact` records whether it still held the sealed content, and PASS needs every one intact.
    Each command runs with every path the base tree lacks set aside, ignored or not, other than the paths the grade
-   counts as the candidate's and the linked names (`setAside`, see the limits). A fix cell runs the accepted pin
-   first, on the base tree, the candidate's sources and the accepted test only, then the candidate's tests, the guard
-   and the lint.
+   counts as the candidate's and the linked names, found by a walk of the checkout on disk that sets a link aside as
+   itself (`setAside`, see the limits). A fix cell runs the accepted pin first, on the base tree, the candidate's
+   sources and the accepted test only, then the candidate's tests, the guard and the lint.
    The review cells are graded by the run itself (grader, clustering, lenses).
 7. **Build.** `python3 tools/calibration/observations.py <journal> <run file> <pack dir>/manifest.json <grades dir>
    <evidence folder> --protocol <evidence folder>/protocol.json`. A cell void under rule 2 is re-run once: launch the
@@ -340,48 +340,56 @@ still requires a named judging profile, so until it changes such a run names one
   accepted test and a wrong fix graded PASS). So before each command every path the base tree lacks, ignored or not and
   at any depth, is moved into a directory inside the checkout's `.git`, unless the grade counts it as the candidate's
   (changed, a new test, the case's source paths, test file and `allowed_extra`, a gate's `required_paths`) or it is a
-  linked name. Nothing below a link (a symlink, a junction) is moved: git lists the entries of a junction's target as
-  the checkout's own files, and moving them took a host directory's files into the checkout's `.git` (review loop
-  RL10-K3), so the topmost link above such an entry is set aside as the link itself. git's listing is not the only way
-  in: git never lists an entry named `.git` in any case below the top, nor anything below it (its directory walk skips
-  the name, case-insensitively where `core.ignorecase` is set, as on Windows), while vitest reads it (its default
-  exclude `**/.git/**` is case-sensitive; review loop RL12-K1: a test at `tests/.GIT/tests/zz_accepted_x2_1.test.ts`
-  ran inside the accepted pin and a wrong fix graded PASS). So the grade also walks the checkout on disk, never through
-  a link, and every entry whose name casefolds to `.git` (other than the checkout's own) goes aside like any other path
-  the base lacks (git checks out no path with such a name, so none is a base file). What the candidate left that way is
-  listed in `setAside` and put back after the last command, in place of anything a command wrote at its path; what
-  one command writes at a path the base lacks is set aside before the next and removed. A path the grade cannot move is
-  listed in `notSetAside` and fails the cell; `restored` is false when a path did not go back, and that fails the cell.
-  Not covered: a directory above the checkout (node's `node_modules` lookup and a config search walk past the
-  checkout's top into the host's directories, which are the host's to keep out of the candidate's reach); and a file
-  the grade counts as the candidate's, which runs as it is: a changed source or new test that patches the runner or the
-  test framework while it runs, or a committed file that shadows a module or the runner (a top-level `unittest.py`
-  beside a gate command `python3 -m unittest ...`), is listed in `changed` and is in the diff the review reads; a fix
-  cell refuses such a file only outside its scope (`scopeOk`), so the case's test file or a new test that patches the
-  runner runs as it is in the candidate's runs and the guard (not in the accepted pin, below), and no grade check
-  refuses one in a pin or gate cell. Nor is a file below a directory the candidate put where the base has a file
-  (`docs/MAP.md/x`): git's listing of new directories leaves such an entry out, so only the accepted pin, which sets
-  that directory aside itself, runs without it. What the last command writes stays in the checkout.
+  linked name. What goes is found by one walk of the checkout on disk compared with the base tree, not by git's listing,
+  which missed three kinds of entry a runner reads, each of which ran a candidate's test inside the accepted pin while a
+  wrong fix graded PASS with every list empty: git never lists an entry named `.git` in any case below the top, nor
+  anything below it (its directory walk skips the name, case-insensitively where `core.ignorecase` is set, as on
+  Windows), while vitest reads it (its default exclude `**/.git/**` is case-sensitive; review loop RL12-K1:
+  `tests/.GIT/tests/zz_accepted_x2_1.test.ts`); git reads through a junction as a directory, so a junction put where the
+  base has a directory, leading to a copy of the base's files and a `.GIT` forge, showed no change (RL13-K1); and a name
+  that ends in a dot or a space (`tests/x.`, `tests/x `), which Win32 paths trim, was listed by git but renamed by its
+  trimmed path, not found and skipped as gone, while node reads it by its extended path (RL13-K2; `tests/x ` and
+  `tests/x..` crashed the grade, RL13-K3). The walk reads and moves every entry by its extended-length path on Windows
+  (`\\?\`), so no name is trimmed, and never enters a link: a link (a symlink, a junction) goes aside as the link
+  itself, unless it is the base's own link, unchanged, or a counted path that leads to a file (RL10-K3: moving the
+  entries below a junction took a host directory's files into the checkout's `.git`). A directory the base has, or one
+  that holds a counted path, is entered and only its entries the base lacks go; any other directory goes whole; an entry
+  named `.git` in any case, other than the checkout's own, goes like any other path the base lacks (git checks out no
+  path with such a name). What the candidate left that way is listed in `setAside` and put back after the last command,
+  in place of anything a command wrote at its path; what one command writes at a path the base lacks is set aside before
+  the next and removed. A path the grade cannot move, a path the rename does not find that is still there when the grade
+  reads the disk again (never "gone"), and a directory the grade cannot read are listed in `notSetAside` and fail the
+  cell; `restored` is false when a path did not go back, and that fails the cell. Not covered: a directory above the
+  checkout (node's `node_modules` lookup and a config search walk past the checkout's top into the host's directories,
+  which are the host's to keep out of the candidate's reach); and a file the grade counts as the candidate's, which runs
+  as it is: a changed source or new test that patches the runner or the test framework while it runs, or a committed
+  file that shadows a module or the runner (a top-level `unittest.py` beside a gate command `python3 -m unittest ...`),
+  is listed in `changed` and is in the diff the review reads; a fix cell refuses such a file only outside its scope
+  (`scopeOk`), so the case's test file or a new test that patches the runner runs as it is in the candidate's runs and
+  the guard (not in the accepted pin, below), and no grade check refuses one in a pin or gate cell. The walk compares
+  names only: an NTFS alternate data stream or an extended attribute on a base path stays (only code that names it reads
+  it, and that code is the candidate's or the pack's); a base directory the candidate renamed in case on disk (`Tests`
+  for `tests`) and, on macOS, a name in another Unicode normalization than the base tree's read as paths the base lacks
+  and go aside whole, which fails a cell rather than passing one. What the last command writes stays in the checkout.
 - The commands of one cell are not independent runs. The set-aside resets only the paths the base lacks: a command can
-  rewrite a base file the grade does not swap (the pack's runner, a config), leave a process running (a detached
-  child; only a command that overruns its timeout has its process tree killed) or keep state outside the checkout (a
-  file in the temp directory or the home directory), and the next command runs with it. So a fix cell runs the
-  accepted pin first, before any of the candidate's tests (review loop RL10-K1: a test that rewrote `tests/run.py`, or
-  that left a child overwriting the accepted test, made the pin read green for a wrong fix), and on the base tree, the
-  candidate's sources and the accepted test only: while it runs, every other path the base lacks (the candidate's new
-  tests, anything it added) is set aside, every other base file the candidate changed (the case's test file,
-  `allowed_extra`, an out-of-scope edit) holds the base's content with an mtime of its own, and both go back right
-  after it (RL11-K1: vitest takes a file argument as a filter and runs every included test whose path contains it, so
-  the pin's own command ran a candidate's in-scope new test at `tests/xtests/zz_accepted_x2_1.test.ts`, which rewrote
-  the accepted test before vitest read it, and a wrong fix graded PASS). So whatever a runner selects from its
-  arguments, no test of the candidate's exists to select (one below an entry named `.git` in any case included, which
-  git never lists: RL12-K1, above); a base file that cannot hold the base's content there (a link above it) leaves the
-  pin unrun, an error and not green. Still not covered for the pin: the candidate's sources
-  run inside it and can patch the runner, the assertion library or the accepted test while it runs (a source is code
-  the pin must run; only the diff the review reads shows it), and state outside the checkout that the candidate's work
-  left before the grade (a process started before the grade, a file in the temp directory) reaches it as it reaches
-  every command. Everything else a grade reads from the candidate's own tests can be forged across commands, as it
-  can by a test that reads the source it runs against: `candidateGreen`, `guardRed` and the lint in a fix
-  cell, and `redAtHead`, `redAtMutants` and `greenWithFix` in a pin cell (RL10-K2: a row that counted its runs in a
-  temp file and failed the second, the guard run, made `guardRed` true for a weak fix). Only the diff the review reads
-  shows it.
+  rewrite a base file the grade does not swap (the pack's runner, a config), leave a process running (a detached child;
+  only a command that overruns its timeout has its process tree killed) or keep state outside the checkout (a file in
+  the temp directory or the home directory), and the next command runs with it. So a fix cell runs the accepted pin
+  first, before any of the candidate's tests (review loop RL10-K1: a test that rewrote `tests/run.py`, or that left a
+  child overwriting the accepted test, made the pin read green for a wrong fix), and on the base tree, the candidate's
+  sources and the accepted test only: while it runs, every other path the base lacks (the candidate's new tests,
+  anything it added) is set aside, every other base file the candidate changed (the case's test file, `allowed_extra`,
+  an out-of-scope edit) holds the base's content with an mtime of its own, and both go back right after it (RL11-K1:
+  vitest takes a file argument as a filter and runs every included test whose path contains it, so the pin's own command
+  ran a candidate's in-scope new test at `tests/xtests/zz_accepted_x2_1.test.ts`, which rewrote the accepted test before
+  vitest read it, and a wrong fix graded PASS). So whatever a runner selects from its arguments, no test of the
+  candidate's exists to select (one below an entry named `.git` in any case, below a junction or under a name Win32
+  paths trim included: RL12-K1, RL13-K1, RL13-K2, above); a base file that cannot hold the base's content there (a link
+  above it) leaves the pin unrun, an error and not green. Still not covered for the pin: the candidate's sources run
+  inside it and can patch the runner, the assertion library or the accepted test while it runs (a source is code the pin
+  must run; only the diff the review reads shows it), and state outside the checkout that the candidate's work left
+  before the grade (a process started before the grade, a file in the temp directory) reaches it as it reaches every
+  command. Everything else a grade reads from the candidate's own tests can be forged across commands, as it can by a
+  test that reads the source it runs against: `candidateGreen`, `guardRed` and the lint in a fix cell, and `redAtHead`,
+  `redAtMutants` and `greenWithFix` in a pin cell (RL10-K2: a row that counted its runs in a temp file and failed the
+  second, the guard run, made `guardRed` true for a weak fix). Only the diff the review reads shows it.
