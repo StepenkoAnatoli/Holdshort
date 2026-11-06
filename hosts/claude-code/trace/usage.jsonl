@@ -23,3 +23,4 @@
 {"ts":"2026-10-18T21:14:19Z","windows":{"five_hour":{"utilization":0.11,"resets-at":"2026-10-19T00:20:00Z"},"seven_day":{"utilization":0.75,"resets-at":"2026-10-24T18:00:00Z"}},"source":"rate_limit_event","note":null}
 {"ts":"2026-10-18T21:59:28Z","windows":{"five_hour":{"utilization":0.15,"resets-at":"2026-10-19T00:20:00Z"},"seven_day":{"utilization":0.76,"resets-at":"2026-10-24T18:00:00Z"}},"source":"rate_limit_event","note":null}
 {"ts":"2026-10-19T03:01:34Z","windows":{"five_hour":{"utilization":0.05,"resets-at":"2026-10-19T05:20:00Z"},"seven_day":{"utilization":0.8,"resets-at":"2026-10-24T18:00:00Z"}},"source":"rate_limit_event","note":null}
+{"ts":"2026-10-24T18:08:41.136Z","windows":{"five_hour":{"utilization":0.01,"resets-at":"2026-10-24T23:00:00.217Z"},"seven_day":{"utilization":0,"resets-at":"2026-10-31T18:00:00.217Z"}},"source":"rate_limit_event","note":"desktop get_usage plan windows (percentUsed/100); Weekly Fable 0%"}

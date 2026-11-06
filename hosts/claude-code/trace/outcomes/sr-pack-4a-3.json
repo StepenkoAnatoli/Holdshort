@@ -1,0 +1,42 @@
+{
+ "task-id": "sr-pack-4a",
+ "outcome": "accepted",
+ "owner-profile": "cc-opus-high",
+ "original-brief-fingerprint": "59a6b7065ebc1218911452f6b48343debdb444db51f8c02959ba2d60e285afa1",
+ "evidence": {
+  "checks": [
+   {
+    "command": "python tools/test_calibration_kit.py",
+    "exit-code": 0,
+    "output-ref": "lead integration 5 at d1ea270: kit suite 158 OK, 11 skipped; evidence tests 51 OK"
+   },
+   {
+    "command": "HostPackX21 with the MoonAliza clone",
+    "exit-code": 0,
+    "output-ref": "18 OK; clone status and .vite* listing identical before and after (integration 5 and check 5)"
+   },
+   {
+    "command": "python tools/check_calibration_evidence.py",
+    "exit-code": 0,
+    "output-ref": "0 failures (integration 5)"
+   },
+   {
+    "command": "python tools/run_regression.py (pre-commit hook)",
+    "exit-code": 0,
+    "output-ref": "REGRESSION GATE PASS on d1ea270 and 2f73c9f"
+   },
+   {
+    "command": "refute-first check 5",
+    "exit-code": 0,
+    "output-ref": "ACCEPT at d1ea270, no S1-S3, S4s IC5-1, IC5-2 (kit), IC5-3 (reports/sr-pack-4a-integration-check-5.md)"
+   }
+  ],
+  "actual-spend": null,
+  "actual-tokens": 2650686,
+  "actual-spend-basis": "estimate-only",
+  "files-touched": [
+   "tools/calibration/subject-pack/host/moonaliza-x2-1/"
+  ],
+  "notes": "draft PR #122 (build/sr-pack-4a, 2f73c9f), stacked on #120; merge is the owner's. Tokens are a lower bound: 2,231,546 (rounds to 4) + 203,330 (pack round 5) + 215,810 (check 5); rounds 5/5b pack parts and round 2 partial not counted. Kit lead integrations 2-8 (incl. 8: 688179 workflow tokens total with the pack steps) count to sr-kit-cases (#120). Open S4s: KR5-1/IC5-2 kit README step 3, IC5-1, IC5-3, LC8-1..3."
+ }
+}
