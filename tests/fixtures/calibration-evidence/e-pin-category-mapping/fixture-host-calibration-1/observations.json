@@ -5,6 +5,7 @@
   "pin": {
    "score": true,
    "tier": "T1",
+   "category": "pin-tests",
    "redAtHead": true,
    "greenWithFix": true,
    "srcClean": true,
@@ -26,6 +27,7 @@
   "fix": {
    "score": true,
    "tier": "T1",
+   "category": "fix",
    "candidateGreen": true,
    "guardRed": true,
    "acceptedPinGreen": true,
@@ -121,6 +123,7 @@
   "review-grade": {
    "result": "PASS",
    "tier": "T1",
+   "category": "review",
    "rawFalseBlocking": 1,
    "adjudicatedFalseBlocking": 0,
    "threeProngFalseBlocking": 0,

@@ -1,0 +1,84 @@
+{
+ "_lineage": "the host pack of calibration run 4 stage 4a (fix@T3, subject X2-1 of calibration run 2, cluster C-B), in the pack format of ../../README.md; the commit ids are the ones make-repo.sh builds from MoonAliza 16f637f and 01a8604, each without its docs/orchestration/ directory, and this pack's accepted journey test",
+ "_cases": "one case, fix at T3: stage 4a of calibration run 4 measures fix@T3 alone, so the pack carries no pin case (the accepted journey test is the grade's pin, never a candidate's task) and no review case (no review ground truth is adjudicated for this subject at this base)",
+ "pack": "moonaliza-x2-1",
+ "pack_version": "1",
+ "kind": "host",
+ "repository": "repo",
+ "subject": {
+  "name": "MoonAliza's GitHub sign-in account store, credential vault and startup wiring",
+  "module": "src/main/github-account-store.ts",
+  "promise": "a crash at any point of a sign-in, a refresh or a sign-out never loses the account the account file names: the next start that reads the file is signed in with the pair it names, committed (docs/specification/github-sign-in.md 4.5), tombstoned vault entries are deleted on every start, and an unreferenced staged entry is deleted by the next start that reads the file",
+  "reference": "docs/specification/github-sign-in.md (4.3 the replace steps, 4.4 the startup checks, 4.5 the crash windows), the comments of src/main/github-account-store.ts and src/main/vault.ts, tests/github-account-store.test.ts (its crash-window helpers, restart and unreadStart) and tests/vault.test.ts (the shipped harnesses)"
+ },
+ "commit_rule": null,
+ "accepted_fix": "5e57e41d0c6641b8bea07598e29c99e1b95a9652",
+ "findings": [
+  {
+   "id": "X2-1",
+   "severity": "S3",
+   "present_at": [
+    "4eaf584a0b72b36e71ca8f318ad9d9b4d04e8a2e"
+   ],
+   "summary": "a sign-in or refresh that crashes after the account file names its new pair but before the pair is committed, followed by a start that cannot read the account file (an I/O error other than a missing file) and then a start that can, loses the account: the readable start finds the refs the file names gone, although the crash-window table promises a sign-in with the new pair",
+   "cause": "during the start that cannot read the account file the store names no references, and the vault reconcile that start runs deletes every unreferenced staged entry, so it deletes the new pair the unread file still names",
+   "required_behaviour": "after that journey (the crash, one or more starts in a row whose open() cannot read the account file, then a start that can) the pair the file names is committed and live, for a first sign-in, for a sign-in that replaced an account and for a refresh (the old pair retired); each start that cannot read the file shows no account, leaves the file as it is and leaves the new pair in the vault as the crash left it, with its encrypted files; tombstoned entries are still deleted on every start, an unreferenced staged entry is deleted by the next start that reads the file, a missing file still reads as no account, whose staged entries the start deletes, beside a committed account too, and so does a file that is read and refused (invalid, oversized, with an extra key or a value the format does not allow), whatever account it names and whatever the vault holds beside it, which the start also rewrites",
+   "found_rule": "a finding says the double fault (a crash between the file write and the commit, then a start that cannot read the file) loses the staged pair the file names",
+   "cause_rule": "it locates the cause in the startup reconcile deleting unreferenced staged entries while the account file is unread",
+   "accepted_fix": "5e57e41d0c6641b8bea07598e29c99e1b95a9652"
+  }
+ ],
+ "cases": {
+  "fix": {
+   "base": "4eaf584a0b72b36e71ca8f318ad9d9b4d04e8a2e",
+   "category": "fix",
+   "tier": "T3",
+   "finding": "X2-1",
+   "pass_rule": "the candidate's tests are green at its head AND red again with the three source files restored to the base AND the accepted journey test is green against the candidate's source AND every changed file is one of the three source files, the two test files, the wiring test or the map, or a newly added test file matching the pattern AND eslint is clean on those files",
+   "instructions": "Drive each start of the journey in the order src/main/index.ts runs it; the account file's format stays as it is; a new test file, if you add one, is named tests/<name>.test.ts with x2 in its name. The acceptance check drives every start the same way, whichever files your change touches: the store's open(), then the startup statements of src/main/index.ts run on their own: the statements that follow the one that reads the engine's references (the engine call whose argument has method: 'vault.references', or a later statement that declares references if that call is split), up to the statement that calls supervisor.attach(), in the one block that holds both. There only vault, references, collectorSettings, githubStore and the names index.ts imports from ./github-account-store or ./vault are in scope; a startup statement that uses any other name of index.ts fails that check, and so does a change that renames one of those four names, moves the engine call or supervisor.attach() out of that block or changes the method: 'vault.references' literal.",
+   "cause_in_prompt": false,
+   "commit_prefix": "fix(github): X2-1 - "
+  }
+ },
+ "paths": {
+  "source": [
+   "src/main/github-account-store.ts",
+   "src/main/vault.ts",
+   "src/main/index.ts"
+  ],
+  "source_dir": "src",
+  "test_file": "tests/github-account-store.test.ts",
+  "new_test_pattern": "^tests/.*x2.*\\.test\\.ts$",
+  "allowed_extra": [
+   "tests/vault.test.ts",
+   "tests/github-main-wiring.test.ts",
+   "docs/ARCHITECTURE.md"
+  ],
+  "map_file": "docs/ARCHITECTURE.md",
+  "accepted_test": {
+   "from": "tests/zz_accepted_x2_1.test.ts",
+   "to": "tests/zz_accepted_x2_1.test.ts"
+  }
+ },
+ "commands": {
+  "test": "npx vitest run {files} --no-cache --configLoader runner --testTimeout=60000 --reporter=json --outputFile={report}",
+  "test_report": "vitest-json",
+  "run_one": "npx vitest run {file} --no-cache --configLoader runner",
+  "lint": "npx eslint {files}",
+  "timeout_seconds": 900
+ },
+ "checkout": {
+  "links": [
+   "node_modules",
+   ".build"
+  ]
+ },
+ "source_hashes": {
+  ".gitattributes": "0065bcd2f22464bbbd231c56c33939f29e2f1bf54b43c5ae99f84760ae35c82b",
+  "README.md": "5de781afefb90ed89e2c8cd1cc4813a8e65e19e8e9de761754542d3f1b9987e7",
+  "WRONG-FIXES.md": "5d1c2b8dbceca443ccde01894ccb10b89e1f24ef516dcfcaaedb16bbdd531d98",
+  "make-repo.sh": "08f57ccd58f3cbb93a34b25592dc744d88be6e17c2d9a64f3d7158059096b276",
+  "zz_accepted_x2_1.test.ts": "9ff959e3dc42676beaf2ec74c0954266eff49422100c8be622ddf843e9f4c05e"
+ },
+ "isolation": "candidate checkouts are history-less trees of the case base only (MoonAliza 16f637f's tree without its history and without its docs/orchestration/ directory, MoonAliza's orchestration records, which name the finding, state its cause and give the accepted fix), made outside the pack and outside the kit's tree, with node_modules linked from an npm ci install in a directory of its own holding only base0's package.json and package-lock.json, outside the pack and outside every git repository's work tree (never the install of a MoonAliza clone or checkout: through node_modules/.. a candidate would reach its docs/orchestration/ records and its history); the pack repository, its accepted commit (with the accepted journey test), this manifest, WRONG-FIXES.md and the ground truth stay outside every candidate's permitted paths; the pack itself carries no MoonAliza code, which the host's own clone provides when make-repo.sh builds the repository; the finding's cause is ground truth only: cases.fix.cause_in_prompt false keeps it out of the candidate's fix prompt, make-repo.sh copies no object of docs/orchestration/ that the two trees do not reach into the pack repository, and a test checks that no file or path name of the base holds the finding's id, the accepted fix's two names or a phrase of the cause (a textual check: a paraphrase is not caught)"
+}
