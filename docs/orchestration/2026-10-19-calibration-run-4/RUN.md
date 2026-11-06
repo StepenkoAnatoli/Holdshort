@@ -1013,8 +1013,9 @@ read only, for the subject trees the packs export.
   base lacks goes; an entry named `.git` in any case goes as in round 12. A path the move does not find is read again on
   disk: one still there fails the cell (`notSetAside`), never skipped as gone. The two names that crashed get a grade.
   This holds for every command and for the pin. Kit README (step 6, the set-aside paragraph, the pin paragraph, what is
-  still not covered: alternate data streams and extended attributes on base paths, a base directory renamed in case, a
-  macOS name in another Unicode normalization, each failing closed; the `docs/MAP.md/x` limit is closed), grade.sh
+  still not covered: alternate data streams and extended attributes on base paths, which stay and are read only by code
+  that names them, and a base directory renamed in case and a macOS name in another Unicode normalization, each going
+  aside and failing closed (wording corrected in round 14, RL14-D1); the `docs/MAP.md/x` limit is closed), grade.sh
   header, CHANGELOG kit line.
 - RL13-P1 (S3, pack): W-C, W-j2's hold keyed on the point, not the code (a failure at the account file's directory, with
   any code, taken for another instance mid-replace, and the kept entries held for good), passed 32 of 32: no row put an
@@ -1083,3 +1084,88 @@ read only, for the subject trees the packs export.
 - Heads: kit 9e06147 (pushed, #120), docs this entry's commit (pushed, #119), pack 6169517 (committed, NOT pushed:
   origin and #122 show b0f14a3, which the owner pushed; 6169517 is its rebase onto 9e06147 and needs the owner's
   force-push with the lease pinned to b0f14a3; the command is in Next of the lead restart report).
+
+## 2026-11-05 - review loop round 14: RL14-K1 on the kit, RL14-P1..P3 on the pack, RL14-D1 on the docs
+- Round 14 (review-loop-round-14-kit-docs, review-loop-round-14-pack; fresh reviewers on kit 9e06147, pack 6169517,
+  docs 0de465f) found one S3 on the kit, two S3s and one S4 on the pack, and one S4 on the docs.
+- RL14-K1 (S3, kit): a candidate renamed its own `.git` to `.GIT` (git and the grade still read it on a case-insensitive
+  disk) and put a forge test inside. The walk skipped it as the checkout's own `.git` (by its name in any case and its
+  identity), vitest's default exclude `**/.git/**` is case-sensitive, so the forge ran inside the accepted pin, and what
+  was set aside went into `.GIT` too: a wrong fix graded PASS.
+- RL14-D1 (S4, docs): #120's Round 13 bullet and this file's round-13 entry say alternate data streams and extended
+  attributes on base paths go aside and fail closed. Correction: they stay, and only code that names them reads them
+  (the kit README says so); only a base directory renamed in case and a macOS name in another Unicode normalization go
+  aside and fail closed. Fixed in the round-13 entry's wording above (marked) and in #120's Round 13 bullet; the
+  9e06147 commit message says the same and is history.
+- Fixed in a060c98 on `build/sr-kit-cases` (pushed, #120), by construction: the checkout's own `.git` is still found by
+  identity, at any spelling, and stays (it holds what is set aside), but the cell fails (`notSetAside`) unless it is
+  spelled exactly `.git`, the name every runner's exclude names. Kit README (the set-aside paragraph: a pack's runner
+  must exclude `.git`; step 6; the pin paragraph), grade.sh header and docstrings, CHANGELOG kit line.
+- Class hunt (kit): the own `.git` was the one skip of the walk matched more loosely than the exact name on disk; every
+  other comparison (the base tree, the kept paths, the links) is by the exact name, so a name that differs in case goes
+  aside. Probed on NTFS: `.GIT` is the own `.git` by both path forms; `.gıt` and `.gİt` are not; `.git.` and `.git `
+  reach it only by the Win32 path, and the walk reads by the extended path, where they are entries of their own and
+  go aside; no 8.3 name is listed (the walk reads long names). A nested `.git` in any case goes aside (round 12).
+  Still not covered: a runner that does not exclude `.git` at all sees the own `.git` and what is set aside in it (the
+  README now says a pack's runner must exclude it).
+- RL14-P1 (S3, pack): W-F, an unreadable start keeps only the newest two staged entries nothing names (one replace in
+  flight at a time) and deletes older ones, passed 33 of 33: every row that put an orphan pair beside the pair to keep
+  staged it before the pair.
+- RL14-P2 (S3, pack): W-G (the pair dropped when the directory fails right after a start that failed at the file) and
+  W-H (an orphan pair held for good then) passed 33 of 33: the rows met the directory only as the first start after the
+  crash or right after a start at the directory.
+- RL14-P3 (S4, pack): the harness comment on the pin's rows said 12 journey rows and 14 others (21 since round 13).
+- Fixed in ec9d744 on `build/sr-pack-4a` (rebased onto a060c98 first; id map below). 33 -> 35 rows; the reviewer's W-F,
+  W-G and W-H are W-k2, W-p4 and W-j6 here (W-f and W-g already name rows, and a case-insensitive disk takes the pairs
+  for the same names; W-j5 is the disclosed one):
+  - P1, by construction for the order: in the two keep-side vault-state rows, beside an orphan pair a second one is
+    staged during the first unreadable start's session (a sign-in retried while the file cannot be read, crashed before
+    its file write), so the pair to keep is newer than one orphan pair and older than the other; the readable start
+    after must delete both. A fix that keeps the newest four or more passes and is disclosed (the rows stage one orphan
+    pair after the pair, no more). The other age and order rules: the W-k family (age by each clock) meets starts ten
+    years apart, and W-z (newer than a committed entry) the engine-key row.
+  - P2, by construction: two point-pair rows run seventeen unreadable starts in a row on one data directory, a year
+    apart, whose points run through every ordered pair of the stat, the open, the read and the directory once (a de
+    Bruijn order), the code moving on through the seven, then a readable start: after a first sign-in's crash before
+    commit 1 and a refresh's before commit 4 each start keeps the pair; after the orphan row's crash each keeps the
+    account and the readable start deletes the orphan pair. 300 s timeout each; about 20 s and 10 s on the accepted
+    source under load. Not closed, and disclosed: pairs of codes across two starts and triples of points.
+  - P3: the comment says 12 journey rows and X21_PIN_ROWS - 12 others.
+  - README: the keep-side rows, the point-pair rows, the eleven 300 s rows, the catch section (thirteen of the fourteen
+    rounds found at least one wrong fix that passed, the fourteenth three) and the limits (runs of more than seventeen
+    unreadable starts; pairs of codes and triples of points; the newest four or more).
+  - WRONG-FIXES.md names fifty-seven (W-k2, W-p4, W-j6 added), every count out of 35. accepted0 is 04d57f9e (base0
+    4eaf584a unchanged).
+  - HostPackX21: X21_PIN_ROWS 35, W-k2, W-p4 and W-j6 as X21_WRONG entries (the directory-after-the-file pieces shared
+    as X21_DIRECTORY_*), the rows' titles and forms, the README's round-14 sentences, the red-at-base check (22).
+- Decisions:
+  - Kit: K1 closed by construction (fail the cell unless the own `.git` is spelled `.git`), not by refusing `.GIT`
+    alone: any other spelling the disk resolves to the own `.git` fails too.
+  - Pack: P1 closed for the order (one orphan pair before and one after the pair), the count beyond it disclosed; P2
+    closed by construction for pairs of points (seventeen starts cover all sixteen pairs within one 300 s row), the
+    codes and longer runs disclosed: a row per pair of codes at each pair of points would be 49 times as many starts.
+  - Docs: D1 corrected here and in #120's body.
+- Pack ids after the rebase onto a060c98 (old -> new, by subject): 6169517->cd393f1, 34973ff->eb58cca, bc5f5ef->5c6d5aa,
+  a97e9a2->8382e6d, 0b98fbc->f4274b0, 7864978->8493e56, 41e63d1->55b735d, c0d2a85->1921897, a655f14->835aeaa,
+  789a9dc->f6c9fb6, 4adbb76->400d419, a26f836->2f625b6, e2bd643->809cb5f, b2b5e7b->4d0c2e6, 7f2e971->94469e1,
+  5ce7fb2->a2d44b4, 3ae4427->5350d73, c69eda2->17e6000, 60f6be8->4424d9e, 56b927b->ed9295b, ba564f0->5026c3f,
+  1b48cf9->eea45f2, 3331768->dc39cc7, f440cef->5629e9b, c7e9a04->6bb23e7, 4a3472c->a771aed; the changed lines of `git
+  diff 6169517 cd393f1` equal those of `git diff 9e06147 a060c98` (19 CHANGELOG conflicts, each the kit line beside the
+  pack line, resolved by taking the kit line from a060c98).
+- Verified:
+  - Kit: the reviewer's probe grades `.GIT` and `.Git` forges PASS on 9e06147's grade.sh and PASS false after
+    (`notSetAside` [".GIT"], [".Git"]), also under X21's vitest config; the new test red on 9e06147, green after; eight
+    guard-removal mutants each red, the unmutated grade green. Full kit suite 166 run: 162 passed and 4 timed out under
+    load (the pack regrade and the mutants ran beside it), the 4 passed alone; a060c98 passed the full regression gate.
+  - Pack: on scratch trees the accepted source passes 35 of 35 and the base fails 22 (the point-pair keep row red, its
+    orphan row green); W-k2, W-p4 and W-j6 fail 2, 1 and 1 of 35; every old wrong fix's count is its old count less the
+    old keep-side rows it failed plus the changed and new rows it fails (+1 for thirty-two (the point-pair keep row for
+    twenty-seven, the point-pair orphan row for W-c, W-j, W-j2, W-j4 and W-q), +2 for W-d, W-e and W-r5 (both point-pair
+    rows), 0 for the other nineteen; each fails the new keep-side rows exactly where it failed the old ones).
+    HostPackX21 without the clone 18 run, 8 passed, 10 skipped (the grading tests need the clone), exit 0; with the
+    read-only clone 18 run, OK, exit 0 in 28563 s (detached, TEMP on E:, 18:46:02-02:42:05Z). make-repo builds base0
+    4eaf584a and accepted0 04d57f9e. ec9d744 passed the full regression gate.
+  - The MoonAliza clone is unchanged (HEAD, refs, status and stash list the same before and after).
+- Heads: kit a060c98 (pushed, #120), docs this entry's commit (pushed, #119), pack ec9d744 (committed, NOT pushed:
+  origin and #122 show b0f14a3; ec9d744 is round 13's 6169517 rebased onto a060c98 with round 14 on top and needs the
+  owner's force-push with the lease pinned to b0f14a3; the command is in Next of the lead restart report).
