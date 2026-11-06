@@ -108,8 +108,9 @@ code) makes a start that cannot read the file (spec 4.4).
    The subject's vitest config sets a 15 s `testTimeout`, and on the lead's Windows host some of its long tests time
    out under load (grades side by side) and even in a lone grade on a cold cache, which turns a correct candidate's
    run red. So `commands.test` raises the timeout to 60 s (`--testTimeout=60000`), and the accepted journey test gives
-   each of its rows 120 s, and 300 s to the nine rows that run the most starts (the lasting row, the orphan-codes row,
-   the tombstone-at-each-point row, the two keep-at-each-point rows and the four vault-state rows of both kinds). `commands.run_one`, the command a candidate is told to run, keeps the subject's own
+   each of its rows 120 s, and 300 s to the eleven rows that run the most starts (the lasting row, the orphan-codes row,
+   the tombstone-at-each-point row, the two keep-at-each-point rows, the four vault-state rows of both kinds and the two
+   point-pair rows). `commands.run_one`, the command a candidate is told to run, keeps the subject's own
    timeout and adds only the
    two flags of step 2.
 
@@ -256,11 +257,15 @@ The two keep-side vault-state rows build what an unreadable start must keep in e
 beside it: a replace that crashed before its pair's first commit, so the file names a staged pair, beside no committed
 entry (a sign-in after a sign-out) and beside the old committed pair (a refresh of it), each with and without a
 tombstoned pair (that sign-out's or an earlier refresh's removals that failed), a staged entry the engine names and an
-orphan pair (two staged entries nothing names). In each of the sixteen states three unreadable starts, ten years
-apart, fail with EACCES, EBUSY and EIO at the stat, the open and the read in turn: each keeps the staged pair the file
-names and the old committed pair, deletes the tombstoned pair and commits the engine's entry, and the readable start
-after them has the pair live and committed, nothing else left but the engine's entry. So a fix that drops the keep
-only in some of those states fails (W-b7 drops it beside a tombstoned entry).
+orphan pair (two staged entries nothing names, staged before the pair). In each of the sixteen states three unreadable
+starts, ten years apart, fail with EACCES, EBUSY and EIO at the stat, the open and the read in turn, and beside an
+orphan pair a second one is staged during the first unreadable start's session (a sign-in retried while the file
+cannot be read, crashed before its file write), so the pair to keep is newer than one orphan pair and older than the
+other: each start keeps the staged pair the file names and the old committed pair, deletes the tombstoned pair and
+commits the engine's entry, and the readable start after them has the pair live and committed, nothing else left but
+the engine's entry. So a fix that drops the keep only in some of those states fails (W-b7 drops it beside a
+tombstoned entry). So does one that keeps only the newest two staged entries nothing names, as if only one replace were
+ever in flight (W-k2).
 The two keep-at-each-point rows run each of the seven codes at the stat, the open, the read and the directory at two
 unreadable starts in a row, ten years apart, after each of the four crashes the table names (a first sign-in's and a
 sign-in's in one row, the two refreshes' in the other), each code and point on a fresh copy of the crash, then a
@@ -269,6 +274,15 @@ committed. So a fix that drops the keep for some code at some point fails (W-y d
 with any code but EACCES, taken for a lost volume). So does one that drops it at the second of two such starts (W-p3
 drops it when the directory fails with a code other than EACCES at two starts in a row), which the lasting row meets
 only for EACCES at the directory, EACCES at the open and EIO at the read.
+The two point-pair rows run seventeen unreadable starts in a row on one data directory, a year apart, whose points run
+through every ordered pair of the stat, the open, the read and the directory (each pair once, in the order stat, stat,
+open, stat, read, stat, dir, open, open, read, open, dir, read, read, dir, dir, stat), the code moving on through
+EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL and UNKNOWN at each start, then a readable start a year after the last.
+After a first sign-in's crash before commit 1 and a refresh's before commit 4 each unreadable start keeps the pair and
+the readable one has it live and committed; after the orphan row's crash each keeps the committed account and the
+readable one deletes the orphan pair. So a fix keyed on the point the start before failed at fails (W-p4 drops the pair
+when the directory fails right after a start that failed at the file, taken for a swapped volume; W-j6 holds an orphan
+pair for good then, taken for another instance that took the directory over).
 The refused-file row refuses the signed-out file and the named refused-file row refuses a file that still names the
 new pair, each as invalid JSON, over 64 KiB, with an extra key and with version 2. The named row does so after a first
 sign-in's crash before commit 1 (no committed entry in the vault) and, beside the old committed pair, after
@@ -285,7 +299,8 @@ references are unknown fails too (W-h3).
 The journey test is a sample of the journey, not a proof that a fix is right. It is expected to catch a wrong fix
 whose rule, in the states the rows build, deletes what an unreadable start must keep, keeps what a start must delete,
 or keeps in another state or without the encrypted files: whether the rule turns on the errno code, the point the read
-failed at, the number of unreadable starts in a row (up to four), the pair's age by any clock the start's process
+failed at (and the one the start before failed at), the number of unreadable starts in a row (up to seventeen), the
+pair's age by any clock the start's process
 moves, the vault's committed entries (one newer than the pair to keep among them), the engine's references, the file's being refused or missing, or a second read
 of the file, or a question about it (`existsSync`, `stat`), through `node:fs` or the module loader in the start's own
 process. What an unreadable start must still delete (a tombstoned pair, an orphan pair) and what it must keep (the
@@ -300,9 +315,10 @@ It is not expected to catch a wrong fix whose rule turns on something the rows h
 inputs below, and any other the rows hold fixed. The list names the ones the reviews found; it is not a claim that
 it is complete, and a wrong fix keyed on an input it does not name may pass.
 
-Review has found new wrong fixes that pass the journey test round after round: twelve of the thirteen review rounds of
+Review has found new wrong fixes that pass the journey test round after round: thirteen of the fourteen review rounds of
 calibration run 4 so far found at least one (the eleventh three: W-b6, W-l5, W-b7; the twelfth two: W-y, W-z; the
-thirteenth three: W-j4 and W-p3, caught once two rows were changed for them, and W-j5, which passes: the limits), and
+thirteenth three: W-j4 and W-p3, caught once two rows were changed for them, and W-j5, which passes: the limits; the
+fourteenth three: W-k2, W-p4 and W-j6, caught once two rows were changed and two added for them), and
 each was caught only once a row or the fault was changed for it, but for the ones the limits name. Expect more. The pack is a sample of wrong fixes and of the journey's states, not
 a proof: a fix that passes it has met every row, not been shown right, and the grade says no more than that.
 
@@ -388,14 +404,19 @@ a proof: a fix that passes it has met every row, not been shown right, and the g
   engine names (the vault-state rows build each with a tombstoned pair, an orphan pair or both, and the keep-side
   vault-state rows each with a pair to keep, with or without either), and the engine-key row a committed entry newer
   than the pair to keep (the engine's key stored during an unreadable session); other states (two accounts' committed
-  entries, two tombstoned pairs, say) are not built.
-- **Runs of more than four unreadable starts.** The unreadable-run row, the lasting row and the orphan row run four in
-  a row, so a fix
-  that keeps the pair through four such starts and drops it at the fifth passes, and so does one that holds an orphan
-  pair for good only after five. The same failure, code and point, comes at four starts in a row only in the lasting row
-  (EACCES at the directory, EACCES at the open, EIO at the read); the keep-at-each-point rows and the orphan-codes row
-  run it at two starts in a row at every other code and point, so a fix that drops the pair, or holds an orphan pair,
-  only at the third such start in a row there passes.
+  entries, two tombstoned pairs, say) are not built. Beside the pair to keep the keep-side vault-state rows put one
+  orphan pair staged before it and one staged after it, no more, so a fix that keeps only the newest four or more
+  staged entries nothing names passes (with the engine's entry, which the engine names, not among them).
+- **Runs of more than seventeen unreadable starts.** The point-pair rows run seventeen in a row (the unreadable-run row,
+  the lasting row and the orphan row four), so a fix that keeps the pair through seventeen such starts and drops it at
+  the eighteenth passes, and so does one that holds an orphan pair for good only after eighteen. The same failure, code
+  and point, comes at four starts in a row only in the lasting row (EACCES at the directory, EACCES at the open, EIO at
+  the read); the keep-at-each-point rows and the orphan-codes row run it at two starts in a row at every other code and
+  point, so a fix that drops the pair, or holds an orphan pair, only at the third such start in a row there passes. The
+  point-pair rows meet every ordered pair of the four points at two starts in a row, each pair with the two codes the
+  order gives it: not every pair of codes, and no ordered triple of points. So a fix keyed on the codes of two starts in
+  a row, or on the points of three, passes when its pair or triple is not one the rows meet (review loop 14 RL14-P2
+  closed the pairs of points; the codes and the triples are left).
 - **Time limits beyond ten years.** The later starts run ten years after the crash, so a fix that drops a kept pair
   only once it is older than that passes.
 - **Crash points.** Only the four the table names: before commit 1 of a first sign-in, and before commits 3 and 4 of a

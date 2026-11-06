@@ -1115,7 +1115,10 @@ describe('X2-1: what an unreadable start still deletes, in every vault state', R
 // the engine's entry, and the next readable start has the pair live and committed, nothing else left but the engine's entry. So a rule
 // that drops the keep only in some state of the vault (beside a tombstone, an engine entry, an orphan or a committed entry, or none)
 // has no state left to pass in. Each state's three unreadable starts fail with EACCES, EBUSY and EIO at the stat, the open and the read,
-// the first point moving on from one state to the next.
+// the first point moving on from one state to the next. Beside an orphan pair a second one is staged during the first unreadable
+// start's session (a sign-in retried while the file cannot be read, crashed before its file write; review loop 14 RL14-P1), so the
+// pair to keep is newer than one orphan pair and older than the other: a rule that keeps only the newest staged entries nothing names
+// (one replace in flight at a time), or only the oldest, has no order left to pass in.
 const keepStates = (committed: boolean): VaultState[] => [false, true].flatMap(engine => [false, true].flatMap(tombstoned =>
   [false, true].map(orphan => ({ committed, tombstoned, engine, orphan }))));
 
@@ -1173,9 +1176,14 @@ function keepsInEveryState(committed: boolean) {
         expect(stays.map(ref => entries(dir)[ref]?.state), step).toEqual(stays.map(() => 'committed'));   // the old pair and the engine's entry, committed
         expect(tombstoned.filter(ref => entries(dir)[ref] !== undefined), step).toEqual([]);   // the tombstoned pair is gone,
         expect(bins(dir).filter(bin => tombstoned.some(ref => bin === `${ref}.bin`)), step).toEqual([]);   // files and all
+        if (index === 0 && state.orphan) {   // during that session a sign-in stages and crashes before its file write: an orphan pair newer than the pair to keep
+          const vault = new (await load()).Vault(join(dir, 'vault'), cryptor); await vault.initialize('epoch-2');
+          const late = [await vault.saveStaged(`x2-orphan-${randomBytes(16).toString('hex')}`), await vault.saveStaged(`x2-orphan-${randomBytes(16).toString('hex')}`)];
+          expect(late.map(ref => entries(dir)[ref]?.state), step).toEqual(['staged', 'staged']);
+        }
       }
       vi.useRealTimers(); later(3650 * 4);
-      await expectAlone(dir, await start(dir, { engine }), pair, engine);       // the next start reads the file and commits the pair
+      await expectAlone(dir, await start(dir, { engine }), pair, engine);       // the next start reads the file, commits the pair and deletes both orphan pairs
     }
   };
 }
@@ -1223,9 +1231,63 @@ describe('X2-1: what an unreadable start must keep, in every vault state', ROW, 
   test('the pair to keep at every code and every point, after a refresh: refresh before commit 3 and refresh before commit 4, then EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL or UNKNOWN at the stat, the open, the read or the directory at two starts in a row, ten years apart, each on a fresh copy of the crash: the pair survives both and is live and committed after the next', { timeout: 300_000 },
     keepsAtEachPoint([['refresh', 3, ['staged', 'staged']], ['refresh', 4, ['committed', 'staged']]]));
 
-  test('a pair to keep beside no committed entry (a sign-in after a sign-out, crashed before its first commit): with or without a tombstoned pair, a staged entry the engine names and an orphan pair, then EACCES, EBUSY and EIO at three starts in a row, ten years apart (at the stat, the open and the read in turn): each start keeps the staged pair the file names, deletes the tombstoned pair and commits the engine\'s entry, and the next readable start has the pair live and committed', { timeout: 300_000 },
+  test('a pair to keep beside no committed entry (a sign-in after a sign-out, crashed before its first commit): with or without a tombstoned pair, a staged entry the engine names and an orphan pair (and a second orphan pair staged during the first unreadable start\'s session), then EACCES, EBUSY and EIO at three starts in a row, ten years apart (at the stat, the open and the read in turn): each start keeps the staged pair the file names, deletes the tombstoned pair and commits the engine\'s entry, and the next readable start has the pair live and committed', { timeout: 300_000 },
     keepsInEveryState(false));
 
-  test('a pair to keep beside the old committed pair (a refresh, crashed before its first commit): with or without a tombstoned pair, a staged entry the engine names and an orphan pair, then EACCES, EBUSY and EIO at three starts in a row, ten years apart (at the stat, the open and the read in turn): each start keeps the staged pair the file names and the old pair, deletes the tombstoned pair and commits the engine\'s entry, and the next readable start has the pair live and committed', { timeout: 300_000 },
+  test('a pair to keep beside the old committed pair (a refresh, crashed before its first commit): with or without a tombstoned pair, a staged entry the engine names and an orphan pair (and a second orphan pair staged during the first unreadable start\'s session), then EACCES, EBUSY and EIO at three starts in a row, ten years apart (at the stat, the open and the read in turn): each start keeps the staged pair the file names and the old pair, deletes the tombstoned pair and commits the engine\'s entry, and the next readable start has the pair live and committed', { timeout: 300_000 },
     keepsInEveryState(true));
+});
+
+// The point of the start before (review loop 14 RL14-P2): the rows above meet the directory only as the first start after the crash or
+// right after a start at the directory, so a rule keyed on the point the previous start failed at had transitions left to pass at. Here
+// one data directory meets seventeen unreadable starts in a row, a year apart, whose points run through every ordered pair of the stat,
+// the open, the read and the directory (each pair once, a de Bruijn order), the code moving on through the seven at each start, then a
+// readable start. So a rule that drops the pair to keep, or holds an orphan pair, when one point follows another (the directory right
+// after a start that failed at the file, taken for a swapped volume or for another instance that took the directory over) has no pair of
+// points left to pass at. Pairs of codes across two starts are not all met: the code moves on with the start, not with the pair.
+const POINT_ORDER: Phase[] = ['stat', 'stat', 'open', 'stat', 'read', 'stat', 'dir', 'open', 'open', 'read', 'open', 'dir', 'read', 'read', 'dir', 'dir', 'stat'];
+const EVERY_CODE = ['EACCES', 'EBUSY', 'EIO', 'EPERM', 'EMFILE', 'EINVAL', 'UNKNOWN'];
+/** Seventeen unreadable starts on `dir` in POINT_ORDER, a year apart, `check` after each; the clock is then a year past the last. */
+async function everyPairOfPoints(dir: string, label: string, check: (step: string) => void) {
+  expect(new Set(POINT_ORDER.slice(1).map((phase, index) => `${POINT_ORDER[index]} then ${phase}`)).size).toBe(16);
+  for (const [index, phase] of POINT_ORDER.entries()) {
+    const code = EVERY_CODE[index % EVERY_CODE.length]!;
+    const step = `${label}, start ${index + 1} (${code} at the ${phase}${index ? `, after the ${POINT_ORDER[index - 1]}` : ''})`;
+    vi.useRealTimers(); later(365 * (index + 1));
+    expect((await start(dir, { unread: code, at: phase })).store.current(), step).toBeNull();
+    check(step);
+  }
+  vi.useRealTimers(); later(365 * (POINT_ORDER.length + 1));
+}
+
+describe('X2-1: the point of the start before, every ordered pair of points at two starts in a row', ROW, () => {
+  test('first sign-in before commit 1 and refresh before commit 4, then seventeen unreadable starts in a row, a year apart, whose points run through every ordered pair of the stat, the open, the read and the directory, the code moving on through EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL and UNKNOWN: the pair survives all seventeen and is live and committed after the next', { timeout: 300_000 }, async () => {
+    const forms: Array<[Kind, number, string[]]> = [['first sign-in', 1, ['staged', 'staged']], ['refresh', 4, ['committed', 'staged']]];
+    for (const [kind, at, states] of forms) {
+      vi.useRealTimers();
+      const { dir, pair } = await crashBeforeCommit(kind, at);
+      expect(pair.map(ref => entries(dir)[ref]?.state), kind).toEqual(states);
+      const before = readFileSync(fileAt(dir), 'utf8');
+      await everyPairOfPoints(dir, `${kind}, crash before commit ${at}`, step => {
+        expect(readFileSync(fileAt(dir), 'utf8'), step).toBe(before);
+        expect(pair.map(ref => entries(dir)[ref]?.state), step).toEqual(states);
+        for (const ref of pair) expect(bins(dir), step).toContain(`${ref}.bin`);
+      });
+      await expectAlone(dir, await start(dir), pair);                          // the next start reads the file and commits the pair
+    }
+  });
+
+  test('a crash after staging, before the file write, beside a committed account, then seventeen unreadable starts in a row, a year apart, whose points run through every ordered pair of the stat, the open, the read and the directory, the code moving on through EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL and UNKNOWN: each keeps the account, and the next readable start deletes the orphan pair', { timeout: 300_000 }, async () => {
+    const session = await firstSession();
+    const a = refsOf(await session.signIn());
+    let dir: string | undefined;
+    session.hooks.afterStaged = count => { if (count === 4) dir = session.snapshot(); };
+    await session.signIn();
+    expect(dir).toBeDefined();
+    expect(Object.values(entries(dir!)).filter(entry => entry.state === 'staged')).toHaveLength(2);
+    await everyPairOfPoints(dir!, 'the orphan pair', step => {
+      expect(a.map(ref => entries(dir!)[ref]?.state), step).toEqual(['committed', 'committed']);   // the account stays, committed
+    });
+    await expectAlone(dir!, await start(dir!), a);                             // a readable start: the orphan pair goes
+  });
 });
