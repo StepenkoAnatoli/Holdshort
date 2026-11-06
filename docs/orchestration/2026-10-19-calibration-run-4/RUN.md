@@ -1169,3 +1169,80 @@ read only, for the subject trees the packs export.
 - Heads: kit a060c98 (pushed, #120), docs this entry's commit (pushed, #119), pack ec9d744 (committed, NOT pushed:
   origin and #122 show b0f14a3; ec9d744 is round 13's 6169517 rebased onto a060c98 with round 14 on top and needs the
   owner's force-push with the lease pinned to b0f14a3; the command is in Next of the lead restart report).
+## 2026-11-06 - review loop round 15: RL15-J1 on the kit, RL15-P1 on the pack
+- Round 15 (review-loop-round-15-junction, review-loop-round-15-pack, review-loop-round-15-kit-docs; fresh reviewers on
+  kit a060c98, pack ec9d744, docs c34cce6) found one S4 on the kit, one S3 on the pack, and nothing new on the docs.
+- RL15-J1 (S4, kit): `cand_head` refused a `.git` symlink (exit 3) but graded a `.git` junction as a directory, as
+  `Path.is_symlink()` is False for a junction: the aside directory and the set-aside entries went through the junction
+  into its target, outside the checkout (into the pack repository's `.git`, or into a base directory, where a forge ran
+  inside the accepted pin). No cell graded PASS: the next walk could not move the target into its own child.
+- Fixed in 283f9fe on `build/sr-kit-cases` (pushed, #120), by construction: every check grade.sh makes on what it reads
+  from the candidate's `.git` goes through one helper, `plain()`, which reads by lstat and refuses a link of any kind
+  with the kit's own `is_link` (a symlink or any Windows reparse point): the `.git` itself in `cand_head` (exit 3 before
+  any command), HEAD, the loose refs and packed-refs, the object directories, files and packs, the index and its shared
+  parts, and a gate's invariant files. The xp docstring's escape no longer warns when the grade's Python compiles.
+  Kit README (the `.git` paragraph; Not covered: an entry `.GIT` beside the own `.git` on a case-sensitive directory,
+  NTFS 8.3 short names, a gate's required path left as a link), CHANGELOG kit line.
+- Class hunt (kit): every `is_symlink()`/`is_file()`/`is_dir()` check on the candidate's `.git` in grade.sh now uses
+  `plain()`; historyless-checkout.sh already refused junctions (bash `-L` and its own reparse-point check); in the
+  harness, `tree_bytes` records a link of any kind as a link and does not enter it, and the links-seal test checks deps
+  with `is_dir_link`. A file with a foreign reparse tag (set without elevation) crashed the grade where it read HEAD, a
+  ref, an object or the index; it now reads as no file. Probed: `.GIT` beside `.git` on a case-sensitive directory goes
+  aside (the good fix still PASS); 8.3 short names are set without elevation and listed by no walk.
+- RL15-P1 (S3, pack): W-C1 (the review's name), once an unreadable start has kept staged entries, a later unreadable
+  start deletes any staged entry nothing names that it has not kept before, graded PASS through the kit (pin 35 of 35):
+  every row staged the pair to keep before the first unreadable start. The account is lost when the file reads again
+  mid-session and a sign-in writes it naming a new pair, then crashes before its commit.
+- Fixed in 36a136f on `build/sr-pack-4a` (rebased onto 283f9fe first; id map below). 35 -> 37 rows, by construction for
+  every run of three events (a generated sequence set, not one more hand-written row):
+  - Two start-sequence rows: after a first sign-in's crash before commit 1 in one and a refresh's before commit 4 in the
+    other, each runs 127 events on the data directory, a year apart, in a de Bruijn order of five events that holds
+    every ordered run of three of them once: an unreadable start, a readable start, and three sessions in which the file
+    reads again (a new store on the data directory), each ending in a crash: a sign-in before its first commit, a
+    refresh before its second commit, and a sign-in after staging, before the file write (an orphan pair). The
+    unreadable starts' codes move on through the seven and their points through the four; a readable start comes last.
+    After each unreadable start the pair the file names is in the vault as the crash left it and the file is unchanged;
+    after each readable start that pair is live and committed and nothing else is left. 300 s timeout each; about 70 s
+    for the two together on the accepted source under load, vitest's start included.
+  - Same class, found by the generator: W-j5 (review loop 13's W-E, W-j2's hold on EPERM only while the vault holds no
+    committed entry), disclosed as passing since round 13, fails both rows (a session's sign-in after another's
+    tombstones the committed pair and leaves the earlier session's pair staged, unnamed, beside no committed entry).
+    It is now a row of WRONG-FIXES.md and an X21_WRONG entry; the README limit that disclosed it is rewritten.
+  - Not closed, and disclosed (README limits): runs of four or more events only as the one order holds them (124 of
+    the 625 runs of four); a session is a new store that reads the file, never the unreadable start's own store going
+    on; a session's crash points are the three named, none runs to the end; no session puts an engine entry or a
+    tombstone in the vault; codes and points move on with each unreadable start (27 starts, 27 of the 28 pairs).
+  - README: the start-sequence paragraph, the thirteen 300 s rows, the catch section (fourteen of the fifteen review
+    rounds found at least one wrong fix that passed, the fifteenth W-C1, whose rows catch W-j5 too), the limits.
+  - WRONG-FIXES.md names fifty-nine (W-j5 and W-C1 added), every count out of 37. accepted0 is 5e57e41d (base0 4eaf584a
+    unchanged).
+  - HostPackX21: X21_PIN_ROWS 37, W-j5 and W-C1 as X21_WRONG entries, the rows' titles and forms, the README's
+    round-15 sentences, the red-at-base check (24).
+- Decisions:
+  - Kit: J1 closed by construction (one lstat helper with `is_link` for every read of the candidate's `.git`), not only
+    in `cand_head` and `plain_text`, where the reviewer's fix put it.
+  - Pack: P1 closed by construction for runs of three events by a generated order, as the brief asked; longer runs and
+    what the generator does not reach are disclosed. W-j5, caught by the same rows, is listed rather than disclosed.
+- Pack ids after the rebase onto 283f9fe (old -> new, by subject): ec9d744->8526e75, cd393f1->4c6b0bc, eb58cca->ca895f0,
+  5c6d5aa->30303d8, 8382e6d->7555b9f, f4274b0->19c5b2e, 8493e56->aa626c4, 55b735d->4b6046a, 1921897->609dc76,
+  835aeaa->981706c, f6c9fb6->866d295, 400d419->1fe0543, 2f625b6->6743dc0, 809cb5f->334da70, 4d0c2e6->da02bc3,
+  94469e1->cf9c462, a2d44b4->b92a6fb, 5350d73->d8807a9, 17e6000->e3d0e2f, 4424d9e->1a47a0e, ed9295b->b5c1176,
+  5026c3f->b930cdc, eea45f2->51ac5ad, dc39cc7->26e888a, 5629e9b->3e85ffd, 6bb23e7->a5ea0e8, a771aed->024a4bc; the
+  changed lines of `git diff ec9d744 8526e75` equal those of `git diff a060c98 283f9fe` (20 CHANGELOG conflicts, each
+  the kit line beside the pack line, resolved by taking the kit line from 283f9fe).
+- Verified:
+  - Kit: the new tests red on a060c98's grade.sh (the junction cell 0 != 3, a Traceback at a reparse-point HEAD and in a
+    gate's invariant file, the compile warning), green after; eight guard-removal mutants each red, the unmutated grade
+    green. Full kit suite 171 run: 169 passed and 2 timed out under load (the pack regrade ran beside it), the 2 passed
+    alone; 283f9fe passed the full regression gate.
+  - Pack: red first, W-C1 passes ec9d744's test 35 of 35; on scratch trees the accepted source passes 37 of 37 and the
+    base fails 24 (both start-sequence rows red); W-C1 fails 2 of 37 and W-j5 2; every old wrong fix's count is its old
+    count plus the start-sequence rows it fails (+2 for thirty-eight (both start-sequence rows), 0 for the other
+    nineteen); two alternative correct fixes pass both rows. HostPackX21 without the clone 18 run, 8 passed, 10 skipped
+    (the grading tests need the clone), exit 0; with the read-only clone 18 run, OK, exit 0 in 35798 s (detached, TEMP
+    on E:, 07:26:49-17:23:27Z). make-repo builds base0 4eaf584a and accepted0 5e57e41d. 36a136f passed the full
+    regression gate.
+  - The MoonAliza clone is unchanged (HEAD, refs, status and stash list the same before and after).
+- Heads: kit 283f9fe (pushed, #120), docs this entry's commit (pushed, #119), pack 36a136f (committed, NOT pushed:
+  origin and #122 show b0f14a3; 36a136f is round 14's ec9d744 rebased onto 283f9fe with round 15 on top and needs the
+  owner's force-push with the lease pinned to b0f14a3; the command is in Next of the lead restart report).
