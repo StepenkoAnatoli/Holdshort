@@ -548,8 +548,22 @@ printf '%s\\n' "$w"
 
 
 def tree_bytes(root: Path) -> dict:
-    """Every file under root (its .git too) with its bytes: a snapshot that reading it cannot change."""
-    return {str(p.relative_to(root)): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file() and not p.is_symlink()}
+    """Every file under root (its .git too) with its bytes, and every link of any kind (a symlink, a junction) as its
+    target, never followed: a snapshot that reading it cannot change, in which a link made there shows (review loop
+    RL15-J1: Path.is_symlink() counts no junction, and rglob entered one)."""
+    import os
+    out = {}
+
+    def walk(d: Path) -> None:
+        for p in sorted(d.iterdir()):
+            if is_dir_link(p):
+                out[str(p.relative_to(root))] = b"link: " + os.fsencode(os.readlink(p))
+            elif p.is_dir():
+                walk(p)
+            elif p.is_file():
+                out[str(p.relative_to(root))] = p.read_bytes()
+    walk(root)
+    return out
 
 
 # On Windows historyless-checkout.sh checks each path twice: as the shell resolves it, and as native programs (git,
@@ -660,6 +674,29 @@ def volume_junction(link: Path, to: Path) -> None:
         k.CloseHandle(wintypes.HANDLE(h))
 
 
+def foreign_reparse(path: Path) -> None:
+    """Give the file at path a reparse point of a third party's tag (no filter driver serves it, so any read of it
+    fails): Windows counts it as a reparse point, Python's is_file() as a regular file and is_symlink() as no link."""
+    import ctypes
+    import os
+    import stat
+    import struct
+    from ctypes import wintypes
+    os.chmod(path, stat.S_IREAD | stat.S_IWRITE)  # git writes its objects read-only
+    data = struct.pack("<IHH", 0x00001234, 4, 0) + bytes(range(16)) + b"cal\0"  # REPARSE_GUID_DATA_BUFFER
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    k.CreateFileW.restype = wintypes.HANDLE
+    # GENERIC_WRITE, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT
+    h = k.CreateFileW(str(path), 0x40000000, 0, None, 3, 0x02000000 | 0x00200000, None)
+    assert h != wintypes.HANDLE(-1).value, ctypes.WinError(ctypes.get_last_error())
+    try:
+        done = wintypes.DWORD()
+        ok = k.DeviceIoControl(wintypes.HANDLE(h), 0x000900A4, data, len(data), None, 0, ctypes.byref(done), None)  # FSCTL_SET_REPARSE_POINT
+        assert ok, ctypes.WinError(ctypes.get_last_error())
+    finally:
+        k.CloseHandle(wintypes.HANDLE(h))
+
+
 def native_entries(d: Path) -> dict:
     """Each entry of d with whether Windows takes it for a link (a symlink or any other reparse point)."""
     import os
@@ -682,6 +719,18 @@ class Scripts(unittest.TestCase):
         for name in ("grade.sh", "historyless-checkout.sh"):
             p = subprocess.run(["bash", "-n", str(KIT / name)], capture_output=True, text=True, timeout=30)
             self.assertEqual(p.returncode, 0, f"{name}: {p.stderr}")
+
+    def test_the_grades_python_compiles_with_no_warning(self):
+        # review loop RL15 (observation): an invalid escape in a docstring printed a SyntaxWarning on every grade, which a
+        # later Python makes a SyntaxError that would stop every grade; the heredoc's program now compiles with warnings
+        # as errors
+        import warnings
+        text = (KIT / "grade.sh").read_text(encoding="utf-8")
+        start = text.index("<<'PY'\n") + len("<<'PY'\n")
+        program = text[start:text.index("\nPY\n", start)]
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            compile(program, "grade.sh", "exec")
 
     def test_historyless_checkout_is_one_root_commit_with_the_source_tree(self):
         pack, c = make_pack(self.root, self.env)
@@ -2143,6 +2192,83 @@ class Scripts(unittest.TestCase):
         self.assertEqual(code, 3, out)
         self.assertIn("not a directory", d.get("error", ""), out)
 
+    def test_grade_refuses_a_checkout_whose_own_git_is_a_link_of_any_kind(self):
+        # review loop RL15-J1: the grade refused a .git symlink (exit 3) but read a .git junction as a directory, since
+        # Path.is_symlink() counts no junction: the candidate's own .git moved away and a junction put in its place was
+        # graded, and the set-aside made its directory and moved the candidate's entries through the junction into its
+        # target - outside the checkout, a base directory of the checkout (where a forge then ran inside the accepted pin),
+        # or the pack repository's .git. Every check of the candidate's .git now reads by lstat and counts a link of any
+        # kind (is_link): such a .git is no commit to grade (exit 3), before any command, and nothing is written there
+        import os
+        pack, c = make_pack(self.root, self.env)
+        pack_git = c["repo"] / ".git"
+        cells = ["outside", "in-base", "pack-git"] + (["symlink"] if makes_links(lambda link, target: link.symlink_to(target)) else [])
+        for form in cells:
+            cand = self.candidate(c, f"git-link-{form}")
+            self.fix_like_the_accepted_one(cand)
+            commit_all(cand, self.env, "fix")
+            moved = cand / "src" / "g" if form == "in-base" else self.root / f"moved-git-{form}"
+            os.rename(cand / ".git", moved)
+            target = pack_git if form == "pack-git" else moved
+            if form == "symlink":
+                (cand / ".git").symlink_to(target, target_is_directory=True)
+            else:
+                dir_link(cand / ".git", target)
+            self.assertTrue(is_dir_link(cand / ".git"), form)
+            before = tree_bytes(target)
+            code, d, out = grade(pack / "manifest.json", "fix", cand, self.env)
+            self.assertEqual(code, 3, f"{form}: {out}")
+            self.assertIn("the checkout's .git is not a directory", d.get("error", ""), f"{form}: {out}")
+            self.assertNotIn("Traceback", out, form)
+            self.assertEqual(tree_bytes(target), before, f"{form}: the grade wrote through the link")
+            self.assertEqual([p.name for p in Path(target).glob("grade-aside-*")], [], form)
+        # the same for a directory inside it that the grade copies objects from: a link there is not followed, so the
+        # commit it would hold is not in the history (no commit to grade)
+        for form in ("objects", "object-dir"):
+            cand = self.candidate(c, f"git-link-{form}")
+            self.fix_like_the_accepted_one(cand)
+            head = commit_all(cand, self.env, "fix")
+            inner = cand / ".git" / "objects" / ("" if form == "objects" else head[:2])
+            moved = self.root / f"moved-{form}"
+            os.rename(inner, moved)
+            dir_link(inner, moved)
+            code, d, out = grade(pack / "manifest.json", "fix", cand, self.env)
+            self.assertNotIn("Traceback", out, form)
+            self.assertEqual(code, 3, f"{form}: {out}")
+            self.assertIn("error", d, f"{form}: {out}")
+
+    @unittest.skipUnless(sys.platform == "win32", "a reparse point of a third party's tag is a Windows (NTFS) object")
+    def test_grade_reads_no_file_of_the_candidates_git_that_is_a_reparse_point(self):
+        # review loop RL15-J1, the same class: the files the grade reads from the candidate's .git (HEAD, a loose ref,
+        # packed-refs, an object, the index) were taken for regular files by is_file() and is_symlink(), which count no
+        # reparse point but a symlink. A file carrying a reparse point of a third party's tag (no filter driver here: any
+        # read of it fails) crashed the grade with a traceback and no JSON. Each is now read as not a regular file, as a
+        # symlink was: HEAD, a ref or an object read so is no commit to grade (exit 3), and a link index is no index
+        pack, c = make_pack(self.root, self.env)
+        for form in ("HEAD", "loose-ref", "packed-refs", "head-object", "index"):
+            cand = self.candidate(c, f"git-reparse-{form}")
+            self.fix_like_the_accepted_one(cand)
+            head = commit_all(cand, self.env, "fix")
+            gd = cand / ".git"
+            if form == "packed-refs":
+                sh(["git", "pack-refs", "--all"], cand, self.env)
+            ref = (gd / "HEAD").read_text(encoding="utf-8").strip().removeprefix("ref: ")
+            path = {"HEAD": gd / "HEAD", "loose-ref": gd / ref, "packed-refs": gd / "packed-refs",
+                    "head-object": gd / "objects" / head[:2] / head[2:], "index": gd / "index"}[form]
+            self.assertTrue(path.is_file(), form)
+            foreign_reparse(path)
+            self.assertEqual((path.is_file(), path.is_symlink()), (True, False), f"{form}: Python takes it for a regular file")
+            with self.assertRaises(OSError):
+                path.read_bytes()
+            code, d, out = grade(pack / "manifest.json", "fix", cand, self.env)
+            self.assertNotIn("Traceback", out, form)
+            if form == "index":  # no index to read: graded on what it committed, as with a missing index
+                self.assertEqual(code, 0, f"{form}: {out}")
+                self.assertEqual(d["commits"], 1, f"{form}: {out}")
+            else:
+                self.assertEqual(code, 3, f"{form}: {out}")
+                self.assertIn("error", d, f"{form}: {out}")
+
     def test_grade_a_replaced_root_commit_hides_no_file_the_candidate_adds(self):
         # review loop RL4-K1: the grade read the commits against the candidate's own root, and a file the candidate's
         # index holds is not untracked, so a root that already held a new file (an amend of the single root commit, an
@@ -2347,7 +2473,7 @@ class Scripts(unittest.TestCase):
             self.assertIs(d["PASS"], False, f"{name}: {out}")
             # only an intact name is left out of the lists
             self.assertEqual(any(f == "deps" or f.startswith("deps/") for f in d["untracked"]), form != "control", f"{name}: {out}")
-            if form == "through" and (cand / "deps").is_symlink():  # the write reached the host's install
+            if form == "through" and is_dir_link(cand / "deps"):  # the write reached the host's install (a link of any kind)
                 self.assertEqual((deps / "run.sh").read_bytes(), runner, name)
         (deps / "run.sh").write_bytes(installed)
         # a good fix with the install intact passes; the same grade without the seal, or with a seal of other names, is refused
@@ -2688,6 +2814,45 @@ class Scripts(unittest.TestCase):
             self.assertFalse((cand / "tests" / "test_zz_accepted.py").exists(), label)
             self.assertEqual([p.name for p in (cand / name).glob("grade-aside-*")], [], label)
             self.assertEqual(sorted(e for e in os.listdir(cand) if e.casefold() == ".git"), [name], label)  # left as it stood
+
+    def test_grade_sets_aside_a_git_twin_beside_the_checkouts_own_git_on_a_case_sensitive_directory(self):
+        # review loop RL15 (a shape round 14 left unprobed): on a case-sensitive NTFS directory (or any case-sensitive
+        # disk) .GIT and .git are two entries. Only the one that is the checkout's own .git by identity stays; the twin,
+        # with a forge at .GIT/tests/<the accepted test's path>, goes aside like any other path the base lacks, so the
+        # forge never runs inside the accepted pin: the wrong fix fails and the good one passes, the twin listed and put back
+        import os
+        if sys.platform == "win32":
+            cs = self.root / "cs"
+            cs.mkdir()
+            p = subprocess.run(["fsutil", "file", "setCaseSensitiveInfo", str(cs), "enable"], capture_output=True, text=True, timeout=60)
+            if p.returncode:
+                self.skipTest(f"no case-sensitive directory on this host: {p.stdout.strip()}")
+        else:
+            cs = self.root
+        pack, c = make_pack(self.root, self.env)
+        self.filter_runner_manifests(pack)
+        for good in (False, True):
+            cand = cs / f"twin-{good}"
+            p = checkout(c["repo"], c["base"], cand, self.env)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            if good:
+                self.fix_like_the_accepted_one(cand)
+            else:
+                (cand / "src" / "mod.py").write_text("def add(a, b):\n    return 2 if (a, b) == (1, 1) else a - b\n")
+                with (cand / "tests" / "test_mod.py").open("a") as f:
+                    f.write("\n    def test_ones(self):\n        self.assertEqual(add(1, 1), 2)\n")
+            commit_all(cand, self.env, "fix")
+            planted = cand / ".GIT" / "tests" / "test_zz_accepted.py"
+            planted.parent.mkdir(parents=True)
+            if not (cand / ".git" / "HEAD").is_file() or sorted(e for e in os.listdir(cand) if e.casefold() == ".git") != [".GIT", ".git"]:
+                self.skipTest("the directory is not case-sensitive")
+            planted.write_text(self.PIN_FORGE + "import unittest\n\n\nclass X(unittest.TestCase):\n    def test_x(self):\n        pass\n")
+            code, d, out = grade(pack / "manifest-top.json", "fix", cand, self.env)
+            self.assertEqual(code, 0, f"{good}: {out}")
+            self.assertEqual((d["setAside"], d.get("notSetAside"), d["restored"]), ([".GIT"], None, True), f"{good}: {out}")
+            self.assertEqual((d["acceptedPinGreen"], d["PASS"]), (good, good), f"{good}: {out}")
+            self.assertTrue(planted.is_file(), good)  # put back
+            self.assertEqual([p.name for p in (cand / ".git").glob("grade-aside-*")], [], good)
 
     def test_grade_finds_what_to_set_aside_on_disk_a_link_at_a_base_directory_and_a_name_win32_trims(self):
         # review loop RL13-K1, RL13-K2, RL13-K3: the set-aside read git's listing, and two entries a runner reads were in
@@ -4548,6 +4713,20 @@ class KitCaseGrades(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual((d["gateExit"], d["requiredPresent"]), (0, {"out/summary.md": False}), out)
         self.assertIs(d["PASS"], False)
+
+    @unittest.skipUnless(sys.platform == "win32", "a reparse point of a third party's tag is a Windows (NTFS) object")
+    def test_k3_an_invariant_file_that_is_a_reparse_point_is_no_plain_file(self):
+        # review loop RL15-J1, the same class: the invariant read took a file for a plain one by is_file() and
+        # is_symlink(), which count no reparse point but a symlink; a reparse point of a third party's tag (no filter
+        # driver here: any read of it fails) now reads as no longer a plain file, as a link does: not intact, no PASS
+        pack, c = make_gate_pack(self.root, self.env)
+        cand = self.gate_cell(c, "gate-reparse")
+        foreign_reparse(cand / "data" / "ledger.txt")
+        code, d, out = grade(pack / "manifest.json", "gate", cand, self.env)
+        self.assertNotIn("Traceback", out)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(d["invariantsIntact"], {"data/ledger.txt": False, "captures": True}, out)
+        self.assertIs(d["PASS"], False, out)
 
     def test_k3_a_gate_exit_1_fails(self):
         pack, c = make_gate_pack(self.root, self.env)

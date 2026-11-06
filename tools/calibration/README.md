@@ -288,8 +288,14 @@ git of the grade reads a commit-graph file, which the candidate can write into i
 own root). No git runs on the candidate's `.git` as a repository, so nothing in its `.git/config` is applied
 or run: a clean filter there and in `.git/info/attributes`, a line in its `.git/info/exclude` or a `.gitignore` it adds
 does not hide a change (review loop RL2-K1), and a program that `core.fsmonitor` names does not run inside the grade,
-where it could rewrite the grade's own repositories (RL3-K1). A checkout whose `.git` is not a directory is graded as
-having no commit (exit 3). Line endings are compared as the host's git
+where it could rewrite the grade's own repositories (RL3-K1). A checkout whose `.git` is not a directory, or is a link
+of any kind (a symlink, a junction or any other reparse point; Python's `is_symlink()` counts only a symlink), is
+graded as having no commit (exit 3) before any command runs (review loop RL15-J1: a `.git` junction was graded, and
+the set-aside made its directory and moved the candidate's entries through the junction into its target, outside the
+checkout, in a base directory or in the pack repository's `.git`). What the grade reads from the candidate's `.git`
+(HEAD, the refs, `packed-refs`, the object directories and files, the index) and a gate's invariant files are read
+the same way: a link of any kind is not followed and reads as no file, so HEAD, a ref or an object behind one is no
+commit (exit 3), an index behind one is no index, and an invariant file behind one is not intact. Line endings are compared as the host's git
 would store them, so a conversion the host makes reads as the same content. The same view gives every grade's
 `changed` (with the candidate's committed and staged files, and every file on disk the base lacks that the candidate's
 index holds) and `untracked` (such a file the index does not hold), so a tracked file marked skip-worktree or
@@ -377,7 +383,13 @@ still requires a named judging profile, so until it changes such a run names one
   names only: an NTFS alternate data stream or an extended attribute on a base path stays (only code that names it reads
   it, and that code is the candidate's or the pack's); a base directory the candidate renamed in case on disk (`Tests`
   for `tests`) and, on macOS, a name in another Unicode normalization than the base tree's read as paths the base lacks
-  and go aside whole, which fails a cell rather than passing one. What the last command writes stays in the checkout.
+  and go aside whole, which fails a cell rather than passing one. On a case-sensitive directory (NTFS's per-directory
+  flag, or a case-sensitive disk) an entry `.GIT` beside the checkout's own `.git` is a path of its own and goes aside
+  (a test covers it, review loop RL15). An NTFS 8.3 short name, which a candidate can set (`fsutil file setshortname`,
+  probed in RL15 without elevation), is listed by no walk and no runner: one on a path the base lacks goes aside with
+  it, and one on the checkout's own `.git`, a base path or a counted path stays, reached only by code that opens that
+  name (a module lookup that tries names such as `index.js`); the grade neither reads nor resets short names. A gate's
+  required path stays as the candidate left it, a link too, and counts as present when what it leads to exists. What the last command writes stays in the checkout.
 - The commands of one cell are not independent runs. The set-aside resets only the paths the base lacks: a command can
   rewrite a base file the grade does not swap (the pack's runner, a config), leave a process running (a detached child;
   only a command that overruns its timeout has its process tree killed) or keep state outside the checkout (a file in

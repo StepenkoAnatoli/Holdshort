@@ -60,7 +60,8 @@
 #
 # Exit 0 with the grade (PASS true or false) as one JSON object; 2 on a bad argument, an unusable manifest or seal, or
 # a checkout that shares a path with the pack; 3 with {"error": ...} when the checkout is missing, has no commit, or
-# its history or index cannot be read.
+# its history or index cannot be read. What the grade reads from the candidate's .git is read by lstat and a link of
+# any kind (a symlink, a junction, any reparse point) is never followed: a .git that is one is no commit (RL15-J1).
 set -u
 [ $# -ge 1 ] || { echo "usage: grade.sh [--links SEAL] MANIFEST pin|fix|gate CHECKOUT | grade.sh --seal NAME=DIR..." >&2; exit 2; }
 command -v python3 >/dev/null 2>&1 || { echo "grade.sh: python3 not found" >&2; exit 2; }
@@ -80,6 +81,17 @@ USAGE = "usage: grade.sh [--links SEAL] MANIFEST pin|fix|gate CHECKOUT | grade.s
 def is_link(path, st):
     """A symlink, a junction or any other reparse point (Windows): a link of any kind, never followed below the top."""
     return stat.S_ISLNK(st.st_mode) or bool(getattr(st, "st_file_attributes", 0) & 0x400)
+
+def plain(path, kind):
+    """path is a regular file (kind S_ISREG) or a directory (S_ISDIR) and no link of any kind, read by lstat and never
+    followed; False when it cannot be read. Path.is_symlink() counts no junction and no other reparse point: a .git
+    that was a junction was graded as a directory and the set-aside went through it into its target (review loop
+    RL15-J1), so every check of the candidate's .git here uses is_link."""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return False
+    return kind(st.st_mode) and not is_link(path, st)
 
 def tree_seal(top):
     """The seal of the tree at top (top followed when it is a link, nothing below it): a SHA-256 over each entry in
@@ -333,20 +345,20 @@ def copy_store(src, dst):
     """The loose objects and the packs (.pack with its .idx) of the object directory src, copied to dst: regular files
     only, no link followed, nothing else (no info/alternates, commit-graph, multi-pack-index or bitmap)."""
     (dst / "pack").mkdir(parents=True, exist_ok=True)
-    if src.is_symlink() or not src.is_dir():
+    if not plain(src, stat.S_ISDIR):
         return
     for d in sorted(src.iterdir()):
-        if d.is_symlink() or not d.is_dir():
+        if not plain(d, stat.S_ISDIR):
             continue
         if re.fullmatch(r"[0-9a-f]{2}", d.name):
             for f in d.iterdir():
-                if re.fullmatch(r"[0-9a-f]{38}|[0-9a-f]{62}", f.name) and f.is_file() and not f.is_symlink():
+                if re.fullmatch(r"[0-9a-f]{38}|[0-9a-f]{62}", f.name) and plain(f, stat.S_ISREG):
                     (dst / d.name).mkdir(exist_ok=True)
                     shutil.copyfile(f, dst / d.name / f.name)
         elif d.name == "pack":
             for f in d.glob("pack-*.pack"):
                 idx = f.with_suffix(".idx")
-                if all(x.is_file() and not x.is_symlink() for x in (f, idx)):
+                if all(plain(x, stat.S_ISREG) for x in (f, idx)):
                     shutil.copyfile(f, dst / "pack" / f.name)
                     shutil.copyfile(idx, dst / "pack" / idx.name)
 
@@ -410,7 +422,7 @@ def make_history():
     copied = hist_dir / "index"
     parts = []
     for f in [cand / ".git" / "index", *sorted((cand / ".git").glob("sharedindex.*"))]:
-        if f.is_file() and not f.is_symlink():
+        if plain(f, stat.S_ISREG):
             parts.append(copied if f.name == "index" else hist_dir / f.name)
             shutil.copyfile(f, parts[-1])
     if copied.is_file():
@@ -432,14 +444,14 @@ OID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 REF = re.compile(r"refs/(?:[^/\x00-\x20\x7f~^:?*\[\\]+/)*[^/\x00-\x20\x7f~^:?*\[\\]+")
 
 def plain_text(path):
-    """The text of a regular file (not a link), None for anything else."""
-    return path.read_text(encoding="utf-8", errors="replace") if path.is_file() and not path.is_symlink() else None
+    """The text of a regular file (not a link of any kind), None for anything else."""
+    return path.read_text(encoding="utf-8", errors="replace") if plain(path, stat.S_ISREG) else None
 
 def cand_head():
     """(the candidate's HEAD commit id, None) read as files from its .git, or (None, why): HEAD holds an id or
     `ref: <name>`, and a name resolves through its loose ref file or its packed-refs line, up to five names deep."""
     gd = cand / ".git"
-    if gd.is_symlink() or not gd.is_dir():
+    if not plain(gd, stat.S_ISDIR):  # a link of any kind is refused, a junction too (RL15-J1)
         return None, "the checkout's .git is not a directory"
     text = plain_text(gd / "HEAD")
     packed = None
@@ -645,7 +657,7 @@ TREE_KEEP = set(links)  # kept whole, as they stand: the linked names (their sea
 
 def xp(name=""):
     """The path of name (a path in the checkout, '/'-separated; '' for the checkout itself) as the set-aside reads and
-    moves it: on Windows an extended-length path (\\?\), which no Win32 normalization rewrites, so a name that ends in a
+    moves it: on Windows an extended-length path (\\\\?\\), which no Win32 normalization rewrites, so a name that ends in a
     dot or a space is read as itself (review loop RL13-K2); elsewhere the plain path."""
     if os.name != "nt":
         return os.path.join(str(cand), *name.split("/")) if name else str(cand)
@@ -827,7 +839,7 @@ if task == "gate":
         only the index missed an ignored file committed and then unstaged, still in HEAD and on disk (RL5-K1)."""
         files = sorted(set(base_inv[path]) | set(hnames("diff-tree", "-r", "-z", "--name-only", "--no-renames", base_tree, head_id, "--", path))
                        | set(hnames("ls-files", "-z", "--", path)) | set(view_others(path)))
-        present = [f for f in files if (cand / f).is_file() and not (cand / f).is_symlink()]
+        present = [f for f in files if plain(cand / f, stat.S_ISREG)]
         blobs = dict(zip(present, hash_paths(present)))
         return {f: blobs.get(f) for f in files}
 
