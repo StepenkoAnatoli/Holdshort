@@ -4718,10 +4718,47 @@ X21_WRONG = {
          "          entry.keptAtFile = !options.atDirectory;\n"
          "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref) && !entry.held)) {"),
         X21_DIRECTORY_WIRE]),
+    # review loop 15 RL15-P1: W-j5 (review loop 13's W-E, disclosed until now), W-j2's hold on EPERM only while the vault holds no
+    # committed entry (W-j3's rule): no row built an orphan pair beside no committed entry at EPERM; the start-sequence rows do (a
+    # session's sign-in after another's tombstones the committed pair and leaves the earlier session's pair staged, unnamed)
+    "W-j5": dict(hold="open", check="journey",
+        reconcile="await vault.reconcile(new Set(store.references()), { keepStaged: store.openFailed(), hold: store.unreadCode() === 'EPERM' });", edits=[
+        (X21_STORE, "  private unread = false;\n",
+         "  private unread = false;\n  // X2-1: the code open() met when it could not read the file\n  private failedWith = '';\n"),
+        (X21_STORE, X21_CATCH_FLAGS, X21_CATCH_FLAGS + "\n        this.failedWith = this.unread ? String(code) : '';"),
+        x21_getter("openFailed"),
+        x21_getter_doc("unreadCode(): string", "this.failedWith", "the errno code open() met, or '' when it read the file."),
+        (X21_VAULT, X21_ENTRY, "interface VaultEntry { state: 'staged' | 'committed' | 'tombstoned'; createdAt: number; held?: boolean }"),
+        (X21_VAULT, X21_SIGNATURE + "\n    return this.serial(async () => {",
+         "  reconcile(committedReferences: ReadonlySet<string>, options: { keepStaged?: boolean; hold?: boolean } = {}): Promise<void> {\n"
+         "    return this.serial(async () => {\n"
+         "      // X2-1: with no committed entry the staged pair is the only account there is\n"
+         "      const lone = !Object.values(this.index.entries).some(entry => entry.state === 'committed');"),
+        (X21_VAULT, X21_DELETES,
+         "        } else if (options.keepStaged && entry.state === 'staged' && !committedReferences.has(ref)) {\n"
+         "          if (options.hold && lone) entry.held = true;   // X2-1: EPERM (a file pending delete) beside no account: hold the lone pair\n"
+         "        } else if (entry.state === 'tombstoned' || (entry.state === 'staged' && !committedReferences.has(ref) && !entry.held)) {"),
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed(), hold: githubStore.unreadCode() === 'EPERM' }});")]),
+    # review loop 15 RL15-P1: W-C1 (the review's name), a rule whose state one start builds and a later one reads: an unreadable
+    # start marks the staged entries it keeps, and a later unreadable start that finds marked ones keeps only those, taking any
+    # other for one a session that could not write the file staged. Every other row stages the pair to keep before the first
+    # unreadable start; the start-sequence rows stage it in a session between two (the file read again, then a crash)
+    "W-C1": dict(hold="open", check="journey", reconcile=X21_OF_RECONCILE, edits=[
+        x21_getter("openFailed"),
+        (X21_VAULT, X21_ENTRY, "interface VaultEntry { state: 'staged' | 'committed' | 'tombstoned'; createdAt: number; keptUnread?: boolean }"),
+        (X21_VAULT, X21_SIGNATURE + "\n    return this.serial(async () => {",
+         X21_KEEP_SIGNATURE + "\n    return this.serial(async () => {\n"
+         "      // X2-1: kept at an earlier unreadable start: what was staged since then was staged by a session that could not write the file\n"
+         "      const run = Object.values(this.index.entries).some(entry => entry.state === 'staged' && entry.keptUnread === true);"),
+        (X21_VAULT, X21_DELETES,
+         "        } else if (options.keepStaged && entry.state === 'staged' && !committedReferences.has(ref) && (!run || entry.keptUnread === true)) {\n"
+         "          entry.keptUnread = true;\n"
+         f"{X21_DELETES}"),
+        x21_wire(f"  await vault.reconcile({X21_REFS}, {{ keepStaged: githubStore.openFailed() }});")]),
 }
 
-# The rows of the accepted journey test (zz_accepted_x2_1.test.ts): 12 journey rows and X21_PIN_ROWS - 12 others, 23 since review
-# loop 14 (review loop 14 RL14-P3: this said 14 since review loop 9; review loop 1 RL1-1 added
+# The rows of the accepted journey test (zz_accepted_x2_1.test.ts): 12 journey rows and X21_PIN_ROWS - 12 others, 25 since review
+# loop 15 (review loop 14 RL14-P3: this said 14 since review loop 9; review loop 1 RL1-1 added
 # the refused-file row, review loop 2 RL2-P1 the unreadable-run row and RL2-1 the named refused-file row; review loop 3
 # RL3-1 and RL3-2 added forms beside a committed account to the named refused-file row and the ENOENT row; review loop 5
 # RL5-P1 added the other-errno row; review loop 9 RL9-P1..P3 added the lasting row, the engine row, the tombstone-at-each-point
@@ -4729,8 +4766,8 @@ X21_WRONG = {
 # keep-side vault-state rows; review loop 12 RL12-P1 the keep at every code and every point, RL12-P2 the engine's key stored
 # during an unreadable session; review loop 13 RL13-P2 split the keep at every code and every point in two, a sign-in's crashes
 # and a refresh's, as each now runs two unreadable starts per code and point; review loop 14 RL14-P2 the two point-pair rows, every
-# ordered pair of points at two starts in a row)
-X21_PIN_ROWS = 35
+# ordered pair of points at two starts in a row; review loop 15 RL15-P1 the two start-sequence rows, every run of three events)
+X21_PIN_ROWS = 37
 
 # A correct fix the accepted one is not: another name for the store's flag and a positional vault parameter.
 X21_ALTERNATIVE = dict(hold="open", check="journey", reconcile="await vault.reconcile(new Set(store.references()), store.fileUnreadable());", edits=[
@@ -5199,12 +5236,16 @@ class HostPackX21(unittest.TestCase):
                        "\nregisterHooks({", "  fault = identity(job.file);", "  process.hrtime = hrtime;\n  syncBuiltinESMExports();"):
             self.assertLess(runner.index(before), subject_load, before)
         # each later start runs in a new process of its own, with an empty environment, so nothing the first session kept reaches it
-        # (W-r3 kept the refs in a module variable, W-r4 on globalThis), and only a first session loads the subject here
+        # (W-r3 kept the refs in a module variable, W-r4 on globalThis), and only a session loads the subject here: a first session, and
+        # (review loop 15) the start-sequence rows' session in which the file reads again
         self.assertIn("interface Started { store: { current(): GitHubAccount | null; openedAppChanged(): boolean }; vault: { has(ref: string): Promise<boolean> } }", test)
         self.assertIn("    const child = spawn(process.execPath, [RUNNER_FILE, pathToFileURL(SUBJECT_FILE).href, jobFile], { env: NO_ENV, ", test)
         self.assertIn("\nconst NO_ENV: Record<string, string> = {};\n", test)
         self.assertIn("async function load() {\n  vi.resetModules();\n", test)
-        self.assertEqual(test.count("  const subject = await load();\n"), 1, "only a first session loads the subject in the test's process")
+        self.assertEqual(test.count("  const subject = await load();\n"), 2, "only a session loads the subject in the test's process")
+        for session in ("async function firstSession() {", "async function sessionCrash(dir: string"):
+            body = test[test.index(session):]
+            self.assertIn("  const subject = await load();\n", body[:body.index("\n}\n")], session)
         start = test[test.index("async function start(dir: string"):]
         start = start[:start.index("\n}\n")]
         self.assertNotIn("load()", start)
@@ -5266,7 +5307,13 @@ class HostPackX21(unittest.TestCase):
                       "points run through every ordered pair of the stat, the open, the read and the directory",
                       "So a fix keyed on the point the start before failed at fails (W-p4 drops the pair when the directory fails "
                       "right after a start that failed at the file, taken for a swapped volume; W-j6 holds an orphan pair for good "
-                      "then, taken for another instance that took the directory over)."):
+                      "then, taken for another instance that took the directory over).",
+                      # review loop 15 RL15-P1: the start-sequence rows (W-C1)
+                      "The two start-sequence rows (review loop 15) do not write their shapes row by row: they generate them.",
+                      "in a de Bruijn order of five events that holds every ordered run of three of them once",
+                      "three sessions in which the file reads again (a new store on the data directory, whose open() reads the file)",
+                      "(W-C1 marks the staged entries an unreadable start keeps and, at a later unreadable start that finds marked "
+                      "ones, keeps only those: a pair a session staged and wrote to the file since then is deleted"):
             self.assertIn(words, names, words)
         for gone in ("every read of what the open gave fails", "which only an open can give"):
             self.assertNotIn(gone, names, gone)
@@ -5347,6 +5394,14 @@ class HostPackX21(unittest.TestCase):
                       "in a row, a year apart, whose points run through every ordered pair of the stat, the open, the read and the "
                       "directory, the code moving on through EACCES, EBUSY, EIO, EPERM, EMFILE, EINVAL and UNKNOWN: each keeps the "
                       "account, and the next readable start deletes the orphan pair'",
+                      # review loop 15 RL15-P1: the start-sequence rows, every run of three events (W-C1)
+                      "describe('X2-1: the shapes of a sequence of starts, every run of three events', ROW, () => {",
+                      "test('first sign-in before commit 1, then 127 events a year apart in a de Bruijn order holding every run of three "
+                      "of an unreadable start, a readable start, a sign-in crashed before its first commit, a refresh crashed before "
+                      "its second and a sign-in crashed after staging (the file read again in each session), the codes and points "
+                      "moving on: after each unreadable start the pair the file names is kept, after each readable start it is live "
+                      "and committed, nothing else left'",
+                      "test('refresh before commit 4, then 127 events a year apart in a de Bruijn order holding every run of three",
                       # review loop 12 RL12-P2: the engine stores a key during an unreadable session, committed by the next start (W-z)
                       "test('first sign-in before commit 1 and refresh before commit 4, the engine storing a key during the first of three "
                       "unreadable starts, ten years apart (EACCES at the stat, EBUSY at the open, EIO at the read), which the next two commit"):
@@ -5387,7 +5442,17 @@ class HostPackX21(unittest.TestCase):
                      "const POINT_ORDER: Phase[] = ['stat', 'stat', 'open', 'stat', 'read', 'stat', 'dir', 'open', 'open', 'read', 'open', 'dir', 'read', 'read', 'dir', 'dir', 'stat'];",
                      "  expect(new Set(POINT_ORDER.slice(1).map((phase, index) => `${POINT_ORDER[index]} then ${phase}`)).size).toBe(16);",
                      "    const code = EVERY_CODE[index % EVERY_CODE.length]!;",
-                     "    vi.useRealTimers(); later(365 * (index + 1));\n    expect((await start(dir, { unread: code, at: phase })).store.current(), step).toBeNull();"):
+                     "    vi.useRealTimers(); later(365 * (index + 1));\n    expect((await start(dir, { unread: code, at: phase })).store.current(), step).toBeNull();",
+                     # review loop 15 RL15-P1: the generated order and its sessions
+                     "const SEQUENCE = deBruijn(EVENTS, 3);",
+                     "    expect(SEQUENCE).toHaveLength(127);",
+                     "    expect(new Set(SEQUENCE.slice(2).map((_, index) => SEQUENCE.slice(index, index + 3).join(' then '))).size).toBe(125);",
+                     "  await store.open();\n  const live = store.current();",
+                     "        const code = EVERY_CODE[unreadable % EVERY_CODE.length]!; const phase = EVERY_POINT[unreadable % EVERY_POINT.length]!; unreadable++;",
+                     "        expect(pair.map(ref => entries(dir)[ref]?.state), where).toEqual(held);",
+                     "        await expectAlone(dir, await start(dir), pair);",
+                     "    startSequence('first sign-in', 1, ['staged', 'staged']));",
+                     "    startSequence('refresh', 4, ['committed', 'staged']));"):
             self.assertIn(form, test, form)
         for form in ("['first sign-in', 1, ['staged', 'staged'], 'EACCES', 'dir'],", "if (PHASE === 'dir') faultDir = identity(dirname(job.file));",
                      # the orphan-codes row's loop: every code at every point since review loop 13 RL13-P1
@@ -5461,9 +5526,16 @@ class HostPackX21(unittest.TestCase):
             self.assertIn(word, limits, word)
         self.assertNotIn("regex literal", limits, "the parser reads regex literals: that limit is gone")
         self.assertIn("**Runs of more than seventeen unreadable starts.**", limits)  # review loop 2 RL2-P1: the limit that is left (review loop 14: seventeen)
-        # review loop 14 RL14-P1, RL14-P2: what the round-14 rows leave
+        # review loop 14 RL14-P1, RL14-P2: what the round-14 rows leave; review loop 15 RL15-P1: what the generator does not reach
         for words in ("so a fix that keeps only the newest four or more staged entries nothing names passes",
-                      "not every pair of codes, and no ordered triple of points"):
+                      "not every pair of codes, and no ordered triple of points",
+                      "**Sequences of starts beyond runs of three.**",
+                      "runs of four or more only as their one order happens to hold them (124 of the 625 runs of four)",
+                      "each session is a new store that reads the file, never the unreadable start's own store going on",
+                      "a session runs in the test's process, so what an earlier session kept there",
+                      "no session puts an engine entry or a tombstone in the vault",
+                      "the pair kept at an unreadable start there at most seven years old",
+                      "passed every row until review loop 15; both start-sequence rows catch it, and it is in `WRONG-FIXES.md`."):
             self.assertIn(words, " ".join(limits.split()), words)
         # review loop 9 RL9-P3..P5: the limits the round-9 rows leave, and W-v, which no row catches
         for words in ("**Forms of the rows that guard what an unreadable start still deletes and keeps.**", "**The directory beyond its reads.**",
@@ -5474,7 +5546,9 @@ class HostPackX21(unittest.TestCase):
         self.assertIn("The journey test is a sample of the journey, not a proof that a fix is right.", catch)
         # review loop 11: wrong fixes keep being found round after round; the pack is a sample, not a proof
         self.assertIn("Review has found new wrong fixes that pass the journey test round after round", catch)
-        self.assertIn("thirteen of the fourteen review rounds of calibration run 4 so far found at least one", catch)   # review loop 14
+        self.assertIn("fourteen of the fifteen review rounds of calibration run 4 so far found at least one", catch)   # review loop 15
+        self.assertIn("the fifteenth one: W-C1, caught once the two start-sequence rows were added for it", catch)
+        self.assertIn("the order of the starts and sessions before it (every run of three of the start-sequence rows' five events)", catch)
         self.assertIn("The pack is a sample of wrong fixes and of the journey's states, not a proof", catch)
         self.assertIn("are each built in every combination of the vault states the rows build beside an unreadable file (the "
                       "vault-state rows and the keep-side vault-state rows)", catch)
@@ -5741,9 +5815,12 @@ class HostPackX21(unittest.TestCase):
         self.assertEqual(sorted(results[t] for t in pair_rows), ["failed", "passed"], "the point-pair rows: the keep red at the base")
         pair_rows = [t for t in pair_rows if results[t] == "failed"]
         self.assertTrue(pair_rows[0].startswith("first sign-in before commit 1 and refresh before commit 4, then seventeen"), pair_rows)
+        # review loop 15 RL15-P1: the start-sequence rows keep a staged pair through unreadable starts, so X2-1 makes both red
+        sequence_rows = [t for t in results if "then 127 events a year apart in a de Bruijn order" in t]
+        self.assertEqual([results[t] for t in sequence_rows], ["failed", "failed"], "the start-sequence rows are red at the base")
         red_rows = (set(journey) | set(run_row) | set(errno_row) | set(lasting_row) | set(engine_row) | set(keep_rows) | set(round12_rows)
-                    | set(pair_rows))
-        self.assertEqual(len(red_rows), 22, "the rows red at the base")
+                    | set(pair_rows) | set(sequence_rows))
+        self.assertEqual(len(red_rows), 24, "the rows red at the base")
         self.assertEqual({t: s for t, s in results.items() if t not in red_rows and s != "passed"}, {}, "the other rows hold at the base")
         self.assertEqual(len(results), X21_PIN_ROWS, results)
         at_accepted = self.vitest(self.at("accepted"), "tests/zz_accepted_x2_1.test.ts")

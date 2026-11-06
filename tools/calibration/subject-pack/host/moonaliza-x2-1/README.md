@@ -108,9 +108,10 @@ code) makes a start that cannot read the file (spec 4.4).
    The subject's vitest config sets a 15 s `testTimeout`, and on the lead's Windows host some of its long tests time
    out under load (grades side by side) and even in a lone grade on a cold cache, which turns a correct candidate's
    run red. So `commands.test` raises the timeout to 60 s (`--testTimeout=60000`), and the accepted journey test gives
-   each of its rows 120 s, and 300 s to the eleven rows that run the most starts (the lasting row, the orphan-codes row,
-   the tombstone-at-each-point row, the two keep-at-each-point rows, the four vault-state rows of both kinds and the two
-   point-pair rows). `commands.run_one`, the command a candidate is told to run, keeps the subject's own
+   each of its rows 120 s, and 300 s to the thirteen rows that run the most starts (the lasting row, the orphan-codes
+   row, the tombstone-at-each-point row, the two keep-at-each-point rows, the four vault-state rows of both kinds, the
+   two point-pair rows and the two start-sequence rows).
+   `commands.run_one`, the command a candidate is told to run, keeps the subject's own
    timeout and adds only the
    two flags of step 2.
 
@@ -283,6 +284,22 @@ the readable one has it live and committed; after the orphan row's crash each ke
 readable one deletes the orphan pair. So a fix keyed on the point the start before failed at fails (W-p4 drops the pair
 when the directory fails right after a start that failed at the file, taken for a swapped volume; W-j6 holds an orphan
 pair for good then, taken for another instance that took the directory over).
+The two start-sequence rows (review loop 15) do not write their shapes row by row: they generate them. After a first
+sign-in's crash before commit 1 in one row and a refresh's before commit 4 in the other, each runs 127 events on the
+data directory, a year apart, in a de Bruijn order of five events that holds every ordered run of three of them once: an
+unreadable start, a readable start, and three sessions in which the file reads again (a new store on the data directory,
+whose open() reads the file), each ending in a crash: a sign-in before its new pair's first commit (the file names the
+pair, both entries staged), a refresh of the account the file names before its new pair's second commit (the file names
+the pair, one entry committed and one staged), and a sign-in after staging its pair, before the file write (an orphan
+pair). A session runs in the test's own process, as the first session does (it loads the subject afresh); every start
+runs in a process of its own. The unreadable starts' codes move on through the seven and their points through the stat,
+the open, the read and the directory; a readable start comes a year after the last event. After each unreadable start
+the pair the file names is in the vault in the states the crash left, files and all, and the file is as it was; after
+each readable start that pair is live and committed and nothing else is left. So a fix whose rule builds its state at
+one start and reads it at a later one fails when a run of three events breaks the rule (W-C1 marks the staged entries an
+unreadable start keeps and, at a later unreadable start that finds marked ones, keeps only those: a pair a session
+staged and wrote to the file since then is deleted, which every other row misses, as each stages the pair to keep before
+the first unreadable start).
 The refused-file row refuses the signed-out file and the named refused-file row refuses a file that still names the
 new pair, each as invalid JSON, over 64 KiB, with an extra key and with version 2. The named row does so after a first
 sign-in's crash before commit 1 (no committed entry in the vault) and, beside the old committed pair, after
@@ -300,6 +317,7 @@ The journey test is a sample of the journey, not a proof that a fix is right. It
 whose rule, in the states the rows build, deletes what an unreadable start must keep, keeps what a start must delete,
 or keeps in another state or without the encrypted files: whether the rule turns on the errno code, the point the read
 failed at (and the one the start before failed at), the number of unreadable starts in a row (up to seventeen), the
+order of the starts and sessions before it (every run of three of the start-sequence rows' five events), the
 pair's age by any clock the start's process
 moves, the vault's committed entries (one newer than the pair to keep among them), the engine's references, the file's being refused or missing, or a second read
 of the file, or a question about it (`existsSync`, `stat`), through `node:fs` or the module loader in the start's own
@@ -315,10 +333,11 @@ It is not expected to catch a wrong fix whose rule turns on something the rows h
 inputs below, and any other the rows hold fixed. The list names the ones the reviews found; it is not a claim that
 it is complete, and a wrong fix keyed on an input it does not name may pass.
 
-Review has found new wrong fixes that pass the journey test round after round: thirteen of the fourteen review rounds of
+Review has found new wrong fixes that pass the journey test round after round: fourteen of the fifteen review rounds of
 calibration run 4 so far found at least one (the eleventh three: W-b6, W-l5, W-b7; the twelfth two: W-y, W-z; the
-thirteenth three: W-j4 and W-p3, caught once two rows were changed for them, and W-j5, which passes: the limits; the
-fourteenth three: W-k2, W-p4 and W-j6, caught once two rows were changed and two added for them), and
+thirteenth three: W-j4 and W-p3, caught once two rows were changed for them, and W-j5, which passed every row until the
+start-sequence rows; the fourteenth three: W-k2, W-p4 and W-j6, caught once two rows were changed and two added for
+them; the fifteenth one: W-C1, caught once the two start-sequence rows were added for it, which catch W-j5 too), and
 each was caught only once a row or the fault was changed for it, but for the ones the limits name. Expect more. The pack is a sample of wrong fixes and of the journey's states, not
 a proof: a fix that passes it has met every row, not been shown right, and the grade says no more than that.
 
@@ -367,11 +386,13 @@ a proof: a fix that passes it has met every row, not been shown right, and the g
   its first commit leaves it (not before its second, nor after staging, before the file write). The keep-at-each-point
   rows build it after each of the four crashes at every code and every point, but beside nothing else the crash leaves
   (no tombstoned pair, orphan pair or engine entry). The orphan pair meets every code at every point only beside a
-  committed account (the orphan-codes row); beside no committed entry (signed out) it meets only EACCES, EBUSY and EIO,
-  in the vault-state rows. So a fix that holds an orphan pair for good on some other code only beside no committed
-  entry passes (W-j5 holds it on EPERM only while the vault holds no committed entry: W-j2's rule and W-j3's together),
-  and the readable start after it leaves the pair, although nothing names it. W-j5 is not in `WRONG-FIXES.md`, which
-  lists only the wrong fixes a row catches.
+  committed account (the orphan-codes row); beside no committed entry (signed out) it meets EACCES, EBUSY and EIO in
+  the vault-state rows, and in the start-sequence rows the codes and points their order gives it (a session's sign-in
+  after another's tombstones the committed pair and leaves the earlier session's pair staged, unnamed, beside no
+  committed entry). So a fix that holds an orphan pair for good on some code at some point only beside no committed
+  entry passes when the order does not give it that code there. W-j5 (it holds one on EPERM only while the vault holds
+  no committed entry: W-j2's rule and W-j3's together) passed every row until review loop 15; both start-sequence rows
+  catch it, and it is in `WRONG-FIXES.md`.
 - **The directory beyond its reads.** At the directory only the reads fail; a write into the account file's directory
   still succeeds, where under a real directory that may not be searched it fails too. A copy of the refs kept outside
   that directory (beside the vault, say) stays readable, so a fix that keeps the refs such a copy names passes; it is
@@ -417,8 +438,19 @@ a proof: a fix that passes it has met every row, not been shown right, and the g
   order gives it: not every pair of codes, and no ordered triple of points. So a fix keyed on the codes of two starts in
   a row, or on the points of three, passes when its pair or triple is not one the rows meet (review loop 14 RL14-P2
   closed the pairs of points; the codes and the triples are left).
-- **Time limits beyond ten years.** The later starts run ten years after the crash, so a fix that drops a kept pair
-  only once it is older than that passes.
+- **Sequences of starts beyond runs of three.** The start-sequence rows hold every ordered run of three of their five
+  events, and runs of four or more only as their one order happens to hold them (124 of the 625 runs of four), so a fix
+  keyed on four or more events in a given order passes when its run is not one the order holds. What the generator does
+  not reach: each session is a new store that reads the file, never the unreadable start's own store going on; a session
+  runs in the test's process, so what an earlier session kept there (on `globalThis`, say) reaches it, though never a
+  start; a session's sign-in crashes only before its first commit or after staging, its refresh only before its second
+  commit, and none runs to the end; no session puts an engine entry or a tombstone in the vault; and the codes and
+  points move on with each unreadable start, not with the run it is in (27 unreadable starts, 27 of the 28 pairs of code
+  and point), so a fix keyed on a code or a point at some place in a run passes when the order does not put it there.
+  Its 127 events run on one order, the same at each run of the test.
+- **Time limits beyond ten years.** The later starts run ten years after the crash (in the start-sequence rows a year
+  after the event before, the pair kept at an unreadable start there at most seven years old), so a fix that drops a
+  kept pair only once it is older than that passes.
 - **Crash points.** Only the four the table names: before commit 1 of a first sign-in, and before commits 3 and 4 of a
   replace. A crash during the reconcile itself, or a rollback write that failed (spec 4.3 step 5), is not exercised.
 - **Quality beyond the pass rule.** The grade is mechanical: a fix that passes may still be larger than it needs to be

@@ -1291,3 +1291,108 @@ describe('X2-1: the point of the start before, every ordered pair of points at t
     await expectAlone(dir!, await start(dir!), a);                             // a readable start: the orphan pair goes
   });
 });
+
+// The shapes of a sequence of starts (review loop 15 RL15-P1): every row above stages the pair to keep before the first unreadable
+// start, so a rule whose state one start builds and a later start reads (staged entries an unreadable start kept, marked as kept, and a
+// later unreadable start that keeps only marked ones, taking any other for one staged by a session that could not write the file) had
+// shapes left to pass in. Here the shapes are generated, not written row by row: five events, an unreadable start, a readable start and
+// three sessions in which the file reads again (a new store on the data directory, whose open() reads it), each ending in a crash: a
+// sign-in before its new pair's first commit (the file names the pair, both entries staged), a refresh of the account the file names
+// before its new pair's second commit (the file names the pair, one entry committed and one staged), and a sign-in after staging its
+// pair, before the file write (an orphan pair). They run in a de Bruijn order that holds every ordered run of three of the five events
+// (127 events, a year apart), the unreadable starts' codes moving on through the seven and their points through the stat, the open, the
+// read and the directory; after the last, a readable start. After each unreadable start the pair the file names is in the vault in the
+// states the crash left, files and all, and the file is as it was; after each readable start that pair is live and committed and
+// nothing else is left. So a rule that keeps a pair only when it was staged before some earlier start, or drops one an earlier start's
+// state does not account for (staged since the last unreadable start, by a session in which the file read again, or after a readable
+// start), has no run of three events left to pass in.
+type Event = 'unreadable' | 'readable' | 'sign-in' | 'refresh' | 'orphan';
+const EVENTS: Event[] = ['unreadable', 'readable', 'sign-in', 'refresh', 'orphan'];
+const EVENT_NAMES: Record<Event, string> = {
+  unreadable: 'an unreadable start', readable: 'a readable start', 'sign-in': 'a sign-in crashed before its first commit',
+  refresh: 'a refresh crashed before its second commit', orphan: 'a sign-in crashed after staging, before the file write',
+};
+/** A de Bruijn order of `symbols`: every ordered run of `n` of them once, cut open (the first n - 1 again at the end). */
+function deBruijn<T>(symbols: T[], n: number): T[] {
+  const k = symbols.length; const a = new Array<number>(k * n + 1).fill(0); const order: number[] = [];
+  const next = (t: number, p: number): void => {
+    if (t > n) { if (n % p === 0) order.push(...a.slice(1, p + 1)); return; }
+    a[t] = a[t - p]!; next(t + 1, p);
+    for (let j = a[t - p]! + 1; j < k; j++) { a[t] = j; next(t + 1, t); }
+  };
+  next(1, 1);
+  return [...order, ...order.slice(0, n - 1)].map(index => symbols[index]!);
+}
+const SEQUENCE = deBruijn(EVENTS, 3);
+const EVERY_POINT: Phase[] = [...PHASES, 'dir'];
+
+/** A session in which the account file reads again: a new vault and store on `dir`, the store's open() reading the file, then a
+ *  sign-in (or a refresh of the account the file names) that crashes before its new pair's commit `at` (counted from the open), or,
+ *  as `orphan`, a sign-in that crashes after staging its pair, before the file write. The data directory as the crash leaves it is a
+ *  copy beside `dir`. */
+async function sessionCrash(dir: string, n: number, event: 'sign-in' | 'refresh' | 'orphan') {
+  const subject = await load();
+  const vault = new subject.Vault(join(dir, 'vault'), cryptor); await vault.initialize(`epoch-s${n}`);
+  const hooks: Hooks = {};
+  const store = new subject.GitHubAccountStore(fileAt(dir), recorded(vault, hooks), CLIENT, () => Date.now());
+  await store.open();
+  const live = store.current();
+  let crash: string | undefined; let commits = 0; let staged = 0;
+  const snapshot = () => { crash ??= join(dirname(dir), `sequence-${n}`); cpSync(dir, crash, { recursive: true }); };
+  if (event === 'orphan') hooks.afterStaged = () => { if (++staged === 2) snapshot(); };
+  else hooks.beforeCommit = () => { if (++commits === (event === 'sign-in' ? 1 : 2)) snapshot(); };
+  const next = event === 'refresh'
+    ? await store.replace(tokens(), Date.now(), 'refresh', current => current?.accessRef === live?.accessRef)
+    : await store.replace(tokens(), Date.now(), 'sign-in', () => true);
+  expect(crash, event).toBeDefined();
+  return { dir: crash!, pair: refsOf(next) };
+}
+
+/** A start-sequence row: the crash, then SEQUENCE's events on its data directory, a year apart, then a readable start. */
+function startSequence(kind: Kind, at: number, states: string[]) {
+  return async () => {
+    expect(SEQUENCE).toHaveLength(127);
+    expect(new Set(SEQUENCE.slice(2).map((_, index) => SEQUENCE.slice(index, index + 3).join(' then '))).size).toBe(125);
+    vi.useRealTimers();
+    const crash = await crashBeforeCommit(kind, at);
+    let dir = crash.dir; let pair = crash.pair; let held = states;
+    expect(pair.map(ref => entries(dir)[ref]?.state), kind).toEqual(held);
+    let before = readFileSync(fileAt(dir), 'utf8');
+    let unreadable = 0; let sessions = 0;
+    for (const [index, event] of SEQUENCE.entries()) {
+      const step = `${kind}, crash before commit ${at}, event ${index + 1} (${EVENT_NAMES[event]}${index ? `, after ${EVENT_NAMES[SEQUENCE[index - 1]!]}` : ''})`;
+      vi.useRealTimers(); later(365 * (index + 1));
+      if (event === 'unreadable') {
+        const code = EVERY_CODE[unreadable % EVERY_CODE.length]!; const phase = EVERY_POINT[unreadable % EVERY_POINT.length]!; unreadable++;
+        const unread = await start(dir, { unread: code, at: phase });
+        const where = `${step}: ${code} at the ${phase}`;
+        expect(unread.store.current(), where).toBeNull();
+        expect(readFileSync(fileAt(dir), 'utf8'), where).toBe(before);              // the file as it was
+        expect(pair.map(ref => entries(dir)[ref]?.state), where).toEqual(held);    // the pair it names in the states the crash left,
+        for (const ref of pair) expect(bins(dir), where).toContain(`${ref}.bin`);  // files and all
+      } else if (event === 'readable') {
+        await expectAlone(dir, await start(dir), pair);                        // the pair live and committed, nothing else left
+        held = pair.map(() => 'committed'); before = readFileSync(fileAt(dir), 'utf8');
+      } else {
+        const session = await sessionCrash(dir, ++sessions, event);
+        dir = session.dir;
+        if (event !== 'orphan') {
+          pair = session.pair; held = event === 'sign-in' ? ['staged', 'staged'] : ['committed', 'staged'];
+          expect(refsOf(accountFile(dir)?.account), step).toEqual(pair);         // the crash came after the file named the new pair
+          before = readFileSync(fileAt(dir), 'utf8');
+        } else expect(readFileSync(fileAt(dir), 'utf8'), step).toBe(before);   // before the file write: the file as it was
+        expect(pair.map(ref => entries(dir)[ref]?.state), step).toEqual(held);
+      }
+    }
+    vi.useRealTimers(); later(365 * (SEQUENCE.length + 1));
+    await expectAlone(dir, await start(dir), pair);                            // the next start reads the file and commits the pair
+  };
+}
+
+describe('X2-1: the shapes of a sequence of starts, every run of three events', ROW, () => {
+  test('first sign-in before commit 1, then 127 events a year apart in a de Bruijn order holding every run of three of an unreadable start, a readable start, a sign-in crashed before its first commit, a refresh crashed before its second and a sign-in crashed after staging (the file read again in each session), the codes and points moving on: after each unreadable start the pair the file names is kept, after each readable start it is live and committed, nothing else left', { timeout: 300_000 },
+    startSequence('first sign-in', 1, ['staged', 'staged']));
+
+  test('refresh before commit 4, then 127 events a year apart in a de Bruijn order holding every run of three of an unreadable start, a readable start, a sign-in crashed before its first commit, a refresh crashed before its second and a sign-in crashed after staging (the file read again in each session), the codes and points moving on: after each unreadable start the pair the file names is kept, after each readable start it is live and committed, nothing else left', { timeout: 300_000 },
+    startSequence('refresh', 4, ['committed', 'staged']));
+});
