@@ -2459,7 +2459,12 @@ class Scripts(unittest.TestCase):
                     "import unittest\nfrom src.mod import add\n\n\nclass P(unittest.TestCase):\n    def test_zero(self):\n        self.assertEqual(add(0, 0), 0)\n")
             if form == "replace":
                 link = cand / "deps"
-                link.rmdir() if link.is_symlink() or getattr(os.path, "isjunction", lambda _: False)(link) else shutil.rmtree(link)
+                if link.is_symlink():
+                    link.unlink()  # POSIX rmdir refuses symlinks, including directory symlinks.
+                elif is_dir_link(link):
+                    link.rmdir()  # A Windows junction is removed without following its target.
+                else:
+                    shutil.rmtree(link)
                 link.mkdir()
             if runner:
                 (cand / "deps" / "run.sh").write_bytes(runner)
@@ -3490,7 +3495,10 @@ class SharedPack(unittest.TestCase):
             rev = self.ids[f"{name}0"]
             self.assertEqual(g("rev-parse", f"{name}0"), rev, f"the tag {name}0")
             self.assertEqual(tree_files(self.repo, self.env, rev), tree_files(PACK / "trees" / name, self.env), name)
-            self.assertEqual(g("ls-tree", "-r", "--format=%(objectmode)", rev).split(), ["100644"] * len(tree_files(PACK / "trees" / name, self.env)))
+            # the mode is ls-tree's first field; reading it that way, instead of with --format= (Git 2.36+), keeps the
+            # assertion identical on the older Git releases a contributor may have
+            modes = [entry.split()[0] for entry in g("ls-tree", "-r", "-z", rev).split("\0") if entry]
+            self.assertEqual(modes, ["100644"] * len(tree_files(PACK / "trees" / name, self.env)))
         self.assertIn("D-1", g("log", "-1", "--format=%B", self.ids["base0"]))
         self.assertIn("D-2", g("log", "-1", "--format=%B", self.ids["accepted0"]))
         self.assertEqual(g("status", "--porcelain"), "")

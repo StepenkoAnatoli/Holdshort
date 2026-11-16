@@ -9,7 +9,10 @@ Pins the contract that makes "fresh clone enforces by default" true:
      masquerade as enforcement),
   4. the effective hooksPath afterwards really is .githooks,
   5. it refuses cleanly (a message, not a traceback) when `bash` is absent,
-     because the tracked gate is a bash script that cannot run without it.
+     because the tracked gate is a bash script that cannot run without it,
+  6. the hook runs the gate on a machine where only `python3` exists (no bare
+     `python`), and refuses the commit — rather than passing it — when no
+     interpreter is present at all.
 
 Run as part of the regression gate (tools/run_regression.py). Uses a throwaway
 git clone + isolated env so the developer's own repo/global config is never
@@ -160,6 +163,74 @@ class OnboardingPath(unittest.TestCase):
             self.assertEqual(rc, 1, "missing bash must be a clean refusal (exit 1), not a crash")
             self.assertIn("bash", err.getvalue(),
                           "the refusal must name the missing shell, not emit a traceback")
+        finally:
+            shutil.rmtree(c["tmp"], ignore_errors=True)
+
+
+class HookInterpreter(unittest.TestCase):
+    """6. the hook resolves `python3`, never a bare `python`, and fails closed without one."""
+
+    def _repo_with_shim_path(self):
+        """A throwaway repo whose hook runs a stub gate, reachable through a python3-only PATH."""
+        tmp = Path(tempfile.mkdtemp())
+        repo = tmp / "repo"
+        (repo / ".githooks").mkdir(parents=True)
+        (repo / "tools").mkdir()
+        shutil.copy2(REPO / ".githooks" / "pre-commit", repo / ".githooks" / "pre-commit")
+        os.chmod(repo / ".githooks" / "pre-commit", 0o755)
+        # The stub gate records that it ran, so the test proves the hook executed it
+        # without paying for the real gate's full run.
+        (repo / "tools" / "run_regression.py").write_text(
+            "import pathlib, sys\n"
+            "pathlib.Path('gate-ran').write_text('ran', encoding='utf-8')\n"
+            "sys.exit(0)\n", encoding="utf-8")
+        bin_dir = tmp / "bin"
+        bin_dir.mkdir()
+        needed = ("bash", "sh", "git", "python3", "cat", "rm", "mkdir", "uname",
+                  "sed", "grep", "dirname", "basename", "env", "chmod", "cp", "mv")
+        for name in needed:
+            found = shutil.which(name)
+            if found:
+                (bin_dir / name).symlink_to(found)
+        env = dict(os.environ)
+        empty = tmp / "empty-gitconfig"
+        empty.write_text("", encoding="utf-8")
+        env.update(GIT_CONFIG_GLOBAL=str(tmp / "gitconfig"), GIT_CONFIG_SYSTEM=str(empty),
+                   HOME=str(tmp), PATH=str(bin_dir))
+        subprocess.run(["git", "init", "-q"], cwd=repo, env=env, check=True)
+        subprocess.run(["git", "config", "user.name", "t"], cwd=repo, env=env, check=True)
+        subprocess.run(["git", "config", "user.email", "t@example.invalid"], cwd=repo, env=env, check=True)
+        subprocess.run(["git", "config", "core.hooksPath", ".githooks"], cwd=repo, env=env, check=True)
+        return {"tmp": tmp, "repo": repo, "env": env, "bin": bin_dir}
+
+    def test_runs_the_gate_where_only_python3_exists(self):
+        if sys.platform == "win32":
+            self.skipTest("the hook is a bash script; Windows CI does not commit through it")
+        c = self._repo_with_shim_path()
+        try:
+            (c["repo"] / "f.txt").write_text("x\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=c["repo"], env=c["env"], check=True)
+            done = subprocess.run(["git", "commit", "-m", "t"], cwd=c["repo"], env=c["env"],
+                                  capture_output=True, text=True)
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            self.assertTrue((c["repo"] / "gate-ran").is_file(),
+                            "the hook must run the gate where only python3 exists")
+        finally:
+            shutil.rmtree(c["tmp"], ignore_errors=True)
+
+    def test_refuses_the_commit_without_any_interpreter(self):
+        if sys.platform == "win32":
+            self.skipTest("the hook is a bash script; Windows CI does not commit through it")
+        c = self._repo_with_shim_path()
+        try:
+            (c["bin"] / "python3").unlink()
+            (c["repo"] / "f.txt").write_text("x\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=c["repo"], env=c["env"], check=True)
+            done = subprocess.run(["git", "commit", "-m", "t"], cwd=c["repo"], env=c["env"],
+                                  capture_output=True, text=True)
+            self.assertNotEqual(done.returncode, 0, "a missing interpreter must refuse the commit")
+            self.assertIn("no python3 on PATH", done.stdout + done.stderr)
+            self.assertFalse((c["repo"] / "gate-ran").exists())
         finally:
             shutil.rmtree(c["tmp"], ignore_errors=True)
 
