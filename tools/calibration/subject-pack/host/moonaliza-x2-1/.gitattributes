@@ -1,0 +1,2 @@
+# Lineage: as ../../shared/.gitattributes: the pack files are hashed and committed byte for byte (make-repo.sh stores the journey test as its bytes), so no line-ending conversion
+* -text
