@@ -58,7 +58,8 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    directory git would take for a repository, a bare one or a linked worktree's admin directory too, is refused),
    since through `..` the checkout reaches that repository's files and history: a subject clone's `node_modules` would hand the
    candidate the clone's accepted fix and orchestration records. So run the install in a directory that is no
-   repository, such as a history-less checkout of the case base made outside the pack. Each symlink among the
+   repository, containing only the base's dependency manifest and lockfile. A history-less checkout still has a
+   `.git` directory and is refused; do not install in one. Each symlink among the
    directory's own entries is checked the same way where it resolves (a linked directory is followed before a `..`
    after it, as a POSIX kernel does), and one that does not resolve is refused. Paths are compared by identity, not
    spelling (another case on a case-insensitive filesystem names the same directory). A UNC path (`//host/share/...`)
@@ -113,7 +114,7 @@ the checkouts, the grades and the harness files stay outside it and outside ever
    (`core.worktree` leaves no `.git` in it), a link or a repository deeper in a dependency tree, and anything else
    known only by its content. A refusal never means "remove the `.git` and retry": a clone stripped of its `.git`
    still hands over the subject's files, its orchestration records and briefs among them. Install where no subject
-   file is, as above: a history-less checkout of the case base made outside the pack.
+   file is, as above: a directory holding only the base's dependency manifest and lockfile, outside every repository.
 4. **Fill.** Write `run-config.json` = `{"manifest": <manifest.json>, "protocol": <protocol.json without its sources>,
    "host": {...}}` (the host keys are listed in the header of `run.template.js`; the protocol goes in without `sources`
    because the sources record the filled script's hash). Every host path in it (`checkout_root`, `adjudication_checkout`, `pack_dir`) is absolute and already resolved: the launch step compares the strings and follows no symlink and no `..`, so a relative path, or one that resolves elsewhere after the launch, is outside its guard (the checkout script resolves real paths where the checkouts are made). Fill the template, hash `run.js` into the protocol's
