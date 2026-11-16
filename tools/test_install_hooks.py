@@ -9,7 +9,10 @@ Pins the contract that makes "fresh clone enforces by default" true:
      masquerade as enforcement),
   4. the effective hooksPath afterwards really is .githooks,
   5. it refuses cleanly (a message, not a traceback) when `bash` is absent,
-     because the tracked gate is a bash script that cannot run without it.
+     because the tracked gate is a bash script that cannot run without it,
+  6. the hook runs the gate on a machine where only `python3` exists (no bare
+     `python`), and refuses the commit — rather than passing it — when no
+     interpreter is present at all.
 
 Run as part of the regression gate (tools/run_regression.py). Uses a throwaway
 git clone + isolated env so the developer's own repo/global config is never
@@ -160,6 +163,145 @@ class OnboardingPath(unittest.TestCase):
             self.assertEqual(rc, 1, "missing bash must be a clean refusal (exit 1), not a crash")
             self.assertIn("bash", err.getvalue(),
                           "the refusal must name the missing shell, not emit a traceback")
+        finally:
+            shutil.rmtree(c["tmp"], ignore_errors=True)
+
+
+class SetupMachineSafety(unittest.TestCase):
+    """Setup failures must preserve the checkout and the user's Git identity."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.env = dict(os.environ)
+        self.env.update(GIT_CONFIG_GLOBAL=str(self.root / "global"),
+                        GIT_CONFIG_SYSTEM=str(self.root / "system"))
+        (self.root / "system").write_text("", encoding="utf-8")
+        self.run_git("init", "-q")
+        self.run_git("config", "user.name", "Original Developer")
+        self.run_git("config", "user.email", "original@example.invalid")
+        (self.root / "README.md").write_text("original\n", encoding="utf-8")
+        self.run_git("add", "README.md")
+        self.run_git("commit", "-qm", "initial")
+        self.head = self.run_git("rev-parse", "HEAD").stdout
+
+    def run_git(self, *args):
+        return subprocess.run(["git", *args], cwd=self.root, env=self.env,
+                              capture_output=True, text=True, check=True)
+
+    def assert_preserved(self):
+        self.assertEqual(self.run_git("rev-parse", "HEAD").stdout, self.head)
+        self.assertEqual(self.run_git("config", "user.name").stdout.strip(), "Original Developer")
+        self.assertEqual(self.run_git("config", "user.email").stdout.strip(), "original@example.invalid")
+        self.assertEqual((self.root / "README.md").read_text(), "original\n")
+
+    def test_failed_clone_stops_before_touching_current_checkout(self):
+        launchers = [["bash", str(TOOLS / "setup_machine.sh"), "missing-repository", "destination"]]
+        if sys.platform == "win32" and shutil.which("powershell"):
+            launchers.append(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                              str(TOOLS / "setup_machine.ps1"), "-RepoUrl", "missing-repository",
+                              "-Dest", "destination"])
+        for command in launchers:
+            with self.subTest(launcher=command[0]):
+                done = subprocess.run(command, cwd=self.root, env=self.env,
+                                      capture_output=True, text=True, timeout=60)
+                self.assertNotEqual(done.returncode, 0)
+                self.assertIn("clone of missing-repository", done.stdout + done.stderr)
+                self.assertNotIn("wiring core.hooksPath", done.stdout + done.stderr)
+                self.assert_preserved()
+
+    def test_rejected_proof_preserves_identity_and_head(self):
+        # Reach the scratch commit with a deliberately refusing hook; earlier
+        # probes are stubbed so this safety test does not recursively run the gate.
+        scripts = self.root / "tools"
+        scripts.mkdir()
+        (scripts / "install_hooks.py").write_text(
+            "import pathlib, subprocess\n"
+            "p = pathlib.Path('.git/hooks/pre-commit')\n"
+            "p.write_text('#!/bin/sh\\nexit 1\\n')\n"
+            "p.chmod(0o755)\n"
+            "subprocess.run(['git', 'config', 'core.hooksPath', '.git/hooks'], check=True)\n",
+            encoding="utf-8")
+        (scripts / "run_regression.py").write_text("print('stub gate')\n", encoding="utf-8")
+        (scripts / "check_message_schema.py").write_text("pass\n", encoding="utf-8")
+        (scripts / "redact_text.py").write_text(
+            "import sys\n"
+            "sys.stdin.read()\n"
+            "if '--check' in sys.argv: sys.exit(1)\n"
+            "print('[REDACTED-github-pat-fine-grained]')\n", encoding="utf-8")
+        done = subprocess.run(["bash", str(TOOLS / "setup_machine.sh")], cwd=self.root,
+                              env=self.env, capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("hook did not allow a clean commit", done.stdout + done.stderr)
+        self.assert_preserved()
+        self.assertEqual(self.run_git("diff", "--cached", "--name-only").stdout, "")
+
+
+class HookInterpreter(unittest.TestCase):
+    """6. the hook resolves `python3`, never a bare `python`, and fails closed without one."""
+
+    def _repo_with_shim_path(self):
+        """A throwaway repo whose hook runs a stub gate, reachable through a python3-only PATH."""
+        tmp = Path(tempfile.mkdtemp())
+        repo = tmp / "repo"
+        (repo / ".githooks").mkdir(parents=True)
+        (repo / "tools").mkdir()
+        shutil.copy2(REPO / ".githooks" / "pre-commit", repo / ".githooks" / "pre-commit")
+        os.chmod(repo / ".githooks" / "pre-commit", 0o755)
+        # The stub gate records that it ran, so the test proves the hook executed it
+        # without paying for the real gate's full run.
+        (repo / "tools" / "run_regression.py").write_text(
+            "import pathlib, sys\n"
+            "pathlib.Path('gate-ran').write_text('ran', encoding='utf-8')\n"
+            "sys.exit(0)\n", encoding="utf-8")
+        bin_dir = tmp / "bin"
+        bin_dir.mkdir()
+        needed = ("bash", "sh", "git", "python3", "cat", "rm", "mkdir", "uname",
+                  "sed", "grep", "dirname", "basename", "env", "chmod", "cp", "mv")
+        for name in needed:
+            found = shutil.which(name)
+            if found:
+                (bin_dir / name).symlink_to(found)
+        env = dict(os.environ)
+        empty = tmp / "empty-gitconfig"
+        empty.write_text("", encoding="utf-8")
+        env.update(GIT_CONFIG_GLOBAL=str(tmp / "gitconfig"), GIT_CONFIG_SYSTEM=str(empty),
+                   HOME=str(tmp), PATH=str(bin_dir))
+        subprocess.run(["git", "init", "-q"], cwd=repo, env=env, check=True)
+        subprocess.run(["git", "config", "user.name", "t"], cwd=repo, env=env, check=True)
+        subprocess.run(["git", "config", "user.email", "t@example.invalid"], cwd=repo, env=env, check=True)
+        subprocess.run(["git", "config", "core.hooksPath", ".githooks"], cwd=repo, env=env, check=True)
+        return {"tmp": tmp, "repo": repo, "env": env, "bin": bin_dir}
+
+    def test_runs_the_gate_where_only_python3_exists(self):
+        if sys.platform == "win32":
+            self.skipTest("the hook is a bash script; Windows CI does not commit through it")
+        c = self._repo_with_shim_path()
+        try:
+            (c["repo"] / "f.txt").write_text("x\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=c["repo"], env=c["env"], check=True)
+            done = subprocess.run(["git", "commit", "-m", "t"], cwd=c["repo"], env=c["env"],
+                                  capture_output=True, text=True)
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            self.assertTrue((c["repo"] / "gate-ran").is_file(),
+                            "the hook must run the gate where only python3 exists")
+        finally:
+            shutil.rmtree(c["tmp"], ignore_errors=True)
+
+    def test_refuses_the_commit_without_any_interpreter(self):
+        if sys.platform == "win32":
+            self.skipTest("the hook is a bash script; Windows CI does not commit through it")
+        c = self._repo_with_shim_path()
+        try:
+            (c["bin"] / "python3").unlink()
+            (c["repo"] / "f.txt").write_text("x\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=c["repo"], env=c["env"], check=True)
+            done = subprocess.run(["git", "commit", "-m", "t"], cwd=c["repo"], env=c["env"],
+                                  capture_output=True, text=True)
+            self.assertNotEqual(done.returncode, 0, "a missing interpreter must refuse the commit")
+            self.assertIn("no python3 on PATH", done.stdout + done.stderr)
+            self.assertFalse((c["repo"] / "gate-ran").exists())
         finally:
             shutil.rmtree(c["tmp"], ignore_errors=True)
 

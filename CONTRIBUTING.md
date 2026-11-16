@@ -40,8 +40,9 @@ python tests/holdshort_decisions.py
 
 Set your intended Git author name and email in the clone before committing.
 The hook installer changes this clone's hook configuration, not your global
-configuration. The longer `setup_machine.sh` onboarding proof also changes the
-clone's author identity, so use that proof only in a clean, disposable clone.
+configuration. The longer `setup_machine.sh` onboarding proof supplies a temporary
+identity only to its proof commits. It rolls those commits back, so run that proof
+in a clean, disposable clone.
 
 ## Make a focused change
 

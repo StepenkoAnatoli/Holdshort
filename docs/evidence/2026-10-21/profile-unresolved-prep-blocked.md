@@ -32,7 +32,7 @@ slug and effort are supplied.
 
 ## What ran locally, and exact outcomes
 
-All commands were run in `C:\Users\PC\Desktop\gittoken\Holdshort` at the commit above.
+All commands were run in the author's Holdshort checkout at the commit above.
 
 | Command | Exit | Observed result |
 |---|---:|---|

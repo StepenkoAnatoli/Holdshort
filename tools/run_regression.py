@@ -83,6 +83,7 @@ CHECKS = [
     ("test_dispatch_budget", [sys.executable, "tools/test_dispatch_budget.py"]),
     ("test_dispatch_adapter", [sys.executable, "tools/test_dispatch_adapter.py"]),
     ("test_adapter_config", [sys.executable, "tools/test_adapter_config.py"]),
+    ("test_gemini_adapter", [sys.executable, "tools/test_gemini_adapter.py"]),
     ("test_billing_qualification", [sys.executable, "tools/test_billing_qualification.py"]),
     ("test_offline_deepseek_adapter", [sys.executable, "tools/test_offline_deepseek_adapter.py"]),
     ("test_eval_pool", [sys.executable, "tools/test_eval_pool.py"]),
@@ -121,6 +122,7 @@ CHECKS = [
     ("test_redact_text", [sys.executable, "tools/test_redact_text.py"]),
     ("test_host_watchdog", [sys.executable, "tools/test_host_watchdog.py"]),
     ("test_usage_snapshot", [sys.executable, "tools/test_usage_snapshot.py"]),
+    ("test_usage_attribution", [sys.executable, "tools/test_usage_attribution.py"]),
     ("test_project_scope", [sys.executable, "tools/test_project_scope.py"]),
     ("test_task_ids", [sys.executable, "tools/test_task_ids.py"]),
     ("test_host_dry_run", [sys.executable, "tools/test_host_dry_run.py"]),
@@ -134,6 +136,7 @@ CHECKS = [
     ("test_conform_spec", [sys.executable, "tools/test_conform_spec.py"]),
     ("test_watch_app_db_secrets", [sys.executable, "tools/test_watch_app_db_secrets.py"]),
     ("test_generic_host", [sys.executable, "tools/test_generic_host.py"]),
+    ("test_package_cli", [sys.executable, "tools/test_package_cli.py"]),
 ]
 
 

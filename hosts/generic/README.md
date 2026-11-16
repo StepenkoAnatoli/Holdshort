@@ -17,12 +17,32 @@ model calls, billing, and project state.
 
 ## Files
 
-- `host-policy.json` — your host's policy blocks (copy and adapt from
-  `hosts/claude-code/host-policy.json`).
 - `route.py` — a Python skeleton showing wiring. Replace model calls with your host's.
+- `full_loop.py` — policy validation, supervised command, dispatch dry-run and
+  session-close accounting report, all using temporary demo data.
+- `production_adapter.py` — a dry-run integration template despite its filename.
+  Its dispatch helper requires the host's ledger path; reuse that ledger across
+  every call and restart in a pilot. Authorized transport, qualification,
+  acceptance checks and outcome recording still belong to the host.
 
 ## Cross-platform notes
 
 - On Windows, use Git Bash or call the Python entry points directly
   (`python -m tools.host_watchdog ...`). The `make` targets assume bash.
 - All tools are stdlib-only; no third-party dependencies are required.
+
+## Installed tools and source checks
+
+`python -m pip install .` installs the Python tools and their runtime data,
+including adapter profiles. `holdshort-watchdog` works from the installation.
+The host examples remain source-checkout templates.
+
+The policy validator and regression gate need the checkout's skills, tests and
+Git hooks. Run `holdshort-validate-skills --repo /path/to/Holdshort --strict` or
+`holdshort-regression --repo /path/to/Holdshort`. Both refuse an incomplete
+directory instead of claiming a pass with no files to check. The gate still
+requires the checkout's hooks to be wired with `python tools/install_hooks.py`.
+
+The package install test builds and installs a wheel in a temporary directory,
+imports the provider adapters, and exercises all three installed commands:
+`python tools/test_package_install.py` (requires pip, setuptools and wheel).

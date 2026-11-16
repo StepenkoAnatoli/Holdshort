@@ -16,15 +16,15 @@ dependencies = []
 dev = ["pytest>=8"]
 
 [project.scripts]
-holdshort-validate-skills = "tools.validate_skills:main"
-holdshort-regression = "tools.run_regression:main"
+holdshort-validate-skills = "tools.package_cli:validate_skills"
+holdshort-regression = "tools.package_cli:regression"
 holdshort-watchdog = "tools.host_watchdog:main"
 
 [tool.setuptools]
 packages = ["tools"]
 
 [tool.setuptools.package-data]
-tools = ["*.json", "*.sh", "calibration/**/*"]
+tools = ["*.json", "*.sh", "profiles/*.json", "calibration/**/*"]
 
 [tool.ruff]
 line-length = 100

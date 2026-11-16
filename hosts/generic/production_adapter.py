@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Production host adapter template — full integration pattern.
+"""Host integration template — dry-run wiring, not a production router.
 
 Shows how to wire Holdshort into a coding-agent host:
   1. Policy check (validate_skills)
-  2. Dispatch with qualification (dispatch_adapter or config-driven)
+  2. Dispatch dry-run against a caller-owned, reusable ledger
   3. Supervised command execution (host_watchdog)
-  4. Outcome recording (conform_spec)
-  5. Shadow mode for evidence collection
+  4. Shadow mode for evidence collection
 
-Replace the model-call and billing sections with your host's implementation.
+The host must implement authorized transport, qualification, acceptance checks,
+and outcome recording before production use. Keep one ledger per pilot across
+calls and restarts so reservations, counters, and terminal stops remain durable.
 """
 from __future__ import annotations
 
@@ -27,10 +28,8 @@ def policy_check() -> int:
 
 
 def dispatch(profile: str, task_id: str, request: str, *, shadow: bool = False,
+            ledger: Path,
             qualification: str | None = None) -> tuple[int, dict]:
-    tmp = Path(tempfile.mkdtemp())
-    ledger = tmp / "ledger.jsonl"
-    out = tmp / "dispatch.json"
     cmd = [
         sys.executable, str(TOOLS / "live_dispatcher.py"),
         "--profile", profile, "--task-id", task_id, "--request", request,
@@ -42,10 +41,11 @@ def dispatch(profile: str, task_id: str, request: str, *, shadow: bool = False,
         cmd.append("--shadow")
     if qualification:
         cmd.extend(["--billing-qualification", qualification])
-    with open(out, "w") as f:
-        rc = subprocess.call(cmd, stdout=f)
-    result = json.loads(out.read_text()) if out.exists() else {}
-    return rc, result
+    completed = subprocess.run(cmd, capture_output=True, text=True)
+    if completed.stderr:
+        print(completed.stderr, file=sys.stderr, end="")
+    result = json.loads(completed.stdout) if completed.stdout.strip() else {}
+    return completed.returncode, result
 
 
 def supervise(command: list[str], task_id: str, state: Path, timeout: int = 30) -> int:
@@ -56,8 +56,8 @@ def supervise(command: list[str], task_id: str, state: Path, timeout: int = 30) 
     ])
 
 
-def main() -> int:
-    print("=== Production adapter (dry-run) ===")
+def run_demo(tmp: Path) -> int:
+    print("=== Host integration template (dry-run) ===")
 
     # 1. Policy check
     print("1. Policy check...")
@@ -66,9 +66,10 @@ def main() -> int:
         return 1
     print("   OK")
 
-    # 2. Dispatch in shadow mode (collect evidence, don't enforce)
+    # 2. Dispatch in shadow mode (label evidence, retaining every safeguard)
     print("2. Dispatch (shadow mode)...")
-    rc, result = dispatch("cloud-C", "prod-demo", "probe", shadow=True)
+    rc, result = dispatch("cloud-C", "prod-demo", "probe", shadow=True,
+                          ledger=tmp / "ledger.jsonl")
     print(f"   rc={rc} decision={result.get('decision')}")
     if rc not in (0, 1):
         print("   FAIL")
@@ -76,7 +77,6 @@ def main() -> int:
 
     # 3. Supervised command
     print("3. Supervised command...")
-    tmp = Path(tempfile.mkdtemp())
     state = tmp / "state.json"
     rc = supervise([sys.executable, "-c", "print('ok')"], "prod-demo", state)
     print(f"   rc={rc}")
@@ -84,12 +84,16 @@ def main() -> int:
         print("   FAIL")
         return 1
 
-    print("=== Production adapter: DONE (dry-run) ===")
+    print("=== Host integration template: DONE (dry-run) ===")
     print("Replace model calls and billing with your host's implementation.")
-    print("Use --shadow for evidence collection before enforcing caps.")
+    print("Use --shadow to label evidence; caps and terminal stops remain enforced.")
     return 0
+
+
+def main() -> int:
+    with tempfile.TemporaryDirectory() as directory:
+        return run_demo(Path(directory))
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-PY

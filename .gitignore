@@ -31,3 +31,8 @@ tools/task_state/
 # XDG paths (e.g. `gh`, which wrote .local/state/gh/device-id here on 2026-10-11)
 # then drop machine-local state into the checkout. Byproduct, not evidence.
 .local/
+
+# Python package build outputs
+build/
+dist/
+*.egg-info/

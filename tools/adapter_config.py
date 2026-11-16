@@ -1,7 +1,7 @@
 """Unified adapter profile configuration loader.
 
-All provider adapters should describe their facts in this common schema so the
-security-critical transport in dispatch_core can stay provider-agnostic.
+Provider facts use this common schema. Each adapter still enforces its own
+endpoint authorization, payload rules, and qualification before transport.
 """
 from __future__ import annotations
 

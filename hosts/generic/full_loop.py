@@ -23,7 +23,7 @@ def step(name, fn):
     return rc
 
 
-def main() -> int:
+def run_demo(tmp: Path) -> int:
     # 1. Policy check
     def policy():
         return subprocess.call([sys.executable, str(TOOLS / "validate_skills.py"), "--strict"])
@@ -31,7 +31,6 @@ def main() -> int:
         return 1
 
     # 2. Supervised harmless command
-    tmp = Path(tempfile.mkdtemp())
     state = tmp / "state.json"
     def supervised():
         return subprocess.call([
@@ -58,10 +57,19 @@ def main() -> int:
         return 1
     print("    ", json.loads(out.read_text())["decision"])
 
+    # 4. Produce the session-close accounting report from this same ledger.
+    if step("session-close report", lambda: subprocess.call([
+            sys.executable, str(TOOLS / "pilot_close.py"), "--ledger", str(ledger)])) != 0:
+        return 1
+
     print("full_loop: DONE (dry-run)")
     return 0
 
 
+def main() -> int:
+    with tempfile.TemporaryDirectory() as directory:
+        return run_demo(Path(directory))
+
+
 if __name__ == "__main__":
     raise SystemExit(main())
-PY

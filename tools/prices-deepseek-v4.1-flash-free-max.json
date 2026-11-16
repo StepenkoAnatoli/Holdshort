@@ -31,5 +31,5 @@
     "max_cost_per_pilot_usd": null,
     "expires_at": null
   },
-  "statement": "estimate-only bounds for offline planning. The target's vendor list price is $0.00 per MTok; the conservative bound is $0.30 input / $1.20 output per MTok from the metered sibling. Cache pricing is bounded at $0.006 per MTok for cached input. These are not bills, not observations, and not authorization to spend."
+  "statement": "estimate-only bounds for offline planning. The target's vendor list price is $0.00 per MTok; the conservative bound is $0.30 input / $1.20 output per MTok from the metered sibling. Cached input is listed at $0.006 per MTok, but the bound prices every prompt token, cached or not, at the higher of the input and cached rates ($0.30), so a cache hit never lowers it. These are not bills, not observations, and not authorization to spend."
 }

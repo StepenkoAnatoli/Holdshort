@@ -18,5 +18,5 @@
     "cloud-F": "Claude Fable 5.1"
   },
   "refused_profiles": ["cloud-C-alt"],
-  "notes": "Config documents provider facts; security-critical transport stays in dispatch_core. Not yet consumed by dispatch_adapter (kept for compatibility)."
+  "notes": "Consumed by dispatch_adapter. These mappings do not authorize egress; the adapter also requires a matching, fresh billing qualification."
 }

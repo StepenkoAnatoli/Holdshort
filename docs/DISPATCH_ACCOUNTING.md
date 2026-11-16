@@ -12,11 +12,14 @@ or savings.
 
 ## Shadow mode (G2 evidence collection)
 
-Run the dispatcher with `--shadow` to collect real usage without enforcing caps.
-In shadow mode, every `_check` returns `None` (no block), but reservations and
-settlement still occur and the ledger records `mode: "shadow"` alongside the
-observed cost. Use this to compare actual vs. estimated cost before making a
-strict upper-bound claim. Shadow runs are never a substitute for qualification. The real adapter now requires an explicit qualification record and
+Run the dispatcher with `--shadow` to label observations for evidence collection.
+It applies the same checks as the default mode: stopped or verified tasks,
+unsettled usage, missing verification reservations, deadlines, repair limits,
+and task/pilot caps still block before transport. Reservations and settlement
+remain durable, and the ledger records `mode: "shadow"` alongside the observed
+cost. The flag does not authorize egress or waive qualification. Use a separate
+ledger for a separate evaluation; switching modes never resets existing stops.
+The real adapter requires an explicit qualification record and
 uses a provider-enforced input ceiling for modeled token reservations. Injected
 estimate-only transports retain their documented 5% margin and carry their own
 qualification responsibility. An unexpected overrun is recorded and stops

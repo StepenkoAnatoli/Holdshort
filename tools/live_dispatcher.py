@@ -238,8 +238,8 @@ class LiveDispatcher:
     def _check(self, doc, task, profile, work, review, purpose, review_calls):
         def reject(decision, reason):
             return self._record(doc, task, profile, decision, reason, purpose=purpose)
-        if self.shadow:
-            return None
+        # Shadow labels observations; it never overrides authorization, terminal
+        # state, reservations, accounting uncertainty, or the task/pilot limits.
         if task.get("abandoned", False):
             return reject("blocked-abandoned", "task was abandoned; counters and evidence retained")
         if task["verified"]:
@@ -675,7 +675,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--task-store", default=None,
                     help="optional JSON state mirrors; authoritative counters always persist beside the ledger")
     ap.add_argument("--shadow", action="store_true",
-                    help="shadow mode: do not enforce caps; record actual vs. estimated cost for G2 evidence")
+                    help="label observations as shadow; retain every dispatch safeguard and cap")
     args = ap.parse_args(argv)
 
     prices = load_prices(PRICES_PATH)

@@ -57,7 +57,7 @@ def response(*, content="ok", finish="stop", tool_calls=None,
     return doc
 
 
-def tool(name="read_file", arguments='{"path": "SPEC.md"}', call_id="call_1"):
+def tool(name="read_file"):
     return {
         "type": "function",
         "function": {
@@ -273,6 +273,9 @@ class OfflineAdapterTests(unittest.TestCase):
                     "prompt_cache_hit_tokens": 3})
         bad.append({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15,
                     "prompt_cache_hit_tokens": 3, "prompt_cache_miss_tokens": 9})
+        bad.append({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15,
+                    "prompt_tokens_details": {"cached_tokens": 4},
+                    "prompt_cache_hit_tokens": 3, "prompt_cache_miss_tokens": 7})
         for usage in bad:
             with self.subTest(usage=usage):
                 transport = oda.MockTransport([response(usage=usage)])
@@ -282,6 +285,9 @@ class OfflineAdapterTests(unittest.TestCase):
                 self.assertEqual(transport.calls_made, 1)
 
     def test_over_ceiling_usage_is_refused(self):
+        # These are the most expensive responses the adapter can see, so the refusal
+        # carries the same pinned bound a usable answer would: $0.30 per prompt token
+        # and $1.20 per completion token, per million.
         cases = [
             dict(prompt=168_001, completion=1, cached=None),
             dict(prompt=100, completion=32_001, cached=None),
@@ -293,6 +299,14 @@ class OfflineAdapterTests(unittest.TestCase):
                 with self.assertRaises(oda.DispatchRefused) as caught:
                     fn(oda.PROFILE_ID, "hello")
                 self.assertIsNotNone(caught.exception.usage)
+                self.assertAlmostEqual(caught.exception.cost_usd_bound,
+                                       (case["prompt"] * 0.30 + case["completion"] * 1.20) / 1e6,
+                                       delta=1e-15)
+        # exactly at both ceilings (168,000 + 32,000 = the 200,000 context) is accepted
+        transport = oda.MockTransport([response(prompt=168_000, completion=32_000, cached=None)])
+        result = oda.build_offline_dispatch_fn(transport=transport).complete(oda.PROFILE_ID, "x")
+        self.assertAlmostEqual(result.cost_usd_bound, (168_000 * 0.30 + 32_000 * 1.20) / 1e6,
+                               delta=1e-15)
 
     def test_partial_failure_keeps_usage_and_cost_bound(self):
         self.transport.queue(response(finish="aborted", prompt=12, completion=7, cached=0, reasoning=2))
@@ -301,7 +315,10 @@ class OfflineAdapterTests(unittest.TestCase):
         self.assertEqual(caught.exception.finish_reason, "aborted")
         self.assertIsNotNone(caught.exception.usage)
         self.assertEqual(caught.exception.usage.reasoning_tokens, 2)
-        self.assertGreater(caught.exception.cost_usd_bound, 0)
+        # 12 prompt tokens at $0.30 and 7 completion tokens at $1.20 per MTok: the
+        # refusal keeps the same bound a usable answer would have carried
+        self.assertAlmostEqual(caught.exception.cost_usd_bound, (12 * 0.30 + 7 * 1.20) / 1e6,
+                               delta=1e-15)
         self.assertEqual(self.transport.calls_made, 1)
 
     def test_transport_failure_is_not_retried(self):
@@ -330,19 +347,28 @@ class OfflineAdapterTests(unittest.TestCase):
             self.fn(oda.PROFILE_ID, "hello")
 
     def test_wrong_choice_shape_is_refused(self):
-        for mutate in (
-            lambda doc: doc.update(choices=[]),
-            lambda doc: doc["choices"][0].update(index=1),
-            lambda doc: doc["choices"][0].update(finish_reason="mystery"),
-            lambda doc: doc["choices"][0].update(message={"role": "user", "content": "x"}),
+        # usage is parsed after the choice count and index, so those refusals carry no
+        # bound; the later ones were billed and keep the 12 + 7 token bound
+        billed = (12 * 0.30 + 7 * 1.20) / 1e6
+        for name, mutate, bound in (
+            ("no choice", lambda doc: doc.update(choices=[]), None),
+            ("index 1", lambda doc: doc["choices"][0].update(index=1), None),
+            ("undocumented finish", lambda doc: doc["choices"][0].update(finish_reason="mystery"),
+             billed),
+            ("no assistant message",
+             lambda doc: doc["choices"][0].update(message={"role": "user", "content": "x"}), billed),
         ):
-            with self.subTest(mutate=mutate):
+            with self.subTest(name):
                 doc = response()
                 mutate(doc)
                 transport = oda.MockTransport([doc])
                 fn = oda.build_offline_dispatch_fn(transport=transport)
-                with self.assertRaises(oda.DispatchRefused):
+                with self.assertRaises(oda.DispatchRefused) as caught:
                     fn(oda.PROFILE_ID, "hello")
+                if bound is None:
+                    self.assertIsNone(caught.exception.cost_usd_bound)
+                else:
+                    self.assertAlmostEqual(caught.exception.cost_usd_bound, bound, delta=1e-15)
 
     def test_tool_call_arguments_must_be_valid_json(self):
         call = {"id": "call_1", "type": "function",
@@ -354,6 +380,8 @@ class OfflineAdapterTests(unittest.TestCase):
                 "tools": [tool()],
             })
         self.assertIsNotNone(caught.exception.usage)
+        self.assertAlmostEqual(caught.exception.cost_usd_bound, (12 * 0.30 + 7 * 1.20) / 1e6,
+                               delta=1e-15)
 
     def test_finish_reason_and_tool_calls_must_agree(self):
         call = {"id": "call_1", "type": "function",
@@ -377,6 +405,61 @@ class OfflineAdapterTests(unittest.TestCase):
         b = oda.build_offline_dispatch_fn(transport=with_reasoning).complete(oda.PROFILE_ID, "hello")
         self.assertEqual(a.output_tokens, b.output_tokens)
         self.assertEqual(a.cost_usd_bound, b.cost_usd_bound)
+
+    def test_cost_bound_value_is_pinned(self):
+        # The bound is the adapter's main safety claim, so its value is pinned, not only
+        # its sign: every prompt token at max(input, cached) = $0.30 and every completion
+        # token (reasoning included) at the $1.20 output rate, per million tokens. A bound
+        # 1000x too small, or completion billed at the input rate, must fail here.
+        transport = oda.MockTransport([response(prompt=12, completion=7, cached=0, reasoning=0)])
+        result = oda.build_offline_dispatch_fn(transport=transport).complete(oda.PROFILE_ID, "x")
+        self.assertAlmostEqual(result.cost_usd_bound, (12 * 0.30 + 7 * 1.20) / 1e6, delta=1e-15)
+        self.assertAlmostEqual(result.cost_usd_bound, 1.2e-5, delta=1e-15)
+        # 1.5 micro-dollars: rounding or truncating to whole micro-dollars fails here
+        single = oda.MockTransport([response(prompt=1, completion=1, cached=0, reasoning=0)])
+        result = oda.build_offline_dispatch_fn(transport=single).complete(oda.PROFILE_ID, "x")
+        self.assertAlmostEqual(result.cost_usd_bound, 1.5e-6, delta=1e-15)
+        large = oda.MockTransport([response(prompt=150_000, completion=32_000, cached=0,
+                                            reasoning=30_000)])
+        result = oda.build_offline_dispatch_fn(transport=large).complete(oda.PROFILE_ID, "x")
+        self.assertAlmostEqual(result.cost_usd_bound, 150_000 * 0.30 / 1e6 + 32_000 * 1.20 / 1e6,
+                               delta=1e-12)
+
+    def test_max_tokens_is_capped_at_the_documented_output_limit(self):
+        # the completion ceiling check trusts this value, so it must not exceed 32,000
+        for bad in (32_001, 100_000, 0, -1, True, 1.0):
+            with self.subTest(max_tokens=bad):
+                with self.assertRaises(oda.DispatchRefused):
+                    oda.build_offline_dispatch_fn(transport=oda.MockTransport(), max_tokens=bad)
+        transport = oda.MockTransport([response()])
+        oda.build_offline_dispatch_fn(transport=transport, max_tokens=32_000).complete(
+            oda.PROFILE_ID, "x")
+        self.assertEqual(transport.calls[0]["payload"]["max_tokens"], 32_000)
+
+    def test_cached_rate_above_input_rate_bounds_every_prompt_token(self):
+        # The max() hedge: if the cached rate is ever priced above the base input rate,
+        # every prompt token (cached or not) is bounded at the cached rate.
+        with tempfile.TemporaryDirectory() as tmp:
+            prices = json.loads(PRICES.read_text(encoding="utf-8"))
+            prices["conservative_bound"]["cached_input_rate_per_mtok"] = 0.5
+            price_path = Path(tmp) / PRICES.name
+            price_path.write_text(json.dumps(prices), encoding="utf-8")
+            profile = json.loads(PROFILE.read_text(encoding="utf-8"))
+            profile["price_sha256"] = hashlib.sha256(
+                price_path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+            ).hexdigest()
+            profile_path = Path(tmp) / PROFILE.name
+            profile_path.write_text(json.dumps(profile), encoding="utf-8")
+            for cached in (None, 0, 40, 100):
+                with self.subTest(cached=cached):
+                    transport = oda.MockTransport([response(prompt=100, completion=10,
+                                                            cached=cached, reasoning=None)])
+                    fn = oda.build_offline_dispatch_fn(profile_path=profile_path,
+                                                       prices_path=price_path,
+                                                       transport=transport)
+                    result = fn.complete(oda.PROFILE_ID, "x")
+                    self.assertAlmostEqual(result.cost_usd_bound, (100 * 0.5 + 10 * 1.20) / 1e6,
+                                           delta=1e-15)
 
     def test_cached_input_tokens_never_lower_the_conservative_bound(self):
         # The price file's cached rate is lower than input; the bound uses the
