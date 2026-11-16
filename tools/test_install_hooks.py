@@ -167,6 +167,77 @@ class OnboardingPath(unittest.TestCase):
             shutil.rmtree(c["tmp"], ignore_errors=True)
 
 
+class SetupMachineSafety(unittest.TestCase):
+    """Setup failures must preserve the checkout and the user's Git identity."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.env = dict(os.environ)
+        self.env.update(GIT_CONFIG_GLOBAL=str(self.root / "global"),
+                        GIT_CONFIG_SYSTEM=str(self.root / "system"))
+        (self.root / "system").write_text("", encoding="utf-8")
+        self.run_git("init", "-q")
+        self.run_git("config", "user.name", "Original Developer")
+        self.run_git("config", "user.email", "original@example.invalid")
+        (self.root / "README.md").write_text("original\n", encoding="utf-8")
+        self.run_git("add", "README.md")
+        self.run_git("commit", "-qm", "initial")
+        self.head = self.run_git("rev-parse", "HEAD").stdout
+
+    def run_git(self, *args):
+        return subprocess.run(["git", *args], cwd=self.root, env=self.env,
+                              capture_output=True, text=True, check=True)
+
+    def assert_preserved(self):
+        self.assertEqual(self.run_git("rev-parse", "HEAD").stdout, self.head)
+        self.assertEqual(self.run_git("config", "user.name").stdout.strip(), "Original Developer")
+        self.assertEqual(self.run_git("config", "user.email").stdout.strip(), "original@example.invalid")
+        self.assertEqual((self.root / "README.md").read_text(), "original\n")
+
+    def test_failed_clone_stops_before_touching_current_checkout(self):
+        launchers = [["bash", str(TOOLS / "setup_machine.sh"), "missing-repository", "destination"]]
+        if sys.platform == "win32" and shutil.which("powershell"):
+            launchers.append(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                              str(TOOLS / "setup_machine.ps1"), "-RepoUrl", "missing-repository",
+                              "-Dest", "destination"])
+        for command in launchers:
+            with self.subTest(launcher=command[0]):
+                done = subprocess.run(command, cwd=self.root, env=self.env,
+                                      capture_output=True, text=True, timeout=60)
+                self.assertNotEqual(done.returncode, 0)
+                self.assertIn("clone of missing-repository", done.stdout + done.stderr)
+                self.assertNotIn("wiring core.hooksPath", done.stdout + done.stderr)
+                self.assert_preserved()
+
+    def test_rejected_proof_preserves_identity_and_head(self):
+        # Reach the scratch commit with a deliberately refusing hook; earlier
+        # probes are stubbed so this safety test does not recursively run the gate.
+        scripts = self.root / "tools"
+        scripts.mkdir()
+        (scripts / "install_hooks.py").write_text(
+            "import pathlib, subprocess\n"
+            "p = pathlib.Path('.git/hooks/pre-commit')\n"
+            "p.write_text('#!/bin/sh\\nexit 1\\n')\n"
+            "p.chmod(0o755)\n"
+            "subprocess.run(['git', 'config', 'core.hooksPath', '.git/hooks'], check=True)\n",
+            encoding="utf-8")
+        (scripts / "run_regression.py").write_text("print('stub gate')\n", encoding="utf-8")
+        (scripts / "check_message_schema.py").write_text("pass\n", encoding="utf-8")
+        (scripts / "redact_text.py").write_text(
+            "import sys\n"
+            "sys.stdin.read()\n"
+            "if '--check' in sys.argv: sys.exit(1)\n"
+            "print('[REDACTED-github-pat-fine-grained]')\n", encoding="utf-8")
+        done = subprocess.run(["bash", str(TOOLS / "setup_machine.sh")], cwd=self.root,
+                              env=self.env, capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("hook did not allow a clean commit", done.stdout + done.stderr)
+        self.assert_preserved()
+        self.assertEqual(self.run_git("diff", "--cached", "--name-only").stdout, "")
+
+
 class HookInterpreter(unittest.TestCase):
     """6. the hook resolves `python3`, never a bare `python`, and fails closed without one."""
 

@@ -34,6 +34,7 @@ PY="$(command -v python3 || command -v python || true)"
 [ -n "$PY" ] || { echo "setup_machine: FAIL — no python3 (or python) on PATH" >&2; exit 1; }
 
 fail() { echo "setup_machine: FAIL — $*"; shift || true; exit 1; }
+die() { echo "setup_machine: FAIL — $*" >&2; exit 1; }
 
 REPO_URL="${1:-}"
 if [ -n "$REPO_URL" ]; then
@@ -47,11 +48,8 @@ else
 fi
 
 if ! git diff --quiet || ! git diff --cached --quiet; then
-  # NOTE: fail (not die) — die() is defined further below.
   fail "worktree has uncommitted changes to tracked files — commit or stash them first; PROOF 1 rolls HEAD and must run on a clean tree (this guard exists because the proof once destroyed uncommitted work)"
 fi
-
-die() { echo "setup_machine: FAIL — $*" >&2; exit 1; }
 
 echo "==> wiring core.hooksPath"
 "$PY" tools/install_hooks.py || die "install_hooks"
@@ -83,15 +81,12 @@ python3 tools/check_message_schema.py >/dev/null 2>&1 || die "message schema gua
 echo "    PASS — schema guard green (absent store skips clean)"
 
 echo "==> PROOF 1: pre-commit hook fires on a clean scratch commit"
-# Scratch identity, LOCAL to this clone only: a bare runner/VM has no
-# user.name/user.email, and without it the proof commit fails before the
-# hook ever runs — masking a working gate as "broken wiring".
-git config user.name  "setup-gate-proof" || die "local user.name"
-git config user.email "setup-gate-proof@example.invalid" || die "local user.email"
+# Supply identity only to each proof commit, preserving the user's config.
+# A bare runner/VM otherwise fails before its hook runs.
 SCRATCH="setup_gate_proof_$$"
 echo "# gate proof (rolled back)" > "$SCRATCH.txt"
 git add "$SCRATCH.txt"
-if git commit -m "setup: gate proof (rolled back, not pushed)" >/dev/null 2>&1; then
+if git -c user.name=setup-gate-proof -c user.email=setup-gate-proof@example.invalid commit -m "setup: gate proof (rolled back, not pushed)" >/dev/null 2>&1; then
   # keep the tree clean: the proof commit is dropped immediately, never pushed
   git reset -q --hard HEAD~1
   rm -f "$SCRATCH.txt"
@@ -116,7 +111,7 @@ PROOF
 cat "$FILE_SLUG" >> README.md
 rm -f "$FILE_SLUG"
 git add README.md
-if git commit -m "setup: leak proof (must be refused)" >/dev/null 2>&1; then
+if git -c user.name=setup-gate-proof -c user.email=setup-gate-proof@example.invalid commit -m "setup: leak proof (must be refused)" >/dev/null 2>&1; then
   git reset -q --hard HEAD~1
   die "hook ACCEPTED a fake key — enforcement is not working"
 fi

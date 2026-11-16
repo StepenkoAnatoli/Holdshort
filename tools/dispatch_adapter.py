@@ -21,6 +21,11 @@ belongs on api.openai.com and is NOT approved for this pilot.
 """
 from __future__ import annotations
 
+try:
+    import dispatch_core as _dc
+except ImportError:
+    from tools import dispatch_core as _dc
+
 import json
 import hashlib
 import math
@@ -42,23 +47,21 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 PRICES_PATH = REPO_ROOT / "tools" / "prices-2.json"
 QUALIFICATION_PATH = REPO_ROOT / "tools" / "live_billing_qualification.json"
 
-APPROVED_ENDPOINT = "https://api.anthropic.com"
-MODEL_FOR_PROFILE: Dict[str, str] = {
-    "cloud-S": "claude-sonnet-5-5",
-    "cloud-C": "claude-haiku-5-5",
-    "cloud-O": "claude-opus-5-5",
-    "cloud-F": "claude-fable-5-1",
-}
-PRICE_MODEL_FOR_PROFILE = {
-    "cloud-S": "Claude Sonnet 5.5", "cloud-C": "Claude Haiku 5.5",
-    "cloud-O": "Claude Opus 5.5", "cloud-F": "Claude Fable 5.1",
-}
+try:
+    import adapter_config as _ac
+except ImportError:
+    from tools import adapter_config as _ac
+
+_PROFILE_PATH = REPO_ROOT / "tools" / "profiles" / "anthropic.json"
+_PROFILE = _ac.load(_PROFILE_PATH)
+APPROVED_ENDPOINT = _PROFILE["approved_endpoint"]
+MODEL_FOR_PROFILE: Dict[str, str] = _ac.model_map(_PROFILE)
+PRICE_MODEL_FOR_PROFILE = _ac.price_model_map(_PROFILE)
 MAX_TOKENS_DEFAULT = 4096
 REQUEST_TIMEOUT_S = 120
 
 
-class DispatchRefused(RuntimeError):
-    """Fail-closed refusal: caller must not attempt any other route."""
+DispatchRefused = _dc.DispatchRefused
 
 
 class _BillingContext:
@@ -112,43 +115,15 @@ class _BillingContext:
         return limit
 
 
-class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Refuse redirects before urllib can forward a credential-bearing request."""
-
-    def http_error_302(self, req, fp, code, msg, headers):
-        fp.close()
-        raise DispatchRefused("HTTP redirect refused: only the approved endpoint is allowed")
-
-    http_error_301 = http_error_302
-    http_error_303 = http_error_302
-    http_error_307 = http_error_302
-    http_error_308 = http_error_302
+_NoRedirectHandler = _dc._NoRedirectHandler
 
 
 # Do not use urlopen's global opener: its default redirect handler can copy
 # x-api-key to another origin. Both token counting and dispatch use this opener.
-_HTTP_OPENER = urllib.request.build_opener(_NoRedirectHandler())
+_HTTP_OPENER = _dc.build_opener()
 
 
-def parse_env_file(path: Path) -> Dict[str, str]:
-    """Tiny .env parser: KEY=VALUE lines; export- and quote-tolerant; no eval."""
-    out: Dict[str, str] = {}
-    if not path.is_file():
-        return out
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("export "):
-            line = line[7:]
-        if "=" not in line:
-            continue
-        k, _, v = line.partition("=")
-        k = k.strip()
-        v = v.strip().strip('"').strip("'")
-        if k:
-            out[k] = v
-    return out
+parse_env_file = _dc.parse_env_file
 
 
 def load_api_key(env_path: Optional[Path] = None, env_fallback: Optional[Dict[str, str]] = None) -> str:
