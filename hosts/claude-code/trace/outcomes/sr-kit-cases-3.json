@@ -1,0 +1,68 @@
+{
+ "task-id": "sr-kit-cases",
+ "outcome": "accepted",
+ "owner-profile": "cc-opus-high",
+ "original-brief-fingerprint": "e0c705cf76d3f6363ffe4761be540151a0276f3e2950dda3116a39f2189ec545",
+ "evidence": {
+  "checks": [
+   {
+    "command": "python tools/test_calibration_kit.py",
+    "exit-code": 0,
+    "output-ref": "lead re-run at ce86512 (TEMP/TMP on C:): 112 tests OK, 1 skipped, 418 s; red-first and guard-removal proofs in reports/sr-kit-cases-1.md and -fix-1.md (26+1 build guards, P1-P7 fix round), re-run by both reviewers"
+   },
+   {
+    "command": "python tools/check_secrets.py",
+    "exit-code": 0,
+    "output-ref": "clean (0 hits) at ce86512, lead's run"
+   },
+   {
+    "command": "python tools/check_calibration_evidence.py; python tools/qualification_table.py --check",
+    "exit-code": 0,
+    "output-ref": "3 folders, 0 failures; table unchanged (lead's run at ce86512)"
+   },
+   {
+    "command": "python tools/run_regression.py (pre-commit hook)",
+    "exit-code": 0,
+    "output-ref": "REGRESSION GATE PASS on each of f9e7b3b, 607dd30, 7ae4577, ce86512 (unit reports)"
+   },
+   {
+    "command": "refute-first review",
+    "exit-code": 0,
+    "output-ref": "wf_84740cc4-275: review FIX (R-1 S3, R-2..R-6 S4), fix round 1 7ae4577, re-review ACCEPT with RR-1..RR-3 S4 open (reports/sr-kit-cases-rereview-1.md)"
+   }
+  ],
+  "actual-spend": null,
+  "actual-tokens": 696772,
+  "actual-spend-basis": "estimate-only",
+  "files-touched": [
+   "CHANGELOG.md",
+   "docs/orchestration/2026-10-19-calibration-run-4/reports/sr-kit-cases-1.md",
+   "docs/orchestration/2026-10-19-calibration-run-4/reports/sr-kit-cases-fix-1.md",
+   "docs/orchestration/2026-10-19-calibration-run-4/reports/sr-kit-cases-rereview-1.md",
+   "docs/orchestration/2026-10-19-calibration-run-4/reports/sr-kit-cases-review-1.md",
+   "tests/fixtures/calibration-evidence/a-protocol-frozen/fixture-host-calibration-1/observations.json",
+   "tests/fixtures/calibration-evidence/b-prongs-declared/fixture-host-calibration-1/observations.json",
+   "tests/fixtures/calibration-evidence/c-scores-derivable/fixture-host-calibration-1/observations.json",
+   "tests/fixtures/calibration-evidence/d-fewer-prong-pass-flagged/fixture-host-calibration-1/observations.json",
+   "tests/fixtures/calibration-evidence/e-pin-category-mapping/fixture-host-calibration-1/observations.json",
+   "tests/fixtures/calibration-evidence/f-judging-profile-named/fixture-host-calibration-1/observations.json",
+   "tests/fixtures/calibration-evidence/g-relayed-chat-statement/fixture-host-calibration-1/observations.json",
+   "tests/fixtures/calibration-evidence/h-no-secrets-or-bodies/fixture-host-calibration-1/observations.json",
+   "tests/fixtures/calibration-evidence/pass/fixture-host-calibration-1/observations.json",
+   "tests/fixtures/calibration/golden-no-category/adjudication.json",
+   "tests/fixtures/calibration/golden-no-category/clusters.md",
+   "tests/fixtures/calibration/golden-no-category/observations.json",
+   "tests/fixtures/calibration/golden-no-category/results-table.md",
+   "tests/fixtures/calibration/golden-no-category/scores.json",
+   "tests/fixtures/calibration/golden-no-category/tokens-and-estimates.md",
+   "tests/fixtures/calibration/golden-no-category/void-cells.json",
+   "tools/calibration/README.md",
+   "tools/calibration/grade.sh",
+   "tools/calibration/observations.py",
+   "tools/calibration/run.template.js",
+   "tools/calibration/subject-pack/README.md",
+   "tools/test_calibration_kit.py"
+  ],
+  "notes": "draft PR #120 (build/sr-kit-cases, ce86512), merge is the owner's. Lead-approved deviation, owner-confirmed: tests/fixtures/calibration-evidence/** regenerated only by --write-fixtures (outside the decided permitted-effects). Tokens: 142609 (first build, wf_9a4da8aa-094, stopped at STOP-1) + 554163 (continuation wf_84740cc4-275, 4 agents); a first launch wf_fb88b23e-3e1 was stopped for the TEMP fault before any change and its tokens are not counted (unknown). Open S4: RR-1 timeout test vacuous under load, RR-2 ignored files under an invariant dir, RR-3 required path may be uncommitted. Follow-ups FU-1..FU-5 before the T1 runs."
+ }
+}
