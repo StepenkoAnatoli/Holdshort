@@ -1,6 +1,14 @@
-# Lead restart report, run 4, sr-pack-4a (2026-10-25 to 2026-11-01)
+# Lead restart report, run 4, sr-pack-4a (updated 2026-11-16)
 
-Result: sr-pack-4a ACCEPTED (check 5, 2f73c9f, draft PR #122, stacked on #120). The kit change it depends on, lead
+Current status (2026-11-16): GitHub already contains round 15 on both kit and pack.
+At the start of the PR audit, #120 was `283f9fe`, #122 was `36a136f`, and #119 was
+`42a12d9`. The old instructions to force-push round 14 or 15 are obsolete. Repair
+commits refresh these branches against main `059c5aa` without rewriting history;
+use the PR's current head and checks for merge decisions. See the appended audit
+entry in RUN.md and the current Next section. Historical ACCEPTs below apply to
+the specific reviewed commits; they are not new approvals of subsequent changes.
+
+Historical result: sr-pack-4a ACCEPTED (check 5, 2f73c9f, draft PR #122, stacked on #120). The kit change it depends on, lead
 integrations 2-8 on build/sr-kit-cases (#120, head 3ed05d4), is ACCEPTED by check 8. Nothing merged; merges are yours.
 
 After those verdicts a review loop (fifteen rounds of fresh reviewers) found more, so the heads to review moved; see RUN.md,
@@ -113,8 +121,8 @@ rebases of the pack branch replaced the pack's, so the ids on the branches now a
   start; fixed in 36a136f after a rebase onto 283f9fe (two start-sequence rows, 127 events in a de Bruijn order holding
   every run of three of five events; 37 rows; fifty-nine wrong fixes, W-j5, disclosed since round 13, caught by the same
   rows; accepted0 5e57e41d). The docs review found nothing new.
-- heads now: kit 283f9fe (pushed, #120), pack 36a136f (committed, not pushed: see Next), docs the RUN.md commit
-  after c34cce6 (pushed, #119). Outcome seq 3 ("accepted", check 5's head) is append-only and stays.
+- Round-15 heads observed on GitHub during the 2026-11-16 audit: kit 283f9fe (#120), pack 36a136f (#122),
+  docs 42a12d9 (#119), all pushed. Outcome seq 3 ("accepted", check 5's head) is append-only and stays.
 - ids on the branches (round-by-round id -> id on the branch now, matched by subject):
 
   | what | as committed | on the branch now |
@@ -246,12 +254,26 @@ rebases of the pack branch replaced the pack's, so the ids on the branches now a
   disclosed); HostPackX21 with the read-only clone 18 run, OK, exit 0 in 35798 s; the clone is unchanged; make-repo
   builds base0 4eaf584a and accepted0 5e57e41d; gate PASS on 36a136f.
 
-## Next (yours)
-Kit 283f9fe (#120) and this branch (#119) are pushed. Origin build/sr-pack-4a is still round 12's b0f14a3 (rounds 13 and
-14 were never pushed), so #122 shows b0f14a3 until the round-15 commit 36a136f (round 14's ec9d744 rebased onto
-283f9fe, with round 15 on top) is pushed; that push is yours:
-`git push --force-with-lease=build/sr-pack-4a:b0f14a3fbe644d3cffb57ed033e8f6608d5e1d6e origin build/sr-pack-4a`
-(from the pack worktree, which holds 36a136f; it refuses if origin's pack is no longer b0f14a3, which it was when
-round 15 ended). Then review and merge #120, then #122, then #119. By your stop rule one more review round follows;
-if it finds only a single S4, that is documented and the loop stops. Plan step 5 (sr-policy-7, sr-packs-t1) waits for
-you; follow-ups FU-1..FU-5 on #120 are still open.
+## Next
+
+1. Review the repair commits and current CI results. The kit's two failing Ubuntu
+   checks came from using `rmdir()` on a POSIX directory symlink in its test cleanup;
+   the repair unlinks symlinks and removes Windows junctions as directory links.
+   The kit README now places dependency installs outside every Git repository,
+   including historyless checkouts (KR5-1 / IC5-2).
+2. Merge #120 before #122; merge #119 after those when its recorded status is
+   accepted. Main requires the regression-gate check and an up-to-date branch, so
+   refresh remaining branches and rerun checks after each main merge. No force-push
+   is needed for the current stack. #125 and #118 are independent of that stack.
+3. The prior stop rule still calls for another fresh review after round 15. This
+   audit repairs concrete PR failures and stale handoffs; it does not claim a new
+   independent review-loop ACCEPT or a new MoonAliza qualification run.
+4. Finish plan step 5: sr-policy-7 and sr-packs-t1, including FU-1..FU-5 from #120,
+   before T1 runs. The four T1 categories are build-core, build-tests,
+   research-collect, and docs-mechanical. Provider comparison runs and usage
+   attribution integration remain separate work (issues #57-#61); merged offline
+   preparation is not evidence of a live run or complete integration.
+
+The round-15 MoonAliza regrade recorded in RUN.md took 35,798 seconds and required
+its read-only source clone. Ordinary CI skips the ten clone-dependent tests.
+Keep that distinction explicit when reporting validation of the refreshed branch.

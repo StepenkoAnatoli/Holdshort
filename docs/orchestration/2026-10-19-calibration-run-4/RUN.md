@@ -1246,3 +1246,37 @@ read only, for the subject trees the packs export.
 - Heads: kit 283f9fe (pushed, #120), docs this entry's commit (pushed, #119), pack 36a136f (committed, NOT pushed:
   origin and #122 show b0f14a3; 36a136f is round 14's ec9d744 rebased onto 283f9fe with round 15 on top and needs the
   owner's force-push with the lease pinned to b0f14a3; the command is in Next of the lead restart report).
+
+## 2026-11-16 - PR readiness audit and handoff correction
+- Observed on GitHub at audit start: main 059c5aa, kit #120 at 283f9fe, pack #122 at
+  36a136f, orchestration #119 at 42a12d9, dispatch/package #118 at aba2836, and
+  cold-cache docs #125 at 9015cc6. The pack's round 15 was already pushed. Earlier
+  entries stating it was unpushed describe the earlier observation and remain
+  unchanged; their force-push instructions must no longer be followed.
+- #120 and #122 both failed regression-gate and gate-older-toolchain on Ubuntu:
+  test_grade_reads_each_linked_tree_against_the_hosts_seal used rmdir on a POSIX
+  symlink. The repair chooses
+  unlink for symlinks and rmdir for Windows junctions, preserving the target tree.
+  The kit README's dependency-install directions now require a directory outside
+  every Git repository, resolving KR5-1 / IC5-2.
+- The repair refreshes stale branches from current main without rebasing published
+  history. #118's conflict is in the regression list; both the new adapter-config
+  tests and main's Gemini/usage-attribution tests must remain in the merged gate.
+  Separate #118 repairs preserve safety checks in shadow mode, include profile data
+  in the installed package, reject source-check commands outside a checkout, remove
+  stray heredoc markers, and preserve user identity during onboarding.
+- The full Windows gates exposed CRLF conversion in byte-compared generated
+  calibration fixtures. A shared .gitattributes rule pins those synthetic fixture
+  directories to LF; generated content and historical evidence are unchanged.
+- #125's four ordinary checks were green with no code findings; it was marked
+  ready for review. The final validation for repaired branches is attached to each
+  PR's current head; this entry does not predeclare those pending checks passed.
+- Scope of #119 includes this documentation plus the existing trace, outcome and
+  usage records. It is not literally docs-only. Existing evidence and append-only
+  outcomes are retained; no historical ACCEPT is promoted to a new head.
+- Remaining work: another fresh review under the prior stop rule; plan step 5
+  (sr-policy-7 and sr-packs-t1); FU-1..FU-5 before T1 runs; model comparison runs
+  (#57-#60) and usage-emission/report integration (#61). No provider calls or
+  MoonAliza clone-dependent regrade were performed as part of this audit.
+- Merge dependency remains #120 -> #122 -> #119. Strict branch protection requires
+  refreshing remaining branches after each main merge. No PR is merged by this audit.

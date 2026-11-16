@@ -27,6 +27,12 @@
 #   All artifacts are temp; nothing is committed or pushed.
 set -u
 
+# The interpreter: python3 exists on every supported platform, while a bare `python`
+# is absent on many distributions; a missing interpreter fails here, before any proof
+# stage runs half-way.
+PY="$(command -v python3 || command -v python || true)"
+[ -n "$PY" ] || { echo "setup_machine: FAIL — no python3 (or python) on PATH" >&2; exit 1; }
+
 fail() { echo "setup_machine: FAIL — $*"; shift || true; exit 1; }
 
 REPO_URL="${1:-}"
@@ -48,11 +54,11 @@ fi
 die() { echo "setup_machine: FAIL — $*" >&2; exit 1; }
 
 echo "==> wiring core.hooksPath"
-python tools/install_hooks.py || die "install_hooks"
+"$PY" tools/install_hooks.py || die "install_hooks"
 
 echo "==> gate baseline (must be green on a fresh clone)"
 GATE_OUT="$(mktemp)" || die "mktemp"
-python tools/run_regression.py > "$GATE_OUT" 2>&1 || {
+"$PY" tools/run_regression.py > "$GATE_OUT" 2>&1 || {
   cat "$GATE_OUT"; rm -f "$GATE_OUT"; die "regression gate is red on a fresh clone — do not commit to this clone";
 }
 tail -1 "$GATE_OUT"
@@ -122,7 +128,7 @@ echo "    PASS — refusal confirmed (commit blocked; worktree otherwise untouch
 # PREFLIGHT (runbook §0–§2) — a fresh machine ends ready, not just gated.
 # ---------------------------------------------------------------------
 echo "==> PREFLIGHT §0: secrets scan (must be clean)"
-python tools/check_secrets.py >/dev/null 2>&1 || die "check_secrets not clean on fresh clone — aborting before preflight"
+"$PY" tools/check_secrets.py >/dev/null 2>&1 || die "check_secrets not clean on fresh clone — aborting before preflight"
 echo "    PASS — clean (0 hits)"
 
 echo "==> PREFLIGHT §0: fail-closed live refusal (NO .env expected)"
@@ -130,7 +136,7 @@ if [ -f .env ]; then
   echo "    NOTE — .env exists on this machine; skipping the no-key refusal proof (it requires a keyless clone)"
 else
   DR_TMP="$(mktemp -d)" || die "mktemp -d"
-  python tools/live_dispatcher.py --live \
+  "$PY" tools/live_dispatcher.py --live \
     --profile cloud-C --task-id setup-preflight --request x \
     --work-bound 0.01 --review-bound 0.01 \
     --ledger "$DR_TMP/preflight.jsonl" > "$DR_TMP/live.json" 2>&1
@@ -145,7 +151,7 @@ fi
 
 echo "==> PREFLIGHT §2: dry-run warm-up (no network)"
 DRY_TMP="$(mktemp -d)" || die "mktemp -d"
-python tools/live_dispatcher.py \
+"$PY" tools/live_dispatcher.py \
   --profile cloud-C --task-id dryrun-1 --request "probe" \
   --work-bound 0.01 --review-bound 0.01 \
   --expected-in-tokens 10000 --expected-out-tokens 1000 \
@@ -156,7 +162,7 @@ grep -q '"decision": "dispatched"' "$DRY_TMP/dry.json" || { cat "$DRY_TMP/dry.js
 grep -q '"decision": "dispatched"' "$DRY_TMP/dryrun_ledger.jsonl" || { cat "$DRY_TMP/dryrun_ledger.jsonl" >&2; die "ledger line not written"; }
 echo "    PASS — cloud-C dispatched and ledger line written (exit 0)"
 
-python tools/live_dispatcher.py \
+"$PY" tools/live_dispatcher.py \
   --profile cloud-XYZ --task-id dryrun-2 --request "x" \
   --work-bound 0.01 --review-bound 0.01 \
   --ledger "$DRY_TMP/dryrun_ledger.jsonl" > "$DRY_TMP/gate4.json" 2>&1
@@ -179,7 +185,7 @@ CLOSE_TMP="$(mktemp -d)" || die "mktemp -d"
 ASSIGN="$CLOSE_TMP/assign.json"
 printf '%s' '{"dryrun-1": {"arm": "B", "cell": "T-01"}, "dryrun-2": {"arm": "B", "cell": "T-02"}}' > "$ASSIGN" \
   || die "write assignments"
-python tools/pilot_close.py \
+"$PY" tools/pilot_close.py \
   --ledger "$DRY_TMP/dryrun_ledger.jsonl" --with-sheet \
   --sheet "$CLOSE_TMP/live_fill_sheet.json" \
   --assignments "$ASSIGN" > "$CLOSE_TMP/close.json" 2> "$CLOSE_TMP/close.err"
@@ -190,7 +196,7 @@ if [ "$RC" -ne 0 ]; then
 fi
 # The embedded sheet section must prove every claim the runbook §5 checklist
 # makes about THE single close command:
-python - "$CLOSE_TMP/close.json" <<'PROOF' || die "session-close proof: report content mismatch"
+"$PY" - "$CLOSE_TMP/close.json" <<'PROOF' || die "session-close proof: report content mismatch"
 import json, sys
 d = json.load(open(sys.argv[1], encoding="utf-8"))
 s = d["live_fill_sheet"]
@@ -204,12 +210,12 @@ print("    close report: intact / all closed / placed+disclosed / tally clean")
 PROOF
 # Idempotency: a second close over the SAME sheet must report loaded-existing
 # and identical fill counts, proving the never-overwrite-recorded-slots rule.
-python tools/pilot_close.py \
+"$PY" tools/pilot_close.py \
   --ledger "$DRY_TMP/dryrun_ledger.jsonl" --with-sheet \
   --sheet "$CLOSE_TMP/live_fill_sheet.json" \
   --assignments "$ASSIGN" > "$CLOSE_TMP/close2.json" 2>&1 \
   || die "session-close proof: idempotent re-run must also exit 0"
-python - "$CLOSE_TMP/close.json" "$CLOSE_TMP/close2.json" <<'PROOF' || die "session-close proof: idempotency mismatch"
+"$PY" - "$CLOSE_TMP/close.json" "$CLOSE_TMP/close2.json" <<'PROOF' || die "session-close proof: idempotency mismatch"
 import json, sys
 s1 = json.load(open(sys.argv[1], encoding="utf-8"))["live_fill_sheet"]
 s2 = json.load(open(sys.argv[2], encoding="utf-8"))["live_fill_sheet"]
