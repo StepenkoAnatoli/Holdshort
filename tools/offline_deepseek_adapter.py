@@ -36,11 +36,18 @@ from typing import Any, Callable, Optional
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PROFILE_PATH = REPO_ROOT / "tools" / "profiles" / "deepseek-v4.1-flash-free-max.json"
 PRICES_PATH = REPO_ROOT / "tools" / "prices-deepseek-v4.1-flash-free-max.json"
+UNIFIED_CONFIG_PATH = REPO_ROOT / "tools" / "profiles" / "deepseek-v4.1-flash-free-max.unified.json"
+
+try:
+    import adapter_config as _ac
+except ImportError:
+    from tools import adapter_config as _ac
+_UNIFIED = _ac.load(UNIFIED_CONFIG_PATH)
 
 PROFILE_ID = "deepseek-v4.1-flash-free-max"
-MODEL_ID = "deepseek-v4.1-flash-free"
-HOST_MODEL_ID = "opencode/deepseek-v4.1-flash-free"
-ENDPOINT = "https://opencode.ai/inference/openai/v1/chat/completions"
+MODEL_ID = _UNIFIED["model_for_profile"][PROFILE_ID]
+HOST_MODEL_ID = _UNIFIED["host_model_id"]
+ENDPOINT = _UNIFIED["approved_endpoint"]
 CONTEXT_TOKENS = 200_000
 MAX_OUTPUT_TOKENS = 32_000
 INPUT_RESERVATION_CEILING = CONTEXT_TOKENS - MAX_OUTPUT_TOKENS
@@ -58,7 +65,12 @@ USAGE_KEYS = {
 }
 
 
-class DispatchRefused(RuntimeError):
+try:
+    import dispatch_core as _dc
+except ImportError:
+    from tools import dispatch_core as _dc
+
+class DispatchRefused(_dc.DispatchRefused):
     """Fail-closed refusal; no guessed usage, no alternate route, no retry."""
 
     def __init__(self, message: str, *, usage: "Usage | None" = None,

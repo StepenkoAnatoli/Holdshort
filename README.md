@@ -135,6 +135,14 @@ For the extended onboarding proof in a **clean checkout**, run:
 
 ```bash
 bash tools/setup_machine.sh
+
+On Windows (PowerShell), the equivalent onboarding is:
+
+```
+powershell -ExecutionPolicy Bypass -File tools/setup_machine.ps1
+```
+
+The PowerShell script covers clone, hook wiring, gate baseline, secrets scan, and the A2 dry-run warm-up. The full proof sequence (scratch commit / fake-key refusal) is easiest under Git Bash.
 ```
 
 That script exercises temporary commit/refusal proofs and local preflight checks.

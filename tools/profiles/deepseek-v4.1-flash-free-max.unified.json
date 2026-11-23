@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "provider": "opencode",
+  "approved_endpoint": "https://opencode.ai/inference/openai/v1/chat/completions",
+  "auth_env_var": "OPENCODE_API_KEY",
+  "request_mode": "openai-chat-completions",
+  "qualification_scope": "modeled-request-tokens",
+  "model_for_profile": {
+    "deepseek-v4.1-flash-free-max": "deepseek-v4.1-flash-free"
+  },
+  "host_model_id": "opencode/deepseek-v4.1-flash-free",
+  "price_model_for_profile": {
+    "deepseek-v4.1-flash-free-max": "DeepSeek V4.1 Flash Free"
+  },
+  "refused_profiles": [],
+  "notes": "Normalized view of tools/profiles/deepseek-v4.1-flash-free-max.json. The offline adapter still validates the rich profile; this file is the migration target."
+}

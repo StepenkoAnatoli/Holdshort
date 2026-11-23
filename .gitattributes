@@ -1,0 +1,4 @@
+# Generated calibration fixtures are compared byte-for-byte on every platform.
+/tests/fixtures/calibration/** text eol=lf
+/tests/fixtures/calibration-evidence/** text eol=lf
+/docs/evidence/qualification-table.md text eol=lf
