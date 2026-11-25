@@ -25,6 +25,11 @@
 #      mechanically-filled live-fill sheet in one artifact; accounting intact,
 #      sheet tally clean, idempotent re-run, ALL artifacts temp.
 #   All artifacts are temp; nothing is committed or pushed.
+#
+# SETUP_SKIP_BASELINE_GATE=1 skips step 2 only, for a caller that has just run the
+# same regression gate on the same commit (CI's regression-gate job does). It
+# cannot let a red gate through: PROOF 1 runs the full gate again through the hook
+# and fails, printing the hook's output.
 set -u
 
 # The interpreter: python3 exists on every supported platform, while a bare `python`
@@ -54,13 +59,17 @@ fi
 echo "==> wiring core.hooksPath"
 "$PY" tools/install_hooks.py || die "install_hooks"
 
-echo "==> gate baseline (must be green on a fresh clone)"
-GATE_OUT="$(mktemp)" || die "mktemp"
-"$PY" tools/run_regression.py > "$GATE_OUT" 2>&1 || {
-  cat "$GATE_OUT"; rm -f "$GATE_OUT"; die "regression gate is red on a fresh clone — do not commit to this clone";
-}
-tail -1 "$GATE_OUT"
-rm -f "$GATE_OUT"
+if [ "${SETUP_SKIP_BASELINE_GATE:-}" = "1" ]; then
+  echo "==> gate baseline SKIPPED (SETUP_SKIP_BASELINE_GATE=1: the caller ran the gate on this commit; PROOF 1 runs it again through the hook)"
+else
+  echo "==> gate baseline (must be green on a fresh clone)"
+  GATE_OUT="$(mktemp)" || die "mktemp"
+  "$PY" tools/run_regression.py > "$GATE_OUT" 2>&1 || {
+    cat "$GATE_OUT"; rm -f "$GATE_OUT"; die "regression gate is red on a fresh clone — do not commit to this clone";
+  }
+  tail -1 "$GATE_OUT"
+  rm -f "$GATE_OUT"
+fi
 
 echo "==> BOOT: redaction layer re-verify (every restart self-checks the triggers)"
 R1='github_pa'; R2='t_'; R3='A1b2C3d4E5A1b2C3d4E5A1b2C3d4E5'
@@ -86,7 +95,9 @@ echo "==> PROOF 1: pre-commit hook fires on a clean scratch commit"
 SCRATCH="setup_gate_proof_$$"
 echo "# gate proof (rolled back)" > "$SCRATCH.txt"
 git add "$SCRATCH.txt"
-if git -c user.name=setup-gate-proof -c user.email=setup-gate-proof@example.invalid commit -m "setup: gate proof (rolled back, not pushed)" >/dev/null 2>&1; then
+PROOF_OUT="$(mktemp)" || die "mktemp"
+if git -c user.name=setup-gate-proof -c user.email=setup-gate-proof@example.invalid commit -m "setup: gate proof (rolled back, not pushed)" >"$PROOF_OUT" 2>&1; then
+  rm -f "$PROOF_OUT"
   # keep the tree clean: the proof commit is dropped immediately, never pushed
   git reset -q --hard HEAD~1
   rm -f "$SCRATCH.txt"
@@ -95,8 +106,11 @@ else
   # The commit was refused: nothing was created, so HEAD must not move.
   git reset -q -- "$SCRATCH.txt" >/dev/null 2>&1 || true
   rm -f "$SCRATCH.txt"
-  git commit --dry-run 2>&1 | head -10 >&2 || true
-  die "hook did not allow a clean commit — gate wiring is broken (HEAD untouched)"
+  # The hook's own output says which gate check refused it, or why the hook did not run.
+  echo "    --- last 60 lines of the refused commit's output (the hook and its gate) ---" >&2
+  tail -60 "$PROOF_OUT" >&2 || true
+  rm -f "$PROOF_OUT"
+  die "hook did not allow a clean commit — a gate check failed or the gate wiring is broken; see the output above (HEAD untouched)"
 fi
 
 echo "==> PROOF 2: a staged fake key is REFUSED (fail-closed)"

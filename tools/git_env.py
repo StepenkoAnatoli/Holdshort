@@ -18,16 +18,19 @@ that starts git calls isolate_git_config() when it loads, so it sees the config 
 see under the hook when run on its own too. tools/test_run_regression.py checks that every
 such test does. A test that sets GIT_CONFIG_GLOBAL in a child's environment still gets the
 file it names.
+
+GIT_CONFIG_GLOBAL points at an empty file this module creates, not at /dev/null: a file
+path works the same on every platform, as the tests that already isolate themselves show
+on Windows, so nothing rests on how Git for Windows reads /dev/null.
 """
 from __future__ import annotations
 
+import atexit
 import os
 import re
+import tempfile
 
 COMMAND_LINE_CONFIG = re.compile(r"GIT_CONFIG_(PARAMETERS|COUNT|KEY_\d+|VALUE_\d+)")
-
-# Git's documented value for "read no global config file"; Git for Windows maps it to NUL.
-NO_PERSONAL_CONFIG = "/dev/null"
 
 
 def without_command_line_config(environ=None) -> dict:
@@ -40,4 +43,25 @@ def isolate_git_config() -> None:
     """Make this process's git children read neither command-line nor personal config."""
     for name in [k for k in os.environ if COMMAND_LINE_CONFIG.fullmatch(k)]:
         del os.environ[name]
-    os.environ["GIT_CONFIG_GLOBAL"] = NO_PERSONAL_CONFIG
+    os.environ["GIT_CONFIG_GLOBAL"] = _empty_config()
+
+
+_EMPTY_CONFIG: str | None = None
+
+
+def _empty_config() -> str:
+    """An empty config file, made once per process and removed when it exits."""
+    global _EMPTY_CONFIG
+    if _EMPTY_CONFIG is None or not os.path.exists(_EMPTY_CONFIG):
+        fd, path = tempfile.mkstemp(prefix="holdshort-empty-gitconfig-")
+        os.close(fd)
+        atexit.register(_remove, path)
+        _EMPTY_CONFIG = path
+    return _EMPTY_CONFIG
+
+
+def _remove(path: str) -> None:
+    try:
+        os.remove(path)
+    except OSError:
+        pass

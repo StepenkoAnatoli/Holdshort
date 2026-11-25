@@ -134,6 +134,14 @@ class TestsIsolateGitConfig(unittest.TestCase):
         self.assertEqual(missing, [], "these test files start git without calling "
                          "isolate_git_config() from tools/git_env.py when they load")
 
+    def test_personal_config_is_replaced_by_an_empty_file(self):
+        # A real file, not /dev/null, so it reads the same on every platform. This file
+        # called isolate_git_config() when it loaded.
+        path = Path(os.environ["GIT_CONFIG_GLOBAL"])
+        self.assertNotEqual(str(path), "/dev/null")
+        self.assertTrue(path.is_file(), path)
+        self.assertEqual(path.stat().st_size, 0)
+
     def test_a_test_ignores_personal_config_as_under_the_hook(self):
         # The hook sets HOME to the repository, so the gate never reads ~/.gitconfig. A test
         # run on its own skips it the same way, whether or not it sets GIT_CONFIG_GLOBAL.
