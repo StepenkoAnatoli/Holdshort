@@ -11,7 +11,8 @@ name: regression-gate
 # On: every push to main and every pull_request (any branch), so a green
 # status is produced for exactly the commits protection looks at.
 #
-# workflow_dispatch additionally runs the ONBOARDING PROOF (setup-prove job):
+# The regression-gate job also runs the ONBOARDING PROOF as its last step, on
+# pull requests, workflow_dispatch and the weekly schedule:
 # setup_machine.sh exercises the full fail-closed path end-to-end — clone,
 # wire repo-local hooksPath, clean commit allowed, staged fake key REFUSED,
 # the §0–§2 dry-run preflight, AND the runbook §5 session-close proof
@@ -19,8 +20,23 @@ name: regression-gate
 # mechanically-filled live-fill sheet in one artifact, intact + tally clean +
 # idempotent) — against a throwaway clone. This keeps the onboarding path
 # itself honest: if install_hooks.py, the hook, OR the close-report
-# generation ever regresses, running this dispatch fails loudly instead of
-# silently shipping enforcement theater.
+# generation ever regresses, the run fails loudly instead of silently
+# shipping enforcement theater.
+#
+# It was a separate onboarding-proof job that ran only on dispatch and
+# schedule, and a change that broke it (2026-11-16) passed every pull request
+# check until the next weekly run. As a step of the required job it now
+# blocks the merge of a pull request that breaks it, with no branch-protection
+# change. A separate required context would not work: strict-canary gives its
+# throwaway pull request a synthetic green check for regression-gate only,
+# because GITHUB_TOKEN events start no workflow runs.
+#
+# The step skips setup_machine.sh's own baseline gate run
+# (SETUP_SKIP_BASELINE_GATE=1): the step before it ran that gate on this
+# commit, and PROOF 1 runs it again through the hook. It skips pushes to main:
+# strict protection merges a pull request only when it is up to date with
+# main, so the pushed tree is the one its pull request already proved, and the
+# weekly run re-proves main.
 #
 # workflow_dispatch and the weekly schedule ALSO run the STRICT-MODE CANARY
 # (strict-canary job): tools/strict_canary.py opens a throwaway pull request
@@ -80,6 +96,14 @@ jobs:
           python-version: "3.12"
       - name: Run the full regression gate (mirror of the pre-commit hook)
         run: python tools/run_regression.py
+      - name: Onboarding proof — clone, wire hooks, prove clean-pass + leak-refusal
+        if: github.event_name != 'push'
+        env:
+          SETUP_SKIP_BASELINE_GATE: "1"
+        run: |
+          bash tools/setup_machine.sh \
+            "file://${GITHUB_WORKSPACE}" "${RUNNER_TEMP}/proof-clone"
+          echo "setup proof: PASS (a fresh machine would be enforcing by default)"
 
   # Portability guard: the toolchain a contributor may actually have. Ubuntu
   # 22.04 ships Git 2.34 and Python 3.10, which is where `git ls-tree
@@ -125,22 +149,25 @@ jobs:
       - name: Claude Code host adapter suite (node --test)
         run: node --test hosts/claude-code/route.test.mjs
 
-  setup-prove:
-    name: onboarding-proof
-    runs-on: ubuntu-24.04
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+  # Windows check of the git isolation the gate's tests rely on (tools/git_env.py):
+  # caller and personal git config kept out, the empty stand-in config file, and a
+  # test run on its own under `git -c commit.gpgsign=true`. Not the full gate, and
+  # not a required context: the gate has never run on a Windows runner, so this
+  # covers what pull request #128 changed without taking on unrelated Windows work.
+  git-isolation-windows:
+    name: git-isolation-windows
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - name: Onboarding proof — clone, wire hooks, prove clean-pass + leak-refusal
-        run: |
-          bash tools/setup_machine.sh \
-            "file://${GITHUB_WORKSPACE}" "${RUNNER_TEMP}/proof-clone"
-          echo "setup proof: PASS (a fresh machine would be enforcing by default)"
+      - name: Git isolation tests
+        run: python tools/test_run_regression.py
+      - name: A git-using test on its own
+        run: python tools/test_task_ids.py
 
   strict-canary:
     name: strict-canary

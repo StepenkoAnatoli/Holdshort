@@ -14,8 +14,11 @@
 #   2. gate baseline on the fresh checkout (full regression gate, exit 0)
 #   2b. BOOT redaction re-verify: the filter fires on a synthetic probe
 #       (placeholder out, value nowhere) and the message-schema guard is green
-#   3. PROOF 1: scratch commit allowed (hook+gate run and pass; rolled back)
-#   4. PROOF 2: staged fake key REFUSED (fail-closed; rolled back)
+#   3. PROOF 1: scratch commit allowed, and the output shows the gate ran and
+#      passed (a hook that allows it without the gate fails the proof; rolled back)
+#   4. PROOF 2: staged fake key REFUSED, and the output shows the gate's secret
+#      scan refused it (a refusal for any other reason fails the proof; rolled back)
+#   Both proof commits are unsigned (-c commit.gpgsign=false): they are never kept.
 #   5. PREFLIGHT (runbook §0–§2, automated):
 #      - §0 secrets scan clean; live refusal exit 2 with NO .env (no HTTP call)
 #      - §2 dry-run cloud-C dispatch -> dispatched, ledger line written, exit 0
@@ -25,6 +28,11 @@
 #      mechanically-filled live-fill sheet in one artifact; accounting intact,
 #      sheet tally clean, idempotent re-run, ALL artifacts temp.
 #   All artifacts are temp; nothing is committed or pushed.
+#
+# SETUP_SKIP_BASELINE_GATE=1 skips step 2 only, for a caller that has just run the
+# same regression gate on the same commit (CI's regression-gate job does). It
+# cannot let a red gate through: PROOF 1 runs the full gate again through the hook
+# and fails, printing the hook's output.
 set -u
 
 # The interpreter: python3 exists on every supported platform, while a bare `python`
@@ -54,13 +62,17 @@ fi
 echo "==> wiring core.hooksPath"
 "$PY" tools/install_hooks.py || die "install_hooks"
 
-echo "==> gate baseline (must be green on a fresh clone)"
-GATE_OUT="$(mktemp)" || die "mktemp"
-"$PY" tools/run_regression.py > "$GATE_OUT" 2>&1 || {
-  cat "$GATE_OUT"; rm -f "$GATE_OUT"; die "regression gate is red on a fresh clone — do not commit to this clone";
-}
-tail -1 "$GATE_OUT"
-rm -f "$GATE_OUT"
+if [ "${SETUP_SKIP_BASELINE_GATE:-}" = "1" ]; then
+  echo "==> gate baseline SKIPPED (SETUP_SKIP_BASELINE_GATE=1: the caller ran the gate on this commit; PROOF 1 runs it again through the hook)"
+else
+  echo "==> gate baseline (must be green on a fresh clone)"
+  GATE_OUT="$(mktemp)" || die "mktemp"
+  "$PY" tools/run_regression.py > "$GATE_OUT" 2>&1 || {
+    cat "$GATE_OUT"; rm -f "$GATE_OUT"; die "regression gate is red on a fresh clone — do not commit to this clone";
+  }
+  tail -1 "$GATE_OUT"
+  rm -f "$GATE_OUT"
+fi
 
 echo "==> BOOT: redaction layer re-verify (every restart self-checks the triggers)"
 R1='github_pa'; R2='t_'; R3='A1b2C3d4E5A1b2C3d4E5A1b2C3d4E5'
@@ -82,21 +94,44 @@ echo "    PASS — schema guard green (absent store skips clean)"
 
 echo "==> PROOF 1: pre-commit hook fires on a clean scratch commit"
 # Supply identity only to each proof commit, preserving the user's config.
-# A bare runner/VM otherwise fails before its hook runs.
+# A bare runner/VM otherwise fails before its hook runs. The proof commits are
+# never kept or pushed, so they are not signed: a personal commit.gpgsign=true
+# with no working signer would otherwise fail them after the hook has passed.
+PROOF_GIT=(git -c user.name=setup-gate-proof -c user.email=setup-gate-proof@example.invalid -c commit.gpgsign=false)
+# What the hook and the gate print. A proof counts only when this output shows
+# the gate itself caused the result, not merely that the commit went through or
+# was refused (a hook that skips the gate, or another refusal, would do that).
+GATE_PASS_LINE='REGRESSION GATE: all checks PASS'
+HOOK_PASS_LINE='pre-commit: regression gate PASS'
+HOOK_FAIL_LINE='pre-commit: regression gate FAILED'
+# The gate checks that run the secret scan (tools/check_secrets.py scan()); the
+# first of them in the gate's order refuses a staged key.
+SECRET_REFUSAL_RE="REGRESSION GATE: 1 failure\\(s\\): \\[\\('(test_secrets_env_guard|check_secrets)',"
 SCRATCH="setup_gate_proof_$$"
 echo "# gate proof (rolled back)" > "$SCRATCH.txt"
 git add "$SCRATCH.txt"
-if git -c user.name=setup-gate-proof -c user.email=setup-gate-proof@example.invalid commit -m "setup: gate proof (rolled back, not pushed)" >/dev/null 2>&1; then
+PROOF_OUT="$(mktemp)" || die "mktemp"
+if "${PROOF_GIT[@]}" commit -m "setup: gate proof (rolled back, not pushed)" >"$PROOF_OUT" 2>&1; then
   # keep the tree clean: the proof commit is dropped immediately, never pushed
   git reset -q --hard HEAD~1
   rm -f "$SCRATCH.txt"
+  if ! grep -qF "$GATE_PASS_LINE" "$PROOF_OUT" || ! grep -qF "$HOOK_PASS_LINE" "$PROOF_OUT"; then
+    echo "    --- the allowed commit's output (expected the gate's '$GATE_PASS_LINE') ---" >&2
+    tail -60 "$PROOF_OUT" >&2 || true
+    rm -f "$PROOF_OUT"
+    die "the hook allowed a clean commit but the gate did not report a full pass — the hook is not running the regression gate (proof commit rolled back)"
+  fi
+  rm -f "$PROOF_OUT"
   echo "    PASS — hook ran the gate and allowed a clean commit"
 else
   # The commit was refused: nothing was created, so HEAD must not move.
   git reset -q -- "$SCRATCH.txt" >/dev/null 2>&1 || true
   rm -f "$SCRATCH.txt"
-  git commit --dry-run 2>&1 | head -10 >&2 || true
-  die "hook did not allow a clean commit — gate wiring is broken (HEAD untouched)"
+  # The hook's own output says which gate check refused it, or why the hook did not run.
+  echo "    --- last 60 lines of the refused commit's output (the hook and its gate) ---" >&2
+  tail -60 "$PROOF_OUT" >&2 || true
+  rm -f "$PROOF_OUT"
+  die "hook did not allow a clean commit — a gate check failed or the gate wiring is broken; see the output above (HEAD untouched)"
 fi
 
 echo "==> PROOF 2: a staged fake key is REFUSED (fail-closed)"
@@ -111,13 +146,22 @@ PROOF
 cat "$FILE_SLUG" >> README.md
 rm -f "$FILE_SLUG"
 git add README.md
-if git -c user.name=setup-gate-proof -c user.email=setup-gate-proof@example.invalid commit -m "setup: leak proof (must be refused)" >/dev/null 2>&1; then
+LEAK_OUT="$(mktemp)" || die "mktemp"
+if "${PROOF_GIT[@]}" commit -m "setup: leak proof (must be refused)" >"$LEAK_OUT" 2>&1; then
   git reset -q --hard HEAD~1
+  rm -f "$LEAK_OUT"
   die "hook ACCEPTED a fake key — enforcement is not working"
 fi
 git reset -q -- README.md >/dev/null 2>&1 || true
 git checkout -q -- README.md >/dev/null 2>&1 || true
-echo "    PASS — refusal confirmed (commit blocked; worktree otherwise untouched)"
+if ! grep -qF "$HOOK_FAIL_LINE" "$LEAK_OUT" || ! grep -qE "$SECRET_REFUSAL_RE" "$LEAK_OUT"; then
+  echo "    --- the refused commit's output (expected the gate's secret scan to refuse it) ---" >&2
+  tail -60 "$LEAK_OUT" >&2 || true
+  rm -f "$LEAK_OUT"
+  die "the fake-key commit was refused, but not by the gate's secret scan — the leak refusal is unproven"
+fi
+rm -f "$LEAK_OUT"
+echo "    PASS — refusal confirmed (the gate's secret scan blocked it; worktree otherwise untouched)"
 
 # ---------------------------------------------------------------------
 # PREFLIGHT (runbook §0–§2) — a fresh machine ends ready, not just gated.

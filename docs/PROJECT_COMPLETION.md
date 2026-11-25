@@ -112,3 +112,8 @@ strict-P02 countersignature is [docs/P02_REVIEWER_DESIGNATION.md](docs/P02_REVIE
 Legacy binary bundles have been removed from the current source tree under the
 2026-10-13 project-boundary correction. The release/tag provenance above describes
 historical snapshots; original release assets are not rewritten.
+
+Since 2026-11-25 (pull request #128) the onboarding proof is no longer a separate `onboarding-proof`
+job: it is the last step of the required `regression-gate` job, on pull requests, dispatch and the
+weekly schedule (not on pushes to `main`). The rows above that name the `onboarding-proof` job, or say
+it skips on non-dispatch events, describe the workflow as it was when they were recorded.

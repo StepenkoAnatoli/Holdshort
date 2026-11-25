@@ -30,6 +30,36 @@
   names and the zip's contents, the copy of the published v1.0.1 release notes, git branch names, paths pinned to a
   commit before the rename and commands recorded as run before it, a path quoted from a brief) and one verbatim chat
   quote. The social PNGs were re-exported and the social video re-rendered.
+- **Fixed: the onboarding proof failed because of the proof commit's own identity.** `tools/setup_machine.sh` gives
+  its proof commits a name with `git -c user.name=... commit`. Git hands that setting to the pre-commit hook and, through
+  it, to every git process the gate's checks start. `tools/test_install_hooks.py` then read the proof's name where it
+  expected its test repository's own, so the hook refused the commit, and the scheduled `onboarding-proof` job failed
+  from 2026-11-23. Any commit made with `git -c user.*` was refused the same way.
+  - `tools/run_regression.py` runs every check without config given on a git command line (`GIT_CONFIG_PARAMETERS`,
+    `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>`, `GIT_CONFIG_VALUE_<n>`).
+  - Every test file that starts git calls `isolate_git_config()` from `tools/git_env.py` when it loads. It drops that
+    config (six tests failed under `git -c commit.gpgsign=true`), and points `GIT_CONFIG_GLOBAL` at an empty file, so a
+    test run on its own reads no `~/.gitconfig`, as under the hook, which sets `HOME` to the repository. System config
+    is still read in both. An empty file, not `/dev/null`, so it reads the same on Windows.
+  - `tools/test_run_regression.py`, part of the gate, pins both and checks that every test file that starts git calls
+    the helper.
+  - The onboarding proof is now the last step of the required `regression-gate` CI job, on pull requests, dispatch and
+    the weekly schedule, so a pull request that breaks it cannot merge; the separate `onboarding-proof` job is gone.
+    It skips pushes to `main`, whose tree its up-to-date pull request already proved.
+  - `setup_machine.sh` accepts `SETUP_SKIP_BASELINE_GATE=1` to skip its first gate run when the caller has just run the
+    gate on the same commit (CI does); PROOF 1 still runs the full gate through the hook. When PROOF 1 is refused, it
+    now prints the hook's output, so the failing gate check is named instead of only "gate wiring is broken".
+  - The two proofs check what caused their result. PROOF 1 passes only when the commit's output shows the gate's
+    full pass, so a hook that allows commits without running the gate fails it. PROOF 2 passes only when the output
+    shows the gate refused the fake key in one of its secret-scan checks (`test_secrets_env_guard` or
+    `check_secrets`), so a refusal for any other reason fails it. Both were accepted before. The proof commits are
+    made with `commit.gpgsign=false`, so a personal signing setting with no working signer no longer fails them.
+    Negative controls in `tools/test_install_hooks.py` (`SetupMachineProofCause`) pin each case.
+  - The check that every test file starting git calls `isolate_git_config()` reads syntax trees instead of text: it
+    finds `"git"` in a tuple, a variable or a path, searches `tools/` and `tests/` recursively, and counts only a real
+    top-level call (not a comment, a string or a call inside a function). It remains a convention check: a test that
+    reaches git only through another module is not seen.
+  - A non-required `git-isolation-windows` CI job runs the isolation tests and one git-using test on Windows.
 - **The calibration gate checks run on a Windows host** (`tools/test_calibration_kit.py` and the tests of the evidence
   check and the qualification table). On Windows 17 of the kit's 79 tests failed, so the pre-commit hook refused every
   commit there: it read files in the locale's encoding, ran a bare `python3`, wrote a Windows path into a git config

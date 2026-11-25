@@ -66,6 +66,7 @@ checker itself is the operator's runbook §0 precondition.
 """
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
@@ -98,6 +99,7 @@ CHECKS = [
     ("check_calibration_evidence", [sys.executable, "tools/check_calibration_evidence.py"]),
     ("test_qualification_table", [sys.executable, "tools/test_qualification_table.py"]),
     ("qualification_table", [sys.executable, "tools/qualification_table.py", "--check"]),
+    ("test_run_regression", [sys.executable, "tools/test_run_regression.py"]),
     ("test_install_hooks", [sys.executable, "tools/test_install_hooks.py"]),
     ("test_hook_wiring", [sys.executable, "tools/test_hook_wiring.py"]),
     ("test_strict_canary", [sys.executable, "tools/test_strict_canary.py"]),
@@ -140,11 +142,23 @@ CHECKS = [
 ]
 
 
+# Each check runs without config given on a git command line; see tools/git_env.py.
+_spec = importlib.util.spec_from_file_location("git_env", TOOLS / "git_env.py")
+git_env = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(git_env)
+
+
+def check_env(environ=None) -> dict:
+    """The environment each check runs in: the caller's, minus command-line git config."""
+    return git_env.without_command_line_config(environ)
+
+
 def main() -> int:
     failures = []
+    env = check_env()
     for name, cmd in CHECKS:
         print(f"== {name} ==")
-        proc = subprocess.run(cmd, cwd=REPO_ROOT)
+        proc = subprocess.run(cmd, cwd=REPO_ROOT, env=env)
         if proc.returncode == 0:
             print(f"   PASS (exit 0)")
         else:
