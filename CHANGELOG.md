@@ -36,8 +36,12 @@
   expected its test repository's own, so the hook refused the commit, and the scheduled `onboarding-proof` job failed
   from 2026-11-23. Any commit made with `git -c user.*` was refused the same way. `tools/run_regression.py` now runs
   every check without config given on a git command line (`GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT`,
-  `GIT_CONFIG_KEY_<n>`, `GIT_CONFIG_VALUE_<n>`). This is pinned by `tools/test_run_regression.py`, which is part of
-  the gate.
+  `GIT_CONFIG_KEY_<n>`, `GIT_CONFIG_VALUE_<n>`). Every test file that starts git also drops that config when it
+  loads (`tools/git_env.py`), so a test run on its own is isolated too: before this, six of them failed under
+  `git -c commit.gpgsign=true` because their fixture commits asked for a signing key. `tools/test_run_regression.py`,
+  part of the gate, pins both and checks that every test file that starts git calls the helper. The
+  `onboarding-proof` CI job now runs on pull requests and pushes, not only on dispatch and the weekly schedule, so a
+  change that breaks it fails its own pull request.
 - **The calibration gate checks run on a Windows host** (`tools/test_calibration_kit.py` and the tests of the evidence
   check and the qualification table). On Windows 17 of the kit's 79 tests failed, so the pre-commit hook refused every
   commit there: it read files in the locale's encoding, ran a bare `python3`, wrote a Windows path into a git config

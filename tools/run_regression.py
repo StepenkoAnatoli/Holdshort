@@ -66,8 +66,7 @@ checker itself is the operator's runbook §0 precondition.
 """
 from __future__ import annotations
 
-import os
-import re
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
@@ -143,18 +142,15 @@ CHECKS = [
 ]
 
 
-# Config given on a git command line (`git -c name=value commit`). Git passes it to the
-# pre-commit hook, and from there to every git process a check starts, where it overrides
-# the config that check set up for itself. tools/setup_machine.sh gives its proof commits
-# an identity this way, and tools/test_install_hooks.py then read that identity in place of
-# its test repository's own. The checks run without it, as they do when the gate runs alone.
-_COMMAND_LINE_CONFIG = re.compile(r"GIT_CONFIG_(PARAMETERS|COUNT|KEY_\d+|VALUE_\d+)")
+# Each check runs without config given on a git command line; see tools/git_env.py.
+_spec = importlib.util.spec_from_file_location("git_env", TOOLS / "git_env.py")
+git_env = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(git_env)
 
 
 def check_env(environ=None) -> dict:
     """The environment each check runs in: the caller's, minus command-line git config."""
-    environ = os.environ if environ is None else environ
-    return {k: v for k, v in environ.items() if not _COMMAND_LINE_CONFIG.fullmatch(k)}
+    return git_env.without_command_line_config(environ)
 
 
 def main() -> int:

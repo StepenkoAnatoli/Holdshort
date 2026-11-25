@@ -16,17 +16,30 @@ Pins:
     GIT_CONFIG_GLOBAL and GIT_CONFIG_SYSTEM (the tests' own isolation);
   * a real git process given check_env() reads the repository's config, while the same
     git given the unscrubbed environment reads the injected value (so this test can fail);
-  * main() passes that environment to every check.
+  * main() passes that environment to every check;
+  * every test file that starts git drops that config itself when it loads (tools/git_env.py),
+    so it is isolated when run on its own too: checked over the source of each test file, and
+    end to end by running tools/test_task_ids.py under `-c commit.gpgsign=true`, which made
+    its fixture commits ask for a signing key before the drop was added.
 """
 from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
+
+# Git here runs without config from a calling `git -c`; see tools/git_env.py.
+_git_env_spec = importlib.util.spec_from_file_location(
+    "git_env", Path(__file__).resolve().parent / "git_env.py")
+_git_env = importlib.util.module_from_spec(_git_env_spec)
+_git_env_spec.loader.exec_module(_git_env)
+_git_env.drop_command_line_config()
 
 TOOLS = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("run_regression", TOOLS / "run_regression.py")
@@ -102,6 +115,31 @@ class MainUsesCheckEnv(unittest.TestCase):
             self.assertIn("env", kwargs)
             for name in INJECTED:
                 self.assertNotIn(name, kwargs["env"])
+
+
+# A test file starts git when its source holds an argument list beginning "git".
+_STARTS_GIT = re.compile(r"""\[\s*["']git["']\s*,""")
+
+
+class TestsDropCommandLineConfig(unittest.TestCase):
+    def test_every_test_file_that_starts_git_drops_it(self):
+        root = TOOLS.parent
+        files = sorted([*TOOLS.glob("test_*.py"), *TOOLS.glob("*/test_*.py"),
+                        *(root / "tests").glob("*.py")])
+        starting_git = [f for f in files if _STARTS_GIT.search(f.read_text(encoding="utf-8"))]
+        self.assertIn(TOOLS / "test_install_hooks.py", starting_git,
+                      "precondition: the pattern finds the file this bug was seen in")
+        missing = [str(f.relative_to(root)) for f in starting_git
+                   if "drop_command_line_config()" not in f.read_text(encoding="utf-8")]
+        self.assertEqual(missing, [], "these test files start git without calling "
+                         "drop_command_line_config() from tools/git_env.py when they load")
+
+    def test_a_test_run_on_its_own_ignores_a_calling_git_c(self):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        env["GIT_CONFIG_PARAMETERS"] = "'commit.gpgsign'='true' 'gpg.program'='false'"
+        done = subprocess.run([sys.executable, str(TOOLS / "test_task_ids.py")], cwd=TOOLS.parent,
+                              env=env, capture_output=True, text=True, timeout=300)
+        self.assertEqual(done.returncode, 0, done.stdout[-2000:] + done.stderr[-2000:])
 
 
 if __name__ == "__main__":
