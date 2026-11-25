@@ -26,12 +26,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-# Git here runs without config from a calling `git -c`; see tools/git_env.py.
+# Git here reads neither a calling `git -c` nor personal config; see tools/git_env.py.
 _git_env_spec = importlib.util.spec_from_file_location(
     "git_env", Path(__file__).resolve().parent / "git_env.py")
 _git_env = importlib.util.module_from_spec(_git_env_spec)
 _git_env_spec.loader.exec_module(_git_env)
-_git_env.drop_command_line_config()
+_git_env.isolate_git_config()
 
 TOOLS = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("chw", TOOLS / "check_hook_wiring.py")

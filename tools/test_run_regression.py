@@ -34,12 +34,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-# Git here runs without config from a calling `git -c`; see tools/git_env.py.
+# Git here reads neither a calling `git -c` nor personal config; see tools/git_env.py.
 _git_env_spec = importlib.util.spec_from_file_location(
     "git_env", Path(__file__).resolve().parent / "git_env.py")
 _git_env = importlib.util.module_from_spec(_git_env_spec)
 _git_env_spec.loader.exec_module(_git_env)
-_git_env.drop_command_line_config()
+_git_env.isolate_git_config()
 
 TOOLS = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("run_regression", TOOLS / "run_regression.py")
@@ -121,7 +121,7 @@ class MainUsesCheckEnv(unittest.TestCase):
 _STARTS_GIT = re.compile(r"""\[\s*["']git["']\s*,""")
 
 
-class TestsDropCommandLineConfig(unittest.TestCase):
+class TestsIsolateGitConfig(unittest.TestCase):
     def test_every_test_file_that_starts_git_drops_it(self):
         root = TOOLS.parent
         files = sorted([*TOOLS.glob("test_*.py"), *TOOLS.glob("*/test_*.py"),
@@ -130,9 +130,44 @@ class TestsDropCommandLineConfig(unittest.TestCase):
         self.assertIn(TOOLS / "test_install_hooks.py", starting_git,
                       "precondition: the pattern finds the file this bug was seen in")
         missing = [str(f.relative_to(root)) for f in starting_git
-                   if "drop_command_line_config()" not in f.read_text(encoding="utf-8")]
+                   if "isolate_git_config()" not in f.read_text(encoding="utf-8")]
         self.assertEqual(missing, [], "these test files start git without calling "
-                         "drop_command_line_config() from tools/git_env.py when they load")
+                         "isolate_git_config() from tools/git_env.py when they load")
+
+    def test_a_test_ignores_personal_config_as_under_the_hook(self):
+        # The hook sets HOME to the repository, so the gate never reads ~/.gitconfig. A test
+        # run on its own skips it the same way, whether or not it sets GIT_CONFIG_GLOBAL.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            home = tmp / "home"
+            (home / ".config" / "git").mkdir(parents=True)
+            personal = "[commit]\n\tgpgsign = true\n"
+            (home / ".gitconfig").write_text(personal, encoding="utf-8")
+            (home / ".config" / "git" / "config").write_text(personal, encoding="utf-8")
+            repo = tmp / "repo"
+            repo.mkdir()
+            env = {k: v for k, v in os.environ.items()
+                   if not k.startswith("GIT_") and k != "XDG_CONFIG_HOME"}
+            env["HOME"] = str(home)
+            subprocess.run(["git", "init", "-q"], cwd=repo, env=env, check=True)
+
+            def gpgsign(isolate):
+                code = ("import importlib.util, subprocess, sys\n"
+                        "spec = importlib.util.spec_from_file_location('git_env', sys.argv[1])\n"
+                        "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\n"
+                        + ("m.isolate_git_config()\n" if isolate else "")
+                        + "sys.exit(subprocess.run(['git', 'config', '--get', 'commit.gpgsign'])"
+                        ".returncode)\n")
+                return subprocess.run([sys.executable, "-c", code, str(TOOLS / "git_env.py")],
+                                      cwd=repo, env=env, capture_output=True, text=True)
+
+            leaked = gpgsign(isolate=False)
+            self.assertEqual(leaked.stdout.strip(), "true",
+                             "precondition: git reads the personal config when not isolated")
+            isolated = gpgsign(isolate=True)
+            # git config --get exits 1, silently, when the key is set nowhere it reads.
+            self.assertEqual((isolated.returncode, isolated.stdout.strip(), isolated.stderr),
+                             (1, "", ""))
 
     def test_a_test_run_on_its_own_ignores_a_calling_git_c(self):
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}

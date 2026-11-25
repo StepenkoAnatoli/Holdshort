@@ -11,7 +11,8 @@ name: regression-gate
 # On: every push to main and every pull_request (any branch), so a green
 # status is produced for exactly the commits protection looks at.
 #
-# Every trigger also runs the ONBOARDING PROOF (setup-prove job):
+# Pull requests, workflow_dispatch and the weekly schedule also run the
+# ONBOARDING PROOF (setup-prove job):
 # setup_machine.sh exercises the full fail-closed path end-to-end — clone,
 # wire repo-local hooksPath, clean commit allowed, staged fake key REFUSED,
 # the §0–§2 dry-run preflight, AND the runbook §5 session-close proof
@@ -22,9 +23,12 @@ name: regression-gate
 # generation ever regresses, the run fails loudly instead of silently
 # shipping enforcement theater. It once ran only on dispatch and schedule, and
 # a change that broke it (2026-11-16) passed every pull request check and was
-# first caught by the next weekly run; so it now runs on pull requests and
-# pushes too. It is not a required status context: branch protection is the
-# maintainer's setting.
+# first caught by the next weekly run; so it now runs on pull requests too.
+# It skips pushes to main: strict protection merges a pull request only when
+# it is up to date with main, so the pushed tree is the one its pull request
+# already proved, and the weekly run re-proves main (and strict-canary checks
+# that protection is still strict). It is not a required status context:
+# branch protection is the maintainer's setting.
 #
 # workflow_dispatch and the weekly schedule ALSO run the STRICT-MODE CANARY
 # (strict-canary job): tools/strict_canary.py opens a throwaway pull request
@@ -132,6 +136,7 @@ jobs:
   setup-prove:
     name: onboarding-proof
     runs-on: ubuntu-24.04
+    if: github.event_name != 'push'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

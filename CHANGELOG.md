@@ -38,10 +38,13 @@
   every check without config given on a git command line (`GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT`,
   `GIT_CONFIG_KEY_<n>`, `GIT_CONFIG_VALUE_<n>`). Every test file that starts git also drops that config when it
   loads (`tools/git_env.py`), so a test run on its own is isolated too: before this, six of them failed under
-  `git -c commit.gpgsign=true` because their fixture commits asked for a signing key. `tools/test_run_regression.py`,
-  part of the gate, pins both and checks that every test file that starts git calls the helper. The
-  `onboarding-proof` CI job now runs on pull requests and pushes, not only on dispatch and the weekly schedule, so a
-  change that breaks it fails its own pull request.
+  `git -c commit.gpgsign=true` because their fixture commits asked for a signing key. The same helper skips the
+  developer's personal git config (`~/.gitconfig`), as the hook does by setting `HOME` to the repository, so a test
+  run on its own sees the config it would see under the hook; system git config is still read in both.
+  `tools/test_run_regression.py`, part of the gate, pins both and checks that every test file that starts git calls
+  the helper. The `onboarding-proof` CI job now runs on pull requests, not only on dispatch and the weekly schedule,
+  so a change that breaks it fails its own pull request. It skips pushes to `main`, whose tree its up-to-date pull
+  request already proved.
 - **The calibration gate checks run on a Windows host** (`tools/test_calibration_kit.py` and the tests of the evidence
   check and the qualification table). On Windows 17 of the kit's 79 tests failed, so the pre-commit hook refused every
   commit there: it read files in the locale's encoding, ran a bare `python3`, wrote a Windows path into a git config
