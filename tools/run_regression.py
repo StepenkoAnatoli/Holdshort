@@ -66,6 +66,8 @@ checker itself is the operator's runbook §0 precondition.
 """
 from __future__ import annotations
 
+import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -98,6 +100,7 @@ CHECKS = [
     ("check_calibration_evidence", [sys.executable, "tools/check_calibration_evidence.py"]),
     ("test_qualification_table", [sys.executable, "tools/test_qualification_table.py"]),
     ("qualification_table", [sys.executable, "tools/qualification_table.py", "--check"]),
+    ("test_run_regression", [sys.executable, "tools/test_run_regression.py"]),
     ("test_install_hooks", [sys.executable, "tools/test_install_hooks.py"]),
     ("test_hook_wiring", [sys.executable, "tools/test_hook_wiring.py"]),
     ("test_strict_canary", [sys.executable, "tools/test_strict_canary.py"]),
@@ -140,11 +143,26 @@ CHECKS = [
 ]
 
 
+# Config given on a git command line (`git -c name=value commit`). Git passes it to the
+# pre-commit hook, and from there to every git process a check starts, where it overrides
+# the config that check set up for itself. tools/setup_machine.sh gives its proof commits
+# an identity this way, and tools/test_install_hooks.py then read that identity in place of
+# its test repository's own. The checks run without it, as they do when the gate runs alone.
+_COMMAND_LINE_CONFIG = re.compile(r"GIT_CONFIG_(PARAMETERS|COUNT|KEY_\d+|VALUE_\d+)")
+
+
+def check_env(environ=None) -> dict:
+    """The environment each check runs in: the caller's, minus command-line git config."""
+    environ = os.environ if environ is None else environ
+    return {k: v for k, v in environ.items() if not _COMMAND_LINE_CONFIG.fullmatch(k)}
+
+
 def main() -> int:
     failures = []
+    env = check_env()
     for name, cmd in CHECKS:
         print(f"== {name} ==")
-        proc = subprocess.run(cmd, cwd=REPO_ROOT)
+        proc = subprocess.run(cmd, cwd=REPO_ROOT, env=env)
         if proc.returncode == 0:
             print(f"   PASS (exit 0)")
         else:
