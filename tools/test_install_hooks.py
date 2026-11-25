@@ -245,6 +245,113 @@ class SetupMachineSafety(unittest.TestCase):
         self.assertEqual(self.run_git("diff", "--cached", "--name-only").stdout, "")
 
 
+# A hook that reports like the real one: the gate's summary line, then the hook's verdict.
+_GATE_PASS = ("echo 'REGRESSION GATE: all checks PASS'; "
+              "echo 'pre-commit: regression gate PASS — commit allowed'; exit 0")
+_SECRET_REFUSAL = ("echo \"REGRESSION GATE: 1 failure(s): [('test_secrets_env_guard', 1)]\"; "
+                   "echo 'pre-commit: regression gate FAILED (exit 1) — commit refused'; exit 1")
+_UNRELATED_REFUSAL = "echo 'some other hook: README.md is frozen'; exit 1"
+_STAGED_KEY = "git diff --cached | grep -q IC_API_KEY"
+
+
+class SetupMachineProofCause(unittest.TestCase):
+    """PROOF 1 and PROOF 2 pass only when the gate itself caused the result.
+
+    A commit allowed by a hook that never ran the gate is not a gate proof, and a fake-key
+    commit refused for some other reason is not a leak refusal. Each case gives
+    setup_machine.sh a stub hook and stubs the earlier steps, so the real gate never runs.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name) / "repo"
+        self.root.mkdir()
+        self.personal = Path(self.tmp.name) / "personal-gitconfig"
+        self.personal.write_text("", encoding="utf-8")
+        self.env = dict(os.environ)
+        self.env.update(GIT_CONFIG_GLOBAL=str(self.personal),
+                        GIT_CONFIG_SYSTEM=str(Path(self.tmp.name) / "system"),
+                        SETUP_SKIP_BASELINE_GATE="1")
+        (Path(self.tmp.name) / "system").write_text("", encoding="utf-8")
+        self.run_git("init", "-q")
+        self.run_git("config", "user.name", "Original Developer")
+        self.run_git("config", "user.email", "original@example.invalid")
+        (self.root / "README.md").write_text("original\n", encoding="utf-8")
+        tools = self.root / "tools"
+        tools.mkdir()
+        (tools / "check_message_schema.py").write_text("pass\n", encoding="utf-8")
+        (tools / "redact_text.py").write_text(
+            "import sys\n"
+            "sys.stdin.read()\n"
+            "if '--check' in sys.argv: sys.exit(1)\n"
+            "print('[REDACTED-github-pat-fine-grained]')\n", encoding="utf-8")
+        # Stops the run right after PROOF 2, so no later preflight step runs.
+        (tools / "check_secrets.py").write_text("raise SystemExit(9)\n", encoding="utf-8")
+        self.run_git("add", "-A")
+        self.run_git("commit", "-qm", "initial")
+        self.head = self.run_git("rev-parse", "HEAD").stdout
+
+    def run_git(self, *args):
+        return subprocess.run(["git", *args], cwd=self.root, env=self.env,
+                              capture_output=True, text=True, check=True)
+
+    def run_setup(self, clean: str, with_key: str):
+        """Run setup_machine.sh with a hook that does `with_key` when the fake key is
+        staged and `clean` otherwise."""
+        hook = f"#!/bin/sh\nif {_STAGED_KEY}; then {with_key}; fi\n{clean}\n"
+        (self.root / "tools" / "install_hooks.py").write_text(
+            "import pathlib, subprocess\n"
+            "p = pathlib.Path('.git/hooks/pre-commit')\n"
+            f"p.write_text({hook!r})\n"
+            "p.chmod(0o755)\n"
+            "subprocess.run(['git', 'config', 'core.hooksPath', '.git/hooks'], check=True)\n",
+            encoding="utf-8")
+        self.run_git("add", "-A")
+        self.run_git("-c", "commit.gpgsign=false", "commit", "-qm", "stub hook", "--no-verify")
+        self.head = self.run_git("rev-parse", "HEAD").stdout
+        done = subprocess.run(["bash", str(TOOLS / "setup_machine.sh")], cwd=self.root,
+                              env=self.env, capture_output=True, text=True, timeout=120)
+        return done.returncode, done.stdout + done.stderr
+
+    def assert_checkout_untouched(self):
+        self.assertEqual(self.run_git("rev-parse", "HEAD").stdout, self.head)
+        self.assertEqual(self.run_git("status", "--porcelain").stdout, "")
+        self.assertEqual(self.run_git("config", "user.name").stdout.strip(), "Original Developer")
+
+    def test_hook_that_skips_the_gate_fails_proof_1(self):
+        code, out = self.run_setup(clean="exit 0", with_key=_UNRELATED_REFUSAL)
+        self.assertNotEqual(code, 0, out)
+        self.assertIn("the gate did not report a full pass", out)
+        self.assertNotIn("PASS — hook ran the gate", out)
+        self.assert_checkout_untouched()
+
+    def test_fake_key_refused_for_another_reason_fails_proof_2(self):
+        code, out = self.run_setup(clean=_GATE_PASS, with_key=_UNRELATED_REFUSAL)
+        self.assertNotEqual(code, 0, out)
+        self.assertIn("PASS — hook ran the gate", out)
+        self.assertIn("not by the gate's secret scan", out)
+        self.assertNotIn("PASS — refusal confirmed", out)
+        self.assert_checkout_untouched()
+
+    def test_fake_key_refused_by_the_secret_scan_passes_proof_2(self):
+        code, out = self.run_setup(clean=_GATE_PASS, with_key=_SECRET_REFUSAL)
+        self.assertIn("PASS — hook ran the gate", out)
+        self.assertIn("PASS — refusal confirmed", out)
+        # The stub check_secrets.py then stops the run on purpose.
+        self.assertIn("check_secrets not clean", out)
+        self.assert_checkout_untouched()
+
+    def test_personal_commit_signing_does_not_break_the_proof_commits(self):
+        self.personal.write_text("[commit]\n\tgpgsign = true\n[gpg]\n\tprogram = false\n",
+                                 encoding="utf-8")
+        code, out = self.run_setup(clean=_GATE_PASS, with_key=_SECRET_REFUSAL)
+        self.assertIn("PASS — hook ran the gate", out)
+        self.assertIn("PASS — refusal confirmed", out)
+        self.assertNotIn("gpg failed", out)
+        self.assert_checkout_untouched()
+
+
 class HookInterpreter(unittest.TestCase):
     """6. the hook resolves `python3`, never a bare `python`, and fails closed without one."""
 

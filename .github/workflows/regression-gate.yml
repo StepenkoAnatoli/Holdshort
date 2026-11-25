@@ -149,6 +149,26 @@ jobs:
       - name: Claude Code host adapter suite (node --test)
         run: node --test hosts/claude-code/route.test.mjs
 
+  # Windows check of the git isolation the gate's tests rely on (tools/git_env.py):
+  # caller and personal git config kept out, the empty stand-in config file, and a
+  # test run on its own under `git -c commit.gpgsign=true`. Not the full gate, and
+  # not a required context: the gate has never run on a Windows runner, so this
+  # covers what pull request #128 changed without taking on unrelated Windows work.
+  git-isolation-windows:
+    name: git-isolation-windows
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Git isolation tests
+        run: python tools/test_run_regression.py
+      - name: A git-using test on its own
+        run: python tools/test_task_ids.py
+
   strict-canary:
     name: strict-canary
     runs-on: ubuntu-24.04

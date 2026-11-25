@@ -24,9 +24,9 @@ Pins:
 """
 from __future__ import annotations
 
+import ast
 import importlib.util
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -117,22 +117,91 @@ class MainUsesCheckEnv(unittest.TestCase):
                 self.assertNotIn(name, kwargs["env"])
 
 
-# A test file starts git when its source holds an argument list beginning "git".
-_STARTS_GIT = re.compile(r"""\[\s*["']git["']\s*,""")
+# Which test files must call isolate_git_config(), read from their syntax trees. This is
+# a convention check, not proof that every git process is isolated: a test that reaches git
+# only through another module (no "git" string in its own code) is not seen. The behavioural
+# tests below cover the helper itself.
+#
+# Calibration subject-pack trees are fixture code copied into throwaway repositories, not
+# tests this gate runs, so they are not required to call the helper.
+_NOT_GATE_TESTS = ("tools/calibration/subject-pack/",)
+
+
+def _gate_test_files(root: Path) -> list[Path]:
+    found = [*(root / "tools").rglob("test_*.py"), *(root / "tests").rglob("*.py")]
+    return sorted(f for f in found if "__pycache__" not in f.parts
+                  and not f.relative_to(root).as_posix().startswith(_NOT_GATE_TESTS))
+
+
+def _is_git_program(value) -> bool:
+    if not isinstance(value, str):
+        return False
+    name = value.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    return name in ("git", "git.exe")
+
+
+def starts_git(source: str) -> bool:
+    """True when the code names the git program as a string anywhere: an argument list or
+    tuple, a variable, a shutil.which() call. Docstrings and comments do not count."""
+    tree = ast.parse(source)
+    docstrings = {id(node.body[0].value) for node in ast.walk(tree)
+                  if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef,
+                                       ast.ClassDef))
+                  and node.body and isinstance(node.body[0], ast.Expr)
+                  and isinstance(node.body[0].value, ast.Constant)}
+    return any(isinstance(node, ast.Constant) and id(node) not in docstrings
+               and _is_git_program(node.value) for node in ast.walk(tree))
+
+
+def isolates_at_load(source: str) -> bool:
+    """True when a top-level statement calls isolate_git_config(), so it runs on import,
+    before any test. A comment, a string or a call inside a function does not count."""
+    for stmt in ast.parse(source).body:
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+            func = stmt.value.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+            if name == "isolate_git_config":
+                return True
+    return False
 
 
 class TestsIsolateGitConfig(unittest.TestCase):
-    def test_every_test_file_that_starts_git_drops_it(self):
+    def test_every_test_file_that_starts_git_isolates_it(self):
         root = TOOLS.parent
-        files = sorted([*TOOLS.glob("test_*.py"), *TOOLS.glob("*/test_*.py"),
-                        *(root / "tests").glob("*.py")])
-        starting_git = [f for f in files if _STARTS_GIT.search(f.read_text(encoding="utf-8"))]
+        starting_git = [f for f in _gate_test_files(root)
+                        if starts_git(f.read_text(encoding="utf-8"))]
         self.assertIn(TOOLS / "test_install_hooks.py", starting_git,
-                      "precondition: the pattern finds the file this bug was seen in")
-        missing = [str(f.relative_to(root)) for f in starting_git
-                   if "isolate_git_config()" not in f.read_text(encoding="utf-8")]
+                      "precondition: the check finds the file this bug was seen in")
+        missing = [f.relative_to(root).as_posix() for f in starting_git
+                   if not isolates_at_load(f.read_text(encoding="utf-8"))]
         self.assertEqual(missing, [], "these test files start git without calling "
-                         "isolate_git_config() from tools/git_env.py when they load")
+                         "isolate_git_config() from tools/git_env.py at the top level")
+
+    def test_the_check_sees_git_however_it_is_spelled(self):
+        for source in ('subprocess.run(["git", "status"])',
+                       'subprocess.run(("git", "status"))',
+                       'GIT = "git"\nsubprocess.run([GIT, "status"])',
+                       'subprocess.run([shutil.which("git"), "status"])',
+                       'subprocess.run(["/usr/bin/git", "status"])',
+                       'subprocess.run([r"C:\\Program Files\\Git\\cmd\\git.exe", "status"])'):
+            with self.subTest(source=source):
+                self.assertTrue(starts_git(source))
+        for source in ('"""Runs git in a fixture."""\nx = 1',
+                       '# subprocess.run(["git"])\nx = 1',
+                       'subprocess.run(["gitleaks", "detect"])'):
+            with self.subTest(source=source):
+                self.assertFalse(starts_git(source))
+
+    def test_only_a_real_top_level_call_counts_as_isolating(self):
+        self.assertTrue(isolates_at_load("_git_env.isolate_git_config()\n"))
+        self.assertTrue(isolates_at_load("isolate_git_config()\n"))
+        for source in ("# _git_env.isolate_git_config()\n",
+                       "NOTE = '_git_env.isolate_git_config()'\n",
+                       "def setUpModule():\n    _git_env.isolate_git_config()\n",
+                       "if False:\n    _git_env.isolate_git_config()\n",
+                       "_git_env.isolate_git_config\n"):
+            with self.subTest(source=source):
+                self.assertFalse(isolates_at_load(source))
 
     def test_personal_config_is_replaced_by_an_empty_file(self):
         # A real file, not /dev/null, so it reads the same on every platform. This file
@@ -144,38 +213,46 @@ class TestsIsolateGitConfig(unittest.TestCase):
 
     def test_a_test_ignores_personal_config_as_under_the_hook(self):
         # The hook sets HOME to the repository, so the gate never reads ~/.gitconfig. A test
-        # run on its own skips it the same way, whether or not it sets GIT_CONFIG_GLOBAL.
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp = Path(tmp)
-            home = tmp / "home"
-            (home / ".config" / "git").mkdir(parents=True)
-            personal = "[commit]\n\tgpgsign = true\n"
-            (home / ".gitconfig").write_text(personal, encoding="utf-8")
-            (home / ".config" / "git" / "config").write_text(personal, encoding="utf-8")
-            repo = tmp / "repo"
-            repo.mkdir()
-            env = {k: v for k, v in os.environ.items()
-                   if not k.startswith("GIT_") and k != "XDG_CONFIG_HOME"}
-            env["HOME"] = str(home)
-            subprocess.run(["git", "init", "-q"], cwd=repo, env=env, check=True)
+        # run on its own skips personal config too, wherever git would find it.
+        placements = {
+            "~/.gitconfig": lambda home, xdg: home / ".gitconfig",
+            "~/.config/git/config": lambda home, xdg: home / ".config" / "git" / "config",
+            "$XDG_CONFIG_HOME/git/config": lambda home, xdg: xdg / "git" / "config",
+        }
+        for where, path_of in placements.items():
+            with self.subTest(where=where), tempfile.TemporaryDirectory() as tmp:
+                tmp = Path(tmp)
+                home, xdg = tmp / "home", tmp / "xdg"
+                personal = path_of(home, xdg)
+                personal.parent.mkdir(parents=True)
+                personal.write_text("[commit]\n\tgpgsign = true\n", encoding="utf-8")
+                home.mkdir(exist_ok=True)
+                repo = tmp / "repo"
+                repo.mkdir()
+                env = {k: v for k, v in os.environ.items()
+                       if not k.startswith("GIT_") and k != "XDG_CONFIG_HOME"}
+                env["HOME"] = str(home)
+                if where.startswith("$XDG"):
+                    env["XDG_CONFIG_HOME"] = str(xdg)
+                subprocess.run(["git", "init", "-q"], cwd=repo, env=env, check=True)
 
-            def gpgsign(isolate):
-                code = ("import importlib.util, subprocess, sys\n"
-                        "spec = importlib.util.spec_from_file_location('git_env', sys.argv[1])\n"
-                        "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\n"
-                        + ("m.isolate_git_config()\n" if isolate else "")
-                        + "sys.exit(subprocess.run(['git', 'config', '--get', 'commit.gpgsign'])"
-                        ".returncode)\n")
-                return subprocess.run([sys.executable, "-c", code, str(TOOLS / "git_env.py")],
-                                      cwd=repo, env=env, capture_output=True, text=True)
+                def gpgsign(isolate):
+                    code = ("import importlib.util, subprocess, sys\n"
+                            "spec = importlib.util.spec_from_file_location('git_env', sys.argv[1])\n"
+                            "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\n"
+                            + ("m.isolate_git_config()\n" if isolate else "")
+                            + "sys.exit(subprocess.run(['git', 'config', '--get', 'commit.gpgsign'])"
+                            ".returncode)\n")
+                    return subprocess.run([sys.executable, "-c", code, str(TOOLS / "git_env.py")],
+                                          cwd=repo, env=env, capture_output=True, text=True)
 
-            leaked = gpgsign(isolate=False)
-            self.assertEqual(leaked.stdout.strip(), "true",
-                             "precondition: git reads the personal config when not isolated")
-            isolated = gpgsign(isolate=True)
-            # git config --get exits 1, silently, when the key is set nowhere it reads.
-            self.assertEqual((isolated.returncode, isolated.stdout.strip(), isolated.stderr),
-                             (1, "", ""))
+                leaked = gpgsign(isolate=False)
+                self.assertEqual(leaked.stdout.strip(), "true",
+                                 "precondition: git reads the personal config when not isolated")
+                isolated = gpgsign(isolate=True)
+                # git config --get exits 1, silently, when the key is set nowhere it reads.
+                self.assertEqual((isolated.returncode, isolated.stdout.strip(), isolated.stderr),
+                                 (1, "", ""))
 
     def test_a_test_run_on_its_own_ignores_a_calling_git_c(self):
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
