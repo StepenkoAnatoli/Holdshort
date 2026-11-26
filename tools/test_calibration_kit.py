@@ -864,6 +864,20 @@ class Scripts(unittest.TestCase):
         self.assertEqual((target / "node_modules").resolve(), outside.resolve())
         self.assertEqual(sh(["git", "status", "--porcelain"], target, self.env).stdout.strip(), "")
 
+    def test_historyless_checkout_refuses_a_link_inside_a_history_less_checkout(self):
+        # review loop K16-1: a history-less checkout has a .git directory, so a dependency tree installed in one is
+        # inside a git repository and refused, at the checkout's top and at any depth below it
+        pack, c = make_pack(self.root, self.env)
+        self.assertIsNone(repo_holding(self.root), TEMP_IN_REPO.format(self.root, repo_holding(self.root)))
+        site = self.root / "install-site"
+        p = checkout(c["repo"], c["base"], site, self.env, "--pack", str(pack))
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertTrue((site / ".git").is_dir())
+        (site / "node_modules" / "pkg").mkdir(parents=True)
+        for d in (site, site / "node_modules", site / "node_modules" / "pkg"):
+            for flags in (("--pack", str(pack)), ()):
+                self.assert_link_refused(c, d, "is inside the git repository", *flags)
+
     @NEEDS_PY_LINKS
     def test_historyless_checkout_checks_the_symlinks_at_the_top_of_a_linked_directory(self):
         # a symlink among DIR's own entries is checked like DIR: it must not reach the pack or a repository
@@ -3992,6 +4006,30 @@ class Docs(unittest.TestCase):
         fmt = md_section((KIT / "subject-pack" / "README.md").read_text(encoding="utf-8"), "The shared pack")
         for word in ("shared/", "make-repo.sh", "manifest.json", "repository"):
             self.assertIn(word, fmt, word)
+
+    def test_no_live_file_names_a_refused_install_site(self):
+        # review loop K16-1: the checkout script's header still named, as the place to install the dependencies, a
+        # checkout --link refuses (it has a .git directory) after the README was put right; the README's step 3 is the
+        # one source of that guidance. A file under docs/orchestration/**/reports/ is a record and keeps what it quoted;
+        # this file holds the phrases its own checks look for.
+        names = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-z"], capture_output=True, text=True, timeout=60)
+        self.assertEqual(names.returncode, 0, names.stderr)
+        records = re.compile(r"^docs/orchestration/(?:[^/]+/)*reports/")
+        near = re.compile(r"\binstall.{0,150}?\bhistory-?less checkout|\bhistory-?less checkout.{0,150}?\binstall", re.I)
+        denies = re.compile(r"\b(?:do not|don't|never|not|no) install|\bno install site|\brefuse[sd]?\b", re.I)
+        found = []
+        for name in filter(None, names.stdout.split("\0")):
+            if records.match(name) or name == "tools/test_calibration_kit.py":
+                continue
+            try:
+                text = (ROOT / name).read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):  # a binary file, or one a sparse checkout left out
+                continue
+            prose = " ".join(re.sub(r"(?m)^[ \t]*(?:#+|//+|\*+|<!--)?", "", text).split())  # comment markers, line breaks
+            found += [f"{name}: {s}" for s in re.split(r"(?<=[.!?])\s+", prose) if near.search(s) and not denies.search(s)]
+        self.assertEqual(found, [])
+        header = " ".join((KIT / "historyless-checkout.sh").read_text(encoding="utf-8").replace("#", " ").split())
+        self.assertIn("is the kit README's step 3 (Checkouts)", header)
 
     def test_changelog_and_readme_name_the_kit(self):
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")

@@ -48,8 +48,9 @@
 # guard cannot see them: a plain copy or export (git archive) of the subject's files, a work tree whose git directory
 # lies elsewhere (core.worktree, which leaves no .git in the tree), a link or a repository deeper inside DIR, and
 # anything else it could know only by its content. A refusal never means "remove the .git and retry": a stripped
-# clone of the subject still hands over its files (orchestration records, a brief). Install dependencies where no
-# subject file is, such as a history-less checkout of the case base made outside the pack.
+# clone of the subject still hands over its files (orchestration records, a brief). Where to install the dependencies
+# is the kit README's step 3 (Checkouts), the one source of that guidance: a directory holding only the base's
+# dependency manifest and lockfile, outside every repository.
 #
 # How paths are compared: "inside" and "holds" are decided by identity ([ -ef ]) along a path's ancestors, not by
 # spelling, so another spelling of the same directory (another case on a case-insensitive filesystem) cannot pass. A
