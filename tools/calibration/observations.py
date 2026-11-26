@@ -28,11 +28,17 @@ from its own records, and the builder needs nothing else from the harness):
         entries of any other type are ignored, and an agent counts only in state done or error.
     "result": the workflow script's return value, {"results": [...], "clusters": {"clusters": [...]},
         "adjudications": [{"cluster": {...}, "lenses": [...], "real": BOOL, "realVotes": "k/n"}]}.
-  LABEL (run.template.js names its agents so): "<case>:<profile>" for a cell (case pin | fix | review),
+  LABEL (run.template.js names its agents so): "<case>:<profile>" for a cell (case pin | fix | review | gate),
     "grade:<profile>" for a review's grader, "cluster:<name>" for the clustering agent, "lens:<cluster>:<lens>"
     (or run 3's "<cluster>:<lens>") for a lens (reproduce | reachability | refute). Any other label is counted
     under "other", so the token totals always sum to the run's agents.
-  GRADES_DIR - grade.sh's outputs, one file per pin or fix cell, named <case>-<profile>.json.
+  GRADES_DIR - grade.sh's outputs, one file per pin, fix or gate cell, named <case>-<profile>.json.
+
+THE TASK OBJECT'S CATEGORY: each pin, fix and gate task object (and the review grade) carries "category", the
+manifest's cases.<case>.category, when the manifest names one; with none it carries no category key and a reader
+applies the fixed mapping (pin -> pin-tests, fix -> fix, review -> review), so a manifest without categories (runs 1-3)
+builds byte for byte what it built before. A gate cell (the gate case kind) appears in an observation, its usage, its
+mistakes and its retries only when the manifest has a gate case, for the same reason.
 
 A void cell (protocol Item 3.2: it halted on relayed operator text) is named with --void and must be re-run once in a
 supplementary run given with --supplementary; its main-run usage and output go to void-cells.json, the
@@ -48,6 +54,8 @@ import sys
 from pathlib import Path
 
 CASES = ("pin", "fix", "review")
+KINDS = CASES + ("gate",)  # every case kind a manifest may carry; gate only where the manifest has one
+GRADED = ("pin", "fix", "gate")  # graded by grade.sh; a review by its grader
 LENSES = ("reproduce", "reachability", "refute")
 PRONGS = ("holds", "reachable", "forbidden")
 BLOCKING = re.compile(r"S[123]")
@@ -112,7 +120,7 @@ def load_run(path: Path):
 
 def label_kind(label: str) -> str:
     parts = (label or "").split(":")
-    if parts[0] in CASES and len(parts) == 2:
+    if parts[0] in KINDS and len(parts) == 2:
         return "items"
     if parts[0] == "grade":
         return "graders"
@@ -217,13 +225,18 @@ def build(a) -> int:
     manifest = read_json(a.manifest, "manifest")
     protocol = read_json(a.protocol, "protocol") if a.protocol else {}
     cases = manifest.get("cases") or {}
-    unknown = sorted(set(cases) - set(CASES))
+    unknown = sorted(set(cases) - set(KINDS))
     if unknown:
-        raise Refused(f"manifest cases {unknown} are not pin, fix or review (the adapter reads only those three)")
+        raise Refused(f"manifest cases {unknown} are not pin, fix, review or gate (the kinds the kit grades)")
     if not a.grades.is_dir():
         raise Refused(f"grades directory not found: {a.grades}")
     truth_ids = list((cases.get("review") or {}).get("findings") or [])
-    tier = {c: (cases.get(c) or {}).get("tier", "T1") for c in CASES}
+    tier = {c: (cases.get(c) or {}).get("tier", "T1") for c in KINDS}
+    # K1: the task object's category is the manifest's, only where the manifest names one (a reader maps the rest)
+    category = {c: (cases.get(c) or {}).get("category") for c in KINDS}
+    cat = lambda c: {"category": category[c]} if isinstance(category[c], str) else {}
+    # the kinds an observation carries per case (usage, mistakes, retries): gate only when the manifest has one
+    per_case = CASES + (("gate",) if "gate" in cases else ())
     declared = list(((protocol.get("classification") or {}).get("prongs")) or PRONGS)
 
     results, errors, retries = load_journal(a.journal)
@@ -233,7 +246,7 @@ def build(a) -> int:
 
     void = list(dict.fromkeys(a.void))
     for v in void:
-        if v.split(":")[0] not in CASES or v.count(":") != 1:
+        if v.split(":")[0] not in KINDS or v.count(":") != 1:
             raise Refused(f"--void {v!r} is not <case>:<profile>")
         if v not in usage and v not in results and v not in errors:
             raise Refused(f"--void {v}: no such cell in the main run")
@@ -280,7 +293,7 @@ def build(a) -> int:
     alias = {p.get("key"): p.get("model") for p in (protocol.get("profiles") or []) + (protocol.get("review_only_profiles") or [])}
     seen = list(dict.fromkeys(lab.split(":", 1)[1] for lab in list(usage) + list(results) + list(supp_usage) if label_kind(lab) == "items"))
     order = list(dict.fromkeys(proto_profiles + proto_review_only + seen))
-    review_only = set(proto_review_only) if protocol else {p for p in order if not any(f"{c}:{p}" in usage or f"{c}:{p}" in results for c in ("pin", "fix"))}
+    review_only = set(proto_review_only) if protocol else {p for p in order if not any(f"{c}:{p}" in usage or f"{c}:{p}" in results for c in GRADED)}
 
     merged = merge_adjudications([adjs, supp_adjs], declared)
     by_member = member_map(merged)
@@ -291,18 +304,24 @@ def build(a) -> int:
     for p in order:
         o = {"profile": p, "review-only": p in review_only, "pin": None, "fix": None, "review": None, "review-grade": None,
              "self-reported-mistakes": {}, "harness-retries": {}, "usage": {}}
-        for case in ("pin", "fix"):
+        if "gate" in cases:
+            o["gate"] = None
+        for case in GRADED:
             lab = f"{case}:{p}"
             ran = case in cases and (cell_usage(lab) is not None or lab in results or lab in errors)
             g_path = a.grades / f"{case}-{p}.json"
             g = read_json(g_path, "grade") if g_path.is_file() else None
             if ran and (g is None or "error" in g):
-                o[case] = {"score": None, "tier": tier[case], "ungraded": (g or {}).get("error") or f"no grade file {g_path.name}"}
+                o[case] = {"score": None, "tier": tier[case], **cat(case), "ungraded": (g or {}).get("error") or f"no grade file {g_path.name}"}
             elif ran and case == "pin":
-                o["pin"] = {"score": bool(g.get("PASS")), "tier": tier[case], **{k: g.get(k) for k in ("redAtHead", "greenWithFix", "srcClean", "lint", "committed", "atHead", "withAcceptedFix")}}
+                o["pin"] = {"score": bool(g.get("PASS")), "tier": tier[case], **cat(case), **{k: g.get(k) for k in ("redAtHead", "greenWithFix", "srcClean", "lint", "committed", "atHead", "withAcceptedFix")}}
+                if "redAtMutants" in g:  # K2: a pin case with mutants
+                    o["pin"]["redAtMutants"] = g.get("redAtMutants")
+            elif ran and case == "fix":
+                o["fix"] = {"score": bool(g.get("PASS")), "tier": tier[case], **cat(case), **{k: g.get(k) for k in ("candidateGreen", "guardRed", "acceptedPinGreen", "scopeOk", "lint", "committedWithMap", "commits", "srcDiffLines", "candidateTests", "guardRemoved", "acceptedPin")}}
             elif ran:
-                o["fix"] = {"score": bool(g.get("PASS")), "tier": tier[case], **{k: g.get(k) for k in ("candidateGreen", "guardRed", "acceptedPinGreen", "scopeOk", "lint", "committedWithMap", "commits", "srcDiffLines", "candidateTests", "guardRemoved", "acceptedPin")}}
-        for case in CASES:
+                o["gate"] = {"score": bool(g.get("PASS")), "tier": tier[case], **cat(case), **{k: g.get(k) for k in ("gateExit", "invariantsIntact", "requiredPresent", "committed", "commits")}}
+        for case in per_case:
             lab = f"{case}:{p}"
             r = results.get(lab)
             if isinstance(r, dict):
@@ -336,12 +355,12 @@ def build(a) -> int:
                     fb3 += 0 if real3 else 1
                 others.append(y)
             truth = {t.get("id"): {k: t.get(k) for k in ("found", "causeNamed", "severity")} for t in g.get("truth") or [] if isinstance(t, dict)}
-            o["review-grade"] = {"result": review_result(g, adj_fb, truth_ids), "tier": tier["review"], "rawFalseBlocking": g.get("falseBlocking"),
+            o["review-grade"] = {"result": review_result(g, adj_fb, truth_ids), "tier": tier["review"], **cat("review"), "rawFalseBlocking": g.get("falseBlocking"),
                                  "adjudicatedFalseBlocking": adj_fb, "threeProngFalseBlocking": fb3,
                                  "threeProngResult": review_result(g, fb3, truth_ids), "truth": truth,
                                  "copiedFromHistory": g.get("copiedFromHistory"), "others": others, "notes": str(g.get("notes", ""))[:500]}
         elif review_ran:
-            o["review-grade"] = {"result": None, "tier": tier["review"], "ungraded": "no grader output"}
+            o["review-grade"] = {"result": None, "tier": tier["review"], **cat("review"), "ungraded": "no grader output"}
         obs[p] = o
 
     # scores
@@ -356,15 +375,17 @@ def build(a) -> int:
     profiles_s, cells, non_pass = {}, collections.defaultdict(lambda: [0, 0, 0]), []
     for p, o in obs.items():
         sp = {}
-        for case in ("pin", "fix"):
-            t = o[case]
+        for case in GRADED:
+            t = o.get(case)
             if t is None:
                 continue
             e = {"pass": t["score"] is True, "tier": t["tier"], "estimate": estimate(p, o["usage"][case])}
             if case == "pin":
                 e["lint_clean"] = t.get("lint") in ("ok", "none")
-            else:
+            elif case == "fix":
                 e["committed_with_map"] = t.get("committedWithMap")
+            else:
+                e["committed"] = t.get("committed")
             if "ungraded" in t:
                 e["ungraded"] = t["ungraded"]
             if f"{case}:{p}" in void_record:
@@ -419,7 +440,7 @@ def build(a) -> int:
               "judging_share_both_runs": round((judging(main_t) + judging(supp_t)) / both, 3) if both else None,
               "note": "items = the cells; judging = graders + clustering + lenses; other = any agent whose label the kit does not name; scored cells = main items minus the void cells plus the supplementary items"}
     cells_text = {}
-    for case in CASES:
+    for case in KINDS:
         if case not in cells:
             continue
         k, n, k3 = cells[case]
@@ -430,13 +451,13 @@ def build(a) -> int:
     scores = {
         "schema_version": 1, "run_id": run_id, "supplementary_run_id": supp_id,
         "pack": {k: manifest.get(k) for k in ("pack", "pack_version", "kind")},
-        "pass_rules": {c: (cases.get(c) or {}).get("pass_rule") for c in CASES if c in cases},
+        "pass_rules": {c: (cases.get(c) or {}).get("pass_rule") for c in KINDS if c in cases},
         "accounting_note": (protocol.get("accounting") or {}).get("statement") if isinstance(protocol.get("accounting"), dict)
         else "estimate-only: no rates given (--protocol with accounting.rates_per_mtok), so every usd field is null; not a bill",
         "profiles": profiles_s,
         "void_cells": {v: {"status": "VOID (protocol Item 3.2)", "main_run_tokens": (r["main-run"]["usage"] or {}).get("tokens")} for v, r in void_record.items()},
         "totals": {"cells": cells_text, "tokens": tokens, "non_pass": non_pass},
-        "category_mapping": {c: (cases.get(c) or {}).get("category") for c in CASES if c in cases},
+        "category_mapping": {c: (cases.get(c) or {}).get("category") for c in KINDS if c in cases},
         "adjudication_schema": {
             "prongs_in_lens_schema": in_schema, "prongs_in_classification": declared, "missing_prong": missing,
             "vote_rule": "a lens votes real when holds, reachable is not no, and forbidden; a cluster is real on two votes of three",
@@ -457,7 +478,9 @@ def build(a) -> int:
     pf = lambda t: "-" if t is None else ("PASS" if t.get("score") is True else "UNGRADED" if t.get("score") is None else "FAIL")
     star = lambda p, case: "*" if f"{case}:{p}" in void_record else ""
     tok = lambda u: "-" if not u else f"{u.get('tokens')}"
-    head = ["profile", "pin", "fix", "fix map", "review"] + truth_ids + ["others true/false/unv (grader)", "false S1-3 raw/adj/3-prong", "copied", "tokens pin/fix/review(+grade)"]
+    gate_col = ["gate"] if "gate" in cases else []
+    head = (["profile", "pin", "fix", "fix map", "review"] + gate_col + truth_ids
+            + ["others true/false/unv (grader)", "false S1-3 raw/adj/3-prong", "copied", f"tokens {'/'.join(per_case)}(+grade)"])
     rows = ["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
     for p, o in obs.items():
         rg, fx = o["review-grade"], o["fix"]
@@ -465,13 +488,14 @@ def build(a) -> int:
         cls = collections.Counter(x.get("classification") for x in (rg or {}).get("others") or [])
         cols = [p, pf(o["pin"]), pf(fx), "-" if not fx or fx.get("committedWithMap") is None else ("yes" if fx["committedWithMap"] else "no"),
                 "-" if rg is None else (rg["result"] or "UNGRADED") + (" (3-prong: " + rg["threeProngResult"] + ")" if graded and rg["threeProngResult"] != rg["result"] else "")]
+        cols += [pf(o["gate"])] if gate_col else []
         for i in truth_ids:
             t = (rg or {}).get("truth", {}).get(i) if graded else None
             cols.append("-" if not t else f"{t.get('found')}" + ("/cause" if t.get("causeNamed") else ""))
         cols += [f"{cls['true']}/{cls['false']}/{cls['unverifiable']}" if graded else "-",
                  f"{rg['rawFalseBlocking']}/{rg['adjudicatedFalseBlocking']}/{rg['threeProngFalseBlocking']}" if graded else "-",
                  f"{rg['copiedFromHistory']}" if graded else "-",
-                 "/".join(tok(o["usage"][c]) + star(p, c) for c in CASES) + f"(+{tok(o['usage']['grade'])}{star(p, 'review')})"]
+                 "/".join(tok(o["usage"][c]) + star(p, c) for c in per_case) + f"(+{tok(o['usage']['grade'])}{star(p, 'review')})"]
         rows.append("| " + " | ".join(cols) + " |")
     rows.append("")
     rows.append("`*` a supplementary-run cell replacing a void one. Review: the run's preregistered result, with the three-prong result beside it when they differ.")
@@ -486,7 +510,7 @@ def build(a) -> int:
 
     cost = ["| profile | task | tokens | ms | est. $ (all-input .. all-output) | result |", "|---|---|---|---|---|---|"]
     for p, o in obs.items():
-        for case in CASES:
+        for case in per_case:
             u = o["usage"][case]
             if not u:
                 continue
